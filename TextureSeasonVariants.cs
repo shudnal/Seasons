@@ -12,7 +12,6 @@ namespace Seasons
     {
         private static System.Reflection.Assembly[] currentAssemblies = null;
         private static Dictionary<string, Type> cachedTypes = new Dictionary<string, Type>();
-        private const string defaultMaterialKey = "Default";
 
         public class SeasonalTextures
         {
@@ -69,21 +68,19 @@ namespace Seasons
         {
             public Type m_renderer;
             public string m_prefabName;
-            public Dictionary<string, List<MaterialTextures>> m_materials = new Dictionary<string, List<MaterialTextures>>();
+            public Dictionary<int, List<MaterialTextures>> m_materials = new Dictionary<int, List<MaterialTextures>>();
 
             public bool Initialized()
             {
                 return m_renderer != null && !String.IsNullOrWhiteSpace(m_prefabName) && m_materials.Count > 0;
             }
 
-            public void AddMaterialTexture(string transformPath, string materialName, string shader, SeasonalTextures st)
+            public void AddMaterialTexture(int lodLevel, string materialName, string shader, SeasonalTextures st)
             {
-                string key = GetMaterialTextiresKey(transformPath);
-
-                if (!m_materials.TryGetValue(key, out List<MaterialTextures> transformMaterials))
+                if (!m_materials.TryGetValue(lodLevel, out List<MaterialTextures> transformMaterials))
                 {
                     transformMaterials = new List<MaterialTextures>();
-                    m_materials.Add(key, transformMaterials);
+                    m_materials.Add(lodLevel, transformMaterials);
                 }
 
                 MaterialTextures materialTextures;
@@ -104,14 +101,9 @@ namespace Seasons
                 materialTextures.AddTextures(st);
             }
         
-            public bool GetMaterialTextures(string transformPath, out List<MaterialTextures> materialTextures)
+            public bool GetMaterialTextures(int lodLevel, out List<MaterialTextures> materialTextures)
             {
-                return m_materials.TryGetValue(GetMaterialTextiresKey(transformPath), out materialTextures);
-            }
-
-            private string GetMaterialTextiresKey(string transformPath)
-            {
-                return transformPath == "" ? defaultMaterialKey : transformPath;
+                return m_materials.TryGetValue(lodLevel, out materialTextures);
             }
         }
 
@@ -186,43 +178,37 @@ namespace Seasons
                             m_prefabName = prefab.Name
                         };
 
-                        foreach (DirectoryInfo material in prefab.GetDirectories())
-                        {
-                            if (material.GetFiles(transformpathfilename).Length == 0)
-                                continue;
-
-                            string transformPath = File.ReadAllText(Path.Combine(material.FullName, transformpathfilename));
-
-                            foreach (DirectoryInfo texName in material.GetDirectories())
-                            {
-                                SeasonalTextures seasonalTextures = new SeasonalTextures();
-
-                                SeasonsTexture.TextureProperties texProperties = new SeasonsTexture.TextureProperties();
-                                FileInfo[] properties = texName.GetFiles(textureProperties);
-                                if (properties.Length > 0)
-                                    texProperties = JsonUtility.FromJson<SeasonsTexture.TextureProperties>(File.ReadAllText(properties[0].FullName));
-
-                                seasonalTextures.textureProperty = texName.Name;
-
-                                foreach (Season season in Enum.GetValues(typeof(Season)))
+                        foreach (DirectoryInfo lodLevel in prefab.GetDirectories())
+                            foreach (DirectoryInfo material in lodLevel.GetDirectories())
+                                foreach (DirectoryInfo texName in material.GetDirectories())
                                 {
-                                    for (int variant = 0; variant < seasonColorVariants; variant++)
+                                    SeasonalTextures seasonalTextures = new SeasonalTextures();
+
+                                    SeasonsTexture.TextureProperties texProperties = new SeasonsTexture.TextureProperties();
+                                    FileInfo[] properties = texName.GetFiles(textureProperties);
+                                    if (properties.Length > 0)
+                                        texProperties = JsonUtility.FromJson<SeasonsTexture.TextureProperties>(File.ReadAllText(properties[0].FullName));
+
+                                    seasonalTextures.textureProperty = texName.Name;
+
+                                    foreach (Season season in Enum.GetValues(typeof(Season)))
                                     {
-                                        FileInfo[] files = texName.GetFiles(SeasonsTexture.SeasonFileName(season, variant));
-                                        if (files.Length == 0)
-                                            continue;
+                                        for (int variant = 0; variant < seasonColorVariants; variant++)
+                                        {
+                                            FileInfo[] files = texName.GetFiles(SeasonsTexture.SeasonFileName(season, variant));
+                                            if (files.Length == 0)
+                                                continue;
 
-                                        if (GetTexture(files[0].FullName, out Texture2D tex, texProperties))
-                                            seasonalTextures.AddVariant(season, variant, tex);
+                                            if (GetTexture(files[0].FullName, out Texture2D tex, texProperties))
+                                                seasonalTextures.AddVariant(season, variant, tex);
+                                        }
                                     }
+
+                                    if (!seasonalTextures.Initialized())
+                                        continue;
+
+                                    prefabController.AddMaterialTexture(int.Parse(lodLevel.Name), material.Name, shaderName, seasonalTextures);
                                 }
-
-                                if (!seasonalTextures.Initialized())
-                                    continue;
-
-                                prefabController.AddMaterialTexture(transformPath, material.Name, shaderName, seasonalTextures);
-                            }
-                        }
 
                         if (!prefabController.Initialized())
                             continue;

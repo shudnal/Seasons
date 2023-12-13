@@ -104,7 +104,7 @@ namespace Seasons
             {
                 { "Custom/Vegetation", "Vegetation" },
                 { "Custom/Grass", "Grass" },
-                { "Custom/Creature", "Creature" },
+                //{ "Custom/Creature", "Creature" },
                 { "Custom/StaticRock", "StaticRock" }
             };
 
@@ -112,13 +112,13 @@ namespace Seasons
             {
                 { "Custom/Vegetation", new string[] { "_MainTex", "_MossTex" } },
                 { "Custom/Grass", new string[] { "_MainTex", "_TerrainColorTex" } },
-                { "Custom/Creature", new string[] { "_MainTex" } },
+                //{ "Custom/Creature", new string[] { "_MainTex" } },
                 { "Custom/StaticRock", new string[] { "_MossTex" }}
             };
 
         public static Dictionary<string, string[]> shaderIgnoreMaterial = new Dictionary<string, string[]>
             {
-                { "Custom/Vegetation", new string[] { "bark", "log" } }
+                { "Custom/Vegetation", new string[] { "bark" } }
             };
 
         public static Dictionary<string, string> renderersFolders = new Dictionary<string, string>
@@ -132,12 +132,11 @@ namespace Seasons
             {
                 { typeof(MeshRenderer).ToString(), new string[] { "Custom/Vegetation", "Custom/Grass", "Custom/StaticRock" } },
                 { typeof(InstanceRenderer).ToString(), new string[] { "Custom/Vegetation", "Custom/Grass" } },
-                { typeof(SkinnedMeshRenderer).ToString(), new string[] { "Custom/Creature" } }
+                //{ typeof(SkinnedMeshRenderer).ToString(), new string[] { "Custom/Creature" } }
             };
 
         public const string originalPostfix = ".orig.png";
         public const string textureProperties = "properties.json";
-        public const string transformpathfilename = "transformpath";
 
         public static Dictionary<string, PrefabControllerData> prefabControllers = new Dictionary<string, PrefabControllerData>();
 
@@ -447,7 +446,11 @@ namespace Seasons
 
         public Color GetMossConfigColor(Season season, int pos)
         {
-            return GetGrassConfigColor(season, (pos + 2) % seasonColorVariants + 1);
+            if (season != Season.Winter)
+                return Color.clear;
+
+            return GetGrassConfigColor(Season.Winter, (pos + 2) % seasonColorVariants + 1);
+            //return GetGrassConfigColor(season, (pos + 2) % seasonColorVariants + 1);
         }
 
         private Color GetColorConfig(string fieldName)

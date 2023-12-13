@@ -7,6 +7,8 @@ using UnityEngine;
 using Object = UnityEngine.Object;
 using static Seasons.Seasons;
 using UnityEngine.Rendering;
+using static Seasons.TextureSeasonVariants;
+using BepInEx.Logging;
 
 namespace Seasons
 {
@@ -39,11 +41,11 @@ namespace Seasons
             public int height = 2;
         }
 
-        public static void CacheMaterialTextures(Material material, string rendererFolder, string shaderFolder, string prefab, string transformPath, string[] textureNames)
+        public static bool CacheMaterialTextures(Material material, string rendererFolder, string shaderFolder, string prefab, int lodLevel, string[] textureNames)
         {
-            string pathMaterial = Path.Combine(cacheFolder, rendererFolder, shaderFolder, prefab, material.name);
+            string pathMaterial = Path.Combine(cacheFolder, rendererFolder, shaderFolder, prefab, lodLevel.ToString(), material.name);
             if (Directory.Exists(pathMaterial))
-                return;
+                return true;
 
             foreach (string textName in material.GetTexturePropertyNames().Where(mat => textureNames.Any(text => mat.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0)))
             {
@@ -80,7 +82,7 @@ namespace Seasons
                         else 
                             colorVariant = instance.GetSeasonConfigColor(season, i);
 
-                        if (IsPine(material.name, transformPath, prefab))
+                        if (IsPine(material.name, prefab))
                             colorVariant.a /= 2;
                         
                         colorVariants.Add(colorVariant);
@@ -106,8 +108,7 @@ namespace Seasons
                     File.WriteAllBytes("\\\\?\\" + Path.Combine(texturePath, textureVariant.Key), textureVariant.Value);
             }
 
-            if (Directory.Exists(pathMaterial))
-                File.WriteAllText("\\\\?\\" + Path.Combine(pathMaterial, transformpathfilename), transformPath);
+            return Directory.Exists(pathMaterial);
         }
 
         public static byte[] GetTextureData(Texture texture, TextureProperties texProperties, out Color[] pixels)
@@ -256,18 +257,70 @@ namespace Seasons
             return textureName.IndexOf("moss", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        private static bool IsPine(string materialName, string prefab, string path)
+        private static bool IsPine(string materialName, string prefab)
         {
-            return materialName.IndexOf("pine", StringComparison.OrdinalIgnoreCase) >= 0 || prefab.IndexOf("pine", StringComparison.OrdinalIgnoreCase) >= 0 || path.IndexOf("pine", StringComparison.OrdinalIgnoreCase) >= 0;
+            return materialName.IndexOf("pine", StringComparison.OrdinalIgnoreCase) >= 0 || prefab.IndexOf("pine", StringComparison.OrdinalIgnoreCase) >= 0;
         }
     }
 
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Start))]
     public static class ZoneSystem_Start_TextureCache
     {
+        public static HashSet<Material> cachedMaterials = new HashSet<Material>();
+
+        public static void CacheMaterials(string prefabName, int lodLevel, string rendererType, List<Material> materials)
+        {
+            for (int m = 0; m < materials.Count; m++)
+            {
+                Material material = materials[m];
+
+                if (material == null || cachedMaterials.Contains(material))
+                    continue;
+
+                if (shadersTypes.TryGetValue(rendererType, out string[] shaders) && shaders.Contains(material.shader.name) && shaderFolders.TryGetValue(material.shader.name, out string shaderFolder))
+                {
+                    if (shaderIgnoreMaterial.TryGetValue(material.shader.name, out string[] ignoreMaterial) && ignoreMaterial.Any(ignore => material.name.IndexOf(ignore, StringComparison.OrdinalIgnoreCase) >= 0))
+                        continue;
+
+                    if (!shaderTextures.TryGetValue(material.shader.name, out string[] textureNames))
+                        textureNames = new string[0];
+
+                    if (SeasonsTexture.CacheMaterialTextures(material, renderersFolders[rendererType], shaderFolder, prefabName, lodLevel, textureNames))
+                        cachedMaterials.Add(material);
+                }
+            }
+        }
+
         public static void CreateTextures()
         {
-            foreach (GameObject prefab in ZNetScene.instance.m_prefabs.Where(prefab => prefab.layer != 8 && prefab.layer != 12))
+
+            foreach (ClutterSystem.Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c.m_prefab != null))
+            {
+                if (!clutter.m_prefab.TryGetComponent(out InstanceRenderer renderer))
+                    continue;
+
+                Material material = renderer.m_material;
+
+                if (material == null || material.shader == null)
+                    continue;
+
+                if (cachedMaterials.Contains(material))
+                    continue;
+
+                string rendererType = renderer.GetType().ToString();
+
+                if (shadersTypes.TryGetValue(rendererType, out string[] shaders) && shaders.Contains(material.shader.name) && shaderFolders.TryGetValue(material.shader.name, out string shaderFolder))
+                {
+                    if (!shaderTextures.TryGetValue(material.shader.name, out string[] textureNames))
+                        textureNames = new string[0];
+
+                    if (SeasonsTexture.CacheMaterialTextures(material, renderersFolders[rendererType], shaderFolder, clutter.m_prefab.name, 0, textureNames))
+                        cachedMaterials.Add(material);
+                }
+
+            }
+
+            foreach (GameObject prefab in ZNetScene.instance.m_prefabs.Where(p => p.layer != 8 && p.layer != 12))
             {
                 if (prefab.layer == 0 && prefab.TryGetComponent<Ship>(out _))
                     continue;
@@ -280,86 +333,61 @@ namespace Seasons
 
                 if (prefab.layer != 9)
                 {
-                    MeshRenderer[] renderers = prefab.GetComponentsInChildren<MeshRenderer>();
-                    if (renderers.Length >= 0)
+                    if (prefab.TryGetComponent<LODGroup>(out LODGroup lodGroup) && lodGroup.lodCount > 0)
+                    {
+                        LOD[] LODs = lodGroup.GetLODs();
+                        for (int lodLevel = 0; lodLevel < lodGroup.lodCount; lodLevel++)
+                        {
+                            LOD lod = LODs[lodLevel];
+                            for (int i = 0; i < lod.renderers.Length; i++)
+                            {
+                                Renderer renderer = lod.renderers[i];
+
+                                if (renderer == null)
+                                    continue;
+
+                                if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
+                                    continue;
+
+                                List<Material> materials = new List<Material>();
+                                renderer.GetSharedMaterials(materials);
+
+                                CacheMaterials(prefab.name, lodLevel, renderer.GetType().ToString(), materials);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        MeshRenderer[] renderers = prefab.GetComponentsInChildren<MeshRenderer>();
                         foreach (MeshRenderer renderer in renderers)
                         {
                             if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
                                 continue;
 
-                            string rendererType = renderer.GetType().ToString();
+                            List<Material> materials = new List<Material>();
+                            renderer.GetSharedMaterials(materials);
 
-                            if (shadersTypes.TryGetValue(rendererType, out string[] shaders) && shaders.Contains(renderer.sharedMaterial.shader.name) && shaderFolders.TryGetValue(renderer.sharedMaterial.shader.name, out string shaderFolder))
-                            {
-                                List<Material> materials = new List<Material>();
-                                renderer.GetSharedMaterials(materials);
-
-                                if (!shaderTextures.TryGetValue(renderer.sharedMaterial.shader.name, out string[] textureNames))
-                                    textureNames = new string[0];
-
-                                if (!shaderIgnoreMaterial.TryGetValue(renderer.sharedMaterial.shader.name, out string[] ignoreMaterial))
-                                    ignoreMaterial = new string[0];
-
-                                string transformPath = renderer.transform.GetPath().Substring(prefab.name.Length + 1);
-
-                                foreach (Material material in materials.Where(mat => !ignoreMaterial.Any(ignore => mat.name.IndexOf(ignore, StringComparison.OrdinalIgnoreCase) >= 0)))
-                                    SeasonsTexture.CacheMaterialTextures(material, renderersFolders[rendererType], shaderFolder, prefab.name, transformPath, textureNames);
-                            }
+                            CacheMaterials(prefab.name, 0, renderer.GetType().ToString(), materials);
                         }
+                    }
                 }
                 else
                 {
                     continue;
-                    SkinnedMeshRenderer[] skinnedMeshRenderers = prefab.GetComponentsInChildren<SkinnedMeshRenderer>();
-                    if (skinnedMeshRenderers.Length >= 0)
-                        foreach (SkinnedMeshRenderer renderer in skinnedMeshRenderers)
-                        {
-                            if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
-                                continue;
-
-                            string rendererType = renderer.GetType().ToString();
-
-                            if (shadersTypes.TryGetValue(rendererType, out string[] shaders) && shaders.Contains(renderer.sharedMaterial.shader.name) && shaderFolders.TryGetValue(renderer.sharedMaterial.shader.name, out string shaderFolder))
-                            {
-                                List<Material> materials = new List<Material>();
-                                renderer.GetSharedMaterials(materials);
-
-                                if (!shaderTextures.TryGetValue(renderer.sharedMaterial.shader.name, out string[] textureNames))
-                                    textureNames = new string[0];
-
-                                if (!shaderIgnoreMaterial.TryGetValue(renderer.sharedMaterial.shader.name, out string[] ignoreMaterial))
-                                    ignoreMaterial = new string[0];
-
-                                string transformPath = renderer.transform.GetPath().Substring(prefab.name.Length + 1);
-
-                                foreach (Material material in materials.Where(mat => !ignoreMaterial.Any(ignore => mat.name.IndexOf(ignore, StringComparison.OrdinalIgnoreCase) >= 0)))
-                                    SeasonsTexture.CacheMaterialTextures(material, renderersFolders[rendererType], shaderFolder, prefab.name, transformPath, textureNames);
-                            }
-                        }
-                }
-            }
-
-            foreach (ClutterSystem.Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c.m_prefab != null))
-            {
-                foreach (InstanceRenderer renderer in clutter.m_prefab.GetComponentsInChildren<InstanceRenderer>())
-                {
-                    Material material = renderer.m_material;
-
-                    if (material == null || material.shader == null)
-                        continue;
-
-                    string rendererType = renderer.GetType().ToString();
-
-                    if (shadersTypes.TryGetValue(rendererType, out string[] shaders) && shaders.Contains(material.shader.name) && shaderFolders.TryGetValue(material.shader.name, out string shaderFolder))
+                    SkinnedMeshRenderer[] renderers = prefab.GetComponentsInChildren<SkinnedMeshRenderer>();
+                    foreach (SkinnedMeshRenderer renderer in renderers)
                     {
-                        if (!shaderTextures.TryGetValue(material.shader.name, out string[] textureNames))
-                            textureNames = new string[0];
+                        if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
+                            continue;
 
-                        string transformPath = renderer.transform.GetPath().Substring(clutter.m_prefab.name.Length + 1);
+                        List<Material> materials = new List<Material>();
+                        renderer.GetSharedMaterials(materials);
 
-                        SeasonsTexture.CacheMaterialTextures(material, renderersFolders[rendererType], shaderFolder, clutter.m_prefab.name, transformPath, textureNames);
+                        CacheMaterials(prefab.name, 0, renderer.GetType().ToString(), materials);
                     }
                 }
+
+                cachedMaterials.Clear();
             }
         }
 

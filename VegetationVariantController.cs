@@ -26,20 +26,53 @@ namespace Seasons
         public void Init(PrefabControllerData controllerData)
         {
             if (controllerData.m_renderer == typeof(MeshRenderer))
-                foreach (MeshRenderer renderer in gameObject.GetComponentsInChildren<MeshRenderer>())
+            {
+                if (gameObject.TryGetComponent(out LODGroup lodGroup))
                 {
-                    string transformPath = renderer.transform.GetPath();
-                    transformPath = transformPath.Substring(transformPath.IndexOf(gameObject.name) + gameObject.name.Length);
-                    if (!controllerData.GetMaterialTextures(transformPath, out List<MaterialTextures> materialTextures))
-                        continue;
-                    
-                    List<Material> materials = new List<Material>();
-                    renderer.GetMaterials(materials);
+                    LOD[] LODs = lodGroup.GetLODs();
+                    for (int lodLevel = 0; lodLevel < lodGroup.lodCount; lodLevel++)
+                    {
+                        if (!controllerData.GetMaterialTextures(lodLevel, out List<MaterialTextures> materialTextures) && lodLevel != 0 && !controllerData.GetMaterialTextures(0, out materialTextures))
+                            continue;
 
-                    foreach (MaterialTextures materialTexture in materialTextures)
-                        foreach (Material material in materials.Where(m => m.name.StartsWith(materialTexture.m_materialName) && m.shader.name == materialTexture.m_shader && !m_materialVariants.ContainsKey(m)))
-                            m_materialVariants.Add(material, materialTexture.m_textures);
+                        LOD lod = LODs[lodLevel];
+
+                        for (int i = 0; i < lod.renderers.Length; i++)
+                        {
+                            Renderer renderer = lod.renderers[i];
+
+                            if (renderer == null)
+                                continue;
+
+                            if (renderer.GetType() != controllerData.m_renderer)
+                                continue;
+
+                            List<Material> materials = new List<Material>();
+                            renderer.GetMaterials(materials);
+
+                            foreach (MaterialTextures materialTexture in materialTextures)
+                                foreach (Material material in materials.Where(m => m.name.StartsWith(materialTexture.m_materialName) && m.shader.name == materialTexture.m_shader && !m_materialVariants.ContainsKey(m)))
+                                    m_materialVariants.Add(material, materialTexture.m_textures);
+                        }
+
+                    }
                 }
+                else
+                {
+                    foreach (MeshRenderer renderer in gameObject.GetComponentsInChildren<MeshRenderer>())
+                    {
+                        if (!controllerData.GetMaterialTextures(0, out List<MaterialTextures> materialTextures))
+                            continue;
+
+                        List<Material> materials = new List<Material>();
+                        renderer.GetMaterials(materials);
+
+                        foreach (MaterialTextures materialTexture in materialTextures)
+                            foreach (Material material in materials.Where(m => m.name.StartsWith(materialTexture.m_materialName) && m.shader.name == materialTexture.m_shader && !m_materialVariants.ContainsKey(m)))
+                                m_materialVariants.Add(material, materialTexture.m_textures);
+                    }
+                }
+            }
 
             base.enabled = m_materialVariants.Count > 0;
         }

@@ -1,4 +1,5 @@
-﻿using HarmonyLib;
+﻿using BepInEx.Logging;
+using HarmonyLib;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -62,7 +63,7 @@ namespace Seasons
                 string transformPath = renderer.transform.GetPath();
                 transformPath = transformPath.Substring(transformPath.IndexOf(prefab.name) + prefab.name.Length);
 
-                if (!controllerData.GetMaterialTextures(transformPath, out List<MaterialTextures> materialTextures))
+                if (!controllerData.GetMaterialTextures(0, out List<MaterialTextures> materialTextures))
                     continue;
 
                 foreach (MaterialTextures materialTexture in materialTextures)
