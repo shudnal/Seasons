@@ -21,7 +21,7 @@ namespace Seasons
 
         private Dictionary<Material, int> m_materialVariantOffset = new Dictionary<Material, int>();
 
-        private static Dictionary<string, int> prefabOffsets = new Dictionary<string, int>()
+        private static readonly Dictionary<string, int> prefabOffsets = new Dictionary<string, int>()
         {
             {  "instanced_meadows_grass", 0 },
             {  "instanced_shrub", 1 },

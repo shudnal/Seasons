@@ -135,8 +135,6 @@ namespace Seasons
                 { typeof(SkinnedMeshRenderer).ToString(), new string[] { "Custom/Creature" } }
             };
 
-        public static string texturesFolder = $"SMT_";
-        public static string materialFolder = $"SM_";
         public const string originalPostfix = ".orig.png";
         public const string textureProperties = "properties.json";
         public const string transformpathfilename = "transformpath";
@@ -411,11 +409,10 @@ namespace Seasons
             resourceStream.Read(data, 0, data.Length);
 
             Texture2D tex = new Texture2D(2, 2);
-            if (!tex.LoadImage(data))
+            if (!tex.LoadImage(data, true))
                 return;
 
             icon = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), Vector2.zero);
-
         }
 
         [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.FixedUpdate))]
@@ -446,6 +443,11 @@ namespace Seasons
         public Color GetGrassConfigColor(Season season, int pos)
         {
             return GetColorConfig($"grass{season}Color{pos}");
+        }
+
+        public Color GetMossConfigColor(Season season, int pos)
+        {
+            return GetGrassConfigColor(season, (pos + 2) % seasonColorVariants + 1);
         }
 
         private Color GetColorConfig(string fieldName)

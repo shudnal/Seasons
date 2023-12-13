@@ -23,7 +23,7 @@ namespace Seasons
 
         private Dictionary<Material, List<SeasonalTextures>> m_materialVariants = new Dictionary<Material, List<SeasonalTextures>>();
 
-        public void Init(PrefabControllerData controllerData, GameObject gameObject)
+        public void Init(PrefabControllerData controllerData)
         {
             if (controllerData.m_renderer == typeof(MeshRenderer))
                 foreach (MeshRenderer renderer in gameObject.GetComponentsInChildren<MeshRenderer>())
@@ -60,12 +60,15 @@ namespace Seasons
             UpdateColors();
         }
 
-        public void OnDisable()
+        public void RevertTextures()
         {
             foreach (KeyValuePair<Material, List<SeasonalTextures>> materialVariants in m_materialVariants)
                 foreach (SeasonalTextures st in materialVariants.Value)
                     if (st.HaveOriginalTexture())
+                    {
                         materialVariants.Key.SetTexture(st.textureProperty, st.m_original);
+                        LogInfo($"Reverting texture {st.textureProperty} of {materialVariants.Key.name}");
+                    }
         }
 
         public void LateUpdate()
@@ -167,7 +170,7 @@ namespace Seasons
             if (!prefabControllers.TryGetValue(Utils.GetPrefabName(__result), out PrefabControllerData controllerData))
                 return;
 
-            __result.AddComponent<VegetationVariantController>().Init(controllerData, __result);
+            __result.AddComponent<VegetationVariantController>().Init(controllerData);
         }
     }
 

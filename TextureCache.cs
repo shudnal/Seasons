@@ -6,6 +6,7 @@ using System.Linq;
 using UnityEngine;
 using Object = UnityEngine.Object;
 using static Seasons.Seasons;
+using UnityEngine.Rendering;
 
 namespace Seasons
 {
@@ -28,7 +29,7 @@ namespace Seasons
                 }
             }
 
-            public TextureFormat format = TextureFormat.RGBA32;
+            public TextureFormat format = TextureFormat.ARGB32;
             public int mipmapCount = 1;
             public TextureWrapMode wrapMode = TextureWrapMode.Repeat;
             public FilterMode filterMode = FilterMode.Point;
@@ -74,7 +75,9 @@ namespace Seasons
                         Color colorVariant;
                         if (IsGrass(material.shader.name))
                             colorVariant = instance.GetGrassConfigColor(season, i);
-                        else
+                        else if (IsMoss(textName))
+                            colorVariant = instance.GetMossConfigColor(season, i); 
+                        else 
                             colorVariant = instance.GetSeasonConfigColor(season, i);
 
                         if (IsPine(material.name, transformPath, prefab))
@@ -121,12 +124,19 @@ namespace Seasons
         public static Texture2D GetReadableTexture(Texture texture, out Color[] pixels, TextureProperties texProperties = null)
         {
             if (texProperties == null)
-                texProperties = new TextureProperties();
+                texProperties = new TextureProperties(texture as Texture2D);
 
             RenderTexture tmp = RenderTexture.GetTemporary(
                                     texture.width,
                                     texture.height,
-                                    24);
+                                    24, RenderTextureFormat.ARGB32);
+            
+            tmp.autoGenerateMips = true;
+            tmp.useMipMap = true;
+            tmp.anisoLevel = texProperties.anisoLevel;
+            tmp.mipMapBias = texProperties.mipMapBias;
+            tmp.wrapMode = texProperties.wrapMode;
+            tmp.filterMode = texProperties.filterMode;
 
             Graphics.Blit(texture, tmp);
 
@@ -140,7 +150,7 @@ namespace Seasons
                 mipMapBias = texProperties.mipMapBias,
                 wrapMode = texProperties.wrapMode
             };
-            textureCopy.ReadPixels(new Rect(0, 0, tmp.width, tmp.height), 0, 0);
+            textureCopy.ReadPixels(new Rect(0, 0, tmp.width, tmp.height), 0, 0, true);
             textureCopy.Apply();
 
             RenderTexture.active = previous;
@@ -165,7 +175,6 @@ namespace Seasons
 
         public static Texture2D GetReadableTexture(Texture texture, TextureProperties texProperties = null)
         {
-            if (texProperties == null) texProperties = new TextureProperties(texture as Texture2D);
             return GetReadableTexture(texture, out _, texProperties);
         }
 
@@ -175,7 +184,7 @@ namespace Seasons
             for (int i = 0; i < colorVariants.Length; i++)
                 seasonColors.Add(pixels.ToArray());
 
-            foreach (int i in pixelsToChange)
+                    foreach (int i in pixelsToChange)
                 for (int j = 0; j < colorVariants.Length; j++)
                     seasonColors[j][i] = MergeColors(pixels[i], colorVariants[j], colorVariants[j].a, season == Season.Winter);
 
@@ -187,12 +196,12 @@ namespace Seasons
                 wrapMode = texProperties.wrapMode
             };
 
-            for (int i = 0; i < colorVariants.Length; i++)
+            for (int variant = 0; variant < colorVariants.Length; variant++)
             {
-                tex.SetPixels(seasonColors[i]);
+                tex.SetPixels(seasonColors[variant]);
                 tex.Apply();
 
-                string filename = SeasonFileName(season, i);
+                string filename = SeasonFileName(season, variant);
 
                 seasonalTexturesData.Add(filename, tex.EncodeToPNG());
             }
@@ -208,7 +217,7 @@ namespace Seasons
         private static bool IsCloseToGreen(Color color)
         {
             HSLColor hslcolor = new HSLColor(color);
-            return color.a != 0f && (hslcolor.s > 0.25f && GetHueDistance(hslcolor.h, 85f) <= 55f || hslcolor.s > 0.15f && GetHueDistance(hslcolor.h, 120f) <= 40f);
+            return color.a != 0f && (hslcolor.s >= 0.25f && GetHueDistance(hslcolor.h, 85f) <= 55f || hslcolor.s >= 0.15f && GetHueDistance(hslcolor.h, 120f) <= 40f);
         }
 
         private static float GetHueDistance(float hue1, float hue2)
@@ -241,6 +250,12 @@ namespace Seasons
         {
             return shaderFolders.TryGetValue(shaderName, out string folder) && folder == "Grass";
         }
+
+        private static bool IsMoss(string textureName)
+        {
+            return textureName.IndexOf("moss", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private static bool IsPine(string materialName, string prefab, string path)
         {
             return materialName.IndexOf("pine", StringComparison.OrdinalIgnoreCase) >= 0 || prefab.IndexOf("pine", StringComparison.OrdinalIgnoreCase) >= 0 || path.IndexOf("pine", StringComparison.OrdinalIgnoreCase) >= 0;

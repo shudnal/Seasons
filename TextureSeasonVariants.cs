@@ -20,16 +20,9 @@ namespace Seasons
             public Dictionary<Season, Dictionary<int, Texture2D>> m_seasons = new Dictionary<Season, Dictionary<int, Texture2D>>();
             public string textureProperty;
 
-            public void SetOriginalTexture(string texName, string filename, SeasonsTexture.TextureProperties texProperties)
-            {
-                if (ChangeTexture(filename, ref m_original, texProperties))
-                    m_original.name = texName;
-            }
-
             public void SetOriginalTexture(Texture texture)
             {
-                m_original = SeasonsTexture.GetReadableTexture(texture);
-                Object.Destroy(texture);
+                m_original = texture as Texture2D;
             }
 
             public bool Initialized()
@@ -142,8 +135,7 @@ namespace Seasons
                     mipMapBias = texProperties.mipMapBias,
                     wrapMode = texProperties.wrapMode
                 };
-                tex.LoadImage(File.ReadAllBytes(filename));
-                tex.Apply(false, true);
+                tex.LoadImage(File.ReadAllBytes(filename), true);
                 return true;
             }
             catch (Exception ex) 
@@ -203,18 +195,12 @@ namespace Seasons
 
                             foreach (DirectoryInfo texName in material.GetDirectories())
                             {
-                                FileInfo[] original = texName.GetFiles($"*{originalPostfix}");
-                                string originalTextName = original.Length == 0 ? "" : original[0].Name.Replace(originalPostfix, "");
-
                                 SeasonalTextures seasonalTextures = new SeasonalTextures();
 
                                 SeasonsTexture.TextureProperties texProperties = new SeasonsTexture.TextureProperties();
                                 FileInfo[] properties = texName.GetFiles(textureProperties);
                                 if (properties.Length > 0)
                                     texProperties = JsonUtility.FromJson<SeasonsTexture.TextureProperties>(File.ReadAllText(properties[0].FullName));
-
-                                if (originalTextName.Length > 0)
-                                    seasonalTextures.SetOriginalTexture(originalTextName, original[0].FullName, texProperties);
 
                                 seasonalTextures.textureProperty = texName.Name;
 
