@@ -1,11 +1,12 @@
-﻿using HarmonyLib;
+﻿using BepInEx.Logging;
+using HarmonyLib;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using static Seasons.PrefabController;
 using static Seasons.Seasons;
-using static Seasons.TextureSeasonVariants;
 
 namespace Seasons
 {
@@ -21,18 +22,17 @@ namespace Seasons
         private float m_my;
         private double m_seasonSet = 0;
 
-        private Dictionary<Material, List<SeasonalTextures>> m_materialVariants = new Dictionary<Material, List<SeasonalTextures>>();
+        private Dictionary<Material, Dictionary<string, TextureVariants>> m_materialVariants = new Dictionary<Material, Dictionary<string, TextureVariants>>();
 
-        public void Init(PrefabControllerData controllerData)
+        public void Init(PrefabController controller)
         {
-            if (controllerData.m_renderer == typeof(MeshRenderer))
-            {
-                if (gameObject.TryGetComponent(out LODGroup lodGroup) && lodGroup.lodCount > 1)
+            if (controller.lodLevelMaterials.Count > 0)
+                if (gameObject.TryGetComponent(out LODGroup lodGroup))
                 {
                     LOD[] LODs = lodGroup.GetLODs();
                     for (int lodLevel = 0; lodLevel < lodGroup.lodCount; lodLevel++)
                     {
-                        if (!controllerData.GetMaterialTextures(lodLevel, out List<MaterialTextures> materialTextures) && lodLevel != 0 && !controllerData.GetMaterialTextures(0, out materialTextures))
+                        if (!controller.lodLevelMaterials.TryGetValue(lodLevel, out List<CachedRenderer> cachedRenderers))
                             continue;
 
                         LOD lod = LODs[lodLevel];
@@ -44,32 +44,67 @@ namespace Seasons
                             if (renderer == null)
                                 continue;
 
-                            if (renderer.GetType() != controllerData.m_renderer)
-                                continue;
+                            foreach (CachedRenderer cachedRenderer in cachedRenderers.Where(cr => cr.type == renderer.GetType().ToString() && cr.name == renderer.name))
+                            {
+                                List<Material> materials = new List<Material>();
+                                renderer.GetMaterials(materials);
 
-                            List<Material> materials = new List<Material>();
-                            renderer.GetMaterials(materials);
+                                for (int m = 0; m < materials.Count; m++)
+                                {
+                                    Material material = materials[m];
 
-                            foreach (MaterialTextures materialTexture in materialTextures)
-                                foreach (Material material in materials.Where(m => m.name.StartsWith(materialTexture.m_materialName) && m.shader.name == materialTexture.m_shader && !m_materialVariants.ContainsKey(m)))
-                                    m_materialVariants.Add(material, materialTexture.m_textures);
+                                    foreach (KeyValuePair<string, CachedMaterial> cachedRendererMaterial in cachedRenderer.materials.Where(mat => mat.Value.textureProperties.Count > 0))
+                                    {
+                                        if (!material.name.StartsWith(cachedRendererMaterial.Key) || !(material.shader.name == cachedRendererMaterial.Value.shaderName))
+                                            continue;
+
+                                        if (!m_materialVariants.TryGetValue(material, out Dictionary<string, TextureVariants> texVariants))
+                                        {
+                                            texVariants = new Dictionary<string, TextureVariants>();
+                                            m_materialVariants.Add(material, texVariants);
+                                        }
+
+                                        foreach (KeyValuePair<string, int> tex in cachedRendererMaterial.Value.textureProperties)
+                                            if (!texVariants.ContainsKey(tex.Key))
+                                                texVariants.Add(tex.Key, SeasonalTextureVariants.textures[tex.Value]);
+                                    }
+                                }
+                            }
                         }
-
                     }
                 }
-                else
+
+            foreach (KeyValuePair<string, CachedRenderer> rendererPath in controller.renderersInHierarchy)
+            {
+                Transform child = gameObject.transform.Find(rendererPath.Key.Substring(Utils.GetPrefabName(gameObject.name).Length + 2));
+                if (child == null)
+                    continue;
+
+                Renderer renderer = child.GetComponent(rendererPath.Value.type) as Renderer;
+                if (renderer == null)
+                    continue;
+
+                List<Material> materials = new List<Material>();
+                renderer.GetMaterials(materials);
+
+                for (int m = 0; m < materials.Count; m++)
                 {
-                    foreach (MeshRenderer renderer in gameObject.GetComponentsInChildren<MeshRenderer>())
+                    Material material = materials[m];
+
+                    foreach (KeyValuePair<string, CachedMaterial> cachedRendererMaterial in rendererPath.Value.materials.Where(mat => mat.Value.textureProperties.Count > 0))
                     {
-                        if (!controllerData.GetMaterialTextures(0, out List<MaterialTextures> materialTextures))
+                        if (!material.name.StartsWith(cachedRendererMaterial.Key) || !(material.shader.name == cachedRendererMaterial.Value.shaderName))
                             continue;
 
-                        List<Material> materials = new List<Material>();
-                        renderer.GetMaterials(materials);
+                        if (!m_materialVariants.TryGetValue(material, out Dictionary<string, TextureVariants> texVariants))
+                        {
+                            texVariants = new Dictionary<string, TextureVariants>();
+                            m_materialVariants.Add(material, texVariants);
+                        }
 
-                        foreach (MaterialTextures materialTexture in materialTextures)
-                            foreach (Material material in materials.Where(m => m.name.StartsWith(materialTexture.m_materialName) && m.shader.name == materialTexture.m_shader && !m_materialVariants.ContainsKey(m)))
-                                m_materialVariants.Add(material, materialTexture.m_textures);
+                        foreach (KeyValuePair<string, int> tex in cachedRendererMaterial.Value.textureProperties)
+                            if (!texVariants.ContainsKey(tex.Key))
+                                texVariants.Add(tex.Key, SeasonalTextureVariants.textures[tex.Value]);
                     }
                 }
             }
@@ -95,12 +130,12 @@ namespace Seasons
 
         public void RevertTextures()
         {
-            foreach (KeyValuePair<Material, List<SeasonalTextures>> materialVariants in m_materialVariants)
-                foreach (SeasonalTextures st in materialVariants.Value)
-                    if (st.HaveOriginalTexture())
+            foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
+                foreach (KeyValuePair<string, TextureVariants> texVar in materialVariants.Value)
+                    if (texVar.Value.HaveOriginalTexture())
                     {
-                        materialVariants.Key.SetTexture(st.textureProperty, st.m_original);
-                        LogInfo($"Reverting texture {st.textureProperty} of {materialVariants.Key.name}");
+                        materialVariants.Key.SetTexture(texVar.Key, texVar.Value.original);
+                        LogInfo($"Reverting texture {texVar.Key} of {materialVariants.Key.name}");
                     }
         }
 
@@ -122,7 +157,7 @@ namespace Seasons
             {
                 UpdateFactors();
                 int variant = GetCurrentVariant();
-                foreach (KeyValuePair<Material, List<SeasonalTextures>> materialVariants in m_materialVariants)
+                foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
                 {
                     materialVariants.Key.color = variant == 0 ? Color.red : variant == 1 ? Color.magenta : variant == 2 ? Color.blue : Color.white;
                 }
@@ -132,17 +167,17 @@ namespace Seasons
         public void UpdateColors()
         {
             int variant = GetCurrentVariant();
-            foreach (KeyValuePair<Material, List<SeasonalTextures>> materialVariants in m_materialVariants)
-                foreach (SeasonalTextures st in materialVariants.Value)
-                    if (st.m_seasons.TryGetValue(seasonState.m_season, out Dictionary<int, Texture2D> variants) && variants.TryGetValue(variant, out Texture2D texture))
+            foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
+                foreach (KeyValuePair<string, TextureVariants> texVar in materialVariants.Value)
+                    if (texVar.Value.seasons.TryGetValue(seasonState.m_season, out Dictionary<int, Texture2D> variants) && variants.TryGetValue(variant, out Texture2D texture))
                     {
-                        if (!st.HaveOriginalTexture())
+                        if (!texVar.Value.HaveOriginalTexture())
                         {
                             LogInfo($"Setting original vegetation texture {materialVariants.Key}");
-                            st.SetOriginalTexture(materialVariants.Key.GetTexture(st.textureProperty));
+                            texVar.Value.SetOriginalTexture(materialVariants.Key.GetTexture(texVar.Key));
                         }
 
-                        materialVariants.Key.SetTexture(st.textureProperty, texture);
+                        materialVariants.Key.SetTexture(texVar.Key, texture);
                     }
         }
 
@@ -200,10 +235,10 @@ namespace Seasons
             if (__result == null)
                 return;
 
-            if (!prefabControllers.TryGetValue(Utils.GetPrefabName(__result), out PrefabControllerData controllerData))
+            if (!SeasonalTextureVariants.controllers.TryGetValue(Utils.GetPrefabName(__result), out PrefabController controller))
                 return;
 
-            __result.AddComponent<PrefabVariantController>().Init(controllerData);
+            __result.AddComponent<PrefabVariantController>().Init(controller);
         }
     }
 

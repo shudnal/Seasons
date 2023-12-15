@@ -9,8 +9,6 @@ using System.Linq;
 using System.Reflection;
 using System;
 using System.IO;
-using static Seasons.TextureSeasonVariants;
-using static Seasons.SeasonalTextureVariants;
 using System.Runtime.Serialization.Formatters.Binary;
 
 namespace Seasons
@@ -134,7 +132,8 @@ namespace Seasons
         public const string originalPostfix = ".orig.png";
         public const string textureProperties = "properties.json";
 
-        public static Dictionary<string, PrefabControllerData> prefabControllers = new Dictionary<string, PrefabControllerData>();
+        public static Dictionary<string, PrefabController> prefabControllers = SeasonalTextureVariants.controllers;
+        public static Dictionary<int, TextureVariants> texturesVariants = SeasonalTextureVariants.textures;
 
         public enum Season
         {
@@ -459,6 +458,25 @@ namespace Seasons
             return (GetType().GetField(fieldName).GetValue(this) as ConfigEntry<Color>).Value;
         }
 
+        /*public static Type GetTypeByName(string name)
+        {
+            if (cachedTypes.TryGetValue(name, out Type type))
+                return type;
 
+            if (currentAssemblies == null)
+                currentAssemblies = AppDomain.CurrentDomain.GetAssemblies().Reverse().ToArray();
+
+            foreach (var assembly in currentAssemblies)
+            {
+                var tt = assembly.GetType(name);
+                if (tt != null)
+                {
+                    cachedTypes.Add(name, tt);
+                    return tt;
+                }
+            }
+
+            return null;
+        }*/
     }
 }

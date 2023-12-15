@@ -9,6 +9,7 @@ using Object = UnityEngine.Object;
 using BepInEx.Logging;
 using Newtonsoft.Json;
 using System.Runtime.Serialization.Formatters.Binary;
+using static Seasons.PrefabController;
 
 namespace Seasons
 {
@@ -29,8 +30,22 @@ namespace Seasons
         [Serializable]
         public class CachedMaterial
         {
+            public string name = string.Empty;
             public string shaderName = string.Empty;
             public Dictionary<string, int> textureProperties = new Dictionary<string, int>();
+
+            public CachedMaterial(string materialName, string shader, string propertyName, int textureID)
+            {
+                name = materialName;
+                shaderName = shader;
+                AddTexture(propertyName, textureID);
+            }
+
+            public void AddTexture(string propertyName, int textureID)
+            {
+                if (!textureProperties.ContainsKey(propertyName))
+                    textureProperties.Add(propertyName, textureID);
+            }
         }
         
         [Serializable]
@@ -47,23 +62,20 @@ namespace Seasons
 
             public void AddMaterialTexture(Material material, string propertyName, int textureID)
             {
-                if (!materials.TryGetValue(material.name, out PrefabController.CachedMaterial cachedMaterial))
-                {
-                    cachedMaterial = new PrefabController.CachedMaterial
-                    {
-                        shaderName = material.shader.name
-                    };
-
-                    materials.Add(material.name, cachedMaterial);
-                }
-
-                if (!cachedMaterial.textureProperties.ContainsKey(propertyName))
-                    cachedMaterial.textureProperties.Add(propertyName, textureID);
+                if (!materials.TryGetValue(material.name, out CachedMaterial cachedMaterial))
+                    materials.Add(material.name, new CachedMaterial(material.name, material.shader.name, propertyName, textureID));
+                else
+                    cachedMaterial.AddTexture(propertyName, textureID);
             }
         }
 
-        public Dictionary<int, List<CachedMaterial>> lodLevelMaterials = new Dictionary<int, List<CachedMaterial>>();
+        public Dictionary<int, List<CachedRenderer>> lodLevelMaterials = new Dictionary<int, List<CachedRenderer>>();
         public Dictionary<string, CachedRenderer> renderersInHierarchy = new Dictionary<string, CachedRenderer>();
+                
+        public bool Initialized()
+        {
+            return lodLevelMaterials.Count > 0 || renderersInHierarchy.Count > 0;
+        }
     }
 
     [Serializable]
@@ -73,7 +85,7 @@ namespace Seasons
         public class TextureData
         { 
             public string name;
-            public byte[] data;
+            public byte[] originalPNG;
             public Dictionary<Season, Dictionary<int, byte[]>> variants = new Dictionary<Season, Dictionary<int, byte[]>>();
             
             public bool Initialized()
@@ -85,6 +97,9 @@ namespace Seasons
             {
                 if (textureVariants == null)
                     return;
+
+                originalPNG = textureVariants.originalPNG;
+                name = textureVariants.original.name;
 
                 foreach (KeyValuePair<Season, Dictionary<int, Texture2D>> texSeason in textureVariants.seasons)
                 {
@@ -129,22 +144,28 @@ namespace Seasons
         {
             Directory.CreateDirectory(folder);
 
-            File.WriteAllText(Path.Combine(folder, prefabCacheFileName), JsonConvert.SerializeObject(controllers, Formatting.Indented));
+            string filename = Path.Combine(folder, prefabCacheFileName);
+
+            File.WriteAllText(filename, JsonConvert.SerializeObject(controllers, Formatting.Indented));
 
             string directory = Path.Combine(folder, texturesDirectory);
 
+            LogInfo($"Saved cache file {filename}");
+            
             foreach (KeyValuePair<int, TextureData> tex in textures)
             {
                 string texturePath = Path.Combine(directory, tex.Key.ToString());
                
                 Directory.CreateDirectory(texturePath);
                 
-                File.WriteAllBytes("\\\\?\\" + Path.Combine(texturePath, $"{tex.Value.name}{originalPostfix}"), tex.Value.data);
+                File.WriteAllBytes("\\\\?\\" + Path.Combine(texturePath, $"{tex.Value.name}{originalPostfix}"), tex.Value.originalPNG);
 
                 foreach (KeyValuePair<Season, Dictionary<int, byte[]>> season in tex.Value.variants)
                     foreach (KeyValuePair<int, byte[]> texData in season.Value)
                         File.WriteAllBytes("\\\\?\\" + Path.Combine(texturePath, SeasonFileName(season.Key, texData.Key)), texData.Value);
             }
+
+            LogInfo($"Saved {textures.Count} textures at {directory}");
         }
 
         public void LoadFromJSON(string folder)
@@ -155,7 +176,10 @@ namespace Seasons
 
             FileInfo[] cacheFile = cacheDirectory.GetFiles(prefabCacheFileName);
             if (cacheFile.Length == 0)
+            {
+                LogInfo($"File not found: {Path.Combine(folder, prefabCacheFileName)}");
                 return;
+            }
 
             try
             {
@@ -195,13 +219,18 @@ namespace Seasons
                 BinaryFormatter bf = new BinaryFormatter();
                 bf.Serialize(fs, this);
             }
+
+            LogInfo($"Saved cache file {Path.Combine(folder, prefabCacheCommonFile)}");
         }
 
         public void LoadFromBinary(string folder)
         {
             string filename = Path.Combine(folder, prefabCacheCommonFile);
             if (!File.Exists(filename))
+            {
+                LogInfo($"File not found: {filename}");
                 return;
+            }
 
             try
             {
@@ -209,9 +238,10 @@ namespace Seasons
                 BinaryFormatter bf = new BinaryFormatter();
                 CachedData cd = (CachedData)bf.Deserialize(fs);
 
-                cd.controllers.Copy(controllers);
-                cd.textures.Copy(textures);
+                controllers.Copy(cd.controllers);
+                textures.Copy(cd.textures);
 
+                fs.Close();
                 cd = null;
             }
             catch (Exception ex)
@@ -229,6 +259,7 @@ namespace Seasons
     public class TextureVariants
     {
         public Texture2D original;
+        public byte[] originalPNG;
         public Dictionary<Season, Dictionary<int, Texture2D>> seasons = new Dictionary<Season, Dictionary<int, Texture2D>>();
 
         public TextureVariants(CachedData.TextureData texData)
@@ -317,7 +348,7 @@ namespace Seasons
 
             if (cachedData.Initialized())
             {
-                cachedData.controllers.Copy(controllers);
+                controllers.Copy(cachedData.controllers);
 
                 foreach (KeyValuePair<int, CachedData.TextureData> texData in cachedData.textures)
                 {
@@ -331,14 +362,16 @@ namespace Seasons
 
                     textures.Add(texData.Key, texVariants);
                 }
+
+                LogInfo($"Loaded from cache controllers:{controllers.Count} textures:{textures.Count}");
             }
             else
             {
                 SeasonalTexturePrefabCache.FillWithGameData();
-                
+
                 if (Initialized())
                 {
-                    controllers.Copy(cachedData.controllers);
+                    cachedData.controllers.Copy(controllers);
 
                     cachedData.textures.Clear();
                     foreach (KeyValuePair<int, TextureVariants> texVariants in textures)
@@ -360,6 +393,7 @@ namespace Seasons
                         }
 
                     ApplyTexturesToGPU();
+
                 }
             }
 
@@ -413,7 +447,7 @@ namespace Seasons
             
             TextureProperties texProperties = new TextureProperties(texture as Texture2D);
 
-            Color[] pixels = GetTexturePixels(texture, texProperties);
+            Color[] pixels = GetTexturePixels(texture, texProperties, out textureVariants.originalPNG);
             if (pixels.Length < 1)
                 return false;
 
@@ -450,7 +484,7 @@ namespace Seasons
             return textureVariants.Initialized();
         }
 
-        private static Color[] GetTexturePixels(Texture texture, TextureProperties texProperties)
+        private static Color[] GetTexturePixels(Texture texture, TextureProperties texProperties, out byte[] originalPNG)
         {
             if (texProperties == null)
                 texProperties = new TextureProperties(texture as Texture2D);
@@ -487,19 +521,8 @@ namespace Seasons
             RenderTexture.ReleaseTemporary(tmp);
 
             Color[] pixels = textureCopy.GetPixels();
+            originalPNG = textureCopy.EncodeToPNG();
 
-            /*Texture2D newTexture = new Texture2D(texture.width, texture.height, texProperties.format, texProperties.mipmapCount, false)
-            {
-                filterMode = texProperties.filterMode,
-                anisoLevel = texProperties.anisoLevel,
-                mipMapBias = texProperties.mipMapBias,
-                wrapMode = texProperties.wrapMode
-            };
-
-            newTexture.SetPixels(pixels);
-            newTexture.Apply();
-
-            Object.Destroy(newTexture);*/
             Object.Destroy(textureCopy);
 
             return pixels;
@@ -582,32 +605,48 @@ namespace Seasons
 
         public static void FillWithGameData()
         {
-            CacheClutters();
+            AddClutters();
 
-            LogInfo($"Cached prefabs:{SeasonalTextureVariants.controllers.Count} textures:{SeasonalTextureVariants.textures.Count}");
+            AddZNetScenePrefabs();
+
+            LogInfo($"Added {SeasonalTextureVariants.controllers.Count} controllers, {SeasonalTextureVariants.textures.Count} textures");
         }
         
-        private static void CacheClutters()
+        private static void AddClutters()
         {
-            foreach (ClutterSystem.Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c.m_prefab != null))
+            foreach (ClutterSystem.Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c.m_prefab != null && !ignorePrefab.Contains(c.m_prefab.name)))
             {
                 if (!clutter.m_prefab.TryGetComponent(out InstanceRenderer renderer))
                     continue;
 
-                Material material = renderer.m_material;
+                List<Material> materials = new List<Material> { renderer.m_material };
+                CacheMaterials(materials, clutter.m_prefab.name, -1, renderer.name, renderer.GetType().ToString(), renderer.transform.GetPath());
+            }
+        }
 
-                if (material == null || material.shader == null)
+        private static void CacheMaterials(List<Material> materials, string prefabName, int lodLevel, string rendererName, string rendererType, string rendererPath)
+        {
+            for (int m = 0; m < materials.Count; m++)
+            {
+                Material material = materials[m];
+
+                if (material == null)
                     continue;
-
-                string rendererType = renderer.GetType().ToString();
 
                 if (!shadersTypes.TryGetValue(rendererType, out string[] shaders) || !shaders.Contains(material.shader.name)
-                    || !shaderFolders.TryGetValue(material.shader.name, out string shaderFolder) || !shaderTextures.TryGetValue(material.shader.name, out string[] textureNames))
+                    || !shaderFolders.TryGetValue(material.shader.name, out string shaderFolder)
+                    || !shaderTextures.TryGetValue(material.shader.name, out string[] textureNames)
+                    || shaderIgnoreMaterial.TryGetValue(material.shader.name, out string[] ignoreMaterial) && ignoreMaterial.Any(ignore => material.name.IndexOf(ignore, StringComparison.OrdinalIgnoreCase) >= 0))
                     continue;
 
-                PrefabController.CachedRenderer cachedRenderer = new PrefabController.CachedRenderer
+                bool isNew = !SeasonalTextureVariants.controllers.TryGetValue(prefabName, out PrefabController controller);
+
+                if (isNew)
+                    controller = new PrefabController();
+
+                CachedRenderer cachedRenderer = new CachedRenderer
                 {
-                    name = renderer.name,
+                    name = rendererName,
                     type = rendererType
                 };
 
@@ -622,7 +661,7 @@ namespace Seasons
                     {
                         cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
                     }
-                    else if (SeasonalTextureVariantsGenerator.GetTextureVariants(clutter.m_prefab.name, material, propertyName, texture, out TextureVariants textureVariants))
+                    else if (SeasonalTextureVariantsGenerator.GetTextureVariants(prefabName, material, propertyName, texture, out TextureVariants textureVariants))
                     {
                         SeasonalTextureVariants.textures.Add(textureID, textureVariants);
                         cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
@@ -632,45 +671,31 @@ namespace Seasons
                 if (!cachedRenderer.Initialized())
                     continue;
 
-                if (!SeasonalTextureVariants.controllers.TryGetValue(clutter.m_prefab.name, out PrefabController controller))
+
+                if (lodLevel >= 0)
                 {
-                    controller = new PrefabController();
-                    SeasonalTextureVariants.controllers.Add(clutter.m_prefab.name, controller);
+                    if (!controller.lodLevelMaterials.TryGetValue(lodLevel, out List<CachedRenderer> lodRenderers))
+                        controller.lodLevelMaterials.Add(lodLevel, new List<CachedRenderer>() { cachedRenderer });
+                    else
+                        lodRenderers.Add(cachedRenderer);
+                }
+                else
+                {
+                    if (!controller.renderersInHierarchy.ContainsKey(rendererPath))
+                        controller.renderersInHierarchy.Add(rendererPath, cachedRenderer);
                 }
 
-                string rendererPath = renderer.transform.GetPath();
-
-                if (!controller.renderersInHierarchy.ContainsKey(rendererPath))
+                if (controller.Initialized())
                 {
-                    controller.renderersInHierarchy.Add(rendererPath, cachedRenderer);
-                    LogInfo($"Caching {rendererPath}");
-                }
-            }
-        }
-
-        private static void CacheMaterials(string prefabName, int lodLevel, string rendererType, List<Material> materials)
-        {
-            for (int m = 0; m < materials.Count; m++)
-            {
-                Material material = materials[m];
-
-                if (material == null)
-                    continue;
-
-                if (shadersTypes.TryGetValue(rendererType, out string[] shaders) && shaders.Contains(material.shader.name) && shaderFolders.TryGetValue(material.shader.name, out string shaderFolder))
-                {
-                    if (shaderIgnoreMaterial.TryGetValue(material.shader.name, out string[] ignoreMaterial) && ignoreMaterial.Any(ignore => material.name.IndexOf(ignore, StringComparison.OrdinalIgnoreCase) >= 0))
-                        continue;
-
-                    if (!shaderTextures.TryGetValue(material.shader.name, out string[] textureNames))
-                        textureNames = new string[0];
-
-                    SeasonsTexture.CacheMaterialTextures(material, renderersFolders[rendererType], shaderFolder, prefabName, lodLevel, textureNames);
+                    if (isNew)
+                        SeasonalTextureVariants.controllers.Add(prefabName, controller);
+                    
+                    LogInfo($"Caching {prefabName} {controller.lodLevelMaterials.Count} LODs, {controller.renderersInHierarchy.Count} renderersInHierarchy");
                 }
             }
         }
 
-        private static void CreateTextures()
+        private static void AddZNetScenePrefabs()
         {
             foreach (GameObject prefab in ZNetScene.instance.m_prefabs.Where(p => p.layer != 8 && p.layer != 12))
             {
@@ -704,7 +729,7 @@ namespace Seasons
                                 List<Material> materials = new List<Material>();
                                 renderer.GetSharedMaterials(materials);
 
-                                CacheMaterials(prefab.name, lodLevel, renderer.GetType().ToString(), materials);
+                                CacheMaterials(materials, prefab.name, lodLevel, renderer.name, renderer.GetType().ToString(), renderer.transform.GetPath());
                             }
                         }
                     }
@@ -719,7 +744,7 @@ namespace Seasons
                             List<Material> materials = new List<Material>();
                             renderer.GetSharedMaterials(materials);
 
-                            CacheMaterials(prefab.name, 0, renderer.GetType().ToString(), materials);
+                            CacheMaterials(materials, prefab.name, -1, renderer.name, renderer.GetType().ToString(), renderer.transform.GetPath());
                         }
                     }
                 }
@@ -735,7 +760,7 @@ namespace Seasons
                         List<Material> materials = new List<Material>();
                         renderer.GetSharedMaterials(materials);
 
-                        CacheMaterials(prefab.name, 0, renderer.GetType().ToString(), materials);
+                        CacheMaterials(materials, prefab.name, -1, renderer.name, renderer.GetType().ToString(), renderer.transform.GetPath());
                     }
                 }
             }

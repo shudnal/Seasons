@@ -60,7 +60,13 @@ namespace Seasons
                         continue;
 
                     InstanceRenderer renderer = prefab.GetComponent<InstanceRenderer>();
-                    
+
+                    if (renderer.m_material == null)
+                        continue;
+
+                    if (m_materialVariants.ContainsKey(renderer.m_material))
+                        continue;
+
                     if (cachedRenderer.Key != renderer.transform.GetPath())
                         continue;
 
@@ -144,7 +150,6 @@ namespace Seasons
             double seedFactor = Math.Log10(Math.Abs(seed));
             return (Math.Sin(Math.Sign(seed) * seedFactor * day) + Math.Sin(Math.Sqrt(seedFactor) * Math.E * day) + Math.Sin(Math.PI * day)) / 2;
         }
-        
     }
 
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Start))]
