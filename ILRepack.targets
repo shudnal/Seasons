@@ -4,7 +4,8 @@
         <ItemGroup>
             <InputAssemblies Include="$(TargetPath)" />
             <InputAssemblies Include="$(OutputPath)\ServerSync.dll" />
-        </ItemGroup>
+			<InputAssemblies Include="$(OutputPath)\Newtonsoft.Json.dll" />
+		</ItemGroup>
         <ILRepack Parallel="true" DebugInfo="true" Internalize="true" InputAssemblies="@(InputAssemblies)" OutputFile="$(TargetPath)" TargetKind="SameAsPrimaryAssembly" LibraryPath="$(OutputPath)" />
     </Target>
 	<Target Name="CopyDLL" AfterTargets="ILRepacker">

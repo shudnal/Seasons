@@ -9,9 +9,9 @@ using System.Linq;
 using System.Reflection;
 using System;
 using System.IO;
-using static Seasons.Seasons;
 using static Seasons.TextureSeasonVariants;
-using static ClutterSystem;
+using static Seasons.SeasonalTextureVariants;
+using System.Runtime.Serialization.Formatters.Binary;
 
 namespace Seasons
 {
@@ -30,17 +30,13 @@ namespace Seasons
         public static ConfigEntry<bool> modEnabled;
         private static ConfigEntry<bool> configLocked;
         private static ConfigEntry<bool> loggingEnabled;
+        public static ConfigEntry<cacheFormat> cacheStorageFormat;
 
         public static ConfigEntry<int> daysInSeason;
         private static ConfigEntry<bool> seasonsOverlap;
 
         private static ConfigEntry<bool> overrideSeason;
         private static ConfigEntry<Season> seasonOverrided;
-
-        public static ConfigEntry<Color> testColor1;
-        public static ConfigEntry<Color> testColor2;
-        public static ConfigEntry<Color> testColor3;
-        public static ConfigEntry<Color> testColor4;
 
         public static ConfigEntry<Color> vegetationSpringColor1;
         public static ConfigEntry<Color> vegetationSpringColor2;
@@ -146,6 +142,13 @@ namespace Seasons
             Summer = 1,
             Fall = 2,
             Winter = 3
+        }
+        
+        public enum cacheFormat
+        {
+            Binary,
+            Json,
+            SaveBothLoadBinary
         }
 
         public class SeasonsState
@@ -333,10 +336,6 @@ namespace Seasons
             overrideSeason = config("Seasons override", "Override", defaultValue: false, "The seasons will smoothly overlap on the last and first days.");
             seasonOverrided = config("Seasons override", "Season", defaultValue: Season.Spring, "The seasons will smoothly overlap on the last and first days.");
 
-            testColor1 = config("Test", "Color 1", defaultValue: Color.red, "Color 1");
-            testColor2 = config("Test", "Color 2", defaultValue: Color.magenta, "Color 2");
-            testColor3 = config("Test", "Color 3", defaultValue: Color.blue, "Color 3");
-
             vegetationSpringColor1 = config("Seasons - Spring", "Color 1", defaultValue: new Color(0.27f, 0.80f, 0.27f, 0.75f), "Color 1");
             vegetationSpringColor2 = config("Seasons - Spring", "Color 2", defaultValue: new Color(0.69f, 0.84f, 0.15f, 0.75f), "Color 2");
             vegetationSpringColor3 = config("Seasons - Spring", "Color 3", defaultValue: new Color(0.43f, 0.56f, 0.11f, 0.75f), "Color 3");
@@ -352,10 +351,10 @@ namespace Seasons
             vegetationFallColor3 = config("Seasons - Fall", "Color 3", defaultValue: new Color(0.8f, 0.2f, 0f, 0.5f), "Color 3");
             vegetationFallColor4 = config("Seasons - Fall", "Color 4", defaultValue: new Color(0.9f, 0.5f, 0f, 0.0f), "Color 4");
 
-            vegetationWinterColor1 = config("Seasons - Winter", "Color 1", defaultValue: new Color(1f, 1f, 1f, 0.8f), "Color 1");
-            vegetationWinterColor2 = config("Seasons - Winter", "Color 2", defaultValue: new Color(1f, 1f, 1f, 0.9f), "Color 2");
-            vegetationWinterColor3 = config("Seasons - Winter", "Color 3", defaultValue: new Color(0.95f, 0.95f, 1f, 1f), "Color 3");
-            vegetationWinterColor4 = config("Seasons - Winter", "Color 4", defaultValue: new Color(1f, 1f, 1f, 1f), "Color 4");
+            vegetationWinterColor1 = config("Seasons - Winter", "Color 1", defaultValue: new Color(1f, 1f, 1f, 0.5f), "Color 1");
+            vegetationWinterColor2 = config("Seasons - Winter", "Color 2", defaultValue: new Color(1f, 1f, 1f, 0.6f), "Color 2");
+            vegetationWinterColor3 = config("Seasons - Winter", "Color 3", defaultValue: new Color(0.95f, 0.95f, 1f, 7f), "Color 3");
+            vegetationWinterColor4 = config("Seasons - Winter", "Color 4", defaultValue: new Color(1f, 1f, 1f, 0.65f), "Color 4");
 
             grassSpringColor1 = config("Grass - Spring", "Color 1", defaultValue: new Color(0.27f, 0.80f, 0.27f, 0.75f), "Color 1");
             grassSpringColor2 = config("Grass - Spring", "Color 2", defaultValue: new Color(0.69f, 0.84f, 0.15f, 0.75f), "Color 2");
@@ -372,16 +371,17 @@ namespace Seasons
             grassFallColor3 = config("Grass - Fall", "Color 3", defaultValue: new Color(0.8f, 0.3f, 0f, 0.5f), "Color 3");
             grassFallColor4 = config("Grass - Fall", "Color 4", defaultValue: new Color(0.9f, 0.5f, 0f, 0.0f), "Color 4");
 
-            grassWinterColor1 = config("Grass - Winter", "Color 1", defaultValue: new Color(1f, 1f, 1f, 0.80f), "Color 1");
-            grassWinterColor2 = config("Grass - Winter", "Color 2", defaultValue: new Color(1f, 1f, 1f, 0.90f), "Color 2");
-            grassWinterColor3 = config("Grass - Winter", "Color 3", defaultValue: new Color(0.95f, 0.95f, 1f, 1f), "Color 3");
-            grassWinterColor4 = config("Grass - Winter", "Color 4", defaultValue: new Color(1f, 1f, 1f, 1f), "Color 4");
+            grassWinterColor1 = config("Grass - Winter", "Color 1", defaultValue: new Color(1f, 1f, 1f, 0.5f), "Color 1");
+            grassWinterColor2 = config("Grass - Winter", "Color 2", defaultValue: new Color(1f, 1f, 1f, 0.6f), "Color 2");
+            grassWinterColor3 = config("Grass - Winter", "Color 3", defaultValue: new Color(0.95f, 0.95f, 1f, 7f), "Color 3");
+            grassWinterColor4 = config("Grass - Winter", "Color 4", defaultValue: new Color(1f, 1f, 1f, 0.65f), "Color 4");
 
             recalculateNoise = config("Test", "Noise recalculate", defaultValue: false, "Recalculate noise for test");
             noiseFrequency = config("Test", "Noise frequency", defaultValue: 10000f, "Noise frequency");
             noiseDivisor = config("Test", "Noise divisor", defaultValue: 1.1, "Noise divisor");
             noisePower = config("Test", "Noise power", defaultValue: 1.3, "Noise power");
-            
+            cacheStorageFormat = config("Test", "Cache format", defaultValue: cacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable object + textures subfolder.");
+
             cacheFolder = Path.Combine(Paths.ConfigPath, pluginID);
         }
 
@@ -431,7 +431,7 @@ namespace Seasons
 
         private void Test()
         {
-            
+            //SeasonalTextureCache.CreateCache(cacheFolder);
         }
 
         public Color GetSeasonConfigColor(Season season, int pos)
@@ -446,11 +446,12 @@ namespace Seasons
 
         public Color GetMossConfigColor(Season season, int pos)
         {
+            Color grassColor = GetGrassConfigColor(season, (pos + 2) % seasonColorVariants + 1);
+            
             if (season != Season.Winter)
-                return Color.clear;
+                grassColor.a /= 3;
 
-            return GetGrassConfigColor(Season.Winter, (pos + 2) % seasonColorVariants + 1);
-            //return GetGrassConfigColor(season, (pos + 2) % seasonColorVariants + 1);
+            return grassColor;
         }
 
         private Color GetColorConfig(string fieldName)

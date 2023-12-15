@@ -83,7 +83,7 @@ namespace Seasons
                             colorVariant = instance.GetSeasonConfigColor(season, i);
 
                         if (IsPine(material.name, prefab))
-                            colorVariant.a /= 2;
+                            colorVariant.a /= season == Season.Winter ? 1.5f : 2f;
                         
                         colorVariants.Add(colorVariant);
                     }
@@ -174,11 +174,6 @@ namespace Seasons
             return newTexture;
         }
 
-        public static Texture2D GetReadableTexture(Texture texture, TextureProperties texProperties = null)
-        {
-            return GetReadableTexture(texture, out _, texProperties);
-        }
-
         public static void GenerateColorVariants(Season season, Color[] colorVariants, Color[] pixels, List<int> pixelsToChange, TextureProperties texProperties, Dictionary<string, byte[]> seasonalTexturesData)
         {
             List<Color[]> seasonColors = new List<Color[]>();
@@ -218,7 +213,7 @@ namespace Seasons
         private static bool IsCloseToGreen(Color color)
         {
             HSLColor hslcolor = new HSLColor(color);
-            return color.a != 0f && (hslcolor.s >= 0.25f && GetHueDistance(hslcolor.h, 85f) <= 55f || hslcolor.s >= 0.15f && GetHueDistance(hslcolor.h, 120f) <= 40f);
+            return color.a != 0f && (hslcolor.s >= 0.24f && GetHueDistance(hslcolor.h, 85f) <= 55f || hslcolor.s >= 0.15f && GetHueDistance(hslcolor.h, 120f) <= 40f);
         }
 
         private static float GetHueDistance(float hue1, float hue2)
@@ -333,7 +328,7 @@ namespace Seasons
 
                 if (prefab.layer != 9)
                 {
-                    if (prefab.TryGetComponent<LODGroup>(out LODGroup lodGroup) && lodGroup.lodCount > 0)
+                    if (prefab.TryGetComponent<LODGroup>(out LODGroup lodGroup) && lodGroup.lodCount > 1)
                     {
                         LOD[] LODs = lodGroup.GetLODs();
                         for (int lodLevel = 0; lodLevel < lodGroup.lodCount; lodLevel++)
@@ -394,6 +389,8 @@ namespace Seasons
         [HarmonyPriority(Priority.First)]
         private static void Postfix()
         {
+            return;
+
             if (prefabControllers.Count > 0 || TextureSeasonVariants.CacheFiles())
                 return;
 

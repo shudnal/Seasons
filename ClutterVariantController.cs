@@ -6,9 +6,8 @@ using System.IO;
 using System.Linq;
 using UnityEngine;
 using static ClutterSystem;
+using static Seasons.PrefabController;
 using static Seasons.Seasons;
-using static Seasons.TextureSeasonVariants;
-
 
 namespace Seasons
 {
@@ -16,11 +15,11 @@ namespace Seasons
     {
         private static ClutterVariantController m_instance;
 
-        private Dictionary<Material, List<SeasonalTextures>> m_materialVariants = new Dictionary<Material, List<SeasonalTextures>>();
+        private readonly Dictionary<Material, Dictionary<string, TextureVariants>> m_materialVariants = new Dictionary<Material, Dictionary<string, TextureVariants>>();
         private double m_daySet = 0;
         private double m_seasonSet = 0;
 
-        private Dictionary<Material, int> m_materialVariantOffset = new Dictionary<Material, int>();
+        private readonly Dictionary<Material, int> m_materialVariantOffset = new Dictionary<Material, int>();
 
         private static readonly Dictionary<string, int> prefabOffsets = new Dictionary<string, int>()
         {
@@ -41,43 +40,61 @@ namespace Seasons
 
         public static ClutterVariantController instance => m_instance;
 
-        public void Awake()
+        private void Awake()
         {
             m_instance = this;
         }
 
-        public void Start()
+        private void Start()
         {
             foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c.m_prefab != null))
             {
-                if (!prefabControllers.TryGetValue(Utils.GetPrefabName(clutter.m_prefab), out PrefabControllerData controllerData))
+                if (!SeasonalTextureVariants.controllers.TryGetValue(Utils.GetPrefabName(clutter.m_prefab), out PrefabController controller))
                     continue;
-
-                if (controllerData.m_renderer != typeof(InstanceRenderer))
-                    continue;
-
+               
                 GameObject prefab = clutter.m_prefab;
 
-                InstanceRenderer renderer = prefab.GetComponent<InstanceRenderer>();
-                
-                string transformPath = renderer.transform.GetPath();
-                transformPath = transformPath.Substring(transformPath.IndexOf(prefab.name) + prefab.name.Length);
+                foreach (KeyValuePair<string, CachedRenderer> cachedRenderer in controller.renderersInHierarchy)
+                {
+                    if (cachedRenderer.Value.type != typeof(InstanceRenderer).ToString())
+                        continue;
 
-                if (!controllerData.GetMaterialTextures(0, out List<MaterialTextures> materialTextures))
-                    continue;
+                    InstanceRenderer renderer = prefab.GetComponent<InstanceRenderer>();
+                    
+                    if (cachedRenderer.Key != renderer.transform.GetPath())
+                        continue;
 
-                foreach (MaterialTextures materialTexture in materialTextures)
-                    if (renderer.m_material.name.StartsWith(materialTexture.m_materialName) && renderer.m_material.shader.name == materialTexture.m_shader && !m_materialVariants.ContainsKey(renderer.m_material))
+                    if (cachedRenderer.Value.name != renderer.name)
+                        continue;
+
+                    if (!cachedRenderer.Value.materials.TryGetValue(renderer.m_material.name, out CachedMaterial cachedMaterial))
+                        continue;
+
+                    if (cachedMaterial.shaderName != renderer.m_material.shader.name)
+                        continue;
+
+                    foreach (KeyValuePair<string, int> textureVariant in cachedMaterial.textureProperties)
                     {
-                        m_materialVariants.Add(renderer.m_material, materialTexture.m_textures);
-                        m_materialVariantOffset.Add(renderer.m_material, prefabOffsets.GetValueSafe(prefab.name));
+                        if (!SeasonalTextureVariants.textures.ContainsKey(textureVariant.Value))
+                            continue;
+
+                        if (!m_materialVariants.TryGetValue(renderer.m_material, out Dictionary<string, TextureVariants> tv))
+                        {
+                            tv = new Dictionary<string, TextureVariants>();
+                            m_materialVariants.Add(renderer.m_material, tv);
+                        }
+
+                        tv.Add(textureVariant.Key, SeasonalTextureVariants.textures[textureVariant.Value]);
                     }
+
+                    m_materialVariantOffset.Add(renderer.m_material, prefabOffsets.GetValueSafe(prefab.name));
+                }
             }
 
-            base.enabled = m_materialVariants.Count > 0;
+            base.enabled = m_materialVariants.Any(variant => variant.Value.Count > 0);
         }
 
-        public void LateUpdate()
+        private void LateUpdate()
         {
             if (!modEnabled.Value)
                 return;
@@ -90,20 +107,22 @@ namespace Seasons
             }
         }
 
-        public void UpdateColors()
+        private void UpdateColors()
         {
             int variant = GetCurrentMainVariant();
-            foreach (KeyValuePair<Material, List<SeasonalTextures>> materialVariants in m_materialVariants)
-                foreach (SeasonalTextures st in materialVariants.Value)
-                    if (st.m_seasons.TryGetValue(seasonState.m_season, out Dictionary<int, Texture2D> variants) && variants.TryGetValue((variant + m_materialVariantOffset.GetValueSafe(materialVariants.Key)) % seasonColorVariants, out Texture2D texture))
+            foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
+                foreach (KeyValuePair<string, TextureVariants> texProp in materialVariants.Value)
+                {
+                    if (texProp.Value.seasons.TryGetValue(seasonState.m_season, out Dictionary<int, Texture2D> variants) && variants.TryGetValue((variant + m_materialVariantOffset.GetValueSafe(materialVariants.Key)) % seasonColorVariants, out Texture2D texture))
                     {
-                        if (!st.HaveOriginalTexture())
+                        if (!texProp.Value.HaveOriginalTexture())
                         {
                             LogInfo($"Setting original clutter texture {materialVariants.Key}");
-                            st.SetOriginalTexture(materialVariants.Key.GetTexture(st.textureProperty));
+                            texProp.Value.SetOriginalTexture(materialVariants.Key.GetTexture(texProp.Key));
                         }
-                        materialVariants.Key.SetTexture(st.textureProperty, texture);
+                        materialVariants.Key.SetTexture(texProp.Key, texture);
                     }
+                }
         }
 
         private int GetCurrentMainVariant()

@@ -9,7 +9,7 @@ using static Seasons.TextureSeasonVariants;
 
 namespace Seasons
 {
-    public class VegetationVariantController : MonoBehaviour
+    public class PrefabVariantController : MonoBehaviour
     {
         private ZNetView m_nview;
 
@@ -27,7 +27,7 @@ namespace Seasons
         {
             if (controllerData.m_renderer == typeof(MeshRenderer))
             {
-                if (gameObject.TryGetComponent(out LODGroup lodGroup))
+                if (gameObject.TryGetComponent(out LODGroup lodGroup) && lodGroup.lodCount > 1)
                 {
                     LOD[] LODs = lodGroup.GetLODs();
                     for (int lodLevel = 0; lodLevel < lodGroup.lodCount; lodLevel++)
@@ -124,7 +124,7 @@ namespace Seasons
                 int variant = GetCurrentVariant();
                 foreach (KeyValuePair<Material, List<SeasonalTextures>> materialVariants in m_materialVariants)
                 {
-                    materialVariants.Key.color = variant == 0 ? testColor1.Value : variant == 1 ? testColor2.Value : variant == 2 ? testColor3.Value : Color.white;
+                    materialVariants.Key.color = variant == 0 ? Color.red : variant == 1 ? Color.magenta : variant == 2 ? Color.blue : Color.white;
                 }
             }
         }
@@ -193,7 +193,7 @@ namespace Seasons
     }
 
     [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.CreateObject))]
-    public static class ZNetScene_CreateObject_VegetationVariantControllerInit
+    public static class ZNetScene_CreateObject_PrefabVariantControllerInit
     {
         private static void Postfix(ref GameObject __result)
         {
@@ -203,7 +203,7 @@ namespace Seasons
             if (!prefabControllers.TryGetValue(Utils.GetPrefabName(__result), out PrefabControllerData controllerData))
                 return;
 
-            __result.AddComponent<VegetationVariantController>().Init(controllerData);
+            __result.AddComponent<PrefabVariantController>().Init(controllerData);
         }
     }
 
