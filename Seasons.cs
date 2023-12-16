@@ -28,7 +28,7 @@ namespace Seasons
         public static ConfigEntry<bool> modEnabled;
         private static ConfigEntry<bool> configLocked;
         private static ConfigEntry<bool> loggingEnabled;
-        public static ConfigEntry<cacheFormat> cacheStorageFormat;
+        public static ConfigEntry<CacheFormat> cacheStorageFormat;
 
         public static ConfigEntry<int> daysInSeason;
         private static ConfigEntry<bool> seasonsOverlap;
@@ -117,20 +117,17 @@ namespace Seasons
 
         public static Dictionary<string, string> renderersFolders = new Dictionary<string, string>
             {
-                { typeof(MeshRenderer).ToString(), "MR" },
-                { typeof(InstanceRenderer).ToString(), "IR" },
-                { typeof(SkinnedMeshRenderer).ToString(), "SMR" }
+                { typeof(MeshRenderer).Name, "MR" },
+                { typeof(InstanceRenderer).Name, "IR" },
+                { typeof(SkinnedMeshRenderer).Name, "SMR" }
             };
 
         public static Dictionary<string, string[]> shadersTypes = new Dictionary<string, string[]>
             {
-                { typeof(MeshRenderer).ToString(), new string[] { "Custom/Vegetation", "Custom/Grass", "Custom/StaticRock" } },
-                { typeof(InstanceRenderer).ToString(), new string[] { "Custom/Vegetation", "Custom/Grass" } },
-                //{ typeof(SkinnedMeshRenderer).ToString(), new string[] { "Custom/Creature" } }
+                { typeof(MeshRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass", "Custom/StaticRock" } },
+                { typeof(InstanceRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass" } },
+                //{ typeof(SkinnedMeshRenderer).Name, new string[] { "Custom/Creature" } }
             };
-
-        public const string originalPostfix = ".orig.png";
-        public const string textureProperties = "properties.json";
 
         public static Dictionary<string, PrefabController> prefabControllers = SeasonalTextureVariants.controllers;
         public static Dictionary<int, TextureVariants> texturesVariants = SeasonalTextureVariants.textures;
@@ -143,7 +140,7 @@ namespace Seasons
             Winter = 3
         }
         
-        public enum cacheFormat
+        public enum CacheFormat
         {
             Binary,
             Json,
@@ -379,7 +376,7 @@ namespace Seasons
             noiseFrequency = config("Test", "Noise frequency", defaultValue: 10000f, "Noise frequency");
             noiseDivisor = config("Test", "Noise divisor", defaultValue: 1.1, "Noise divisor");
             noisePower = config("Test", "Noise power", defaultValue: 1.3, "Noise power");
-            cacheStorageFormat = config("Test", "Cache format", defaultValue: cacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable object + textures subfolder.");
+            cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable object + textures subfolder.");
 
             cacheFolder = Path.Combine(Paths.ConfigPath, pluginID);
         }
@@ -430,7 +427,11 @@ namespace Seasons
 
         private void Test()
         {
-            //SeasonalTextureCache.CreateCache(cacheFolder);
+            /*foreach (var item in q)
+                if (item.Key.Contains("frac"))
+                    ZLog.Log(item.Key);
+            }            //SeasonalTextureCache.CreateCache(cacheFolder);*/
+            
         }
 
         public Color GetSeasonConfigColor(Season season, int pos)

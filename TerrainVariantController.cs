@@ -17,7 +17,7 @@ namespace Seasons
                     { Biome.BlackForest, new Dictionary<Season, Biome>() { { Season.Fall, Biome.Swamp }, { Season.Winter, Biome.Mountain } } },
                     { Biome.Meadows, new Dictionary<Season, Biome>() { { Season.Fall, Biome.Plains }, { Season.Winter, Biome.Mountain } } },
                     { Biome.Plains, new Dictionary<Season, Biome>() { { Season.Spring, Biome.Meadows }, { Season.Winter, Biome.Mountain } } },
-                    { Biome.Mistlands, new Dictionary<Season, Biome>() { { Season.Winter, Biome.Mountain } } },
+                    //{ Biome.Mistlands, new Dictionary<Season, Biome>() { { Season.Winter, Biome.Mountain } } },
                     { Biome.Swamp, new Dictionary<Season, Biome>() { { Season.Winter, Biome.Mountain } } },
                 };
 
@@ -91,7 +91,7 @@ namespace Seasons
     public static class Heightmap_Awake_TerrainVariantControllerInit
     {
         [HarmonyPriority(Priority.Last)]
-        private static void Postfix(Heightmap __instance, Mesh ___m_renderMesh)
+        private static void Postfix(Heightmap __instance)
         {
             if (!modEnabled.Value)
                 return;
@@ -135,7 +135,7 @@ namespace Seasons
         }
 
         [HarmonyPriority(Priority.First)]
-        private static void Postfix(ref Biome biome, Biome __state, ref Color32 __result)
+        private static void Postfix(ref Biome biome, Biome __state)
         {
             if (!modEnabled.Value)
                 return;
@@ -150,9 +150,6 @@ namespace Seasons
                 return;
 
             biome = __state;
-            /*if (TerrainVariantController.seasonalBiomeMerge.TryGetValue(biome, out Dictionary<Season, Biome> mergeBiome) && mergeBiome.TryGetValue(seasonState.GetCurrentSeason(), out Biome mergedBiome))
-                __result = Color32.Lerp(__result, GetBaseBiomeColor(mergedBiome), 0.75f);*/
-
         }
     }
 }

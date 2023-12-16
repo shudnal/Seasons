@@ -39,7 +39,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SE_Season.cs" />
     <Compile Include="TerrainVariantController.cs" />
-    <Compile Include="VegetationVariantController.cs" />
+    <Compile Include="PrefabVariantController.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="0Harmony">
