@@ -94,41 +94,6 @@ namespace Seasons
 
         public static string cacheFolder;
 
-        public static Dictionary<string, string> shaderFolders = new Dictionary<string, string>
-            {
-                { "Custom/Vegetation", "Vegetation" },
-                { "Custom/Grass", "Grass" },
-                //{ "Custom/Creature", "Creature" },
-                { "Custom/StaticRock", "StaticRock" }
-            };
-
-        public static Dictionary<string, string[]> shaderTextures = new Dictionary<string, string[]>
-            {
-                { "Custom/Vegetation", new string[] { "_MainTex", "_MossTex" } },
-                { "Custom/Grass", new string[] { "_MainTex", "_TerrainColorTex" } },
-                //{ "Custom/Creature", new string[] { "_MainTex" } },
-                { "Custom/StaticRock", new string[] { "_MossTex" }}
-            };
-
-        public static Dictionary<string, string[]> shaderIgnoreMaterial = new Dictionary<string, string[]>
-            {
-                { "Custom/Vegetation", new string[] { "bark" } }
-            };
-
-        public static Dictionary<string, string> renderersFolders = new Dictionary<string, string>
-            {
-                { typeof(MeshRenderer).Name, "MR" },
-                { typeof(InstanceRenderer).Name, "IR" },
-                { typeof(SkinnedMeshRenderer).Name, "SMR" }
-            };
-
-        public static Dictionary<string, string[]> shadersTypes = new Dictionary<string, string[]>
-            {
-                { typeof(MeshRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass", "Custom/StaticRock" } },
-                { typeof(InstanceRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass" } },
-                //{ typeof(SkinnedMeshRenderer).Name, new string[] { "Custom/Creature" } }
-            };
-
         public static Dictionary<string, PrefabController> prefabControllers = SeasonalTextureVariants.controllers;
         public static Dictionary<int, TextureVariants> texturesVariants = SeasonalTextureVariants.textures;
 
@@ -431,7 +396,8 @@ namespace Seasons
                 if (item.Key.Contains("frac"))
                     ZLog.Log(item.Key);
             }            //SeasonalTextureCache.CreateCache(cacheFolder);*/
-            
+            //SwampTree1_Stub
+            //-window-mode exclusive -screen-fullscreen -console -exclusivefullscreen
         }
 
         public Color GetSeasonConfigColor(Season season, int pos)

@@ -58,6 +58,7 @@ namespace Seasons
             public string name = string.Empty;
             public string shaderName = string.Empty;
             public Dictionary<string, int> textureProperties = new Dictionary<string, int>();
+            public Dictionary<string, string[]> colorVariants = new Dictionary<string, string[]>();
 
             public CachedMaterial(string materialName, string shader, string propertyName, int textureID)
             {
@@ -66,13 +67,29 @@ namespace Seasons
                 AddTexture(propertyName, textureID);
             }
 
+            public CachedMaterial(string materialName, string shader, string propertyName, Color[] colors)
+            {
+                name = materialName;
+                shaderName = shader;
+                AddColors(propertyName, colors);
+            }
+
             public void AddTexture(string propertyName, int textureID)
             {
                 if (!textureProperties.ContainsKey(propertyName))
                     textureProperties.Add(propertyName, textureID);
             }
+
+            public void AddColors(string propertyName, Color[] colors)
+            {
+                List<string> vec = new List<string>();
+                colors.Do(x => vec.Add($"#{ColorUtility.ToHtmlStringRGBA(x)}"));
+
+                if (!colorVariants.ContainsKey(propertyName))
+                    colorVariants.Add(propertyName, vec.ToArray());
+            }
         }
-        
+
         [Serializable]
         public class CachedRenderer
         {
@@ -82,7 +99,7 @@ namespace Seasons
 
             public bool Initialized()
             {
-                return materials.Any(m => m.Value.textureProperties.Count > 0);
+                return materials.Any(m => m.Value.textureProperties.Count > 0 || m.Value.colorVariants.Count > 0);
             }
 
             public void AddMaterialTexture(Material material, string propertyName, int textureID)
@@ -92,6 +109,15 @@ namespace Seasons
                 else
                     cachedMaterial.AddTexture(propertyName, textureID);
             }
+
+            public void AddMaterialColors(Material material, string propertyName, Color[] colors)
+            {
+                if (!materials.TryGetValue(material.name, out CachedMaterial cachedMaterial))
+                    materials.Add(material.name, new CachedMaterial(material.name, material.shader.name, propertyName, colors));
+                else
+                    cachedMaterial.AddColors(propertyName, colors);
+            }
+
         }
 
         public Dictionary<int, List<CachedRenderer>> lodLevelMaterials = new Dictionary<int, List<CachedRenderer>>();
@@ -463,6 +489,42 @@ namespace Seasons
 
     public static class SeasonalTextureVariantsGenerator
     {
+        public static bool GetColorVariants(string prefabName, Material material, string propertyName, Color color, out Color[] colors)
+        {
+            colors = null;
+
+            bool isRock = IsRock(material.shader.name);
+            bool isGrass = IsGrass(material.shader.name);
+            bool isMoss = IsMoss(propertyName);
+
+            if (!ReplaceColor(color, isGrass, isMoss, isRock))
+                return false;
+
+            List<Color> colorsList = new List<Color>();
+            foreach (Season season in Enum.GetValues(typeof(Season)))
+            {
+                for (int i = 1; i <= seasonColorVariants; i++)
+                {
+                    Color colorVariant;
+                    if (isGrass)
+                        colorVariant = instance.GetGrassConfigColor(season, i);
+                    else if (isMoss)
+                        colorVariant = instance.GetMossConfigColor(season, i);
+                    else
+                        colorVariant = instance.GetSeasonConfigColor(season, i);
+
+                    if (IsPine(material.name, prefabName))
+                        colorVariant.a /= season == Season.Winter ? 1.5f : 2f;
+
+                    colorsList.Add(MergeColors(color, colorVariant, colorVariant.a, season == Season.Winter));
+                }
+            }
+
+            colors = colorsList.ToArray();
+            
+            return true;
+        }
+
         public static bool GetTextureVariants(string prefabName, Material material, string propertyName, Texture texture, out TextureVariants textureVariants)
         {
             textureVariants = new TextureVariants(texture);
@@ -471,9 +533,13 @@ namespace Seasons
             if (pixels.Length < 1)
                 return false;
 
+            bool isRock = IsRock(material.shader.name);
+            bool isGrass = IsGrass(material.shader.name);
+            bool isMoss = IsMoss(propertyName);
+
             List<int> pixelsToChange = new List<int>();
             for (int i = 0; i < pixels.Length; i++)
-                if (ReplaceColor(pixels[i]))
+                if (ReplaceColor(pixels[i], isGrass, isMoss, isRock))
                     pixelsToChange.Add(i);
 
             if (pixelsToChange.Count == 0)
@@ -485,9 +551,9 @@ namespace Seasons
                 for (int i = 1; i <= seasonColorVariants; i++)
                 {
                     Color colorVariant;
-                    if (IsGrass(material.shader.name))
+                    if (isGrass)
                         colorVariant = instance.GetGrassConfigColor(season, i);
-                    else if (IsMoss(propertyName))
+                    else if (isMoss)
                         colorVariant = instance.GetMossConfigColor(season, i);
                     else
                         colorVariant = instance.GetSeasonConfigColor(season, i);
@@ -572,10 +638,12 @@ namespace Seasons
             }
         }
 
-        private static bool ReplaceColor(Color color)
+        private static bool ReplaceColor(Color color, bool isGrass, bool isMoss, bool isRock)
         {
             HSLColor hslcolor = new HSLColor(color);
-            return color.a != 0f && (hslcolor.s >= 0.24f && GetHueDistance(hslcolor.h, 85f) <= 55f || hslcolor.s >= 0.15f && GetHueDistance(hslcolor.h, 120f) <= 40f);
+            return color.a != 0f && (hslcolor.s >= 0.24f && GetHueDistance(hslcolor.h, 85f) <= 55f || 
+                                     hslcolor.s >= 0.15f && GetHueDistance(hslcolor.h, 120f) <= 40f ||
+                                     isRock && isMoss && hslcolor.s >= 0.03f && GetHueDistance(hslcolor.h, 120f) <= 5f);
         }
 
         private static float GetHueDistance(float hue1, float hue2)
@@ -599,7 +667,12 @@ namespace Seasons
 
         private static bool IsGrass(string shaderName)
         {
-            return shaderFolders.TryGetValue(shaderName, out string folder) && folder == "Grass";
+            return shaderName == "Custom/Grass";
+        }
+
+        private static bool IsRock(string shaderName)
+        {
+            return shaderName == "Custom/StaticRock";
         }
 
         private static bool IsMoss(string textureName)
@@ -615,6 +688,31 @@ namespace Seasons
 
     public static class SeasonalTexturePrefabCache
     {
+        public static Dictionary<string, string[]> shaderColors = new Dictionary<string, string[]>
+            {
+                { "Custom/StaticRock", new string[] { "_MossColor" }}
+            };
+
+        public static Dictionary<string, string[]> shaderTextures = new Dictionary<string, string[]>
+            {
+                { "Custom/Vegetation", new string[] { "_MainTex" } },
+                { "Custom/Grass", new string[] { "_MainTex", "_TerrainColorTex" } },
+                //{ "Custom/Creature", new string[] { "_MainTex" } },
+                { "Custom/StaticRock", new string[] { "_MossTex" }}
+            };
+
+        public static Dictionary<string, string[]> shaderIgnoreMaterial = new Dictionary<string, string[]>
+            {
+                { "Custom/Vegetation", new string[] { "bark" } }
+            };
+
+        public static Dictionary<string, string[]> shadersTypes = new Dictionary<string, string[]>
+            {
+                { typeof(MeshRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass", "Custom/StaticRock" } },
+                { typeof(InstanceRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass" } },
+                //{ typeof(SkinnedMeshRenderer).Name, new string[] { "Custom/Creature" } }
+            };
+
         private static readonly List<string> ignorePrefab = new List<string>()
         {
             "SwampTree2_log",
@@ -681,10 +779,7 @@ namespace Seasons
                     if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
                         continue;
 
-                    List<Material> materials = new List<Material>();
-                    renderer.GetSharedMaterials(materials);
-
-                    CacheMaterials(materials, loc.m_prefabName, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
+                    CacheMaterials(renderer.sharedMaterials, loc.m_prefabName, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
                 }
             }
         }
@@ -696,14 +791,13 @@ namespace Seasons
                 if (!clutter.m_prefab.TryGetComponent(out InstanceRenderer renderer))
                     continue;
 
-                List<Material> materials = new List<Material> { renderer.m_material };
-                CacheMaterials(materials, clutter.m_prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
+                CacheMaterials(new Material[1] { renderer.m_material }, clutter.m_prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
             }
         }
 
-        private static void CacheMaterials(List<Material> materials, string prefabName, string rendererName, string rendererType, string rendererPath, int lodLevel = -1, bool singleRenderer = false)
+        private static void CacheMaterials(Material[] materials, string prefabName, string rendererName, string rendererType, string rendererPath, int lodLevel = -1, bool singleRenderer = false)
         {
-            for (int m = 0; m < materials.Count; m++)
+            for (int m = 0; m < materials.Length; m++)
             {
                 Material material = materials[m];
 
@@ -711,8 +805,6 @@ namespace Seasons
                     continue;
 
                 if (!shadersTypes.TryGetValue(rendererType, out string[] shaders) || !shaders.Contains(material.shader.name)
-                    || !shaderFolders.TryGetValue(material.shader.name, out string shaderFolder)
-                    || !shaderTextures.TryGetValue(material.shader.name, out string[] textureNames)
                     || shaderIgnoreMaterial.TryGetValue(material.shader.name, out string[] ignoreMaterial) && ignoreMaterial.Any(ignore => material.name.IndexOf(ignore, StringComparison.OrdinalIgnoreCase) >= 0))
                     continue;
 
@@ -727,27 +819,38 @@ namespace Seasons
                     type = rendererType
                 };
 
-                foreach (string propertyName in material.GetTexturePropertyNames().Where(mat => textureNames.Any(text => mat.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0)))
-                {
-                    Texture texture = material.GetTexture(propertyName);
-                    if (texture == null)
-                        continue;
+                if (shaderColors.TryGetValue(material.shader.name, out string[] colorNames))
+                    foreach (string propertyName in colorNames)
+                    {
+                        Color color = material.GetColor(propertyName);
+                        if (color == null || color == Color.clear || color == Color.white || color == Color.black)
+                            continue;
 
-                    int textureID = texture.GetInstanceID();
-                    if (SeasonalTextureVariants.textures.ContainsKey(textureID))
-                    {
-                        cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
+                        if (SeasonalTextureVariantsGenerator.GetColorVariants(prefabName, material, propertyName, color, out Color[] colors))
+                            cachedRenderer.AddMaterialColors(material, propertyName, colors);
                     }
-                    else if (SeasonalTextureVariantsGenerator.GetTextureVariants(prefabName, material, propertyName, texture, out TextureVariants textureVariants))
+
+                if (shaderTextures.TryGetValue(material.shader.name, out string[] textureNames))
+                    foreach (string propertyName in material.GetTexturePropertyNames().Where(mat => textureNames.Any(text => mat.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0)))
                     {
-                        SeasonalTextureVariants.textures.Add(textureID, textureVariants);
-                        cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
+                        Texture texture = material.GetTexture(propertyName);
+                        if (texture == null)
+                            continue;
+
+                        int textureID = texture.GetInstanceID();
+                        if (SeasonalTextureVariants.textures.ContainsKey(textureID))
+                        {
+                            cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
+                        }
+                        else if (SeasonalTextureVariantsGenerator.GetTextureVariants(prefabName, material, propertyName, texture, out TextureVariants textureVariants))
+                        {
+                            SeasonalTextureVariants.textures.Add(textureID, textureVariants);
+                            cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
+                        }
                     }
-                }
 
                 if (!cachedRenderer.Initialized())
                     continue;
-
 
                 if (lodLevel >= 0)
                 {
@@ -808,10 +911,7 @@ namespace Seasons
                     if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
                         return;
 
-                    List<Material> materials = new List<Material>();
-                    renderer.GetSharedMaterials(materials);
-
-                    CacheMaterials(materials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath(), singleRenderer: true);
+                    CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath(), singleRenderer: true);
                     continue;
                 }
                 
@@ -833,10 +933,7 @@ namespace Seasons
                                 if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
                                     continue;
 
-                                List<Material> materials = new List<Material>();
-                                renderer.GetSharedMaterials(materials);
-
-                                CacheMaterials(materials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath(), lodLevel);
+                                CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath(), lodLevel);
                             }
                         }
                     }
@@ -847,10 +944,7 @@ namespace Seasons
                             if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
                                 continue;
 
-                            List<Material> materials = new List<Material>();
-                            renderer.GetSharedMaterials(materials);
-
-                            CacheMaterials(materials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
+                            CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
                         }
                     }
                 }
@@ -863,10 +957,7 @@ namespace Seasons
                         if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
                             continue;
 
-                        List<Material> materials = new List<Material>();
-                        renderer.GetSharedMaterials(materials);
-
-                        CacheMaterials(materials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
+                        CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
                     }
                 }
             }
