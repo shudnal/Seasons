@@ -17,16 +17,7 @@ namespace Seasons
                     { Biome.BlackForest, new Dictionary<Season, Biome>() { { Season.Fall, Biome.Swamp }, { Season.Winter, Biome.Mountain } } },
                     { Biome.Meadows, new Dictionary<Season, Biome>() { { Season.Fall, Biome.Plains }, { Season.Winter, Biome.Mountain } } },
                     { Biome.Plains, new Dictionary<Season, Biome>() { { Season.Spring, Biome.Meadows }, { Season.Winter, Biome.Mountain } } },
-                    //{ Biome.Mistlands, new Dictionary<Season, Biome>() { { Season.Winter, Biome.Mountain } } },
                     { Biome.Swamp, new Dictionary<Season, Biome>() { { Season.Winter, Biome.Mountain } } },
-                };
-
-        public static Dictionary<Biome, Dictionary<Season, Biome>> seasonalBiomeMerge = new Dictionary<Biome, Dictionary<Season, Biome>>
-                {
-                    { Biome.BlackForest, new Dictionary<Season, Biome>() { { Season.Fall, Biome.BlackForest } } },
-                    { Biome.Meadows, new Dictionary<Season, Biome>() { { Season.Fall, Biome.Meadows } } },
-                    { Biome.Plains, new Dictionary<Season, Biome>() { { Season.Spring, Biome.Plains } } },
-                    { Biome.Swamp, new Dictionary<Season, Biome>() { { Season.Winter, Biome.Swamp } } },
                 };
 
         private Heightmap m_heightmap;

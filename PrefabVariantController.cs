@@ -1,11 +1,9 @@
 ﻿using BepInEx.Logging;
 using HarmonyLib;
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using static PrivilegeManager;
 using static Seasons.PrefabController;
 using static Seasons.Seasons;
 
@@ -24,11 +22,16 @@ namespace Seasons
         private float m_my;
         private double m_seasonSet = 0;
 
-        private readonly Dictionary<Material, Dictionary<string, TextureVariants>> m_materialVariants = new Dictionary<Material, Dictionary<string, TextureVariants>>();
+        private MaterialPropertyBlock m_matBlock;
 
-        public void Init(PrefabController controller)
+        private readonly Dictionary<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>> m_materialVariants = new Dictionary<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>>();
+
+        public void Init(PrefabController controller, string prefabName = null)
         {
-            m_prefabName = Utils.GetPrefabName(gameObject);
+            if (String.IsNullOrEmpty(prefabName))
+                m_prefabName = Utils.GetPrefabName(gameObject);
+            else
+                m_prefabName = prefabName;
 
             if (controller.lodLevelMaterials.Count > 0)
                 if (gameObject.TryGetComponent(out LODGroup lodGroup))
@@ -55,24 +58,21 @@ namespace Seasons
 
             foreach (KeyValuePair<string, CachedRenderer> rendererPath in controller.renderersInHierarchy)
             {
-                Transform child = gameObject.transform.Find(rendererPath.Key);
-                if (child == null && rendererPath.Key.Contains(m_prefabName))
+                string path = rendererPath.Key;
+                if (path.Contains(m_prefabName))
                 {
-                    string path = rendererPath.Key.Substring(rendererPath.Key.IndexOf(m_prefabName) + m_prefabName.Length);
+                    path = rendererPath.Key.Substring(rendererPath.Key.IndexOf(m_prefabName) + m_prefabName.Length);
                     if (path.StartsWith("/"))
                         path = path.Substring(1);
-                    
-                    child = gameObject.transform.Find(path);
                 }
-                
-                if (child == null)
-                    continue;
 
-                Renderer renderer = child.GetComponent(rendererPath.Value.type) as Renderer;
-                if (renderer == null)
-                    continue;
+                string[] transformPath = path.Split(new char[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
 
-                AddMaterialVariants(renderer, rendererPath.Value);
+                List<Renderer> renderers = new List<Renderer>();
+                CheckRenderersInHierarchy(gameObject.transform, rendererPath.Value.type, transformPath, 0, renderers);
+
+                foreach (Renderer renderer in renderers) 
+                    AddMaterialVariants(renderer, rendererPath.Value);
             }
 
             if (controller.cachedRenderer != null)
@@ -85,9 +85,32 @@ namespace Seasons
             ToggleEnabled();
         }
 
+        private void CheckRenderersInHierarchy(Transform transform, string rendererType, string[] transformPath, int index, List<Renderer> renderers)
+        {
+            for (int i = 0; i < transform.childCount; i++)
+            {
+                Transform child = transform.GetChild(i);
+
+                if (child.name == transformPath[index])
+                {
+                    if (index == transformPath.Length - 1)
+                    {
+                        Renderer renderer = child.GetComponent(rendererType) as Renderer;
+                        if (renderer != null)
+                            renderers.Add(renderer);
+                    }
+                    else
+                    {
+                        CheckRenderersInHierarchy(child, rendererType, transformPath, index + 1, renderers);
+                    }
+                }
+            }
+        }
+
         private void Awake()
         {
             m_nview = gameObject.GetComponent<ZNetView>();
+            m_matBlock = new MaterialPropertyBlock();
         }
 
         private void OnEnable()
@@ -119,39 +142,44 @@ namespace Seasons
             {
                 UpdateFactors();
                 int variant = GetCurrentVariant();
-                foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
+                foreach (KeyValuePair<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>> materialVariants in m_materialVariants)
                 {
-                    materialVariants.Key.color = variant == 0 ? Color.red : variant == 1 ? Color.magenta : variant == 2 ? Color.blue : Color.white;
+                    materialVariants.Key.GetPropertyBlock(m_matBlock);
+                    m_matBlock.SetColor("_Color", variant == 0 ? Color.red : variant == 1 ? Color.magenta : variant == 2 ? Color.blue : Color.white);
+                    materialVariants.Key.SetPropertyBlock(m_matBlock);
                 }
             }
         }
 
         private void RevertTextures()
         {
-            foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
-                foreach (KeyValuePair<string, TextureVariants> texVar in materialVariants.Value)
-                    if (texVar.Value.HaveOriginalTexture())
-                    {
-                        materialVariants.Key.SetTexture(texVar.Key, texVar.Value.original);
-                        LogInfo($"Reverting texture {texVar.Key} of {materialVariants.Key.name}");
-                    }
+            foreach (KeyValuePair<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>> materialVariants in m_materialVariants)
+                foreach (KeyValuePair<int, Dictionary<string, TextureVariants>> materialIndex in materialVariants.Value)
+                    foreach (KeyValuePair<string, TextureVariants> texVar in materialIndex.Value)
+                        if (texVar.Value.HaveOriginalTexture())
+                        {
+                            materialVariants.Key.SetPropertyBlock(null);
+                            LogInfo($"Reverting texture {texVar.Key} of {materialVariants.Key.name}");
+                        }
         }
 
         private void UpdateColors()
         {
             int variant = GetCurrentVariant();
-            foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
-                foreach (KeyValuePair<string, TextureVariants> texVar in materialVariants.Value)
-                    if (texVar.Value.seasons.TryGetValue(seasonState.m_season, out Dictionary<int, Texture2D> variants) && variants.TryGetValue(variant, out Texture2D texture))
-                    {
-                        if (!texVar.Value.HaveOriginalTexture())
+            foreach (KeyValuePair<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>> materialVariants in m_materialVariants)
+                foreach (KeyValuePair<int, Dictionary<string, TextureVariants>> materialIndex in materialVariants.Value)
+                    foreach (KeyValuePair<string, TextureVariants> texVar in materialIndex.Value)
+                        if (texVar.Value.seasons.TryGetValue(seasonState.m_season, out Dictionary<int, Texture2D> variants) && variants.TryGetValue(variant, out Texture2D texture))
                         {
-                            LogInfo($"Setting original vegetation texture {materialVariants.Key}");
-                            texVar.Value.SetOriginalTexture(materialVariants.Key.GetTexture(texVar.Key));
+                            if (!texVar.Value.HaveOriginalTexture())
+                            {
+                                LogInfo($"Setting original vegetation texture {materialVariants.Key}");
+                                texVar.Value.SetOriginalTexture(materialVariants.Key.sharedMaterials[materialIndex.Key].GetTexture(texVar.Key));
+                            }
+                            materialVariants.Key.GetPropertyBlock(m_matBlock);
+                            m_matBlock.SetTexture(texVar.Key, texture);
+                            materialVariants.Key.SetPropertyBlock(m_matBlock);
                         }
-
-                        materialVariants.Key.SetTexture(texVar.Key, texture);
-                    }
         }
 
         private void UpdateFactors()
@@ -186,12 +214,9 @@ namespace Seasons
 
         public void AddMaterialVariants(Renderer renderer, CachedRenderer cachedRenderer)
         {
-            List<Material> materials = new List<Material>();
-            renderer.GetMaterials(materials);
-
-            for (int m = 0; m < materials.Count; m++)
+            for (int i = 0; i < renderer.sharedMaterials.Length; i++)
             {
-                Material material = materials[m];
+                Material material = renderer.sharedMaterials[i];
 
                 if (material == null)
                     continue;
@@ -201,10 +226,16 @@ namespace Seasons
                     if (!material.name.StartsWith(cachedRendererMaterial.Key) || !(material.shader.name == cachedRendererMaterial.Value.shaderName))
                         continue;
 
-                    if (!m_materialVariants.TryGetValue(material, out Dictionary<string, TextureVariants> texVariants))
+                    if (!m_materialVariants.TryGetValue(renderer, out Dictionary<int, Dictionary<string, TextureVariants>> materialIndex))
+                    {
+                        materialIndex = new Dictionary<int, Dictionary<string, TextureVariants>>();
+                        m_materialVariants.Add(renderer, materialIndex);
+                    }
+
+                    if (!materialIndex.TryGetValue(i, out Dictionary<string, TextureVariants> texVariants))
                     {
                         texVariants = new Dictionary<string, TextureVariants>();
-                        m_materialVariants.Add(material, texVariants);
+                        materialIndex.Add(i, texVariants);
                     }
 
                     foreach (KeyValuePair<string, int> tex in cachedRendererMaterial.Value.textureProperties)
@@ -268,25 +299,37 @@ namespace Seasons
     [HarmonyPatch(typeof(MineRock5), nameof(MineRock5.Start))]
     public static class MineRock5_Start_PrefabVariantControllerInit
     {
-        private static void Postfix(MineRock5 __instance, MeshRenderer ___m_meshRenderer)
+        private static void Postfix(MineRock5 __instance, MeshRenderer ___m_meshRenderer, ZNetView ___m_nview)
         {
             if (___m_meshRenderer == null)
                 return;
 
-            if (!__instance.TryGetComponent(out PrefabVariantController prefabVariantController))
+            if (__instance.TryGetComponent(out PrefabVariantController prefabVariantController) && prefabVariantController.enabled)
                 return;
 
-            if (prefabVariantController.enabled)
-                return;
+            if (prefabVariantController == null)
+            {
+                if (___m_nview == null || !___m_nview.IsValid())
+                    return;
 
-            if (!SeasonalTextureVariants.controllers.TryGetValue(prefabVariantController.m_prefabName, out PrefabController controller))
-                return;
+                string prefabName = ZNetScene.instance.GetPrefab(___m_nview.GetZDO().GetPrefab()).name;
 
-            if (controller.cachedRenderer == null)
-                return;
+                if (!SeasonalTextureVariants.controllers.TryGetValue(prefabName, out PrefabController controller))
+                    return;
 
-            prefabVariantController.AddMaterialVariants(___m_meshRenderer, controller.cachedRenderer);
-            prefabVariantController.ToggleEnabled();
+                __instance.gameObject.AddComponent<PrefabVariantController>().Init(controller, prefabName);
+            }
+            else
+            {
+                if (!SeasonalTextureVariants.controllers.TryGetValue(prefabVariantController.m_prefabName, out PrefabController controller))
+                    return;
+                
+                if (controller.cachedRenderer == null)
+                    return;
+
+                prefabVariantController.AddMaterialVariants(___m_meshRenderer, controller.cachedRenderer);
+                prefabVariantController.ToggleEnabled();
+            }
         }
     }
 

@@ -620,13 +620,13 @@ namespace Seasons
             "SwampTree2_log",
             "Rock_destructible_test",
             "DevHouse1",
-            "instanced_mistlands_grass_short",
-            "instanced_mistlands_rockplant",
-            "cliff_mistlands1_creep",
-            "cliff_mistlands1_creep_frac",
-            "rock1_mistlands",
-            "Runestone_Mistlands",
-            "MountainGrave01"
+            //"instanced_mistlands_grass_short",
+            //"instanced_mistlands_rockplant",
+            //"cliff_mistlands1_creep",
+            //"cliff_mistlands1_creep_frac",
+            //"rock1_mistlands",
+            //"Runestone_Mistlands",
+            //"MountainGrave01"
         };
 
         private static readonly List<string> ignorePrefabPartialName = new List<string>()
