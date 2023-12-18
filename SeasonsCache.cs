@@ -135,12 +135,12 @@ namespace Seasons
     {
         [Serializable]
         public class TextureData
-        { 
+        {
             public string name;
             public byte[] originalPNG;
             public TextureProperties properties;
             public Dictionary<Season, Dictionary<int, byte[]>> variants = new Dictionary<Season, Dictionary<int, byte[]>>();
-            
+
             public bool Initialized()
             {
                 return variants.Any(variant => variant.Value.Count > 0);
@@ -212,11 +212,11 @@ namespace Seasons
             string directory = Path.Combine(folder, texturesDirectory);
 
             LogInfo($"Saved cache file {filename}");
-            
+
             foreach (KeyValuePair<int, TextureData> tex in textures)
             {
                 string texturePath = Path.Combine(directory, tex.Key.ToString());
-               
+
                 Directory.CreateDirectory(texturePath);
 
                 File.WriteAllBytes("\\\\?\\" + Path.Combine(texturePath, $"{tex.Value.name}{originalPostfix}"), tex.Value.originalPNG);
@@ -318,7 +318,7 @@ namespace Seasons
             return $"{season}_{variant + 1}.png";
         }
     }
-    
+
     public class TextureVariants
     {
         public Texture2D original;
@@ -478,13 +478,13 @@ namespace Seasons
         {
             return controllers.Count > 0 && textures.Count > 0;
         }
-        
+
         public static void ApplyTexturesToGPU()
         {
             foreach (KeyValuePair<int, TextureVariants> texture in textures)
                 texture.Value.ApplyTextures();
         }
-    
+
     }
 
     public static class SeasonalTextureVariantsGenerator
@@ -493,11 +493,11 @@ namespace Seasons
         {
             colors = null;
 
-            bool isRock = IsRock(material.shader.name);
             bool isGrass = IsGrass(material.shader.name);
             bool isMoss = IsMoss(propertyName);
+            bool replaceOverride = ReplaceColorOverride(prefabName, material.name, propertyName);
 
-            if (!ReplaceColor(color, isGrass, isMoss, isRock))
+            if (!replaceOverride && !ReplaceColor(color, isGrass, isMoss))
                 return false;
 
             List<Color> colorsList = new List<Color>();
@@ -516,30 +516,67 @@ namespace Seasons
                     if (IsPine(material.name, prefabName))
                         colorVariant.a /= season == Season.Winter ? 1.5f : 2f;
 
-                    colorsList.Add(MergeColors(color, colorVariant, colorVariant.a, season == Season.Winter));
+                    if (GenerateOnlyWinterColor(prefabName, material.name, propertyName) && season != Season.Winter)
+                        colorsList.Add(color);
+                    else
+                        colorsList.Add(MergeColors(color, colorVariant, colorVariant.a, season == Season.Winter));
                 }
             }
 
             colors = colorsList.ToArray();
-            
+
             return true;
+        }
+
+        private static bool IsPixelToChange(Color color, int pos, TextureProperties properties, bool isGrass, bool isMoss, string prefabName, string materialName, string propertyName)
+        {
+            if (materialName.StartsWith("Pine_tree_small"))
+                if (pos % properties.width < 94 && properties.height - pos / properties.width < 45)
+                    return false;
+
+            if (materialName.StartsWith("Fir_tree_sapling"))
+                if (pos % properties.width < 21 && properties.height - pos / properties.width < 12)
+                    return false;
+
+            if (prefabName == "FirTree")
+                if (pos % properties.width < 372 && properties.height - pos / properties.width < 165)
+                    return false;
+
+            if (prefabName == "Pinetree_01")
+                if (pos % properties.width > 126)
+                    return false;
+
+            if (isGrass && !prefabName.StartsWith("Pickable_Flax") && prefabName != "sapling_flax" && prefabName != "instanced_heathflowers" && prefabName != "instanced_shrub" && prefabName != "instanced_vass")
+                return !((prefabName == "instanced_meadows_grass" && propertyName == "_MainTex") || (prefabName == "instanced_meadows_grass_short" && propertyName == "_MainTex") || (prefabName == "instanced_mistlands_grass_short" && propertyName == "_MainTex"));
+
+            return ReplaceColor(color, isGrass, isMoss);
+        }
+
+        private static bool GenerateOnlyWinterColor(string prefabName, string materialName, string propertyName)
+        {
+            if (materialName == "Pine_tree_small_dead")
+                return true;
+
+            /*if (materialName == "Vines_Mat")
+                return true;*/
+
+            return false;
         }
 
         public static bool GetTextureVariants(string prefabName, Material material, string propertyName, Texture texture, out TextureVariants textureVariants)
         {
             textureVariants = new TextureVariants(texture);
-            
+
             Color[] pixels = GetTexturePixels(texture, textureVariants.properties, out textureVariants.originalPNG);
             if (pixels.Length < 1)
                 return false;
 
-            bool isRock = IsRock(material.shader.name);
             bool isGrass = IsGrass(material.shader.name);
             bool isMoss = IsMoss(propertyName);
 
             List<int> pixelsToChange = new List<int>();
             for (int i = 0; i < pixels.Length; i++)
-                if (ReplaceColor(pixels[i], isGrass, isMoss, isRock))
+                if (IsPixelToChange(pixels[i], i, textureVariants.properties, isGrass, isMoss, prefabName, material.name, propertyName))
                     pixelsToChange.Add(i);
 
             if (pixelsToChange.Count == 0)
@@ -561,7 +598,11 @@ namespace Seasons
                     if (IsPine(material.name, prefabName))
                         colorVariant.a /= season == Season.Winter ? 1.5f : 2f;
 
-                    colorVariants.Add(colorVariant);
+                    if (GenerateOnlyWinterColor(prefabName, material.name, propertyName) && season != Season.Winter)
+                        colorVariants.Add(Color.clear);
+                    else
+                        colorVariants.Add(colorVariant);
+
                 }
 
                 GenerateColorVariants(season, colorVariants.ToArray(), pixels, pixelsToChange.ToArray(), textureVariants.properties, textureVariants);
@@ -638,12 +679,36 @@ namespace Seasons
             }
         }
 
-        private static bool ReplaceColor(Color color, bool isGrass, bool isMoss, bool isRock)
+        private static bool ReplaceColor(Color color, bool isGrass, bool isMoss)
         {
+            if (color.a == 0f)
+                return false;
+
             HSLColor hslcolor = new HSLColor(color);
-            return color.a != 0f && (hslcolor.s >= 0.24f && GetHueDistance(hslcolor.h, 85f) <= 55f || 
-                                     hslcolor.s >= 0.15f && GetHueDistance(hslcolor.h, 120f) <= 40f ||
-                                     isRock && isMoss && hslcolor.s >= 0.03f && GetHueDistance(hslcolor.h, 120f) <= 5f);
+
+            if (isGrass)
+                return ColorFits(hslcolor, 100f, 35f, 0.13f) || ColorFits(hslcolor, 60f, 5f, 0.55f, 0.5f) || ColorFits(hslcolor, 50f, 15f, -0.35f, 0.35f) || ColorFits(hslcolor, 50f, 10f, 0.4f); //&& !ColorFits(hslcolor, 50f, 10f, 0.13f);
+
+            else if (isMoss)
+                return true;// ColorFits(hslcolor, 90f, 50f, 0.2f);
+
+            return ColorFits(hslcolor, 120f, 40f, 0.15f) || ColorFits(hslcolor, 73f, 18f, 0.20f, 0.18f) || ColorFits(hslcolor, 45f, 12f, 0.28f, 0.26f);
+            //ColorFits(hslcolor, 0.24f, 85f, 50f) || 
+        }
+
+        private static bool ReplaceColorOverride(string prefabName, string materialName, string propertyName)
+        {
+            if (materialName == "Vines_Mat")
+                return true;
+
+            return false;
+        }
+
+        private static bool ColorFits(HSLColor hslcolor, float hue, float hueDelta, float saturation = 0f, float luminance = 0f)
+        {
+            return GetHueDistance(hslcolor.h, hue) <= hueDelta
+                && (saturation == 0f || (saturation > 0 && hslcolor.s >= saturation) || (saturation < 0 && hslcolor.s <= -saturation))
+                && (luminance == 0f || (luminance > 0 && hslcolor.l >= luminance) || (luminance < 0 && hslcolor.l <= -luminance));
         }
 
         private static float GetHueDistance(float hue1, float hue2)
@@ -670,11 +735,6 @@ namespace Seasons
             return shaderName == "Custom/Grass";
         }
 
-        private static bool IsRock(string shaderName)
-        {
-            return shaderName == "Custom/StaticRock";
-        }
-
         private static bool IsMoss(string textureName)
         {
             return textureName.IndexOf("moss", StringComparison.OrdinalIgnoreCase) >= 0;
@@ -688,12 +748,17 @@ namespace Seasons
 
     public static class SeasonalTexturePrefabCache
     {
-        public static Dictionary<string, string[]> shaderColors = new Dictionary<string, string[]>
+        public static readonly Dictionary<string, string[]> shaderColors = new Dictionary<string, string[]>
             {
                 { "Custom/StaticRock", new string[] { "_MossColor" }}
             };
 
-        public static Dictionary<string, string[]> shaderTextures = new Dictionary<string, string[]>
+        public static readonly Dictionary<string, string[]> materialColors = new Dictionary<string, string[]>
+            {
+                { "Vines_Mat", new string[] { "_Color" }}
+            };
+
+        public static readonly Dictionary<string, string[]> shaderTextures = new Dictionary<string, string[]>
             {
                 { "Custom/Vegetation", new string[] { "_MainTex" } },
                 { "Custom/Grass", new string[] { "_MainTex", "_TerrainColorTex" } },
@@ -701,30 +766,40 @@ namespace Seasons
                 { "Custom/StaticRock", new string[] { "_MossTex" }}
             };
 
-        public static Dictionary<string, string[]> shaderIgnoreMaterial = new Dictionary<string, string[]>
+        public static readonly Dictionary<string, string[]> shaderIgnoreMaterial = new Dictionary<string, string[]>
             {
-                { "Custom/Vegetation", new string[] { "bark" } }
+                { "Custom/Vegetation", new string[] { "bark", "trunk", "_wood", "HildirFlowerGirland_", "HildirTentCloth_", "TraderTent_" } }
             };
 
-        public static Dictionary<string, string[]> shadersTypes = new Dictionary<string, string[]>
+        public static readonly Dictionary<string, string[]> shadersTypes = new Dictionary<string, string[]>
             {
                 { typeof(MeshRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass", "Custom/StaticRock" } },
                 { typeof(InstanceRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass" } },
                 //{ typeof(SkinnedMeshRenderer).Name, new string[] { "Custom/Creature" } }
             };
 
+        public static readonly List<string> piecePrefab = new List<string>()
+        {
+            "vines"
+        };
+
         private static readonly List<string> ignorePrefab = new List<string>()
         {
             "SwampTree2_log",
             "Rock_destructible_test",
             "DevHouse1",
-            //"instanced_mistlands_grass_short",
-            //"instanced_mistlands_rockplant",
-            //"cliff_mistlands1_creep",
-            //"cliff_mistlands1_creep_frac",
-            //"rock1_mistlands",
-            //"Runestone_Mistlands",
-            //"MountainGrave01"
+            "SwampTree1_Stub",
+            "HugeRoot1",
+            "Hildir_cave",
+            "PineTree_log",
+            "PineTree_log_half",
+            "MountainGrave01",
+            "PineTree_log_halfOLD",
+            "PineTree_logOLD",
+            "sapling_magecap",
+            "FirTree_log",
+            "FirTree_log_half",
+            "Hildir_crypt"
         };
 
         private static readonly List<string> ignorePrefabPartialName = new List<string>()
@@ -742,7 +817,7 @@ namespace Seasons
             "Mistlands_Giant",
             "Mistlands_Harbour",
             "dvergrtown_",
-            "blackmarble_creep"
+            //"blackmarble_creep"
         };
 
         public static void FillWithGameData()
@@ -830,6 +905,20 @@ namespace Seasons
                             cachedRenderer.AddMaterialColors(material, propertyName, colors);
                     }
 
+
+                if (materialColors.TryGetValue(material.name, out string[] materialColorNames))
+                {
+                    foreach (string propertyName in materialColorNames)
+                    {
+                        Color color = material.GetColor(propertyName);
+                        if (color == null || color == Color.clear || color == Color.white || color == Color.black)
+                            continue;
+
+                        if (SeasonalTextureVariantsGenerator.GetColorVariants(prefabName, material, propertyName, color, out Color[] colors))
+                            cachedRenderer.AddMaterialColors(material, propertyName, colors);
+                    }
+                }
+
                 if (shaderTextures.TryGetValue(material.shader.name, out string[] textureNames))
                     foreach (string propertyName in material.GetTexturePropertyNames().Where(mat => textureNames.Any(text => mat.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0)))
                     {
@@ -873,7 +962,7 @@ namespace Seasons
                 {
                     if (isNew)
                         SeasonalTextureVariants.controllers.Add(prefabName, controller);
-                    
+
                     LogInfo($"Caching {prefabName}{(controller.cachedRenderer == null ? "" : ", main renderer,")} {controller.lodLevelMaterials.Count} LODs, {controller.renderersInHierarchy.Count} renderersInHierarchy");
 
                     if (singleRenderer)
@@ -895,16 +984,18 @@ namespace Seasons
                 if (prefab.layer == 16 && !prefab.TryGetComponent<Pickable>(out _) && !prefab.TryGetComponent<Plant>(out _))
                     continue;
 
-                if (prefab.layer == 10 && !prefab.TryGetComponent<Pickable>(out _) && !prefab.TryGetComponent<Plant>(out _))
+                if (prefab.layer == 10 && !piecePrefab.Contains(prefab.name) && !prefab.TryGetComponent<Pickable>(out _) && !prefab.TryGetComponent<Plant>(out _))
+                {
                     continue;
-
+                }
+                
                 if (ignorePrefabPartialName.Any(namepart => prefab.name.Contains(namepart)))
                     continue;
 
                 if (prefab.layer == 15 && (prefab.TryGetComponent<MineRock5>(out _) || prefab.TryGetComponent<MineRock>(out _)))
                 {
                     MeshRenderer renderer = prefab.GetComponentInChildren<MeshRenderer>();
-                    
+
                     if (renderer == null)
                         return;
 
@@ -914,7 +1005,7 @@ namespace Seasons
                     CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath(), singleRenderer: true);
                     continue;
                 }
-                
+
                 if (prefab.layer != 9)
                 {
                     if (prefab.TryGetComponent(out LODGroup lodGroup) && lodGroup.lodCount > 1)
@@ -962,7 +1053,7 @@ namespace Seasons
                 }
             }
         }
-        
+
 
     }
 

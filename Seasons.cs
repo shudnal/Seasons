@@ -9,7 +9,6 @@ using System.Linq;
 using System.Reflection;
 using System;
 using System.IO;
-using System.Runtime.Serialization.Formatters.Binary;
 
 namespace Seasons
 {
@@ -250,7 +249,7 @@ namespace Seasons
 
             Game.isModded = true;
 
-            LoadIcons();
+            LoadAssets();
 
             Test();
         }
@@ -358,9 +357,10 @@ namespace Seasons
 
         ConfigEntry<T> config<T>(string group, string name, T defaultValue, string description, bool synchronizedSetting = true) => config(group, name, defaultValue, new ConfigDescription(description), synchronizedSetting);
 
-        private void LoadIcons() 
+        private void LoadAssets() 
         {
             Assembly executingAssembly = Assembly.GetExecutingAssembly();
+            
             string name = executingAssembly.GetManifestResourceNames().Single(str => str.EndsWith("season.png"));
 
             Stream resourceStream = executingAssembly.GetManifestResourceStream(name);
@@ -369,10 +369,8 @@ namespace Seasons
             resourceStream.Read(data, 0, data.Length);
 
             Texture2D tex = new Texture2D(2, 2);
-            if (!tex.LoadImage(data, true))
-                return;
-
-            icon = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), Vector2.zero);
+            if (tex.LoadImage(data, true))
+                icon = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), Vector2.zero);
         }
 
         [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.FixedUpdate))]

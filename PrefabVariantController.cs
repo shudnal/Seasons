@@ -23,7 +23,6 @@ namespace Seasons
         private double m_seasonSet = 0;
 
         private MaterialPropertyBlock m_matBlock;
-        private Color originalColor = Color.clear;
 
         private readonly Dictionary<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>> m_materialVariants = new Dictionary<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>>();
         private readonly Dictionary<Renderer, Dictionary<int, Dictionary<string, Color[]>>> m_colorVariants = new Dictionary<Renderer, Dictionary<int, Dictionary<string, Color[]>>>();
@@ -157,8 +156,7 @@ namespace Seasons
         {
             foreach (KeyValuePair<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>> materialVariants in m_materialVariants)
                 foreach (KeyValuePair<int, Dictionary<string, TextureVariants>> materialIndex in materialVariants.Value)
-                    foreach (KeyValuePair<string, TextureVariants> texVar in materialIndex.Value)
-                        materialVariants.Key.SetPropertyBlock(null);
+                    materialVariants.Key.SetPropertyBlock(null);
         }
 
         private void UpdateColors()
@@ -169,21 +167,18 @@ namespace Seasons
                     foreach (KeyValuePair<string, TextureVariants> texVar in materialIndex.Value)
                         if (texVar.Value.seasons.TryGetValue(seasonState.m_season, out Dictionary<int, Texture2D> variants) && variants.TryGetValue(variant, out Texture2D texture))
                         {
-                            materialVariants.Key.GetPropertyBlock(m_matBlock);
+                            materialVariants.Key.GetPropertyBlock(m_matBlock, materialIndex.Key);
                             m_matBlock.SetTexture(texVar.Key, texture);
-                            materialVariants.Key.SetPropertyBlock(m_matBlock);
+                            materialVariants.Key.SetPropertyBlock(m_matBlock, materialIndex.Key);
                         }
 
             foreach (KeyValuePair<Renderer, Dictionary<int, Dictionary<string, Color[]>>> colorVariants in m_colorVariants)
                 foreach (KeyValuePair<int, Dictionary<string, Color[]>> colorIndex in colorVariants.Value)
                     foreach (KeyValuePair<string, Color[]> colVar in colorIndex.Value)
                     {
-                        if (originalColor == Color.clear)
-                            originalColor = colorVariants.Key.sharedMaterials[colorIndex.Key].GetColor(colVar.Key);
-
-                        colorVariants.Key.GetPropertyBlock(m_matBlock);
+                        colorVariants.Key.GetPropertyBlock(m_matBlock, colorIndex.Key);
                         m_matBlock.SetColor(colVar.Key, colVar.Value[(int)seasonState.m_season * seasonsCount + variant]);
-                        colorVariants.Key.SetPropertyBlock(m_matBlock);
+                        colorVariants.Key.SetPropertyBlock(m_matBlock, colorIndex.Key);
                     }
         }
 
