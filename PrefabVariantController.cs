@@ -18,14 +18,18 @@ namespace Seasons
         private double m_summerFactor;
         private double m_fallFactor;
         private double m_winterFactor;
-        private float m_mx;
-        private float m_my;
-        private double m_seasonSet = 0;
 
-        private MaterialPropertyBlock m_matBlock;
+        public int m_myListIndex = -1;
+        public static readonly List<PrefabVariantController> s_allControllers = new List<PrefabVariantController>();
 
         private readonly Dictionary<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>> m_materialVariants = new Dictionary<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>>();
         private readonly Dictionary<Renderer, Dictionary<int, Dictionary<string, Color[]>>> m_colorVariants = new Dictionary<Renderer, Dictionary<int, Dictionary<string, Color[]>>>();
+
+        private static readonly MaterialPropertyBlock s_matBlock = new MaterialPropertyBlock();
+
+        private const float noiseFrequency = 10000f;
+        private const double noiseDivisor = 1.1;
+        private const double noisePower = 1.3;
 
         public void Init(PrefabController controller, string prefabName = null)
         {
@@ -84,71 +88,35 @@ namespace Seasons
             }
 
             ToggleEnabled();
-        }
-
-        private void CheckRenderersInHierarchy(Transform transform, string rendererType, string[] transformPath, int index, List<Renderer> renderers)
-        {
-            for (int i = 0; i < transform.childCount; i++)
-            {
-                Transform child = transform.GetChild(i);
-
-                if (child.name == transformPath[index])
-                {
-                    if (index == transformPath.Length - 1)
-                    {
-                        Renderer renderer = child.GetComponent(rendererType) as Renderer;
-                        if (renderer != null)
-                            renderers.Add(renderer);
-                    }
-                    else
-                    {
-                        CheckRenderersInHierarchy(child, rendererType, transformPath, index + 1, renderers);
-                    }
-                }
-            }
+            UpdateColors();
         }
 
         private void Awake()
         {
             m_nview = gameObject.GetComponent<ZNetView>();
-            m_matBlock = new MaterialPropertyBlock();
+            s_allControllers.Add(this);
+            m_myListIndex = s_allControllers.Count - 1;
         }
 
         private void OnEnable()
         {
-            if (m_mx == 0 && m_my == 0 && Minimap.instance != null)
+            if (m_springFactor == 0 && m_summerFactor == 0 && m_fallFactor == 0 && m_winterFactor == 0)
             {
-                Minimap.instance.WorldToMapPoint(transform.position, out m_mx, out m_my);
-                UpdateFactors();
+                Minimap.instance.WorldToMapPoint(transform.position, out float mx, out float my);
+                UpdateFactors(mx, my);
             }
 
             UpdateColors();
         }
 
-        private void LateUpdate()
+        private void OnDestroy()
         {
-            if (!modEnabled.Value)
-                return;
-
-            if (m_nview != null && !m_nview.IsValid())
-                return;
-
-            if (m_seasonSet < seasonState.seasonChanged)
+            if (m_myListIndex >= 0)
             {
-                m_seasonSet = seasonState.seasonChanged;
-                UpdateColors();
-            }
-
-            if (recalculateNoise.Value)
-            {
-                UpdateFactors();
-                int variant = GetCurrentVariant();
-                foreach (KeyValuePair<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>> materialVariants in m_materialVariants)
-                {
-                    materialVariants.Key.GetPropertyBlock(m_matBlock);
-                    m_matBlock.SetColor("_Color", variant == 0 ? Color.red : variant == 1 ? Color.magenta : variant == 2 ? Color.blue : Color.white);
-                    materialVariants.Key.SetPropertyBlock(m_matBlock);
-                }
+                s_allControllers[m_myListIndex] = s_allControllers[s_allControllers.Count - 1];
+                s_allControllers[m_myListIndex].m_myListIndex = m_myListIndex;
+                s_allControllers.RemoveAt(s_allControllers.Count - 1);
+                m_myListIndex = -1;
             }
         }
 
@@ -159,30 +127,36 @@ namespace Seasons
                     materialVariants.Key.SetPropertyBlock(null);
         }
 
-        private void UpdateColors()
+        public void UpdateColors()
         {
+            if (m_nview != null && !m_nview.IsValid())
+                return;
+
+            if (!base.enabled)
+                return;
+
             int variant = GetCurrentVariant();
             foreach (KeyValuePair<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>> materialVariants in m_materialVariants)
                 foreach (KeyValuePair<int, Dictionary<string, TextureVariants>> materialIndex in materialVariants.Value)
                     foreach (KeyValuePair<string, TextureVariants> texVar in materialIndex.Value)
-                        if (texVar.Value.seasons.TryGetValue(seasonState.m_season, out Dictionary<int, Texture2D> variants) && variants.TryGetValue(variant, out Texture2D texture))
+                        if (texVar.Value.seasons.TryGetValue(seasonState.GetCurrentSeason(), out Dictionary<int, Texture2D> variants) && variants.TryGetValue(variant, out Texture2D texture))
                         {
-                            materialVariants.Key.GetPropertyBlock(m_matBlock, materialIndex.Key);
-                            m_matBlock.SetTexture(texVar.Key, texture);
-                            materialVariants.Key.SetPropertyBlock(m_matBlock, materialIndex.Key);
+                            materialVariants.Key.GetPropertyBlock(s_matBlock, materialIndex.Key);
+                            s_matBlock.SetTexture(texVar.Key, texture);
+                            materialVariants.Key.SetPropertyBlock(s_matBlock, materialIndex.Key);
                         }
 
             foreach (KeyValuePair<Renderer, Dictionary<int, Dictionary<string, Color[]>>> colorVariants in m_colorVariants)
                 foreach (KeyValuePair<int, Dictionary<string, Color[]>> colorIndex in colorVariants.Value)
                     foreach (KeyValuePair<string, Color[]> colVar in colorIndex.Value)
                     {
-                        colorVariants.Key.GetPropertyBlock(m_matBlock, colorIndex.Key);
-                        m_matBlock.SetColor(colVar.Key, colVar.Value[(int)seasonState.m_season * seasonsCount + variant]);
-                        colorVariants.Key.SetPropertyBlock(m_matBlock, colorIndex.Key);
+                        colorVariants.Key.GetPropertyBlock(s_matBlock, colorIndex.Key);
+                        s_matBlock.SetColor(colVar.Key, colVar.Value[(int)seasonState.GetCurrentSeason() * seasonsCount + variant]);
+                        colorVariants.Key.SetPropertyBlock(s_matBlock, colorIndex.Key);
                     }
         }
 
-        private void UpdateFactors()
+        private void UpdateFactors(float m_mx, float m_my)
         {
             m_springFactor = GetNoise(m_mx, m_my);
             m_summerFactor = GetNoise(1 - m_mx, m_my);
@@ -192,7 +166,7 @@ namespace Seasons
 
         private int GetCurrentVariant()
         {
-            switch (seasonState.m_season)
+            switch (seasonState.GetCurrentSeason())
             {
                 case Season.Spring:
                     return GetVariant(m_springFactor);
@@ -209,7 +183,7 @@ namespace Seasons
 
         public void ToggleEnabled()
         {
-            base.enabled = m_materialVariants.Count > 0 || m_colorVariants.Count > 0;
+            base.enabled = Minimap.instance != null && (m_materialVariants.Count > 0 || m_colorVariants.Count > 0);
         }
 
         public void AddMaterialVariants(Renderer renderer, CachedRenderer cachedRenderer)
@@ -280,6 +254,34 @@ namespace Seasons
             }
         }
 
+        private void CheckRenderersInHierarchy(Transform transform, string rendererType, string[] transformPath, int index, List<Renderer> renderers)
+        {
+            for (int i = 0; i < transform.childCount; i++)
+            {
+                Transform child = transform.GetChild(i);
+
+                if (child.name == transformPath[index])
+                {
+                    if (index == transformPath.Length - 1)
+                    {
+                        Renderer renderer = child.GetComponent(rendererType) as Renderer;
+                        if (renderer != null)
+                            renderers.Add(renderer);
+                    }
+                    else
+                    {
+                        CheckRenderersInHierarchy(child, rendererType, transformPath, index + 1, renderers);
+                    }
+                }
+            }
+        }
+
+        public static void UpdatePrefabColors()
+        {
+            foreach (PrefabVariantController controller in s_allControllers)
+                controller.UpdateColors();
+        }
+
         public static int GetVariant(double factor)
         {
             if (factor < 0.25)
@@ -295,10 +297,9 @@ namespace Seasons
         public static double GetNoise(float mx, float my)
         {
             float seed = WorldGenerator.instance != null ? Mathf.Log10(Math.Abs(WorldGenerator.instance.GetSeed())) : 0f;
-            return Math.Round(Math.Pow(((double)Mathf.PerlinNoise(mx * noiseFrequency.Value + seed, my * noiseFrequency.Value - seed) +
-                (double)Mathf.PerlinNoise(mx * 2 * noiseFrequency.Value - seed, my * 2 * noiseFrequency.Value + seed) * 0.5) / noiseDivisor.Value, noisePower.Value) * 20) / 20;
+            return Math.Round(Math.Pow(((double)Mathf.PerlinNoise(mx * noiseFrequency + seed, my * noiseFrequency - seed) +
+                (double)Mathf.PerlinNoise(mx * 2 * noiseFrequency - seed, my * 2 * noiseFrequency + seed) * 0.5) / noiseDivisor, noisePower) * 20) / 20;
         }
-
     }
 
     [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.CreateObject))]
@@ -364,6 +365,7 @@ namespace Seasons
 
                 prefabVariantController.AddMaterialVariants(___m_meshRenderer, controller.cachedRenderer);
                 prefabVariantController.ToggleEnabled();
+                prefabVariantController.UpdateColors();
             }
         }
     }

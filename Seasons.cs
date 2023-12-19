@@ -24,13 +24,13 @@ namespace Seasons
 
         internal static readonly ConfigSync configSync = new ConfigSync(pluginID) { DisplayName = pluginName, CurrentVersion = pluginVersion, MinimumRequiredVersion = pluginVersion };
 
-        public static ConfigEntry<bool> modEnabled;
         private static ConfigEntry<bool> configLocked;
         private static ConfigEntry<bool> loggingEnabled;
         public static ConfigEntry<CacheFormat> cacheStorageFormat;
 
         public static ConfigEntry<int> daysInSeason;
         private static ConfigEntry<bool> seasonsOverlap;
+        public static ConfigEntry<TimerFormat> seasonsTimerFormat;
 
         private static ConfigEntry<bool> overrideSeason;
         private static ConfigEntry<Season> seasonOverrided;
@@ -75,11 +75,7 @@ namespace Seasons
         public static ConfigEntry<Color> grassWinterColor3;
         public static ConfigEntry<Color> grassWinterColor4;
 
-        public static ConfigEntry<bool> recalculateNoise;
-        public static ConfigEntry<float> noiseFrequency;
-        public static ConfigEntry<Vector2> noiseOffset;
-        public static ConfigEntry<double> noiseDivisor;
-        public static ConfigEntry<double> noisePower;
+        public static ConfigEntry<string> messageSeasonIsComing;
 
         public static Seasons instance;
         public static SeasonsState seasonState = new SeasonsState();
@@ -111,19 +107,22 @@ namespace Seasons
             SaveBothLoadBinary
         }
 
+        public enum TimerFormat
+        {
+            None,
+            CurrentDay,
+            TimeToEnd
+        }
+
         public class SeasonsState
         {
-            public bool IsActive() => ZoneSystem.instance != null;
-
             public float m_spring = 1f;
             public float m_summer = 0f;
             public float m_fall = 0f;
             public float m_winter = 0f;
 
-            public double seasonChanged = 0;
-            public double dayChanged = 0;
-            public Season m_season = Season.Spring;
-            public int m_day = 0;
+            private Season m_season = Season.Spring;
+            private int m_day = 0;
 
             public void UpdateState(int day, float dayFraction)
             {
@@ -171,6 +170,16 @@ namespace Seasons
                 return m_season;
             }
 
+            public int GetCurrentDay()
+            {
+                return m_day;
+            }
+
+            public Season GetNextSeason()
+            {
+                return NextSeason(m_season);
+            }
+
             private void SetSeasonFactor(Season season, float fraction)
             {
                 switch ((int)season)
@@ -215,7 +224,9 @@ namespace Seasons
                 if (season == (int)m_season)
                     return;
 
-                seasonChanged = GetCurrentTime();
+                PrefabVariantController.UpdatePrefabColors();
+                TerrainVariantController.UpdateTerrainColors();
+                ClutterVariantController.instance.UpdateColors();
             }
 
             private void CheckIfDayChanged(int dayInSeason)
@@ -224,12 +235,7 @@ namespace Seasons
                     return;
 
                 m_day = dayInSeason;
-                dayChanged = GetCurrentTime();
-            }
-
-            public double GetCurrentTime()
-            {
-                return ZNet.instance.GetTimeSeconds();
+                ClutterVariantController.instance.UpdateColors();
             }
 
             public override string ToString()
@@ -254,11 +260,8 @@ namespace Seasons
             Test();
         }
 
-        private void LateUpdate()
+        private void FixedUpdate()
         {
-            if (!modEnabled.Value)
-                return;
-
             Player player = Player.m_localPlayer;
             if (player == null)
                 return;
@@ -286,13 +289,13 @@ namespace Seasons
         {
             config("General", "NexusID", 0, "Nexus mod ID for updates", false);
 
-            modEnabled = config("General", "Enabled", defaultValue: true, "Enable the mod.");
             configLocked = config("General", "Lock Configuration", defaultValue: true, "Configuration is locked and can be changed by server admins only.");
             loggingEnabled = config("General", "Logging enabled", defaultValue: false, "Enable logging. [Not Synced with Server]", false);
 
             daysInSeason = config("Season", "Days in season", defaultValue: 10, "How much ingame days should pass for season to change.");
             seasonsOverlap = config("Season", "Seasons overlap", defaultValue: true, "The seasons will smoothly overlap on the last and first days.");
-            
+            seasonsTimerFormat = config("Season", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer"); 
+
             overrideSeason = config("Seasons override", "Override", defaultValue: false, "The seasons will smoothly overlap on the last and first days.");
             seasonOverrided = config("Seasons override", "Season", defaultValue: Season.Spring, "The seasons will smoothly overlap on the last and first days.");
 
@@ -336,11 +339,9 @@ namespace Seasons
             grassWinterColor3 = config("Grass - Winter", "Color 3", defaultValue: new Color(0.95f, 0.95f, 1f, 7f), "Color 3");
             grassWinterColor4 = config("Grass - Winter", "Color 4", defaultValue: new Color(1f, 1f, 1f, 0.65f), "Color 4");
 
-            recalculateNoise = config("Test", "Noise recalculate", defaultValue: false, "Recalculate noise for test");
-            noiseFrequency = config("Test", "Noise frequency", defaultValue: 10000f, "Noise frequency");
-            noiseDivisor = config("Test", "Noise divisor", defaultValue: 1.1, "Noise divisor");
-            noisePower = config("Test", "Noise power", defaultValue: 1.3, "Noise power");
-            cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable object + textures subfolder.");
+            messageSeasonIsComing = config("Messages", "Next season is coming", defaultValue: "{0} is coming", "Message to be shown on the last day of the season.");
+
+            cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subfolder.");
 
             cacheFolder = Path.Combine(Paths.ConfigPath, pluginID);
         }
@@ -378,9 +379,6 @@ namespace Seasons
         {
             private static void Postfix(EnvMan __instance)
             {
-                if (!modEnabled.Value)
-                    return;
-
                 int day = __instance.GetCurrentDay();
                 float dayFraction = __instance.GetDayFraction();
 
@@ -400,12 +398,12 @@ namespace Seasons
 
         public Color GetSeasonConfigColor(Season season, int pos)
         {
-            return GetColorConfig($"vegetation{season}Color{pos}");
+            return GetColorConfig($"vegetation{season.ToString()}Color{Mathf.Clamp(pos, 1, 4)}");
         }
 
         public Color GetGrassConfigColor(Season season, int pos)
         {
-            return GetColorConfig($"grass{season}Color{pos}");
+            return GetColorConfig($"grass{season.ToString()}Color{Mathf.Clamp(pos, 1, 4)}");
         }
 
         public Color GetMossConfigColor(Season season, int pos)
@@ -423,25 +421,5 @@ namespace Seasons
             return (GetType().GetField(fieldName).GetValue(this) as ConfigEntry<Color>).Value;
         }
 
-        /*public static Type GetTypeByName(string name)
-        {
-            if (cachedTypes.TryGetValue(name, out Type type))
-                return type;
-
-            if (currentAssemblies == null)
-                currentAssemblies = AppDomain.CurrentDomain.GetAssemblies().Reverse().ToArray();
-
-            foreach (var assembly in currentAssemblies)
-            {
-                var tt = assembly.GetType(name);
-                if (tt != null)
-                {
-                    cachedTypes.Add(name, tt);
-                    return tt;
-                }
-            }
-
-            return null;
-        }*/
     }
 }

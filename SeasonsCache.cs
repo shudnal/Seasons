@@ -10,7 +10,6 @@ using BepInEx.Logging;
 using Newtonsoft.Json;
 using System.Runtime.Serialization.Formatters.Binary;
 using static Seasons.PrefabController;
-using static Seasons.CachedData;
 
 namespace Seasons
 {

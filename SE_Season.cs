@@ -47,11 +47,22 @@ namespace Seasons
 
         public override string GetIconText()
         {
-            /*Minimap.instance.WorldToMapPoint(Player.m_localPlayer.transform.position, out float mx, out float my);
-            return VegetationVariantController.GetNoise(mx, my).ToString();*/
+            if (seasonsTimerFormat.Value == TimerFormat.None)
+                return "";
+            else if (seasonsTimerFormat.Value == TimerFormat.CurrentDay)
+                return seasonState.GetCurrentDay() == daysInSeason.Value ? MessageNextSeason() : Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}");
+
             long startOfSeason = daysInSeason.Value * EnvMan.instance.m_dayLengthSec;
             TimeSpan span = TimeSpan.FromSeconds(startOfSeason - ZNet.instance.GetTimeSeconds() % startOfSeason);
+            if (span <= TimeSpan.Zero)
+                return MessageNextSeason();
+
             return span.TotalHours > 24 ? string.Format("{0:d2}:{1:d2}:{2:d2}", (int)span.TotalHours, span.Minutes, span.Seconds) : span.ToString(span.Hours > 0 ? @"hh\:mm\:ss" : @"mm\:ss");
+        }
+
+        private static string MessageNextSeason()
+        {
+            return String.Format(messageSeasonIsComing.Value, messageSeasonIsComing.Value.StartsWith("{0}") ? seasonState.GetNextSeason().ToString() : seasonState.GetNextSeason().ToString().ToLower());
         }
 
         private string GetSeasonTooltip()

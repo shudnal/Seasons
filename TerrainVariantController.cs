@@ -1,9 +1,5 @@
 ﻿using HarmonyLib;
-using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using UnityEngine;
 using static Heightmap;
 using static Seasons.Seasons;
@@ -12,6 +8,11 @@ namespace Seasons
 {
     public class TerrainVariantController : MonoBehaviour
     {
+       private Heightmap m_heightmap;
+
+        public int m_myListIndex = -1;
+        public static readonly List<TerrainVariantController> s_allControllers = new List<TerrainVariantController>();
+
         public static Dictionary<Biome, Dictionary<Season, Biome>> seasonalBiomeOverride = new Dictionary<Biome, Dictionary<Season, Biome>>
                 {
                     { Biome.BlackForest, new Dictionary<Season, Biome>() { { Season.Fall, Biome.Swamp }, { Season.Winter, Biome.Mountain } } },
@@ -21,34 +22,31 @@ namespace Seasons
                     { Biome.Swamp, new Dictionary<Season, Biome>() { { Season.Winter, Biome.Mountain } } },
                 };
 
-        private Heightmap m_heightmap;
-        private double m_seasonSet = 0;
-
-        public void Init(Heightmap hmap_instance)
+        private void Awake()
         {
-            m_heightmap = hmap_instance;
+            m_heightmap = GetComponentInParent<Heightmap>();
+            s_allControllers.Add(this);
+            m_myListIndex = s_allControllers.Count - 1;
+        }
+        
+        private void OnEnable()
+        {
+            UpdateColors();
         }
 
-        public void LateUpdate()
+        private void OnDestroy()
         {
-            if (!modEnabled.Value)
-                return;
-
-            if (m_seasonSet < seasonState.seasonChanged)
+            if (m_myListIndex >= 0)
             {
-                m_seasonSet = seasonState.seasonChanged;
-                UpdateColors();
+                s_allControllers[m_myListIndex] = s_allControllers[s_allControllers.Count - 1];
+                s_allControllers[m_myListIndex].m_myListIndex = m_myListIndex;
+                s_allControllers.RemoveAt(s_allControllers.Count - 1);
+                m_myListIndex = -1;
             }
         }
 
-        public void UpdateColors()
+        private void UpdateColors()
         {
-            if (!modEnabled.Value)
-                return;
-
-            if (!seasonState.IsActive())
-                return;
-
             if (m_heightmap.m_renderMesh == null)
                 return;
 
@@ -77,6 +75,13 @@ namespace Seasons
 
             m_heightmap.m_renderMesh.SetColors(s_tempColors);
         }
+        
+        public static void UpdateTerrainColors()
+        {
+            foreach (TerrainVariantController controller in s_allControllers)
+                controller.UpdateColors();
+        }
+        
     }
 
     [HarmonyPatch(typeof(Heightmap), nameof(Heightmap.Awake))]
@@ -85,10 +90,7 @@ namespace Seasons
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(Heightmap __instance)
         {
-            if (!modEnabled.Value)
-                return;
-
-            __instance.gameObject.AddComponent<TerrainVariantController>().Init(__instance);
+            __instance.gameObject.AddComponent<TerrainVariantController>();
         }
     }
 
@@ -108,13 +110,7 @@ namespace Seasons
         [HarmonyPriority(Priority.Last)]
         private static void Prefix(ref Biome biome, ref Biome __state)
         {
-            if (!modEnabled.Value)
-                return;
-
             if (callBaseMethod)
-                return;
-
-            if (!seasonState.IsActive())
                 return;
 
             __state = Biome.None;
@@ -129,13 +125,7 @@ namespace Seasons
         [HarmonyPriority(Priority.First)]
         private static void Postfix(ref Biome biome, Biome __state)
         {
-            if (!modEnabled.Value)
-                return;
-
             if (callBaseMethod)
-                return;
-
-            if (!seasonState.IsActive())
                 return;
 
             if (__state == Biome.None)

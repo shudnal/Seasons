@@ -2,7 +2,6 @@
 using HarmonyLib;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using UnityEngine;
 using static ClutterSystem;
@@ -14,12 +13,6 @@ namespace Seasons
     public class ClutterVariantController : MonoBehaviour
     {
         private static ClutterVariantController m_instance;
-
-        private readonly Dictionary<Material, Dictionary<string, TextureVariants>> m_materialVariants = new Dictionary<Material, Dictionary<string, TextureVariants>>();
-        private double m_daySet = 0;
-        private double m_seasonSet = 0;
-
-        private readonly Dictionary<Material, int> m_materialVariantOffset = new Dictionary<Material, int>();
 
         private static readonly Dictionary<string, int> prefabOffsets = new Dictionary<string, int>()
         {
@@ -37,6 +30,11 @@ namespace Seasons
             {  "instanced_swamp_ormbunke", 1 },
             {  "instanced_swamp_grass", 3 },
         };
+
+        private readonly Dictionary<Material, Dictionary<string, TextureVariants>> m_materialVariants = new Dictionary<Material, Dictionary<string, TextureVariants>>();
+
+        private readonly Dictionary<Material, int> m_materialVariantOffset = new Dictionary<Material, int>();
+
         private static Color instanced_mistlands_grass_short_color = Color.clear;
 
         public static ClutterVariantController instance => m_instance;
@@ -99,32 +97,31 @@ namespace Seasons
             }
 
             base.enabled = m_materialVariants.Any(variant => variant.Value.Count > 0);
+
+            UpdateColors();
         }
 
-        private void LateUpdate()
+        private void OnEnable()
         {
-            if (!modEnabled.Value)
-                return;
-
-            if (m_daySet < seasonState.dayChanged || m_seasonSet < seasonState.seasonChanged)
-            {
-                m_daySet = seasonState.dayChanged;
-                m_seasonSet = seasonState.seasonChanged;
-                UpdateColors();
-            }
+            UpdateColors();
         }
 
         private void OnDisable()
         {
             RevertTextures();
         }
+        
+        private void OnDestroy()
+        {
+            RevertTextures();
+        }
 
-        private void RevertTextures()
+        public void RevertTextures()
         {
             foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
                 foreach (KeyValuePair<string, TextureVariants> texProp in materialVariants.Value)
                 {
-                    if (!texProp.Value.HaveOriginalTexture())
+                    if (texProp.Value.HaveOriginalTexture())
                         materialVariants.Key.SetTexture(texProp.Key, texProp.Value.original);
                     
                     if (materialVariants.Key.name == "grasscross_mistlands_short")
@@ -132,25 +129,24 @@ namespace Seasons
                 }
         }
 
-        private void UpdateColors()
+        public void UpdateColors()
         {
             int variant = GetCurrentMainVariant();
             foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
                 foreach (KeyValuePair<string, TextureVariants> texProp in materialVariants.Value)
                 {
                     int pos = (variant + m_materialVariantOffset.GetValueSafe(materialVariants.Key)) % seasonColorVariants;
-                    if (texProp.Value.seasons.TryGetValue(seasonState.m_season, out Dictionary<int, Texture2D> variants) && variants.TryGetValue(pos, out Texture2D texture))
+                    if (texProp.Value.seasons.TryGetValue(seasonState.GetCurrentSeason(), out Dictionary<int, Texture2D> variants) && variants.TryGetValue(pos, out Texture2D texture))
                     {
                         if (!texProp.Value.HaveOriginalTexture())
                         {
-                            LogInfo($"Setting original clutter texture {materialVariants.Key}");
                             texProp.Value.SetOriginalTexture(materialVariants.Key.GetTexture(texProp.Key));
                             if (materialVariants.Key.name == "grasscross_mistlands_short")
                                 instanced_mistlands_grass_short_color = materialVariants.Key.color;
                         }
                         materialVariants.Key.SetTexture(texProp.Key, texture);
                         if (materialVariants.Key.name == "grasscross_mistlands_short")
-                            materialVariants.Key.color = Seasons.instance.GetGrassConfigColor(seasonState.m_season, pos);
+                            materialVariants.Key.color = Seasons.instance.GetGrassConfigColor(seasonState.GetCurrentSeason(), pos);
                     }
                 }
         }
@@ -182,9 +178,6 @@ namespace Seasons
         [HarmonyPriority(Priority.Last)]
         private static void Postfix()
         {
-            if (!modEnabled.Value)
-                return;
-
             ClutterSystem.instance.transform.gameObject.AddComponent<ClutterVariantController>();
         }
     }
