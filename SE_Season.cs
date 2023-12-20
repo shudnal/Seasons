@@ -50,36 +50,26 @@ namespace Seasons
             if (seasonsTimerFormat.Value == TimerFormat.None)
                 return "";
             else if (seasonsTimerFormat.Value == TimerFormat.CurrentDay)
-                return seasonState.GetCurrentDay() == daysInSeason.Value ? MessageNextSeason() : Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}");
+                return seasonState.GetCurrentDay() == daysInSeason.Value && !String.IsNullOrEmpty(MessageNextSeason()) ? MessageNextSeason() : Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}");
 
             long startOfSeason = daysInSeason.Value * EnvMan.instance.m_dayLengthSec;
             TimeSpan span = TimeSpan.FromSeconds(startOfSeason - ZNet.instance.GetTimeSeconds() % startOfSeason);
-            if (span <= TimeSpan.Zero)
+            if (span <= TimeSpan.Zero && !String.IsNullOrEmpty(MessageNextSeason()))
                 return MessageNextSeason();
 
             return span.TotalHours > 24 ? string.Format("{0:d2}:{1:d2}:{2:d2}", (int)span.TotalHours, span.Minutes, span.Seconds) : span.ToString(span.Hours > 0 ? @"hh\:mm\:ss" : @"mm\:ss");
         }
 
+        private string GetSeasonTooltip()
+        {
+            if (m_season > 0)
+                return String.Format(messageSeasonTooltip.Value, messageSeasonTooltip.Value.StartsWith("{0}") ? m_season.ToString() : m_season.ToString().ToLower());
+
+            return "";
+        }
         private static string MessageNextSeason()
         {
             return String.Format(messageSeasonIsComing.Value, messageSeasonIsComing.Value.StartsWith("{0}") ? seasonState.GetNextSeason().ToString() : seasonState.GetNextSeason().ToString().ToLower());
-        }
-
-        private string GetSeasonTooltip()
-        {
-            switch (m_season) 
-            {
-                case Season.Spring:
-                    return "Spring has come";
-                case Season.Summer:
-                    return "Summer has come";
-                case Season.Fall:
-                    return "Fall has come";
-                case Season.Winter:
-                    return "Winter has come";
-            }
-
-            return "";
         }
     }
 

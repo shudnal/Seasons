@@ -76,6 +76,7 @@ namespace Seasons
         public static ConfigEntry<Color> grassWinterColor4;
 
         public static ConfigEntry<string> messageSeasonIsComing;
+        public static ConfigEntry<string> messageSeasonTooltip;
 
         public static Seasons instance;
         public static SeasonsState seasonState = new SeasonsState();
@@ -87,7 +88,7 @@ namespace Seasons
 
         public static Sprite icon;
 
-        public static string cacheFolder;
+        public static string configDirectory;
 
         public static Dictionary<string, PrefabController> prefabControllers = SeasonalTextureVariants.controllers;
         public static Dictionary<int, TextureVariants> texturesVariants = SeasonalTextureVariants.textures;
@@ -296,8 +297,8 @@ namespace Seasons
             seasonsOverlap = config("Season", "Seasons overlap", defaultValue: true, "The seasons will smoothly overlap on the last and first days.");
             seasonsTimerFormat = config("Season", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer"); 
 
-            overrideSeason = config("Seasons override", "Override", defaultValue: false, "The seasons will smoothly overlap on the last and first days.");
-            seasonOverrided = config("Seasons override", "Season", defaultValue: Season.Spring, "The seasons will smoothly overlap on the last and first days.");
+            overrideSeason = config("Seasons override", "Override", defaultValue: false, "The season will be overrided by set season.");
+            seasonOverrided = config("Seasons override", "Season", defaultValue: Season.Spring, "The season to set.");
 
             vegetationSpringColor1 = config("Seasons - Spring", "Color 1", defaultValue: new Color(0.27f, 0.80f, 0.27f, 0.75f), "Color 1");
             vegetationSpringColor2 = config("Seasons - Spring", "Color 2", defaultValue: new Color(0.69f, 0.84f, 0.15f, 0.75f), "Color 2");
@@ -309,14 +310,14 @@ namespace Seasons
             vegetationSummerColor3 = config("Seasons - Summer", "Color 3", defaultValue: new Color(0.5f, 0.5f, 0f, 0.5f), "Color 3");
             vegetationSummerColor4 = config("Seasons - Summer", "Color 4", defaultValue: new Color(0.7f, 0.7f, 0f, 0.2f), "Color 4");
 
-            vegetationFallColor1 = config("Seasons - Fall", "Color 1", defaultValue: new Color(0.8f, 0.5f, 0f, 0.5f), "Color 1");
-            vegetationFallColor2 = config("Seasons - Fall", "Color 2", defaultValue: new Color(0.8f, 0.3f, 0f, 0.5f), "Color 2");
-            vegetationFallColor3 = config("Seasons - Fall", "Color 3", defaultValue: new Color(0.8f, 0.2f, 0f, 0.5f), "Color 3");
+            vegetationFallColor1 = config("Seasons - Fall", "Color 1", defaultValue: new Color(0.8f, 0.5f, 0f, 0.75f), "Color 1");
+            vegetationFallColor2 = config("Seasons - Fall", "Color 2", defaultValue: new Color(0.8f, 0.3f, 0f, 0.75f), "Color 2");
+            vegetationFallColor3 = config("Seasons - Fall", "Color 3", defaultValue: new Color(0.8f, 0.2f, 0f, 0.75f), "Color 3");
             vegetationFallColor4 = config("Seasons - Fall", "Color 4", defaultValue: new Color(0.9f, 0.5f, 0f, 0.0f), "Color 4");
 
-            vegetationWinterColor1 = config("Seasons - Winter", "Color 1", defaultValue: new Color(1f, 1f, 1f, 0.5f), "Color 1");
+            vegetationWinterColor1 = config("Seasons - Winter", "Color 1", defaultValue: new Color(1f, 0.98f, 0.98f, 0.7f), "Color 1");
             vegetationWinterColor2 = config("Seasons - Winter", "Color 2", defaultValue: new Color(1f, 1f, 1f, 0.6f), "Color 2");
-            vegetationWinterColor3 = config("Seasons - Winter", "Color 3", defaultValue: new Color(0.95f, 0.95f, 1f, 7f), "Color 3");
+            vegetationWinterColor3 = config("Seasons - Winter", "Color 3", defaultValue: new Color(0.97f, 0.97f, 1f, 0.75f), "Color 3");
             vegetationWinterColor4 = config("Seasons - Winter", "Color 4", defaultValue: new Color(1f, 1f, 1f, 0.65f), "Color 4");
 
             grassSpringColor1 = config("Grass - Spring", "Color 1", defaultValue: new Color(0.27f, 0.80f, 0.27f, 0.75f), "Color 1");
@@ -334,16 +335,17 @@ namespace Seasons
             grassFallColor3 = config("Grass - Fall", "Color 3", defaultValue: new Color(0.8f, 0.3f, 0f, 0.5f), "Color 3");
             grassFallColor4 = config("Grass - Fall", "Color 4", defaultValue: new Color(0.9f, 0.5f, 0f, 0.0f), "Color 4");
 
-            grassWinterColor1 = config("Grass - Winter", "Color 1", defaultValue: new Color(1f, 1f, 1f, 0.5f), "Color 1");
+            grassWinterColor1 = config("Grass - Winter", "Color 1", defaultValue: new Color(1f, 0.98f, 0.98f, 0.7f), "Color 1");
             grassWinterColor2 = config("Grass - Winter", "Color 2", defaultValue: new Color(1f, 1f, 1f, 0.6f), "Color 2");
-            grassWinterColor3 = config("Grass - Winter", "Color 3", defaultValue: new Color(0.95f, 0.95f, 1f, 7f), "Color 3");
+            grassWinterColor3 = config("Grass - Winter", "Color 3", defaultValue: new Color(0.97f, 0.97f, 1f, 0.75f), "Color 3");
             grassWinterColor4 = config("Grass - Winter", "Color 4", defaultValue: new Color(1f, 1f, 1f, 0.65f), "Color 4");
 
             messageSeasonIsComing = config("Messages", "Next season is coming", defaultValue: "{0} is coming", "Message to be shown on the last day of the season.");
+            messageSeasonTooltip = config("Messages", "Season status effect tooltip", defaultValue: "{0} has come", "Message to be shown on the last day of the season."); 
 
             cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subfolder.");
 
-            cacheFolder = Path.Combine(Paths.ConfigPath, pluginID);
+            configDirectory = Path.Combine(Paths.ConfigPath, pluginID);
         }
 
         ConfigEntry<T> config<T>(string group, string name, T defaultValue, ConfigDescription description, bool synchronizedSetting = true)
@@ -394,16 +396,17 @@ namespace Seasons
             }            //SeasonalTextureCache.CreateCache(cacheFolder);*/
             //SwampTree1_Stub
             //-window-mode exclusive -screen-fullscreen -console -exclusivefullscreen
+            
         }
 
         public Color GetSeasonConfigColor(Season season, int pos)
         {
-            return GetColorConfig($"vegetation{season.ToString()}Color{Mathf.Clamp(pos, 1, 4)}");
+            return GetColorConfig($"vegetation{season}Color{Mathf.Clamp(pos, 1, 4)}");
         }
 
         public Color GetGrassConfigColor(Season season, int pos)
         {
-            return GetColorConfig($"grass{season.ToString()}Color{Mathf.Clamp(pos, 1, 4)}");
+            return GetColorConfig($"grass{season}Color{Mathf.Clamp(pos, 1, 4)}");
         }
 
         public Color GetMossConfigColor(Season season, int pos)

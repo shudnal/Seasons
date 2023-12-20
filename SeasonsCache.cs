@@ -19,7 +19,7 @@ namespace Seasons
         [HarmonyPriority(Priority.First)]
         private static void Postfix()
         {
-            if (!SeasonalTextureVariants.Initialize(cacheFolder))
+            if (!SeasonalTextureVariants.Initialize())
                 LogInfo("Missing textures variants");
         }
     }
@@ -119,13 +119,14 @@ namespace Seasons
 
         }
 
+        public Dictionary<string, Dictionary<int, List<CachedRenderer>>> lodsInHierarchy = new Dictionary<string, Dictionary<int, List<CachedRenderer>>>();
         public Dictionary<int, List<CachedRenderer>> lodLevelMaterials = new Dictionary<int, List<CachedRenderer>>();
         public Dictionary<string, CachedRenderer> renderersInHierarchy = new Dictionary<string, CachedRenderer>();
         public CachedRenderer cachedRenderer;
 
         public bool Initialized()
         {
-            return lodLevelMaterials.Count > 0 || renderersInHierarchy.Count > 0 || cachedRenderer != null;
+            return lodsInHierarchy.Count > 0 || lodLevelMaterials.Count > 0 || renderersInHierarchy.Count > 0 || cachedRenderer != null;
         }
     }
 
@@ -185,12 +186,12 @@ namespace Seasons
 
         }
 
+        internal const string cacheSubdirectory = "cache";
         internal const string prefabCacheCommonFile = "cache.bin";
         internal const string prefabCacheFileName = "cache.json";
         internal const string texturesDirectory = "textures";
         internal const string originalPostfix = ".orig.png";
         internal const string texturePropertiesFileName = "properties.json";
-
 
         public Dictionary<string, PrefabController> controllers = new Dictionary<string, PrefabController>();
         public Dictionary<int, TextureData> textures = new Dictionary<int, TextureData>();
@@ -200,8 +201,10 @@ namespace Seasons
             return controllers.Count > 0 && textures.Count > 0;
         }
 
-        public void SaveToJSON(string folder)
+        public void SaveToJSON()
         {
+            string folder = Path.Combine(configDirectory, cacheSubdirectory);
+
             Directory.CreateDirectory(folder);
 
             string filename = Path.Combine(folder, prefabCacheFileName);
@@ -230,8 +233,10 @@ namespace Seasons
             LogInfo($"Saved {textures.Count} textures at {directory}");
         }
 
-        public void LoadFromJSON(string folder)
+        public void LoadFromJSON()
         {
+            string folder = Path.Combine(configDirectory, cacheSubdirectory);
+
             DirectoryInfo cacheDirectory = new DirectoryInfo(folder);
             if (!cacheDirectory.Exists)
                 return;
@@ -272,8 +277,10 @@ namespace Seasons
             }
         }
 
-        public void SaveToBinary(string folder)
+        public void SaveToBinary()
         {
+            string folder = Path.Combine(configDirectory, cacheSubdirectory);
+
             Directory.CreateDirectory(folder);
 
             using (FileStream fs = new FileStream(Path.Combine(folder, prefabCacheCommonFile), FileMode.OpenOrCreate))
@@ -285,8 +292,10 @@ namespace Seasons
             LogInfo($"Saved cache file {Path.Combine(folder, prefabCacheCommonFile)}");
         }
 
-        public void LoadFromBinary(string folder)
+        public void LoadFromBinary()
         {
+            string folder = Path.Combine(configDirectory, cacheSubdirectory);
+
             string filename = Path.Combine(folder, prefabCacheCommonFile);
             if (!File.Exists(filename))
             {
@@ -405,7 +414,7 @@ namespace Seasons
         public static Dictionary<string, PrefabController> controllers = new Dictionary<string, PrefabController>();
         public static Dictionary<int, TextureVariants> textures = new Dictionary<int, TextureVariants>();
 
-        public static bool Initialize(string folder)
+        public static bool Initialize()
         {
             if (Initialized())
                 return true;
@@ -415,9 +424,9 @@ namespace Seasons
 
             CachedData cachedData = new CachedData();
             if (cacheStorageFormat.Value == CacheFormat.Json)
-                cachedData.LoadFromJSON(folder);
+                cachedData.LoadFromJSON();
             else
-                cachedData.LoadFromBinary(folder);
+                cachedData.LoadFromBinary();
 
             if (cachedData.Initialized())
             {
@@ -456,13 +465,13 @@ namespace Seasons
 
                     if (cachedData.Initialized())
                         if (cacheStorageFormat.Value == CacheFormat.Binary)
-                            cachedData.SaveToBinary(folder);
+                            cachedData.SaveToBinary();
                         else if (cacheStorageFormat.Value == CacheFormat.Json)
-                            cachedData.SaveToJSON(folder);
+                            cachedData.SaveToJSON();
                         else
                         {
-                            cachedData.SaveToJSON(folder);
-                            cachedData.SaveToBinary(folder);
+                            cachedData.SaveToJSON();
+                            cachedData.SaveToBinary();
                         }
 
                     ApplyTexturesToGPU();
@@ -515,7 +524,10 @@ namespace Seasons
                     if (IsPine(material.name, prefabName))
                         colorVariant.a /= season == Season.Winter ? 1.5f : 2f;
 
-                    if (GenerateOnlyWinterColor(prefabName, material.name, propertyName) && season != Season.Winter)
+                    if (IsPiece(material.shader.name) || IsCreature(material.shader.name))
+                        colorVariant.a /= 2f;
+
+                    if (GenerateOnlyWinterColor(prefabName, material, propertyName) && season != Season.Winter)
                         colorsList.Add(color);
                     else
                         colorsList.Add(MergeColors(color, colorVariant, colorVariant.a, season == Season.Winter));
@@ -527,13 +539,13 @@ namespace Seasons
             return true;
         }
 
-        private static bool IsPixelToChange(Color color, int pos, TextureProperties properties, bool isGrass, bool isMoss, string prefabName, string materialName, string propertyName)
+        private static bool IsPixelToChange(Color color, int pos, TextureProperties properties, bool isGrass, bool isMoss, string prefabName, Material material, string propertyName)
         {
-            if (materialName.StartsWith("Pine_tree_small"))
+            if (material.name.StartsWith("Pine_tree_small"))
                 if (pos % properties.width < 94 && properties.height - pos / properties.width < 45)
                     return false;
 
-            if (materialName.StartsWith("Fir_tree_sapling"))
+            if (material.name.StartsWith("Fir_tree_sapling"))
                 if (pos % properties.width < 21 && properties.height - pos / properties.width < 12)
                     return false;
 
@@ -545,19 +557,34 @@ namespace Seasons
                 if (pos % properties.width > 126)
                     return false;
 
+            if (prefabName.IndexOf("goblin_roof", StringComparison.OrdinalIgnoreCase) >= 0 && material.name.IndexOf("GoblinVillage_Cloth", StringComparison.OrdinalIgnoreCase) >= 0)
+                return (pos % properties.width <= 130 && properties.height - pos / properties.width < 231) || (pos % properties.width < 202 && properties.height - pos / properties.width < 86);
+
+            if (prefabName.IndexOf("darkwood_roof", StringComparison.OrdinalIgnoreCase) >= 0 && material.name.IndexOf("RoofShingles", StringComparison.OrdinalIgnoreCase) >= 0)
+                return pos % properties.width <= 54;
+
+            if (prefabName.IndexOf("copper_roof", StringComparison.OrdinalIgnoreCase) >= 0 && material.name.IndexOf("RoofShingles", StringComparison.OrdinalIgnoreCase) >= 0)
+                return pos % properties.width <= 54;
+
+            if (prefabName.IndexOf("wood_roof", StringComparison.OrdinalIgnoreCase) >= 0 && material.name.IndexOf("straw", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+
             if (isGrass && !prefabName.StartsWith("Pickable_Flax") && prefabName != "sapling_flax" && prefabName != "instanced_heathflowers" && prefabName != "instanced_shrub" && prefabName != "instanced_vass")
                 return !((prefabName == "instanced_meadows_grass" && propertyName == "_MainTex") || (prefabName == "instanced_meadows_grass_short" && propertyName == "_MainTex") || (prefabName == "instanced_mistlands_grass_short" && propertyName == "_MainTex"));
 
             return ReplaceColor(color, isGrass, isMoss);
         }
 
-        private static bool GenerateOnlyWinterColor(string prefabName, string materialName, string propertyName)
+        private static bool GenerateOnlyWinterColor(string prefabName, Material material, string propertyName)
         {
-            if (materialName == "Pine_tree_small_dead")
+            if (material.name == "Pine_tree_small_dead")
                 return true;
 
-            /*if (materialName == "Vines_Mat")
-                return true;*/
+            if (IsPiece(material.shader.name))
+                return true;
+
+            if (IsCreature(material.shader.name))
+                return true;
 
             return false;
         }
@@ -575,7 +602,7 @@ namespace Seasons
 
             List<int> pixelsToChange = new List<int>();
             for (int i = 0; i < pixels.Length; i++)
-                if (IsPixelToChange(pixels[i], i, textureVariants.properties, isGrass, isMoss, prefabName, material.name, propertyName))
+                if (IsPixelToChange(pixels[i], i, textureVariants.properties, isGrass, isMoss, prefabName, material, propertyName))
                     pixelsToChange.Add(i);
 
             if (pixelsToChange.Count == 0)
@@ -597,7 +624,10 @@ namespace Seasons
                     if (IsPine(material.name, prefabName))
                         colorVariant.a /= season == Season.Winter ? 1.5f : 2f;
 
-                    if (GenerateOnlyWinterColor(prefabName, material.name, propertyName) && season != Season.Winter)
+                    if (IsPiece(material.shader.name) || IsCreature(material.shader.name))
+                        colorVariant.a /= 2f;
+
+                    if (GenerateOnlyWinterColor(prefabName, material, propertyName) && season != Season.Winter)
                         colorVariants.Add(Color.clear);
                     else
                         colorVariants.Add(colorVariant);
@@ -739,6 +769,16 @@ namespace Seasons
             return textureName.IndexOf("moss", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private static bool IsPiece(string shaderName)
+        {
+            return shaderName == "Custom/Piece";
+        }
+
+        private static bool IsCreature(string shaderName)
+        {
+            return shaderName == "Custom/Creature";
+        }
+
         private static bool IsPine(string materialName, string prefab)
         {
             return materialName.IndexOf("pine", StringComparison.OrdinalIgnoreCase) >= 0 || prefab.IndexOf("pine", StringComparison.OrdinalIgnoreCase) >= 0;
@@ -761,32 +801,53 @@ namespace Seasons
             {
                 { "Custom/Vegetation", new string[] { "_MainTex" } },
                 { "Custom/Grass", new string[] { "_MainTex", "_TerrainColorTex" } },
-                //{ "Custom/Creature", new string[] { "_MainTex" } },
+                { "Custom/Creature", new string[] { "_MainTex" } },
+                { "Custom/Piece", new string[] { "_MainTex" }},
                 { "Custom/StaticRock", new string[] { "_MossTex" }}
             };
 
         public static readonly Dictionary<string, string[]> shaderIgnoreMaterial = new Dictionary<string, string[]>
             {
-                { "Custom/Vegetation", new string[] { "bark", "trunk", "_wood", "HildirFlowerGirland_", "HildirTentCloth_", "TraderTent_" } }
+                { "Custom/Vegetation", new string[] { "bark", "trunk", "_wood", "HildirFlowerGirland_", "HildirTentCloth_", "TraderTent_" } },
+            };
+
+        public static readonly Dictionary<string, string[]> shaderOnlyMaterial = new Dictionary<string, string[]>
+            {
+                { "Custom/Piece", new string[] { "straw", "RoofShingles" } },
+                { "Custom/Creature", new string[] { "HildirsLox", "lox", "lox_calf" } },
             };
 
         public static readonly Dictionary<string, string[]> shadersTypes = new Dictionary<string, string[]>
             {
-                { typeof(MeshRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass", "Custom/StaticRock" } },
+                { typeof(MeshRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass", "Custom/StaticRock", "Custom/Piece" } },
                 { typeof(InstanceRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass" } },
-                //{ typeof(SkinnedMeshRenderer).Name, new string[] { "Custom/Creature" } }
+                { typeof(SkinnedMeshRenderer).Name, new string[] { "Custom/Creature" } }
             };
+
+        public static readonly List<string> creaturePrefab = new List<string>()
+        {
+            "Lox",
+            "Lox_calf",
+            "HildirsLox",
+            "Halstein",
+        };
 
         public static readonly List<string> piecePrefab = new List<string>()
         {
-            "vines"
+            "vines",
+        };
+
+        public static readonly List<string> piecePrefabPartialName = new List<string>()
+        {
+            "wood_roof",
+            "copper_roof",
+            "goblin_roof"
         };
 
         private static readonly List<string> ignorePrefab = new List<string>()
         {
             "SwampTree2_log",
             "Rock_destructible_test",
-            "DevHouse1",
             "SwampTree1_Stub",
             "HugeRoot1",
             "Hildir_cave",
@@ -798,13 +859,19 @@ namespace Seasons
             "sapling_magecap",
             "FirTree_log",
             "FirTree_log_half",
-            "Hildir_crypt"
+            "Hildir_crypt",
+            "MountainGraveStone01",
+            "crypt_skeleton_chest",
+            "dungeon_sunkencrypt_irongate_rusty",
+            "stonechest",
+            "SunkenKit_int_towerwall"
         };
 
         private static readonly List<string> ignorePrefabPartialName = new List<string>()
         {
             "Mistlands_GuardTower",
             "WoodHouse",
+            "DevHouse",
             "StoneTower",
             "SunkenCrypt",
             "MountainCave",
@@ -816,7 +883,8 @@ namespace Seasons
             "Mistlands_Giant",
             "Mistlands_Harbour",
             "dvergrtown_",
-            //"blackmarble_creep"
+            "OLD_wood_roof",
+            "AbandonedLogCabin"
         };
 
         public static void FillWithGameData()
@@ -869,7 +937,7 @@ namespace Seasons
             }
         }
 
-        private static void CacheMaterials(Material[] materials, string prefabName, string rendererName, string rendererType, string rendererPath, int lodLevel = -1, bool singleRenderer = false)
+        private static void CacheMaterials(Material[] materials, string prefabName, string rendererName, string rendererType, string transformPath, int lodLevel = -1, bool isSingleRenderer = false, bool isLodInHierarchy = false)
         {
             for (int m = 0; m < materials.Length; m++)
             {
@@ -879,7 +947,8 @@ namespace Seasons
                     continue;
 
                 if (!shadersTypes.TryGetValue(rendererType, out string[] shaders) || !shaders.Contains(material.shader.name)
-                    || shaderIgnoreMaterial.TryGetValue(material.shader.name, out string[] ignoreMaterial) && ignoreMaterial.Any(ignore => material.name.IndexOf(ignore, StringComparison.OrdinalIgnoreCase) >= 0))
+                    || shaderIgnoreMaterial.TryGetValue(material.shader.name, out string[] ignoreMaterial) && ignoreMaterial.Any(ignore => material.name.IndexOf(ignore, StringComparison.OrdinalIgnoreCase) >= 0)
+                    || shaderOnlyMaterial.TryGetValue(material.shader.name, out string[] onlyMaterial) && !onlyMaterial.Any(onlymat => material.name.IndexOf(onlymat, StringComparison.OrdinalIgnoreCase) >= 0))
                     continue;
 
                 bool isNew = !SeasonalTextureVariants.controllers.TryGetValue(prefabName, out PrefabController controller);
@@ -942,19 +1011,35 @@ namespace Seasons
 
                 if (lodLevel >= 0)
                 {
-                    if (!controller.lodLevelMaterials.TryGetValue(lodLevel, out List<CachedRenderer> lodRenderers))
-                        controller.lodLevelMaterials.Add(lodLevel, new List<CachedRenderer>() { cachedRenderer });
+                    if (isLodInHierarchy)
+                    {
+                        if (!controller.lodsInHierarchy.TryGetValue(transformPath, out Dictionary<int, List<CachedRenderer>> lodInHierarchy))
+                        {
+                            controller.lodsInHierarchy.Add(transformPath, new Dictionary<int, List<CachedRenderer>>());
+                            lodInHierarchy = controller.lodsInHierarchy[transformPath];
+                        }
+
+                        if (!lodInHierarchy.TryGetValue(lodLevel, out List<CachedRenderer> lodRenderers))
+                            lodInHierarchy.Add(lodLevel, new List<CachedRenderer>() { cachedRenderer });
+                        else
+                            lodRenderers.Add(cachedRenderer);
+                    }
                     else
-                        lodRenderers.Add(cachedRenderer);
+                    {
+                        if (!controller.lodLevelMaterials.TryGetValue(lodLevel, out List<CachedRenderer> lodRenderers))
+                            controller.lodLevelMaterials.Add(lodLevel, new List<CachedRenderer>() { cachedRenderer });
+                        else
+                            lodRenderers.Add(cachedRenderer);
+                    }
                 }
-                else if (singleRenderer)
+                else if (isSingleRenderer)
                 {
                     controller.cachedRenderer = cachedRenderer;
                 }
                 else
                 {
-                    if (!controller.renderersInHierarchy.ContainsKey(rendererPath))
-                        controller.renderersInHierarchy.Add(rendererPath, cachedRenderer);
+                    if (!controller.renderersInHierarchy.ContainsKey(transformPath))
+                        controller.renderersInHierarchy.Add(transformPath, cachedRenderer);
                 }
 
                 if (controller.Initialized())
@@ -962,9 +1047,12 @@ namespace Seasons
                     if (isNew)
                         SeasonalTextureVariants.controllers.Add(prefabName, controller);
 
-                    LogInfo($"Caching {prefabName}{(controller.cachedRenderer == null ? "" : ", main renderer,")} {controller.lodLevelMaterials.Count} LODs, {controller.renderersInHierarchy.Count} renderersInHierarchy");
+                    LogInfo($"Caching {prefabName}{(controller.cachedRenderer == null ? "" : ", main renderer,")} " +
+                        $"{(controller.lodsInHierarchy.Count > 0 ? $" {controller.lodsInHierarchy.Count} LOD groups" : "")}" +
+                        $"{(controller.lodLevelMaterials.Count > 0 ? $" {controller.lodLevelMaterials.Count} LODs" : "")}" +
+                        $"{(controller.renderersInHierarchy.Count > 0 ? $" {controller.renderersInHierarchy.Count} renderersInHierarchy" : "")}");
 
-                    if (singleRenderer)
+                    if (isSingleRenderer)
                         return;
                 }
             }
@@ -977,20 +1065,20 @@ namespace Seasons
                 if (ignorePrefab.Contains(prefab.name) || prefab.layer == 8 || prefab.layer == 12)
                     continue;
 
+                if (ignorePrefabPartialName.Any(namepart => prefab.name.Contains(namepart)))
+                    continue;
+
                 if (prefab.layer == 0 && prefab.TryGetComponent<Ship>(out _))
                     continue;
 
                 if (prefab.layer == 16 && !prefab.TryGetComponent<Pickable>(out _) && !prefab.TryGetComponent<Plant>(out _))
                     continue;
 
-                if (prefab.layer == 10 && !piecePrefab.Contains(prefab.name) && !prefab.TryGetComponent<Pickable>(out _) && !prefab.TryGetComponent<Plant>(out _))
-                {
+                if (prefab.layer == 10 
+                   && !(piecePrefab.Contains(prefab.name) || piecePrefabPartialName.Any(namepart => prefab.name.IndexOf(namepart, StringComparison.OrdinalIgnoreCase) >= 0))
+                   && !prefab.TryGetComponent<Pickable>(out _) && !prefab.TryGetComponent<Plant>(out _))
                     continue;
-                }
                 
-                if (ignorePrefabPartialName.Any(namepart => prefab.name.Contains(namepart)))
-                    continue;
-
                 if (prefab.layer == 15 && (prefab.TryGetComponent<MineRock5>(out _) || prefab.TryGetComponent<MineRock>(out _)))
                 {
                     MeshRenderer renderer = prefab.GetComponentInChildren<MeshRenderer>();
@@ -1001,31 +1089,27 @@ namespace Seasons
                     if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
                         return;
 
-                    CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath(), singleRenderer: true);
+                    CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath(), isSingleRenderer: true);
                     continue;
                 }
 
                 if (prefab.layer != 9)
                 {
+                    if (prefab.TryGetComponent(out WearNTear wnt))
+                    {
+                        if (wnt.m_new != null && wnt.m_new.TryGetComponent(out LODGroup wntLodGroupNew))
+                            CachePrefabLODGroup(wntLodGroupNew, prefab.name, isLodInHierarchy: true);
+                        if (wnt.m_worn != null && wnt.m_worn.TryGetComponent(out LODGroup wntLodGroupWorn))
+                            CachePrefabLODGroup(wntLodGroupWorn, prefab.name, isLodInHierarchy: true);
+                        if (wnt.m_broken != null && wnt.m_broken.TryGetComponent(out LODGroup wntLodGroupBroken))
+                            CachePrefabLODGroup(wntLodGroupBroken, prefab.name, isLodInHierarchy: true);
+                        if (wnt.m_wet != null && wnt.m_wet.TryGetComponent(out LODGroup wntLodGroupWet))
+                            CachePrefabLODGroup(wntLodGroupWet, prefab.name, isLodInHierarchy: true);
+                    }
+                    
                     if (prefab.TryGetComponent(out LODGroup lodGroup) && lodGroup.lodCount > 1)
                     {
-                        LOD[] LODs = lodGroup.GetLODs();
-                        for (int lodLevel = 0; lodLevel < lodGroup.lodCount; lodLevel++)
-                        {
-                            LOD lod = LODs[lodLevel];
-                            for (int i = 0; i < lod.renderers.Length; i++)
-                            {
-                                Renderer renderer = lod.renderers[i];
-
-                                if (renderer == null)
-                                    continue;
-
-                                if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
-                                    continue;
-
-                                CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath(), lodLevel);
-                            }
-                        }
+                        CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: false);
                     }
                     else
                     {
@@ -1049,6 +1133,27 @@ namespace Seasons
 
                         CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
                     }
+                }
+            }
+        }
+
+        private static void CachePrefabLODGroup(LODGroup lodGroup, string prefabName, bool isLodInHierarchy)
+        {
+            LOD[] LODs = lodGroup.GetLODs();
+            for (int lodLevel = 0; lodLevel < lodGroup.lodCount; lodLevel++)
+            {
+                LOD lod = LODs[lodLevel];
+                for (int i = 0; i < lod.renderers.Length; i++)
+                {
+                    Renderer renderer = lod.renderers[i];
+
+                    if (renderer == null)
+                        continue;
+
+                    if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
+                        continue;
+
+                    CacheMaterials(renderer.sharedMaterials, prefabName, renderer.name, renderer.GetType().Name, lodGroup.transform.GetPath(), lodLevel, isLodInHierarchy: isLodInHierarchy);
                 }
             }
         }

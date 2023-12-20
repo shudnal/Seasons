@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using static PrivilegeManager;
 using static Seasons.PrefabController;
 using static Seasons.Seasons;
 
@@ -12,6 +13,7 @@ namespace Seasons
     public class PrefabVariantController : MonoBehaviour
     {
         private ZNetView m_nview;
+        private WearNTear m_wnt;
 
         public string m_prefabName;
         private double m_springFactor;
@@ -19,8 +21,11 @@ namespace Seasons
         private double m_fallFactor;
         private double m_winterFactor;
 
+        private bool m_covered = true;
+
         public int m_myListIndex = -1;
         public static readonly List<PrefabVariantController> s_allControllers = new List<PrefabVariantController>();
+        public static readonly Dictionary<WearNTear, PrefabVariantController> s_pieceControllers = new Dictionary<WearNTear, PrefabVariantController>();
 
         private readonly Dictionary<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>> m_materialVariants = new Dictionary<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>>();
         private readonly Dictionary<Renderer, Dictionary<int, Dictionary<string, Color[]>>> m_colorVariants = new Dictionary<Renderer, Dictionary<int, Dictionary<string, Color[]>>>();
@@ -38,28 +43,20 @@ namespace Seasons
             else
                 m_prefabName = prefabName;
 
-            if (controller.lodLevelMaterials.Count > 0)
-                if (gameObject.TryGetComponent(out LODGroup lodGroup))
-                {
-                    LOD[] LODs = lodGroup.GetLODs();
-                    for (int lodLevel = 0; lodLevel < lodGroup.lodCount; lodLevel++)
-                    {
-                        if (!controller.lodLevelMaterials.TryGetValue(lodLevel, out List<CachedRenderer> cachedRenderers))
-                            continue;
+            foreach (KeyValuePair<string, Dictionary<int, List<CachedRenderer>>> rendererPath in controller.lodsInHierarchy)
+            {
+                string transformPath = GetRelativePath(rendererPath.Key, m_prefabName);
 
-                        LOD lod = LODs[lodLevel];
+                Transform transformWithLODGroup = gameObject.transform.Find(transformPath);
+                if (transformWithLODGroup == null)
+                    continue;
 
-                        for (int i = 0; i < lod.renderers.Length; i++)
-                        {
-                            Renderer renderer = lod.renderers[i];
-                            if (renderer == null)
-                                continue;
+                if (transformWithLODGroup.gameObject.TryGetComponent(out LODGroup lodGroupTransform))
+                    AddLODGroupMaterialVariants(lodGroupTransform, rendererPath.Value);
+            }
 
-                            foreach (CachedRenderer cachedRenderer in cachedRenderers.Where(cr => cr.type == renderer.GetType().Name && cr.name == renderer.name))
-                                AddMaterialVariants(renderer, cachedRenderer);
-                        }
-                    }
-                }
+            if (controller.lodLevelMaterials.Count > 0 && gameObject.TryGetComponent(out LODGroup lodGroup))
+                AddLODGroupMaterialVariants(lodGroup, controller.lodLevelMaterials);
 
             foreach (KeyValuePair<string, CachedRenderer> rendererPath in controller.renderersInHierarchy)
             {
@@ -94,8 +91,15 @@ namespace Seasons
         private void Awake()
         {
             m_nview = gameObject.GetComponent<ZNetView>();
+            m_wnt = gameObject.GetComponent<WearNTear>();
+
             s_allControllers.Add(this);
             m_myListIndex = s_allControllers.Count - 1;
+
+            if (m_wnt != null)
+            {
+                s_pieceControllers.Add(m_wnt, this);
+            }
         }
 
         private void OnEnable()
@@ -118,13 +122,28 @@ namespace Seasons
                 s_allControllers.RemoveAt(s_allControllers.Count - 1);
                 m_myListIndex = -1;
             }
+
+            if (m_wnt != null)
+            {
+                s_pieceControllers.Remove(m_wnt);
+            }
         }
 
         private void RevertTextures()
         {
             foreach (KeyValuePair<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>> materialVariants in m_materialVariants)
                 foreach (KeyValuePair<int, Dictionary<string, TextureVariants>> materialIndex in materialVariants.Value)
-                    materialVariants.Key.SetPropertyBlock(null);
+                    materialVariants.Key.SetPropertyBlock(null, materialIndex.Key);
+        }
+
+        public void CheckCoveredStatus()
+        {
+            bool haveRoof = HaveRoof();
+            if (m_covered == haveRoof)
+                return;
+
+            m_covered = haveRoof;
+            UpdateColors();
         }
 
         public void UpdateColors()
@@ -134,6 +153,12 @@ namespace Seasons
 
             if (!base.enabled)
                 return;
+
+            if (m_wnt != null && m_covered)
+            {
+                RevertTextures();
+                return;
+            }
 
             int variant = GetCurrentVariant();
             foreach (KeyValuePair<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>> materialVariants in m_materialVariants)
@@ -184,6 +209,28 @@ namespace Seasons
         public void ToggleEnabled()
         {
             base.enabled = Minimap.instance != null && (m_materialVariants.Count > 0 || m_colorVariants.Count > 0);
+        }
+
+        public void AddLODGroupMaterialVariants(LODGroup lodGroup, Dictionary<int, List<CachedRenderer>> lodLevelMaterials)
+        {
+            LOD[] LODs = lodGroup.GetLODs();
+            for (int lodLevel = 0; lodLevel < lodGroup.lodCount; lodLevel++)
+            {
+                if (!lodLevelMaterials.TryGetValue(lodLevel, out List<CachedRenderer> cachedRenderers))
+                    continue;
+
+                LOD lod = LODs[lodLevel];
+
+                for (int i = 0; i < lod.renderers.Length; i++)
+                {
+                    Renderer renderer = lod.renderers[i];
+                    if (renderer == null)
+                        continue;
+
+                    foreach (CachedRenderer cachedRenderer in cachedRenderers.Where(cr => cr.type == renderer.GetType().Name && cr.name == renderer.name))
+                        AddMaterialVariants(renderer, cachedRenderer);
+                }
+            }
         }
 
         public void AddMaterialVariants(Renderer renderer, CachedRenderer cachedRenderer)
@@ -256,26 +303,67 @@ namespace Seasons
 
         private void CheckRenderersInHierarchy(Transform transform, string rendererType, string[] transformPath, int index, List<Renderer> renderers)
         {
-            for (int i = 0; i < transform.childCount; i++)
+            if (transformPath.Length == 0)
             {
-                Transform child = transform.GetChild(i);
-
-                if (child.name == transformPath[index])
+                Renderer renderer = transform.GetComponent(rendererType) as Renderer;
+                if (renderer != null)
+                    renderers.Add(renderer);
+            }
+            else
+            {
+                for (int i = 0; i < transform.childCount; i++)
                 {
-                    if (index == transformPath.Length - 1)
+                    Transform child = transform.GetChild(i);
+
+                    if (child.name == transformPath[index])
                     {
-                        Renderer renderer = child.GetComponent(rendererType) as Renderer;
-                        if (renderer != null)
-                            renderers.Add(renderer);
-                    }
-                    else
-                    {
-                        CheckRenderersInHierarchy(child, rendererType, transformPath, index + 1, renderers);
+                        if (index == transformPath.Length - 1)
+                        {
+                            Renderer renderer = child.GetComponent(rendererType) as Renderer;
+                            if (renderer != null)
+                                renderers.Add(renderer);
+                        }
+                        else
+                        {
+                            CheckRenderersInHierarchy(child, rendererType, transformPath, index + 1, renderers);
+                        }
                     }
                 }
             }
         }
 
+        private bool HaveRoof()
+        {
+            if (m_wnt == null)
+                return false;
+
+            if (!m_wnt.HaveRoof())
+                return false;
+
+            int num = Physics.SphereCastNonAlloc(base.transform.position + new Vector3(0, 2f, 0), 0.1f, Vector3.up, WearNTear.s_raycastHits, 100f, WearNTear.s_rayMask);
+            for (int i = 0; i < num; i++)
+            {
+                GameObject go = ((Component)(object)WearNTear.s_raycastHits[i].collider).gameObject;
+                if (go != null && !go.CompareTag("leaky") && (m_wnt.m_colliders == null || !m_wnt.m_colliders.Any(coll => coll.gameObject == go)))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static string GetRelativePath(string rendererPath, string prefabName)
+        {
+            string path = rendererPath;
+            if (path.Contains(prefabName))
+            {
+                path = rendererPath.Substring(rendererPath.IndexOf(prefabName) + prefabName.Length);
+                if (path.StartsWith("/"))
+                    path = path.Substring(1);
+            }
+
+            return path;
+        }
+        
         public static void UpdatePrefabColors()
         {
             foreach (PrefabVariantController controller in s_allControllers)
@@ -367,6 +455,26 @@ namespace Seasons
                 prefabVariantController.ToggleEnabled();
                 prefabVariantController.UpdateColors();
             }
+        }
+    }
+
+    [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.SetHealthVisual))]
+    public static class WearNTear_SetHealthVisual_UpdateCoverStatus
+    {
+        private static void Postfix(WearNTear __instance)
+        {
+            if (PrefabVariantController.s_pieceControllers.TryGetValue(__instance, out PrefabVariantController controller))
+                controller.CheckCoveredStatus();
+        }
+    }
+
+    [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.Start))]
+    public static class WearNTear_Start_PrefabVariantControllerInit
+    {
+        private static void Postfix(WearNTear __instance)
+        {
+            if (!PrefabVariantController.s_pieceControllers.ContainsKey(__instance) && SeasonalTextureVariants.controllers.TryGetValue(Utils.GetPrefabName(__instance.gameObject), out PrefabController controller))
+                __instance.gameObject.AddComponent<PrefabVariantController>().Init(controller);
         }
     }
 

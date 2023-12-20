@@ -8,12 +8,12 @@
 		</ItemGroup>
         <ILRepack Parallel="true" DebugInfo="true" Internalize="true" InputAssemblies="@(InputAssemblies)" OutputFile="$(TargetPath)" TargetKind="SameAsPrimaryAssembly" LibraryPath="$(OutputPath)" />
     </Target>
-	<Target Name="CopyDLLPlugins" AfterTargets="ILRepacker">
-		<Copy SourceFiles="$(TargetPath)" DestinationFolder="F:\Steam\steamapps\common\Valheim\BepInEx\plugins\" />
-		<Message Text="Copied to plugins folder." Importance="High" />
-	</Target>
 	<Target Name="CopyDLLPackage" AfterTargets="ILRepacker">
 		<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ProjectDir)thunderstore\" />
 		<Message Text="Copied to package folder." Importance="High" />
+	</Target>
+	<Target Name="CopyDLLPlugins" AfterTargets="ILRepacker">
+		<Copy SourceFiles="$(TargetPath)" DestinationFolder="F:\Steam\steamapps\common\Valheim\BepInEx\plugins\" />
+		<Message Text="Copied to plugins folder." Importance="High" />
 	</Target>
 </Project>
