@@ -146,7 +146,7 @@ namespace Seasons
                         }
                         materialVariants.Key.SetTexture(texProp.Key, texture);
                         if (materialVariants.Key.name == "grasscross_mistlands_short")
-                            materialVariants.Key.color = Seasons.instance.GetGrassConfigColor(seasonState.GetCurrentSeason(), pos);
+                            materialVariants.Key.color = GetGrassConfigColor(seasonState.GetCurrentSeason(), pos);
                     }
                 }
         }

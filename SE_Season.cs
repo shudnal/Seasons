@@ -19,7 +19,7 @@ namespace Seasons
             if (newSeason != m_season)
             {
                 m_season = newSeason;
-                m_name = m_season.ToString();
+                m_name = GetSeasonName(m_season);
             }
         }
 
@@ -28,7 +28,7 @@ namespace Seasons
             base.Setup(character);
 
             m_season = seasonState.GetCurrentSeason();
-            m_name = m_season.ToString();
+            m_name = GetSeasonName(m_season);
         }
 
         public override string GetTooltipString()
@@ -63,13 +63,14 @@ namespace Seasons
         private string GetSeasonTooltip()
         {
             if (m_season > 0)
-                return String.Format(messageSeasonTooltip.Value, messageSeasonTooltip.Value.StartsWith("{0}") ? m_season.ToString() : m_season.ToString().ToLower());
+                return Seasons.GetSeasonTooltip(m_season);
 
             return "";
         }
+        
         private static string MessageNextSeason()
         {
-            return String.Format(messageSeasonIsComing.Value, messageSeasonIsComing.Value.StartsWith("{0}") ? seasonState.GetNextSeason().ToString() : seasonState.GetNextSeason().ToString().ToLower());
+            return GetSeasonIsComing(seasonState.GetNextSeason());
         }
     }
 

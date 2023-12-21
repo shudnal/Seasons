@@ -516,13 +516,13 @@ namespace Seasons
                 {
                     Color colorVariant;
                     if (isGrass)
-                        colorVariant = instance.GetGrassConfigColor(season, i);
+                        colorVariant = GetGrassConfigColor(season, i);
                     else if (isMoss)
-                        colorVariant = instance.GetMossConfigColor(season, i);
+                        colorVariant = GetMossConfigColor(season, i);
                     else if (isCreature)
-                        colorVariant = instance.GetCreatureConfigColor(season, i);
+                        colorVariant = GetCreatureConfigColor(season, i);
                     else
-                        colorVariant = instance.GetSeasonConfigColor(season, i);
+                        colorVariant = GetSeasonConfigColor(season, i);
 
                     if (IsPine(material.name, prefabName))
                         colorVariant.a /= season == Season.Winter ? 1.5f : 2f;
@@ -629,11 +629,11 @@ namespace Seasons
                 {
                     Color colorVariant;
                     if (isGrass)
-                        colorVariant = instance.GetGrassConfigColor(season, i);
+                        colorVariant = GetGrassConfigColor(season, i);
                     else if (isMoss)
-                        colorVariant = instance.GetMossConfigColor(season, i);
+                        colorVariant = GetMossConfigColor(season, i);
                     else
-                        colorVariant = instance.GetSeasonConfigColor(season, i);
+                        colorVariant = GetSeasonConfigColor(season, i);
 
                     if (IsPine(material.name, prefabName))
                         colorVariant.a /= season == Season.Winter ? 1.5f : 2f;

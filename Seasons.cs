@@ -9,6 +9,7 @@ using System.Linq;
 using System.Reflection;
 using System;
 using System.IO;
+using static Seasons.Seasons;
 
 namespace Seasons
 {
@@ -29,11 +30,11 @@ namespace Seasons
         public static ConfigEntry<CacheFormat> cacheStorageFormat;
 
         public static ConfigEntry<int> daysInSeason;
-        private static ConfigEntry<bool> seasonsOverlap;
+        public static ConfigEntry<bool> seasonsOverlap;
         public static ConfigEntry<TimerFormat> seasonsTimerFormat;
 
-        private static ConfigEntry<bool> overrideSeason;
-        private static ConfigEntry<Season> seasonOverrided;
+        public static ConfigEntry<bool> overrideSeason;
+        public static ConfigEntry<Season> seasonOverrided;
 
         public static ConfigEntry<Color> vegetationSpringColor1;
         public static ConfigEntry<Color> vegetationSpringColor2;
@@ -75,8 +76,20 @@ namespace Seasons
         public static ConfigEntry<Color> grassWinterColor3;
         public static ConfigEntry<Color> grassWinterColor4;
 
-        public static ConfigEntry<string> messageSeasonIsComing;
-        public static ConfigEntry<string> messageSeasonTooltip;
+        public static ConfigEntry<string> localizationSeasonNameSpring;
+        public static ConfigEntry<string> localizationSeasonNameSummer;
+        public static ConfigEntry<string> localizationSeasonNameFall;
+        public static ConfigEntry<string> localizationSeasonNameWinter;
+
+        public static ConfigEntry<string> localizationSeasonIsComingSpring;
+        public static ConfigEntry<string> localizationSeasonIsComingSummer;
+        public static ConfigEntry<string> localizationSeasonIsComingFall;
+        public static ConfigEntry<string> localizationSeasonIsComingWinter;
+
+        public static ConfigEntry<string> localizationSeasonTooltipSpring;
+        public static ConfigEntry<string> localizationSeasonTooltipSummer;
+        public static ConfigEntry<string> localizationSeasonTooltipFall;
+        public static ConfigEntry<string> localizationSeasonTooltipWinter;
 
         public static Seasons instance;
         public static SeasonsState seasonState = new SeasonsState();
@@ -114,139 +127,7 @@ namespace Seasons
             CurrentDay,
             TimeToEnd
         }
-
-        public class SeasonsState
-        {
-            public float m_spring = 1f;
-            public float m_summer = 0f;
-            public float m_fall = 0f;
-            public float m_winter = 0f;
-
-            private Season m_season = Season.Spring;
-            private int m_day = 0;
-
-            public bool IsActive => EnvMan.instance != null;
-
-            public void UpdateState(int day, float dayFraction)
-            {
-                dayFraction = Mathf.Clamp01(dayFraction);
-                int dayInSeason = GetDayInSeason(day);
-
-                for (int i = 0; i < seasonsCount; i++)
-                    SetSeasonFactor((Season)i, 0f);
-
-                int season = (int)m_season;
-
-                if (overrideSeason.Value)
-                {
-                    m_season = seasonOverrided.Value;
-                    SetSeasonFactor(m_season, 1f);
-                    CheckIfSeasonChanged(season);
-                    CheckIfDayChanged(dayInSeason);
-                    return;
-                }
-
-                m_season = GetSeason(day);
-                float fraction = 0f;
-
-                if (seasonsOverlap.Value && day != 0)
-                {
-                    if (dayInSeason == 0)
-                    {
-                        fraction = (1f - dayFraction) / 2f;
-                        SetSeasonFactor(PreviousSeason(m_season), fraction);
-                    }
-                    else if (dayInSeason == daysInSeason.Value - 1)
-                    {
-                        fraction = dayFraction / 2f;
-                        SetSeasonFactor(NextSeason(m_season), fraction);
-                    }
-                }
-
-                SetSeasonFactor(m_season, 1f - fraction);
-                CheckIfSeasonChanged(season);
-                CheckIfDayChanged(dayInSeason);
-            }
-
-            public Season GetCurrentSeason()
-            {
-                return m_season;
-            }
-
-            public int GetCurrentDay()
-            {
-                return m_day;
-            }
-
-            public Season GetNextSeason()
-            {
-                return NextSeason(m_season);
-            }
-
-            private void SetSeasonFactor(Season season, float fraction)
-            {
-                switch ((int)season)
-                {
-                    case 0: 
-                        m_spring = fraction;
-                        break;
-                    case 1:
-                        m_summer = fraction;
-                        break;
-                    case 2:
-                        m_fall = fraction;
-                        break;
-                    case 3:
-                        m_winter = fraction;
-                        break;
-                }
-            }
-
-            private Season GetSeason(int day)
-            {
-                return (Season)(day / daysInSeason.Value % seasonsCount);
-            }
-
-            private int GetDayInSeason(int day)
-            {
-                return day % daysInSeason.Value;
-            }
-
-            private Season PreviousSeason(Season season)
-            {
-                return (Season)((seasonsCount + (int)season - 1) % seasonsCount);
-            }
-            
-            private Season NextSeason(Season season)
-            {
-                return (Season)(((int)season + 1) % seasonsCount);
-            }
-
-            private void CheckIfSeasonChanged(int season)
-            {
-                if (season == (int)m_season)
-                    return;
-
-                PrefabVariantController.UpdatePrefabColors();
-                TerrainVariantController.UpdateTerrainColors();
-                ClutterVariantController.instance.UpdateColors();
-            }
-
-            private void CheckIfDayChanged(int dayInSeason)
-            {
-                if (m_day == dayInSeason)
-                    return;
-
-                m_day = dayInSeason;
-                ClutterVariantController.instance.UpdateColors();
-            }
-
-            public override string ToString()
-            {
-                return $"{m_season} spring:{m_spring,-5:F4} summer:{m_summer,-5:F4} fall:{m_fall,-5:F4} winter:{m_winter,-5:F4}";
-            }
-        }
-
+        
         private void Awake()
         {
             harmony.PatchAll();
@@ -342,8 +223,20 @@ namespace Seasons
             grassWinterColor3 = config("Grass - Winter", "Color 3", defaultValue: new Color(0.98f, 0.98f, 1f, 0.65f), "Color 3");
             grassWinterColor4 = config("Grass - Winter", "Color 4", defaultValue: new Color(1f, 1f, 1f, 0.65f), "Color 4");
 
-            messageSeasonIsComing = config("Messages", "Next season is coming", defaultValue: "{0} is coming", "Message to be shown on the last day of the season.");
-            messageSeasonTooltip = config("Messages", "Season status effect tooltip", defaultValue: "{0} has come", "Message to be shown on the last day of the season."); 
+            localizationSeasonNameSpring = config("Localization", "Season name Spring", defaultValue: "Spring", "Season name");
+            localizationSeasonNameSummer = config("Localization", "Season name Summer", defaultValue: "Summer", "Season name");
+            localizationSeasonNameFall = config("Localization", "Season name Fall", defaultValue: "Fall", "Season name");
+            localizationSeasonNameWinter = config("Localization", "Season name Winter", defaultValue: "Winter", "Season name");
+
+            localizationSeasonIsComingSpring = config("Localization", "Status tooltip - Spring is coming", defaultValue: "Spring is coming", "Message to be shown on the last day of the previous season.");
+            localizationSeasonIsComingSummer = config("Localization", "Status tooltip - Summer is coming", defaultValue: "Summer is coming", "Message to be shown on the last day of the previous season.");
+            localizationSeasonIsComingFall = config("Localization", "Status tooltip - Fall is coming", defaultValue: "Fall is coming", "Message to be shown on the last day of the previous season.");
+            localizationSeasonIsComingWinter = config("Localization", "Status tooltip - Winter is coming", defaultValue: "Winter is coming", "Message to be shown on the last day of the previous season.");
+
+            localizationSeasonTooltipSpring = config("Localization", "Season status effect tooltip - Spring has come", defaultValue: "Spring has come", "Message to be shown on the buff tooltip and almanach.");
+            localizationSeasonTooltipSummer = config("Localization", "Season status effect tooltip - Summer has come", defaultValue: "Summer has come", "Message to be shown on the buff tooltip and almanach.");
+            localizationSeasonTooltipFall = config("Localization", "Season status effect tooltip - Fall has come", defaultValue: "Fall has come", "Message to be shown on the buff tooltip and almanach.");
+            localizationSeasonTooltipWinter = config("Localization", "Season status effect tooltip - Winter has come", defaultValue: "Winter has come", "Message to be shown on the buff tooltip and almanach.");
 
             cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
 
@@ -378,18 +271,6 @@ namespace Seasons
                 icon = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), Vector2.zero);
         }
 
-        [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.FixedUpdate))]
-        public static class EnvMan_FixedUpdate_SeasonStateUpdate
-        {
-            private static void Postfix(EnvMan __instance)
-            {
-                int day = __instance.GetCurrentDay();
-                float dayFraction = __instance.GetDayFraction();
-
-                seasonState.UpdateState(day, dayFraction);
-            }
-        }
-
         private void Test()
         {
             /*foreach (var item in q)
@@ -401,17 +282,27 @@ namespace Seasons
             
         }
 
-        public Color GetSeasonConfigColor(Season season, int pos)
+        private Color GetColorConfig(string fieldName)
         {
-            return GetColorConfig($"vegetation{season}Color{Mathf.Clamp(pos, 1, 4)}");
+            return (GetType().GetField(fieldName).GetValue(this) as ConfigEntry<Color>).Value;
         }
 
-        public Color GetGrassConfigColor(Season season, int pos)
+        private string GetStringConfig(string fieldName)
         {
-            return GetColorConfig($"grass{season}Color{Mathf.Clamp(pos, 1, 4)}");
+            return (GetType().GetField(fieldName).GetValue(this) as ConfigEntry<string>).Value;
         }
 
-        public Color GetMossConfigColor(Season season, int pos)
+        public static Color GetSeasonConfigColor(Season season, int pos)
+        {
+            return instance.GetColorConfig($"vegetation{season}Color{Mathf.Clamp(pos, 1, 4)}");
+        }
+
+        public static Color GetGrassConfigColor(Season season, int pos)
+        {
+            return instance.GetColorConfig($"grass{season}Color{Mathf.Clamp(pos, 1, 4)}");
+        }
+
+        public static Color GetMossConfigColor(Season season, int pos)
         {
             Color grassColor = GetGrassConfigColor(season, (pos + 2) % seasonColorVariants + 1);
             
@@ -421,7 +312,7 @@ namespace Seasons
             return grassColor;
         }
 
-        public Color GetCreatureConfigColor(Season season, int pos)
+        public static Color GetCreatureConfigColor(Season season, int pos)
         {
             Color creatureColor = GetSeasonConfigColor(season, pos);
 
@@ -433,10 +324,19 @@ namespace Seasons
             return creatureColor;
         }
 
-        private Color GetColorConfig(string fieldName)
+        public static string GetSeasonTooltip(Season season)
         {
-            return (GetType().GetField(fieldName).GetValue(this) as ConfigEntry<Color>).Value;
+            return instance.GetStringConfig($"localizationSeasonTooltip{season}");
         }
 
+        public static string GetSeasonName(Season season)
+        {
+            return instance.GetStringConfig($"localizationSeasonName{season}");
+        }
+
+        public static string GetSeasonIsComing(Season season)
+        {
+            return instance.GetStringConfig($"localizationSeasonIsComing{season}");
+        }
     }
 }
