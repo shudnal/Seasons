@@ -20,6 +20,7 @@ namespace Seasons
             {
                 m_season = newSeason;
                 m_name = GetSeasonName(m_season);
+                m_icon = GetSeasonIcon(m_season);
             }
         }
 
@@ -29,6 +30,7 @@ namespace Seasons
 
             m_season = seasonState.GetCurrentSeason();
             m_name = GetSeasonName(m_season);
+            m_icon = GetSeasonIcon(m_season);
         }
 
         public override string GetTooltipString()
@@ -84,7 +86,7 @@ namespace Seasons
                 SE_Season seasonEffect = ScriptableObject.CreateInstance<SE_Season>();
                 seasonEffect.name = statusEffectSeasonName;
                 seasonEffect.m_nameHash = statusEffectSeasonHash;
-                seasonEffect.m_icon = icon;
+                seasonEffect.m_icon = iconSpring;
 
                 __instance.m_StatusEffects.Add(seasonEffect);
             }
@@ -101,7 +103,7 @@ namespace Seasons
                 SE_Season seasonEffect = ScriptableObject.CreateInstance<SE_Season>();
                 seasonEffect.name = statusEffectSeasonName;
                 seasonEffect.m_nameHash = statusEffectSeasonHash;
-                seasonEffect.m_icon = icon;
+                seasonEffect.m_icon = iconSpring;
 
                 __instance.m_StatusEffects.Add(seasonEffect);
             }

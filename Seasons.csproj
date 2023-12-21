@@ -37,7 +37,7 @@
     <Compile Include="HSLColor.cs" />
     <Compile Include="Seasons.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="SeasonsState.cs" />
+    <Compile Include="SeasonState.cs" />
     <Compile Include="SE_Season.cs" />
     <Compile Include="TerrainVariantController.cs" />
     <Compile Include="PrefabVariantController.cs" />
@@ -91,9 +91,12 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Assets\season_fall.png" />
+    <EmbeddedResource Include="Assets\season_spring.png" />
+    <EmbeddedResource Include="Assets\season_summer.png" />
+    <EmbeddedResource Include="Assets\season_winter.png" />
     <Content Include="Libs\Newtonsoft.Json.dll" />
     <Content Include="Libs\ServerSync.dll" />
-    <EmbeddedResource Include="Assets\season.png" />
   </ItemGroup>
   <ItemGroup>
     <None Include="ILRepack.targets" />

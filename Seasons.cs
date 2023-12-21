@@ -9,7 +9,6 @@ using System.Linq;
 using System.Reflection;
 using System;
 using System.IO;
-using static Seasons.Seasons;
 
 namespace Seasons
 {
@@ -92,19 +91,24 @@ namespace Seasons
         public static ConfigEntry<string> localizationSeasonTooltipWinter;
 
         public static Seasons instance;
-        public static SeasonsState seasonState = new SeasonsState();
+        public static SeasonState seasonState = new SeasonState();
         internal const int seasonsCount = 4;
         public const int seasonColorVariants = 4;
 
         public const string statusEffectSeasonName = "Season";
         public static int statusEffectSeasonHash = statusEffectSeasonName.GetStableHashCode();
 
-        public static Sprite icon;
+        public static Sprite iconSpring;
+        public static Sprite iconSummer;
+        public static Sprite iconFall;
+        public static Sprite iconWinter;
 
         public static string configDirectory;
 
         public static Dictionary<string, PrefabController> prefabControllers = SeasonalTextureVariants.controllers;
         public static Dictionary<int, TextureVariants> texturesVariants = SeasonalTextureVariants.textures;
+
+        public static readonly CustomSyncedValue<Dictionary<Season, SeasonSettings>> seasonsSettings = new CustomSyncedValue<Dictionary<Season, SeasonSettings>>(configSync, "Seasons settings", new Dictionary<Season, SeasonSettings>());
 
         public enum Season
         {
@@ -137,9 +141,11 @@ namespace Seasons
             ConfigInit();
             _ = configSync.AddLockingConfigEntry(configLocked);
 
+            seasonsSettings.ValueChanged += new Action(UpdateSeasonSettings);
+
             Game.isModded = true;
 
-            LoadAssets();
+            LoadIcons();
 
             Test();
         }
@@ -255,11 +261,24 @@ namespace Seasons
 
         ConfigEntry<T> config<T>(string group, string name, T defaultValue, string description, bool synchronizedSetting = true) => config(group, name, defaultValue, new ConfigDescription(description), synchronizedSetting);
 
-        private void LoadAssets() 
+        private static void UpdateSeasonSettings()
+        {
+            seasonState.UpdateSeasonSettings();
+        }
+
+        private void LoadIcons() 
+        {
+            LoadIcon("season_spring.png",   ref iconSpring);
+            LoadIcon("season_summer.png",   ref iconSummer);
+            LoadIcon("season_fall.png",     ref iconFall);
+            LoadIcon("season_winter.png",   ref iconWinter);
+        }
+
+        private void LoadIcon(string filename, ref Sprite icon)
         {
             Assembly executingAssembly = Assembly.GetExecutingAssembly();
-            
-            string name = executingAssembly.GetManifestResourceNames().Single(str => str.EndsWith("season.png"));
+
+            string name = executingAssembly.GetManifestResourceNames().Single(str => str.EndsWith(filename));
 
             Stream resourceStream = executingAssembly.GetManifestResourceStream(name);
 
@@ -273,12 +292,6 @@ namespace Seasons
 
         private void Test()
         {
-            /*foreach (var item in q)
-                if (item.Key.Contains("frac"))
-                    ZLog.Log(item.Key);
-            }            //SeasonalTextureCache.CreateCache(cacheFolder);*/
-            //SwampTree1_Stub
-            //-window-mode exclusive -screen-fullscreen -console -exclusivefullscreen
             
         }
 
@@ -290,6 +303,11 @@ namespace Seasons
         private string GetStringConfig(string fieldName)
         {
             return (GetType().GetField(fieldName).GetValue(this) as ConfigEntry<string>).Value;
+        }
+        
+        private Sprite GetSpriteConfig(string fieldName)
+        {
+            return GetType().GetField(fieldName).GetValue(this) as Sprite;
         }
 
         public static Color GetSeasonConfigColor(Season season, int pos)
@@ -337,6 +355,11 @@ namespace Seasons
         public static string GetSeasonIsComing(Season season)
         {
             return instance.GetStringConfig($"localizationSeasonIsComing{season}");
+        }
+
+        public static Sprite GetSeasonIcon(Season season)
+        {
+            return instance.GetSpriteConfig($"icon{season}");
         }
     }
 }

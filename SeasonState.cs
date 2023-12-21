@@ -2,10 +2,19 @@
 using static Seasons.Seasons;
 using UnityEngine;
 using HarmonyLib;
+using Newtonsoft.Json;
+using System.IO;
+using System.Collections.Generic;
 
 namespace Seasons
 {
     [Serializable]
+    public class SeasonSettingsFile
+    {
+        public int m_daysInSeason = 10;
+        public int m_nightLength = SeasonSettings.nightLentghDefault;
+    }
+
     public class SeasonSettings
     {
         public const int nightLentghDefault = 30;
@@ -14,16 +23,30 @@ namespace Seasons
         public int m_nightLength = nightLentghDefault;
 
         public SeasonSettings(Season season) 
-        { 
+        {
+            /*string filename = $"{season}.json";
 
+            config new DirectoryInfo(configDirectory);
+
+
+            File.WriteAllText(filename, JsonConvert.SerializeObject(controllers, Formatting.Indented));*/
         }
     }
 
-    public class SeasonsState
+    public class SeasonState
     {
         private Season m_season = Season.Spring;
         private int m_day = 0;
-        private SeasonSettings m_settings;
+
+        private SeasonSettings settings { 
+            get
+            {
+                if (seasonsSettings.Value.TryGetValue(GetCurrentSeason(), out SeasonSettings settings))
+                    return settings;
+
+                return new SeasonSettings(m_season);
+            }
+        }
 
         public bool IsActive => EnvMan.instance != null;
 
@@ -58,16 +81,18 @@ namespace Seasons
 
         public int GetNightLength()
         {
-            if (m_settings == null)
-                UpdateSeasonSettings();
-
-            return m_settings.m_nightLength;
+            return settings.m_nightLength;
         }
 
         public bool OverrideNightLength()
         {
             float nightLength = GetNightLength();
             return nightLength > 0 && nightLength != SeasonSettings.nightLentghDefault;
+        }
+
+        public void UpdateSeasonSettings()
+        {
+
         }
 
         private Season GetSeason(int day)
@@ -95,8 +120,6 @@ namespace Seasons
             if (season == (int)m_season)
                 return;
 
-            UpdateSeasonSettings();
-
             PrefabVariantController.UpdatePrefabColors();
             TerrainVariantController.UpdateTerrainColors();
             ClutterVariantController.instance.UpdateColors();
@@ -109,11 +132,6 @@ namespace Seasons
 
             m_day = dayInSeason;
             ClutterVariantController.instance.UpdateColors();
-        }
-
-        private void UpdateSeasonSettings()
-        {
-            m_settings = new SeasonSettings(GetCurrentSeason());
         }
 
         public override string ToString()
