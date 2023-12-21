@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using static PrivilegeManager;
+using static MeleeWeaponTrail;
 using static Seasons.PrefabController;
 using static Seasons.Seasons;
 
@@ -351,6 +351,60 @@ namespace Seasons
             return false;
         }
 
+        public static void AddComponentTo(GameObject gameObject)
+        {
+            if (gameObject == null)
+                return;
+
+            if (!SeasonalTextureVariants.controllers.TryGetValue(Utils.GetPrefabName(gameObject), out PrefabController controller))
+                return;
+
+            if (gameObject.TryGetComponent<PrefabVariantController>(out _))
+                return;
+
+            if (IsIgnoredLocation(gameObject.transform.position))
+                return;
+
+            gameObject.AddComponent<PrefabVariantController>().Init(controller);
+        }
+
+        public static void AddComponentTo(Humanoid humanoid)
+        {
+            if (humanoid.InInterior())
+                return;
+
+            if (SeasonalTextureVariants.controllers.TryGetValue(Utils.GetPrefabName(humanoid.gameObject), out PrefabController controller))
+                if (!humanoid.gameObject.TryGetComponent<PrefabVariantController>(out _))
+                    humanoid.gameObject.AddComponent<PrefabVariantController>().Init(controller);
+        }
+
+        public static void AddComponentTo(WearNTear wnt)
+        {
+            if (s_pieceControllers.ContainsKey(wnt) || !SeasonalTextureVariants.controllers.TryGetValue(Utils.GetPrefabName(wnt.gameObject), out PrefabController controller))
+                return;
+
+            if (IsIgnoredLocation(wnt.transform.position))
+                return;
+
+            wnt.gameObject.AddComponent<PrefabVariantController>().Init(controller);
+        }
+
+        public static void AddComponentTo(MineRock5 mineRock)
+        {
+            if (mineRock.m_nview == null || !mineRock.m_nview.IsValid())
+                return;
+
+            string prefabName = ZNetScene.instance.GetPrefab(mineRock.m_nview.GetZDO().GetPrefab()).name;
+
+            if (!SeasonalTextureVariants.controllers.TryGetValue(prefabName, out PrefabController controller))
+                return;
+
+            if (IsIgnoredLocation(mineRock.transform.position))
+                return;
+
+            mineRock.gameObject.AddComponent<PrefabVariantController>().Init(controller, prefabName);
+        }
+
         private static string GetRelativePath(string rendererPath, string prefabName)
         {
             string path = rendererPath;
@@ -388,40 +442,43 @@ namespace Seasons
             return Math.Round(Math.Pow(((double)Mathf.PerlinNoise(mx * noiseFrequency + seed, my * noiseFrequency - seed) +
                 (double)Mathf.PerlinNoise(mx * 2 * noiseFrequency - seed, my * 2 * noiseFrequency + seed) * 0.5) / noiseDivisor, noisePower) * 20) / 20;
         }
+
+        public static bool IsIgnoredLocation(Vector3 position)
+        {
+            if (WorldGenerator.instance == null)
+                return true;
+
+            float baseHeight = WorldGenerator.instance.GetBaseHeight(position.x, position.z, menuTerrain: false);
+
+            if (baseHeight > WorldGenerator.mountainBaseHeightMin + 0.05f)
+                return true;
+
+            Heightmap.Biome biome = WorldGenerator.instance.GetBiome(position);
+
+            return biome == Heightmap.Biome.DeepNorth || biome == Heightmap.Biome.AshLands;
+        }
     }
 
     [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.CreateObject))]
-    public static class ZNetScene_CreateObject_PrefabVariantControllerInit
+    public static class ZNetScene_CreateObject_AddPrefabVariantController
     {
-        private static void Postfix(ref GameObject __result)
+        private static void Postfix(GameObject __result)
         {
-            if (__result == null)
-                return;
-
-            if (!SeasonalTextureVariants.controllers.TryGetValue(Utils.GetPrefabName(__result), out PrefabController controller))
-                return;
-
-            __result.AddComponent<PrefabVariantController>().Init(controller);
+            PrefabVariantController.AddComponentTo(__result);
         }
     }
 
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.SpawnProxyLocation))]
-    public static class ZoneSystem_SpawnProxyLocation_PrefabVariantControllerInit
+    public static class ZoneSystem_SpawnProxyLocation_AddPrefabVariantController
     {
-        private static void Postfix(ref GameObject __result)
+        private static void Postfix(GameObject __result)
         {
-            if (__result == null)
-                return;
-
-            if (!SeasonalTextureVariants.controllers.TryGetValue(Utils.GetPrefabName(__result), out PrefabController controller))
-                return;
-
-            __result.AddComponent<PrefabVariantController>().Init(controller);
+            PrefabVariantController.AddComponentTo(__result);
         }
     }
 
     [HarmonyPatch(typeof(MineRock5), nameof(MineRock5.Start))]
-    public static class MineRock5_Start_PrefabVariantControllerInit
+    public static class MineRock5_Start_AddPrefabVariantController
     {
         private static void Postfix(MineRock5 __instance, MeshRenderer ___m_meshRenderer, ZNetView ___m_nview)
         {
@@ -433,15 +490,7 @@ namespace Seasons
 
             if (prefabVariantController == null)
             {
-                if (___m_nview == null || !___m_nview.IsValid())
-                    return;
-
-                string prefabName = ZNetScene.instance.GetPrefab(___m_nview.GetZDO().GetPrefab()).name;
-
-                if (!SeasonalTextureVariants.controllers.TryGetValue(prefabName, out PrefabController controller))
-                    return;
-
-                __instance.gameObject.AddComponent<PrefabVariantController>().Init(controller, prefabName);
+                PrefabVariantController.AddComponentTo(__instance);
             }
             else
             {
@@ -469,13 +518,30 @@ namespace Seasons
     }
 
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.Start))]
-    public static class WearNTear_Start_PrefabVariantControllerInit
+    public static class WearNTear_Start_AddPrefabVariantController
     {
         private static void Postfix(WearNTear __instance)
         {
-            if (!PrefabVariantController.s_pieceControllers.ContainsKey(__instance) && SeasonalTextureVariants.controllers.TryGetValue(Utils.GetPrefabName(__instance.gameObject), out PrefabController controller))
-                __instance.gameObject.AddComponent<PrefabVariantController>().Init(controller);
+            PrefabVariantController.AddComponentTo(__instance);
         }
     }
 
+    [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.Start))]
+    public static class Humanoid_Start_AddPrefabVariantController
+    {
+        private static void Postfix(Humanoid __instance)
+        {
+            PrefabVariantController.AddComponentTo(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.OnRagdollCreated))]
+    public static class Humanoid_OnRagdollCreated_AddPrefabVariantController
+    {
+        private static void Postfix(Ragdoll ragdoll)
+        {
+            PrefabVariantController.AddComponentTo(ragdoll.gameObject);
+        }
+    }
+    
 }

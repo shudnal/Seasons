@@ -125,6 +125,8 @@ namespace Seasons
             private Season m_season = Season.Spring;
             private int m_day = 0;
 
+            public bool IsActive => EnvMan.instance != null;
+
             public void UpdateState(int day, float dayFraction)
             {
                 dayFraction = Mathf.Clamp01(dayFraction);
@@ -315,9 +317,9 @@ namespace Seasons
             vegetationFallColor3 = config("Seasons - Fall", "Color 3", defaultValue: new Color(0.8f, 0.2f, 0f, 0.75f), "Color 3");
             vegetationFallColor4 = config("Seasons - Fall", "Color 4", defaultValue: new Color(0.9f, 0.5f, 0f, 0.0f), "Color 4");
 
-            vegetationWinterColor1 = config("Seasons - Winter", "Color 1", defaultValue: new Color(1f, 0.98f, 0.98f, 0.7f), "Color 1");
+            vegetationWinterColor1 = config("Seasons - Winter", "Color 1", defaultValue: new Color(1f, 0.98f, 0.98f, 0.65f), "Color 1");
             vegetationWinterColor2 = config("Seasons - Winter", "Color 2", defaultValue: new Color(1f, 1f, 1f, 0.6f), "Color 2");
-            vegetationWinterColor3 = config("Seasons - Winter", "Color 3", defaultValue: new Color(0.97f, 0.97f, 1f, 0.75f), "Color 3");
+            vegetationWinterColor3 = config("Seasons - Winter", "Color 3", defaultValue: new Color(0.98f, 0.98f, 1f, 0.65f), "Color 3");
             vegetationWinterColor4 = config("Seasons - Winter", "Color 4", defaultValue: new Color(1f, 1f, 1f, 0.65f), "Color 4");
 
             grassSpringColor1 = config("Grass - Spring", "Color 1", defaultValue: new Color(0.27f, 0.80f, 0.27f, 0.75f), "Color 1");
@@ -335,15 +337,15 @@ namespace Seasons
             grassFallColor3 = config("Grass - Fall", "Color 3", defaultValue: new Color(0.8f, 0.3f, 0f, 0.5f), "Color 3");
             grassFallColor4 = config("Grass - Fall", "Color 4", defaultValue: new Color(0.9f, 0.5f, 0f, 0.0f), "Color 4");
 
-            grassWinterColor1 = config("Grass - Winter", "Color 1", defaultValue: new Color(1f, 0.98f, 0.98f, 0.7f), "Color 1");
+            grassWinterColor1 = config("Grass - Winter", "Color 1", defaultValue: new Color(1f, 0.98f, 0.98f, 0.65f), "Color 1");
             grassWinterColor2 = config("Grass - Winter", "Color 2", defaultValue: new Color(1f, 1f, 1f, 0.6f), "Color 2");
-            grassWinterColor3 = config("Grass - Winter", "Color 3", defaultValue: new Color(0.97f, 0.97f, 1f, 0.75f), "Color 3");
+            grassWinterColor3 = config("Grass - Winter", "Color 3", defaultValue: new Color(0.98f, 0.98f, 1f, 0.65f), "Color 3");
             grassWinterColor4 = config("Grass - Winter", "Color 4", defaultValue: new Color(1f, 1f, 1f, 0.65f), "Color 4");
 
             messageSeasonIsComing = config("Messages", "Next season is coming", defaultValue: "{0} is coming", "Message to be shown on the last day of the season.");
             messageSeasonTooltip = config("Messages", "Season status effect tooltip", defaultValue: "{0} has come", "Message to be shown on the last day of the season."); 
 
-            cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subfolder.");
+            cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
 
             configDirectory = Path.Combine(Paths.ConfigPath, pluginID);
         }
@@ -417,6 +419,18 @@ namespace Seasons
                 grassColor.a /= 3;
 
             return grassColor;
+        }
+
+        public Color GetCreatureConfigColor(Season season, int pos)
+        {
+            Color creatureColor = GetSeasonConfigColor(season, pos);
+
+            if (season == Season.Winter)
+                creatureColor.a /= 2;
+            else
+                creatureColor.a /= 3;
+
+            return creatureColor;
         }
 
         private Color GetColorConfig(string fieldName)

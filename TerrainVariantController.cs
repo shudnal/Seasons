@@ -115,6 +115,9 @@ namespace Seasons
 
             __state = Biome.None;
 
+            if (!seasonState.IsActive)
+                return;
+
             if (TerrainVariantController.seasonalBiomeOverride.TryGetValue(biome, out Dictionary<Season, Biome> overrideBiome) && overrideBiome.TryGetValue(seasonState.GetCurrentSeason(), out Biome overridedBiome))
             {
                 __state = biome;
