@@ -37,6 +37,7 @@
     <Compile Include="HSLColor.cs" />
     <Compile Include="Seasons.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="SeasonSettings.cs" />
     <Compile Include="SeasonState.cs" />
     <Compile Include="SE_Season.cs" />
     <Compile Include="TerrainVariantController.cs" />

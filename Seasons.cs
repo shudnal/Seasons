@@ -9,6 +9,7 @@ using System.Linq;
 using System.Reflection;
 using System;
 using System.IO;
+using HarmonyLib.Tools;
 
 namespace Seasons
 {
@@ -108,7 +109,7 @@ namespace Seasons
         public static Dictionary<string, PrefabController> prefabControllers = SeasonalTextureVariants.controllers;
         public static Dictionary<int, TextureVariants> texturesVariants = SeasonalTextureVariants.textures;
 
-        public static readonly CustomSyncedValue<Dictionary<Season, SeasonSettings>> seasonsSettings = new CustomSyncedValue<Dictionary<Season, SeasonSettings>>(configSync, "Seasons settings", new Dictionary<Season, SeasonSettings>());
+        public static readonly CustomSyncedValue<Dictionary<int, string>> seasonsSettingsJSON = new CustomSyncedValue<Dictionary<int, string>>(configSync, "Seasons settings JSON", new Dictionary<int, string>());
 
         public enum Season
         {
@@ -141,7 +142,7 @@ namespace Seasons
             ConfigInit();
             _ = configSync.AddLockingConfigEntry(configLocked);
 
-            seasonsSettings.ValueChanged += new Action(UpdateSeasonSettings);
+            seasonsSettingsJSON.ValueChanged += new Action(UpdateSeasonSettings);
 
             Game.isModded = true;
 
@@ -264,6 +265,43 @@ namespace Seasons
         private static void UpdateSeasonSettings()
         {
             seasonState.UpdateSeasonSettings();
+        }
+
+        public static void SetupConfigWatcher()
+        {
+            string filter = $"*.json";
+
+            FileSystemWatcher fileSystemWatcher1 = new FileSystemWatcher(configDirectory, filter);
+            fileSystemWatcher1.Changed += new FileSystemEventHandler(ReadConfigs);
+            fileSystemWatcher1.Created += new FileSystemEventHandler(ReadConfigs);
+            fileSystemWatcher1.Renamed += new RenamedEventHandler(ReadConfigs);
+            fileSystemWatcher1.IncludeSubdirectories = false;
+            fileSystemWatcher1.SynchronizingObject = ThreadingHelper.SynchronizingObject;
+            fileSystemWatcher1.EnableRaisingEvents = true;
+
+            ReadConfigs(null, null);
+        }
+
+        private static void ReadConfigs(object sender, FileSystemEventArgs eargs)
+        {
+            Dictionary<int, string> localConfig = new Dictionary<int, string>();
+
+            foreach (FileInfo file in new DirectoryInfo(configDirectory).GetFiles("*.json", SearchOption.TopDirectoryOnly))
+            {
+                if (!SeasonSettings.GetSeasonByFilename(file.Name, out Season season))
+                    continue;
+
+                try
+                {
+                    localConfig.Add((int)season, File.ReadAllText(file.FullName));
+                }
+                catch (Exception e)
+                {
+                    instance.Logger.LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
+                }
+            }
+
+            seasonsSettingsJSON.AssignLocalValue(localConfig);
         }
 
         private void LoadIcons() 

@@ -1,64 +1,46 @@
 ﻿using System;
 using static Seasons.Seasons;
-using UnityEngine;
 using HarmonyLib;
 using Newtonsoft.Json;
-using System.IO;
 using System.Collections.Generic;
 
 namespace Seasons
 {
-    [Serializable]
-    public class SeasonSettingsFile
-    {
-        public int m_daysInSeason = 10;
-        public int m_nightLength = SeasonSettings.nightLentghDefault;
-    }
-
-    public class SeasonSettings
-    {
-        public const int nightLentghDefault = 30;
-
-        public int m_daysInSeason = 10;
-        public int m_nightLength = nightLentghDefault;
-
-        public SeasonSettings(Season season) 
-        {
-            /*string filename = $"{season}.json";
-
-            config new DirectoryInfo(configDirectory);
-
-
-            File.WriteAllText(filename, JsonConvert.SerializeObject(controllers, Formatting.Indented));*/
-        }
-    }
-
     public class SeasonState
     {
         private Season m_season = Season.Spring;
         private int m_day = 0;
 
+        public static readonly Dictionary<Season, SeasonSettings> seasonsSettings = new Dictionary<Season, SeasonSettings>();
+
         private SeasonSettings settings { 
             get
             {
-                if (seasonsSettings.Value.TryGetValue(GetCurrentSeason(), out SeasonSettings settings))
-                    return settings;
+                if (!seasonsSettings.ContainsKey(m_season))
+                    seasonsSettings.Add(m_season, new SeasonSettings(m_season));
 
-                return new SeasonSettings(m_season);
+                return seasonsSettings[m_season];
             }
+        }
+
+        public SeasonState()
+        {
+            foreach (Season season in Enum.GetValues(typeof(Season)))
+                seasonsSettings.Add(season, new SeasonSettings(season));
         }
 
         public bool IsActive => EnvMan.instance != null;
 
-        public void UpdateState(int day, float dayFraction)
+        public void UpdateState(int day, bool seasonCanBeChanged)
         {
-            float fraction = Mathf.Clamp01(dayFraction);
-
             int dayInSeason = GetDayInSeason(day);
 
             int season = (int)m_season;
 
-            m_season = overrideSeason.Value ? seasonOverrided.Value : GetSeason(day);
+            if (overrideSeason.Value)
+                m_season = seasonOverrided.Value;
+            else if (seasonCanBeChanged)
+                m_season = GetSeason(day);
 
             CheckIfSeasonChanged(season);
             CheckIfDayChanged(dayInSeason);
@@ -72,6 +54,11 @@ namespace Seasons
         public int GetCurrentDay()
         {
             return m_day;
+        }
+
+        public int GetDaysInSeason()
+        {
+            return settings.m_daysInSeason;
         }
 
         public Season GetNextSeason()
@@ -92,17 +79,49 @@ namespace Seasons
 
         public void UpdateSeasonSettings()
         {
-
+            foreach (KeyValuePair<int, string> item in seasonsSettingsJSON.Value)
+            {
+                seasonsSettings[(Season)item.Key] = new SeasonSettings(JsonConvert.DeserializeObject<SeasonSettingsFile>(item.Value));
+                LogInfo($"Settings updated: {(Season)item.Key}");
+            }
         }
 
         private Season GetSeason(int day)
         {
-            return (Season)(day / daysInSeason.Value % seasonsCount);
+            int dayOfYear = GetDayOfYear(day);
+            int days = 0;
+            foreach (Season season in Enum.GetValues(typeof(Season)))
+            {
+                days += GetDaysInSeason(season);
+                if (dayOfYear <= days)
+                    return season;
+            }
+
+            return Season.Winter;
         }
 
         private int GetDayInSeason(int day)
         {
-            return day % daysInSeason.Value;
+            int dayOfYear = GetDayOfYear(day);
+            int days = 0;
+            foreach (Season season in Enum.GetValues(typeof(Season)))
+            {
+                int daysInSeason = GetDaysInSeason(season);
+                if (dayOfYear <= days + daysInSeason)
+                    break;
+                days += daysInSeason;
+            }
+            return dayOfYear - days;
+        }
+
+        private int GetDayOfYear(int day)
+        {
+            return day % GetYearLengthInDays();
+        }
+
+        private int GetDaysInSeason(Season season)
+        {
+            return (seasonsSettings[season] ?? new SeasonSettings(season)).m_daysInSeason;
         }
 
         private Season PreviousSeason(Season season)
@@ -134,21 +153,29 @@ namespace Seasons
             ClutterVariantController.instance.UpdateColors();
         }
 
+        private int GetYearLengthInDays()
+        {
+            int days = 0;
+            foreach (Season season in Enum.GetValues(typeof(Season)))
+            {
+                days += GetDaysInSeason(season);
+            }
+            return days;
+        }
+
         public override string ToString()
         {
             return $"{m_season} day:{m_day}";
         }
     }
 
-    [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.FixedUpdate))]
-    public static class EnvMan_FixedUpdate_SeasonStateUpdate
+    [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.UpdateTriggers))]
+    public static class EnvMan_UpdateTriggers_SeasonStateUpdate
     {
-        private static void Postfix(EnvMan __instance)
+        private static void Postfix(EnvMan __instance, float oldDayFraction, float newDayFraction)
         {
-            int day = __instance.GetCurrentDay();
-            float dayFraction = __instance.GetDayFraction();
-
-            seasonState.UpdateState(day, dayFraction);
+            bool seasonCanBeChanged = (oldDayFraction > 0.18f && oldDayFraction < 0.23f && newDayFraction > 0.23f && newDayFraction < 0.3f);
+            seasonState.UpdateState(__instance.GetCurrentDay(), seasonCanBeChanged);
         }
     }
 
@@ -216,7 +243,7 @@ namespace Seasons
             ___m_skipToTime = morningStartSec;
             double num = morningStartSec - timeSeconds;
             ___m_timeSkipSpeed = num / 12.0;
-            ZLog.Log((object)("Time " + timeSeconds + ", day:" + day + "    nextm:" + morningStartSec + "  skipspeed:" + ___m_timeSkipSpeed));
+            ZLog.Log("Time " + timeSeconds + ", day:" + day + "    nextm:" + morningStartSec + "  skipspeed:" + ___m_timeSkipSpeed);
 
             return false;
         }
