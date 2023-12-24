@@ -52,7 +52,7 @@ namespace Seasons
             if (seasonsTimerFormat.Value == TimerFormat.None)
                 return "";
             else if (seasonsTimerFormat.Value == TimerFormat.CurrentDay)
-                return seasonState.GetCurrentDay() >= seasonState.GetDaysInSeason() - 1 && !String.IsNullOrEmpty(MessageNextSeason()) ? MessageNextSeason() : Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}");
+                return seasonState.GetCurrentDay() >= seasonState.GetDaysInSeason() && !String.IsNullOrEmpty(MessageNextSeason()) ? MessageNextSeason() : Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}");
 
             long startOfSeason = seasonState.GetDaysInSeason() * EnvMan.instance.m_dayLengthSec;
             TimeSpan span = TimeSpan.FromSeconds(startOfSeason - ZNet.instance.GetTimeSeconds() % startOfSeason);

@@ -16,7 +16,6 @@ namespace Seasons
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Start))]
     public static class ZoneSystem_Start_SeasonsCache
     {
-        [HarmonyPriority(Priority.First)]
         private static void Postfix()
         {
             if (!SeasonalTextureVariants.Initialize())
@@ -186,7 +185,7 @@ namespace Seasons
 
         }
 
-        internal const string cacheSubdirectory = "cache";
+        internal const string cacheSubdirectory = "Cache";
         internal const string prefabCacheCommonFile = "cache.bin";
         internal const string prefabCacheFileName = "cache.json";
         internal const string texturesDirectory = "textures";
@@ -254,7 +253,7 @@ namespace Seasons
             }
             catch (Exception ex)
             {
-                LogInfo($"Error loading JSON cache data from {cacheFile[0].FullName}\n{ex}");
+                LogWarning($"Error loading JSON cache data from {cacheFile[0].FullName}\n{ex}");
                 return;
             }
 
@@ -317,7 +316,7 @@ namespace Seasons
             }
             catch (Exception ex)
             {
-                LogInfo($"Error loading binary cache data from {filename}:\n {ex}");
+                LogWarning($"Error loading binary cache data from {filename}:\n {ex}");
             }
         }
 
@@ -839,6 +838,7 @@ namespace Seasons
                 { "swamptree1_bark", new string[] { "_MossTex" }},
                 { "swamptree2_bark", new string[] { "_MossTex" }},
                 { "swamptree_stump", new string[] { "_MossTex" }},
+                { "beech_bark", new string[] { "_MossTex" }},
             };
 
         public static readonly Dictionary<string, string[]> shaderTextures = new Dictionary<string, string[]>

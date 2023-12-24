@@ -92,7 +92,7 @@ namespace Seasons
         public static ConfigEntry<string> localizationSeasonTooltipWinter;
 
         public static Seasons instance;
-        public static SeasonState seasonState = new SeasonState();
+        public static SeasonState seasonState;
         internal const int seasonsCount = 4;
         public const int seasonColorVariants = 4;
 
@@ -142,13 +142,15 @@ namespace Seasons
             ConfigInit();
             _ = configSync.AddLockingConfigEntry(configLocked);
 
-            seasonsSettingsJSON.ValueChanged += new Action(UpdateSeasonSettings);
+            seasonsSettingsJSON.ValueChanged += new Action(SeasonSettings.UpdateSeasonSettings);
 
             Game.isModded = true;
 
             LoadIcons();
 
             Test();
+
+            seasonState = new SeasonState();
         }
 
         private void FixedUpdate()
@@ -174,6 +176,12 @@ namespace Seasons
         {
             if (loggingEnabled.Value)
                 instance.Logger.LogInfo(data);
+        }
+        
+        public static void LogWarning(object data)
+        {
+            if (loggingEnabled.Value)
+                instance.Logger.LogWarning(data);
         }
 
         public void ConfigInit()
@@ -261,48 +269,6 @@ namespace Seasons
         }
 
         ConfigEntry<T> config<T>(string group, string name, T defaultValue, string description, bool synchronizedSetting = true) => config(group, name, defaultValue, new ConfigDescription(description), synchronizedSetting);
-
-        private static void UpdateSeasonSettings()
-        {
-            seasonState.UpdateSeasonSettings();
-        }
-
-        public static void SetupConfigWatcher()
-        {
-            string filter = $"*.json";
-
-            FileSystemWatcher fileSystemWatcher1 = new FileSystemWatcher(configDirectory, filter);
-            fileSystemWatcher1.Changed += new FileSystemEventHandler(ReadConfigs);
-            fileSystemWatcher1.Created += new FileSystemEventHandler(ReadConfigs);
-            fileSystemWatcher1.Renamed += new RenamedEventHandler(ReadConfigs);
-            fileSystemWatcher1.IncludeSubdirectories = false;
-            fileSystemWatcher1.SynchronizingObject = ThreadingHelper.SynchronizingObject;
-            fileSystemWatcher1.EnableRaisingEvents = true;
-
-            ReadConfigs(null, null);
-        }
-
-        private static void ReadConfigs(object sender, FileSystemEventArgs eargs)
-        {
-            Dictionary<int, string> localConfig = new Dictionary<int, string>();
-
-            foreach (FileInfo file in new DirectoryInfo(configDirectory).GetFiles("*.json", SearchOption.TopDirectoryOnly))
-            {
-                if (!SeasonSettings.GetSeasonByFilename(file.Name, out Season season))
-                    continue;
-
-                try
-                {
-                    localConfig.Add((int)season, File.ReadAllText(file.FullName));
-                }
-                catch (Exception e)
-                {
-                    instance.Logger.LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
-                }
-            }
-
-            seasonsSettingsJSON.AssignLocalValue(localConfig);
-        }
 
         private void LoadIcons() 
         {

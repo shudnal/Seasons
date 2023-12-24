@@ -3,6 +3,7 @@ using static Seasons.Seasons;
 using HarmonyLib;
 using Newtonsoft.Json;
 using System.Collections.Generic;
+using System.IO;
 
 namespace Seasons
 {
@@ -27,6 +28,16 @@ namespace Seasons
         {
             foreach (Season season in Enum.GetValues(typeof(Season)))
                 seasonsSettings.Add(season, new SeasonSettings(season));
+
+            string folder = Path.Combine(configDirectory, SeasonSettings.defaultsSubdirectory);
+            Directory.CreateDirectory(folder);
+
+            foreach (KeyValuePair<Season, SeasonSettings> seasonSettings in seasonsSettings)
+            {
+                string filename = Path.Combine(folder, $"{seasonSettings.Key}.json");
+                LogInfo($"Saving default settings to {filename}");
+                seasonSettings.Value.SaveToJSON(filename);
+            }
         }
 
         public bool IsActive => EnvMan.instance != null;
@@ -81,8 +92,15 @@ namespace Seasons
         {
             foreach (KeyValuePair<int, string> item in seasonsSettingsJSON.Value)
             {
-                seasonsSettings[(Season)item.Key] = new SeasonSettings(JsonConvert.DeserializeObject<SeasonSettingsFile>(item.Value));
-                LogInfo($"Settings updated: {(Season)item.Key}");
+                try
+                {
+                    seasonsSettings[(Season)item.Key] = new SeasonSettings((Season)item.Key, JsonConvert.DeserializeObject<SeasonSettingsFile>(item.Value));
+                    LogInfo($"Settings updated: {(Season)item.Key}");
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error parsing settings: {(Season)item.Key}\n{e}");
+                }
             }
         }
 
