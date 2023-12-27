@@ -2,8 +2,11 @@
 using static Seasons.Seasons;
 using HarmonyLib;
 using Newtonsoft.Json;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using UnityEngine;
 
 namespace Seasons
 {
@@ -13,6 +16,8 @@ namespace Seasons
         private int m_day = 0;
 
         public static readonly Dictionary<Season, SeasonSettings> seasonsSettings = new Dictionary<Season, SeasonSettings>();
+        public static SeasonBiomeEnvironments seasonBiomeEnvironments = new SeasonBiomeEnvironments();
+        public static List<SeasonEnvironment> seasonEnvironments = SeasonEnvironment.GetDefaultCustomEnvironments();
 
         private SeasonSettings settings { 
             get
@@ -24,20 +29,25 @@ namespace Seasons
             }
         }
 
-        public SeasonState()
+        public SeasonState(bool initialize = false)
         {
+            if (!initialize)
+                return;
+
             foreach (Season season in Enum.GetValues(typeof(Season)))
                 seasonsSettings.Add(season, new SeasonSettings(season));
 
             string folder = Path.Combine(configDirectory, SeasonSettings.defaultsSubdirectory);
             Directory.CreateDirectory(folder);
 
+            LogInfo($"Saving default seasons settings");
             foreach (KeyValuePair<Season, SeasonSettings> seasonSettings in seasonsSettings)
             {
                 string filename = Path.Combine(folder, $"{seasonSettings.Key}.json");
-                LogInfo($"Saving default settings to {filename}");
                 seasonSettings.Value.SaveToJSON(filename);
             }
+
+            SeasonSettings.SaveDefaultEnvironments(folder);
         }
 
         public bool IsActive => EnvMan.instance != null;
@@ -81,7 +91,7 @@ namespace Seasons
         {
             return settings.m_nightLength;
         }
-
+        
         public bool OverrideNightLength()
         {
             float nightLength = GetNightLength();
@@ -90,6 +100,9 @@ namespace Seasons
 
         public void UpdateSeasonSettings()
         {
+            if (!IsActive)
+                return;
+
             foreach (KeyValuePair<int, string> item in seasonsSettingsJSON.Value)
             {
                 try
@@ -100,6 +113,94 @@ namespace Seasons
                 catch (Exception e)
                 {
                     LogWarning($"Error parsing settings: {(Season)item.Key}\n{e}");
+                }
+            }
+        }
+
+        public void UpdateSeasonEnvironments()
+        {
+            if (!IsActive)
+                return;
+
+            if (!String.IsNullOrEmpty(customEnvironmentsJSON.Value))
+            {
+                try
+                {
+                    seasonEnvironments = JsonConvert.DeserializeObject<List<SeasonEnvironment>>(customEnvironmentsJSON.Value);
+                    LogInfo($"Custom environments updated");
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error parsing custom environments:\n{e}");
+                }
+            }
+
+            foreach (SeasonEnvironment senv in seasonEnvironments)
+                EnvMan.instance.AppendEnvironment(senv.ToEnvSetup());
+        }
+
+        public void UpdateBiomeEnvironments()
+        {
+            if (!IsActive)
+                return;
+
+            if (!String.IsNullOrEmpty(customBiomeEnvironmentsJSON.Value))
+            {
+                try
+                {
+                    seasonBiomeEnvironments = JsonConvert.DeserializeObject<SeasonBiomeEnvironments>(customBiomeEnvironmentsJSON.Value);
+                    LogInfo($"Custom biome environments updated");
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error parsing custom biome environments:\n{e}");
+                }
+            }
+
+            SeasonBiomeEnvironment biomeEnv = new SeasonBiomeEnvironment();
+            switch (GetCurrentSeason())
+            {
+                case Season.Spring:
+                    {
+                        biomeEnv = seasonBiomeEnvironments.Spring;
+                        break;
+                    }
+                case Season.Summer:
+                    {
+                        biomeEnv = seasonBiomeEnvironments.Summer;
+                        break;
+                    }
+                case Season.Fall:
+                    {
+                        biomeEnv = seasonBiomeEnvironments.Fall;
+                        break;
+                    }
+                case Season.Winter:
+                    {
+                        biomeEnv = seasonBiomeEnvironments.Winter;
+                        break;
+                    }
+            }
+
+            foreach (BiomeEnvSetup biomeEnvironment in biomesDefault)
+            {
+                foreach (SeasonBiomeEnvironment.EnvironmentReplace replace in biomeEnv.replace)
+                    biomeEnvironment.m_environments.DoIf(env => env.m_environment == replace.m_environment, env => env.m_environment = replace.replace_to);
+
+                foreach (SeasonBiomeEnvironment.EnvironmentAdd add in biomeEnv.add)
+                    if (add.m_name == biomeEnvironment.m_name && !biomeEnvironment.m_environments.Any(env => env.m_environment == add.m_environment.m_environment))
+                        biomeEnvironment.m_environments.Add(add.m_environment);
+
+                foreach (SeasonBiomeEnvironment.EnvironmentRemove remove in biomeEnv.remove)
+                    biomeEnvironment.m_environments.DoIf(env => biomeEnvironment.m_name == remove.m_name && env.m_environment == remove.m_environment, env => biomeEnvironment.m_environments.Remove(env));
+
+                try
+                {
+                    EnvMan.instance.AppendBiomeSetup(biomeEnvironment);
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error appending biome setup {biomeEnvironment.m_name}:\n{e}");
                 }
             }
         }
@@ -160,6 +261,9 @@ namespace Seasons
             PrefabVariantController.UpdatePrefabColors();
             TerrainVariantController.UpdateTerrainColors();
             ClutterVariantController.instance.UpdateColors();
+            UpdateBiomeEnvironments();
+            //instance.StartCoroutine(UpdateTorchesFireWarmth());
+            UpdateTorchesFireWarmth();
         }
 
         private void CheckIfDayChanged(int dayInSeason)
@@ -184,6 +288,42 @@ namespace Seasons
         public override string ToString()
         {
             return $"{m_season} day:{m_day}";
+        }
+
+        public static void PatchTorchItemData(ItemDrop.ItemData torch)
+        {
+            if (torch == null)
+                return;
+
+            if (torch.m_shared.m_itemType != ItemDrop.ItemData.ItemType.Torch)
+                return;
+
+            if (seasonState.settings.m_torchAsFiresource && (EnvMan.instance.IsWet() || EnvMan.instance.IsCold() || EnvMan.instance.IsFreezing()))
+                torch.m_shared.m_durabilityDrain = seasonState.settings.m_torchDurabilityDrain;
+            else
+                torch.m_shared.m_durabilityDrain = 0.0333f;
+        }
+
+        public IEnumerator UpdateTorchesFireWarmth()
+        {
+            yield return new WaitForFixedUpdate();
+
+            GameObject prefabGoblinTorch = ObjectDB.instance.GetItemPrefab("GoblinTorch");
+            if (prefabGoblinTorch != null)
+                UpdateTorchFireWarmth(prefabGoblinTorch);
+
+            GameObject prefabTorch = ObjectDB.instance.GetItemPrefab("Torch");
+            if (prefabTorch != null)
+                UpdateTorchFireWarmth(prefabTorch);
+
+            GameObject prefabTorchMist = ObjectDB.instance.GetItemPrefab("TorchMist");
+            if (prefabTorchMist != null)
+                UpdateTorchFireWarmth(prefabTorchMist);
+        }
+
+        public void UpdateTorchFireWarmth(GameObject prefab)
+        {
+            Utils.FindChild(prefab.transform, "FireWarmth").gameObject.GetComponent<EffectArea>().m_type = seasonState.settings.m_torchAsFiresource ? EffectArea.Type.Heat | EffectArea.Type.Fire : EffectArea.Type.Fire;
         }
     }
 
@@ -264,6 +404,19 @@ namespace Seasons
             ZLog.Log("Time " + timeSeconds + ", day:" + day + "    nextm:" + morningStartSec + "  skipspeed:" + ___m_timeSkipSpeed);
 
             return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.UpdateEquipment))]
+    public static class Humanoid_UpdateEquipment_ToggleTorchesWarmth
+    {
+        private static void Prefix(Humanoid __instance)
+        {
+            if (__instance == null || !__instance.IsPlayer())
+                return;
+
+            SeasonState.PatchTorchItemData(__instance.m_rightItem);
+            SeasonState.PatchTorchItemData(__instance.m_leftItem);
         }
     }
 

@@ -29,8 +29,6 @@ namespace Seasons
         private static ConfigEntry<bool> loggingEnabled;
         public static ConfigEntry<CacheFormat> cacheStorageFormat;
 
-        public static ConfigEntry<int> daysInSeason;
-        public static ConfigEntry<bool> seasonsOverlap;
         public static ConfigEntry<TimerFormat> seasonsTimerFormat;
 
         public static ConfigEntry<bool> overrideSeason;
@@ -110,6 +108,10 @@ namespace Seasons
         public static Dictionary<int, TextureVariants> texturesVariants = SeasonalTextureVariants.textures;
 
         public static readonly CustomSyncedValue<Dictionary<int, string>> seasonsSettingsJSON = new CustomSyncedValue<Dictionary<int, string>>(configSync, "Seasons settings JSON", new Dictionary<int, string>());
+        public static readonly CustomSyncedValue<string> customEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom environments JSON", "");
+        public static readonly CustomSyncedValue<string> customBiomeEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom biome environments JSON", "");
+
+        public static readonly List<BiomeEnvSetup> biomesDefault = new List<BiomeEnvSetup>();
 
         public enum Season
         {
@@ -191,8 +193,6 @@ namespace Seasons
             configLocked = config("General", "Lock Configuration", defaultValue: true, "Configuration is locked and can be changed by server admins only.");
             loggingEnabled = config("General", "Logging enabled", defaultValue: false, "Enable logging. [Not Synced with Server]", false);
 
-            daysInSeason = config("Season", "Days in season", defaultValue: 10, "How much ingame days should pass for season to change.");
-            seasonsOverlap = config("Season", "Seasons overlap", defaultValue: true, "The seasons will smoothly overlap on the last and first days.");
             seasonsTimerFormat = config("Season", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer"); 
 
             overrideSeason = config("Seasons override", "Override", defaultValue: false, "The season will be overrided by set season.");

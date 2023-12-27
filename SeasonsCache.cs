@@ -839,6 +839,7 @@ namespace Seasons
                 { "swamptree2_bark", new string[] { "_MossTex" }},
                 { "swamptree_stump", new string[] { "_MossTex" }},
                 { "beech_bark", new string[] { "_MossTex" }},
+                { "oak_bark", new string[] { "_MossTex" }},
             };
 
         public static readonly Dictionary<string, string[]> shaderTextures = new Dictionary<string, string[]>
