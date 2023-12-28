@@ -35,7 +35,8 @@ namespace Seasons
                 return;
 
             foreach (Season season in Enum.GetValues(typeof(Season)))
-                seasonsSettings.Add(season, new SeasonSettings(season));
+                if (!seasonsSettings.ContainsKey(season))
+                    seasonsSettings.Add(season, new SeasonSettings(season));
 
             string folder = Path.Combine(configDirectory, SeasonSettings.defaultsSubdirectory);
             Directory.CreateDirectory(folder);
@@ -107,8 +108,11 @@ namespace Seasons
             {
                 try
                 {
-                    seasonsSettings[(Season)item.Key] = new SeasonSettings((Season)item.Key, JsonConvert.DeserializeObject<SeasonSettingsFile>(item.Value));
-                    LogInfo($"Settings updated: {(Season)item.Key}");
+                    if (!String.IsNullOrEmpty(item.Value))
+                    {
+                        seasonsSettings[(Season)item.Key] = new SeasonSettings((Season)item.Key, JsonConvert.DeserializeObject<SeasonSettingsFile>(item.Value));
+                        LogInfo($"Settings updated: {(Season)item.Key}");
+                    }
                 }
                 catch (Exception e)
                 {
@@ -205,6 +209,11 @@ namespace Seasons
             }
         }
 
+        public void UpdateCurrentEnvironment()
+        {
+            EnvMan.instance.m_environmentPeriod--;
+        }
+
         private Season GetSeason(int day)
         {
             int dayOfYear = GetDayOfYear(day);
@@ -262,7 +271,7 @@ namespace Seasons
             TerrainVariantController.UpdateTerrainColors();
             ClutterVariantController.instance.UpdateColors();
             UpdateBiomeEnvironments();
-            //instance.StartCoroutine(UpdateTorchesFireWarmth());
+            UpdateCurrentEnvironment();
             UpdateTorchesFireWarmth();
         }
 
@@ -290,7 +299,7 @@ namespace Seasons
             return $"{m_season} day:{m_day}";
         }
 
-        public static void PatchTorchItemData(ItemDrop.ItemData torch)
+        public void PatchTorchItemData(ItemDrop.ItemData torch)
         {
             if (torch == null)
                 return;
@@ -304,26 +313,47 @@ namespace Seasons
                 torch.m_shared.m_durabilityDrain = 0.0333f;
         }
 
-        public IEnumerator UpdateTorchesFireWarmth()
+        public void UpdateTorchesFireWarmth()
         {
-            yield return new WaitForFixedUpdate();
-
             GameObject prefabGoblinTorch = ObjectDB.instance.GetItemPrefab("GoblinTorch");
             if (prefabGoblinTorch != null)
                 UpdateTorchFireWarmth(prefabGoblinTorch);
 
-            GameObject prefabTorch = ObjectDB.instance.GetItemPrefab("Torch");
-            if (prefabTorch != null)
-                UpdateTorchFireWarmth(prefabTorch);
-
             GameObject prefabTorchMist = ObjectDB.instance.GetItemPrefab("TorchMist");
             if (prefabTorchMist != null)
                 UpdateTorchFireWarmth(prefabTorchMist);
+
+            GameObject prefabTorch = ObjectDB.instance.GetItemPrefab(SeasonSettings.itemNameTorch);
+            if (prefabTorch != null)
+                UpdateTorchFireWarmth(prefabTorch);
+
+            if (Player.m_localPlayer != null)
+                PatchTorchesInInventory(Player.m_localPlayer.GetInventory());
         }
 
-        public void UpdateTorchFireWarmth(GameObject prefab)
+        public void PatchTorchesInInventory(Inventory inventory)
         {
-            Utils.FindChild(prefab.transform, "FireWarmth").gameObject.GetComponent<EffectArea>().m_type = seasonState.settings.m_torchAsFiresource ? EffectArea.Type.Heat | EffectArea.Type.Fire : EffectArea.Type.Fire;
+            List<ItemDrop.ItemData> items = new List<ItemDrop.ItemData>();
+            inventory.GetAllItems(SeasonSettings.itemDropNameTorch, items);
+
+            foreach (ItemDrop.ItemData item in items)
+                seasonState.PatchTorchItemData(item);
+        }
+
+        public void UpdateTorchFireWarmth(GameObject prefab, string childName = "FireWarmth")
+        {
+            Transform fireWarmth = Utils.FindChild(prefab.transform, childName);
+            if (fireWarmth == null)
+                return;
+
+            EffectArea component = fireWarmth.gameObject.GetComponent<EffectArea>();
+            if (component == null)
+                return;
+
+            component.m_type = seasonState.settings.m_torchAsFiresource ? EffectArea.Type.Heat | EffectArea.Type.Fire : EffectArea.Type.Fire;
+            
+            ItemDrop item = prefab.GetComponent<ItemDrop>();
+            PatchTorchItemData(item.m_itemData);
         }
     }
 
@@ -415,9 +445,63 @@ namespace Seasons
             if (__instance == null || !__instance.IsPlayer())
                 return;
 
-            SeasonState.PatchTorchItemData(__instance.m_rightItem);
-            SeasonState.PatchTorchItemData(__instance.m_leftItem);
+            seasonState.PatchTorchItemData(__instance.m_rightItem);
+            seasonState.PatchTorchItemData(__instance.m_leftItem);
         }
     }
 
+    [HarmonyPatch(typeof(ObjectDB), nameof(ObjectDB.Awake))]
+    public static class ObjectDB_Awake_CircletStats
+    {
+        [HarmonyPriority(Priority.Last)]
+        private static void Postfix()
+        {
+            seasonState.UpdateTorchesFireWarmth();
+        }
+    }
+
+    [HarmonyPatch(typeof(Player), nameof(Player.AddKnownItem))]
+    public static class Player_AddKnownItem_CircletStats
+    {
+        private static void Postfix(ref ItemDrop.ItemData item)
+        {
+            if (item.m_shared.m_name != SeasonSettings.itemDropNameTorch)
+                return;
+
+            seasonState.PatchTorchItemData(item);
+        }
+    }
+
+    [HarmonyPatch(typeof(Player), nameof(Player.OnSpawned))]
+    public class Player_OnSpawned_CircletStats
+    {
+        public static void Postfix(Player __instance)
+        {
+            if (__instance != Player.m_localPlayer)
+                return;
+
+            seasonState.PatchTorchesInInventory(__instance.GetInventory());
+        }
+    }
+
+    [HarmonyPatch(typeof(Inventory), nameof(Inventory.Load))]
+    public class Inventory_Load_CircletStats
+    {
+        public static void Postfix(Inventory __instance)
+        {
+            seasonState.PatchTorchesInInventory(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(ItemDrop), nameof(ItemDrop.Start))]
+    public static class ItemDrop_Start_CircletStats
+    {
+        private static void Postfix(ref ItemDrop __instance)
+        {
+            if (__instance.GetPrefabName(__instance.name) != SeasonSettings.itemNameTorch)
+                return;
+
+            seasonState.PatchTorchItemData(__instance.m_itemData);
+        }
+    }
 }

@@ -316,8 +316,8 @@ namespace Seasons
                     m_isCold = true,
                     m_isColdAtNight = true,
                     m_alwaysDark = true,
-                    m_psystems = "GroundMist,Snow,FogClouds,OceanMist",
-                    m_ambientLoop = "Wind_ColdLoop3",
+                    m_psystems = "GroundMist,SnowStorm,FogClouds,OceanMist",
+                    m_ambientLoop = "Wind_BlowingLoop3",
                 },
                 new SeasonEnvironment
                 {
@@ -328,7 +328,7 @@ namespace Seasons
                     m_isColdAtNight = true,
                     m_alwaysDark = true,
                     m_psystems = "GroundMist,Snow,FogClouds",
-                    m_ambientLoop = "SW008_Wendland_Autumn_Wind_In_Reeds_Medium_Distance_Leaves_Only",
+                    m_ambientLoop = "Wind_ColdLoop3",
                 },
                 new SeasonEnvironment
                 {
@@ -361,7 +361,7 @@ namespace Seasons
                     m_isColdAtNight = true,
                     m_alwaysDark = true,
                     m_psystems = "Snow,GroundMist",
-                    m_ambientLoop = "SW008_Wendland_Autumn_Wind_In_Reeds_Medium_Distance_Leaves_Only",
+                    m_ambientLoop = "Wind_ColdLoop3",
                 },
                 new SeasonEnvironment
                 {
@@ -569,11 +569,13 @@ namespace Seasons
         public const string customEnvironmentsFileName = "Custom environments.json";
         public const string customBiomeEnvironmentsFileName = "Custom Biome Environments.json";
         public const int nightLentghDefault = 30;
+        public const string itemDropNameTorch = "$item_torch";
+        public const string itemNameTorch = "Torch";
 
         public int m_daysInSeason = 10;
         public int m_nightLength = nightLentghDefault;
         public bool m_torchAsFiresource = false;
-        public float m_torchDurabilityDrain = 0.5f; 
+        public float m_torchDurabilityDrain = 0.1f;
 
         public SeasonSettings(Season season)
         {

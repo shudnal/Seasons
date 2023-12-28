@@ -543,5 +543,13 @@ namespace Seasons
             PrefabVariantController.AddComponentTo(ragdoll.gameObject);
         }
     }
-    
+
+    [HarmonyPatch(typeof(Plant), nameof(Plant.Awake))]
+    public static class Plant_Awake_AddPrefabVariantController
+    {
+        private static void Postfix(Plant __instance)
+        {
+            PrefabVariantController.AddComponentTo(__instance.gameObject);
+        }
+    }
 }
