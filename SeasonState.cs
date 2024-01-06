@@ -273,6 +273,11 @@ namespace Seasons
             UpdateBiomeEnvironments();
             UpdateCurrentEnvironment();
             UpdateTorchesFireWarmth();
+
+            if (Player.m_localPlayer != null)
+            {
+                Player.m_localPlayer.UpdateCurrentSeason();
+            }
         }
 
         private void CheckIfDayChanged(int dayInSeason)
@@ -451,7 +456,7 @@ namespace Seasons
     }
 
     [HarmonyPatch(typeof(ObjectDB), nameof(ObjectDB.Awake))]
-    public static class ObjectDB_Awake_CircletStats
+    public static class ObjectDB_Awake_TorchPatch
     {
         [HarmonyPriority(Priority.Last)]
         private static void Postfix()
@@ -461,7 +466,7 @@ namespace Seasons
     }
 
     [HarmonyPatch(typeof(Player), nameof(Player.AddKnownItem))]
-    public static class Player_AddKnownItem_CircletStats
+    public static class Player_AddKnownItem_TorchPatch
     {
         private static void Postfix(ref ItemDrop.ItemData item)
         {
@@ -473,7 +478,7 @@ namespace Seasons
     }
 
     [HarmonyPatch(typeof(Player), nameof(Player.OnSpawned))]
-    public class Player_OnSpawned_CircletStats
+    public class Player_OnSpawned_TorchPatch
     {
         public static void Postfix(Player __instance)
         {
@@ -485,7 +490,7 @@ namespace Seasons
     }
 
     [HarmonyPatch(typeof(Inventory), nameof(Inventory.Load))]
-    public class Inventory_Load_CircletStats
+    public class Inventory_Load_TorchPatch
     {
         public static void Postfix(Inventory __instance)
         {
@@ -494,7 +499,7 @@ namespace Seasons
     }
 
     [HarmonyPatch(typeof(ItemDrop), nameof(ItemDrop.Start))]
-    public static class ItemDrop_Start_CircletStats
+    public static class ItemDrop_Start_TorchPatch
     {
         private static void Postfix(ref ItemDrop __instance)
         {
@@ -504,4 +509,17 @@ namespace Seasons
             seasonState.PatchTorchItemData(__instance.m_itemData);
         }
     }
+
+    [HarmonyPatch(typeof(SeasonalItemGroup), nameof(SeasonalItemGroup.IsInSeason))]
+    public static class SeasonalItemGroup_IsInSeason_SeasonalItems
+    {
+        private static void Postfix(SeasonalItemGroup __instance, ref bool __result)
+        {
+            Season season = seasonState.GetCurrentSeason();
+            __result = __result || __instance.name == "Halloween" && season == Season.Fall
+                                || __instance.name == "Midsummer" && season == Season.Summer
+                                || __instance.name == "Yule" && season == Season.Winter;
+        }
+    }
+    
 }

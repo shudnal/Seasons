@@ -10,6 +10,7 @@ using System.Reflection;
 using System;
 using System.IO;
 using HarmonyLib.Tools;
+using static Seasons.Seasons;
 
 namespace Seasons
 {
@@ -30,6 +31,7 @@ namespace Seasons
         public static ConfigEntry<CacheFormat> cacheStorageFormat;
 
         public static ConfigEntry<TimerFormat> seasonsTimerFormat;
+        public static ConfigEntry<bool> enableSeasonalItems;
 
         public static ConfigEntry<bool> overrideSeason;
         public static ConfigEntry<Season> seasonOverrided;
@@ -193,7 +195,8 @@ namespace Seasons
             configLocked = config("General", "Lock Configuration", defaultValue: true, "Configuration is locked and can be changed by server admins only.");
             loggingEnabled = config("General", "Logging enabled", defaultValue: false, "Enable logging. [Not Synced with Server]", false);
 
-            seasonsTimerFormat = config("Season", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer"); 
+            seasonsTimerFormat = config("Season", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
+            enableSeasonalItems = config("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
 
             overrideSeason = config("Seasons override", "Override", defaultValue: false, "The season will be overrided by set season.");
             seasonOverrided = config("Seasons override", "Season", defaultValue: Season.Spring, "The season to set.");
@@ -296,6 +299,7 @@ namespace Seasons
 
         private void Test()
         {
+            
             
         }
 
