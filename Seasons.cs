@@ -32,6 +32,7 @@ namespace Seasons
 
         public static ConfigEntry<TimerFormat> seasonsTimerFormat;
         public static ConfigEntry<bool> enableSeasonalItems;
+        public static ConfigEntry<bool> preventDeathFromFreezing;
 
         public static ConfigEntry<bool> overrideSeason;
         public static ConfigEntry<Season> seasonOverrided;
@@ -197,6 +198,7 @@ namespace Seasons
 
             seasonsTimerFormat = config("Season", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
             enableSeasonalItems = config("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
+            preventDeathFromFreezing = config("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
 
             overrideSeason = config("Seasons override", "Override", defaultValue: false, "The season will be overrided by set season.");
             seasonOverrided = config("Seasons override", "Season", defaultValue: Season.Spring, "The season to set.");
@@ -369,5 +371,6 @@ namespace Seasons
         {
             return instance.GetSpriteConfig($"icon{season}");
         }
+       
     }
 }

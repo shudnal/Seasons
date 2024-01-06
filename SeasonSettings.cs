@@ -7,12 +7,7 @@ using System.IO;
 using System.Reflection;
 using System.Linq;
 using UnityEngine;
-using UnityEngine.Serialization;
 using static Seasons.Seasons;
-using static TerrainOp;
-using System.Security.Policy;
-using System.Runtime.ConstrainedExecution;
-using static Utils;
 
 namespace Seasons
 {
@@ -107,8 +102,10 @@ namespace Seasons
 
         public bool m_isFreezingAtNight;
 
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Include)]
         public bool m_isCold;
 
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Include)]
         public bool m_isColdAtNight;
 
         public bool m_alwaysDark;
@@ -613,7 +610,7 @@ namespace Seasons
                     }
                 case Season.Summer:
                     {
-                        m_nightLength = 20;
+                        m_nightLength = 15;
                         break;
                     }
                 case Season.Fall:
@@ -623,7 +620,7 @@ namespace Seasons
                     }
                 case Season.Winter:
                     {
-                        m_nightLength = 40;
+                        m_nightLength = 45;
                         m_torchAsFiresource = true;
                         break;
                     }

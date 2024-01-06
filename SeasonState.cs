@@ -186,25 +186,28 @@ namespace Seasons
                     }
             }
 
-            foreach (BiomeEnvSetup biomeEnvironment in biomesDefault)
+            EnvMan.instance.m_biomes.Clear();
+
+            foreach (BiomeEnvSetup biomeEnvironmentDefault in biomesDefault)
             {
-                foreach (SeasonBiomeEnvironment.EnvironmentReplace replace in biomeEnv.replace)
-                    biomeEnvironment.m_environments.DoIf(env => env.m_environment == replace.m_environment, env => env.m_environment = replace.replace_to);
-
-                foreach (SeasonBiomeEnvironment.EnvironmentAdd add in biomeEnv.add)
-                    if (add.m_name == biomeEnvironment.m_name && !biomeEnvironment.m_environments.Any(env => env.m_environment == add.m_environment.m_environment))
-                        biomeEnvironment.m_environments.Add(add.m_environment);
-
-                foreach (SeasonBiomeEnvironment.EnvironmentRemove remove in biomeEnv.remove)
-                    biomeEnvironment.m_environments.DoIf(env => biomeEnvironment.m_name == remove.m_name && env.m_environment == remove.m_environment, env => biomeEnvironment.m_environments.Remove(env));
-
                 try
                 {
+                    BiomeEnvSetup biomeEnvironment = JsonUtility.FromJson<BiomeEnvSetup>(JsonUtility.ToJson(biomeEnvironmentDefault));
+                    foreach (SeasonBiomeEnvironment.EnvironmentReplace replace in biomeEnv.replace)
+                        biomeEnvironment.m_environments.DoIf(env => env.m_environment == replace.m_environment, env => env.m_environment = replace.replace_to);
+
+                    foreach (SeasonBiomeEnvironment.EnvironmentAdd add in biomeEnv.add)
+                        if (add.m_name == biomeEnvironment.m_name && !biomeEnvironment.m_environments.Any(env => env.m_environment == add.m_environment.m_environment))
+                            biomeEnvironment.m_environments.Add(add.m_environment);
+
+                    foreach (SeasonBiomeEnvironment.EnvironmentRemove remove in biomeEnv.remove)
+                        biomeEnvironment.m_environments.DoIf(env => biomeEnvironment.m_name == remove.m_name && env.m_environment == remove.m_environment, env => biomeEnvironment.m_environments.Remove(env));
+
                     EnvMan.instance.AppendBiomeSetup(biomeEnvironment);
                 }
                 catch (Exception e)
                 {
-                    LogWarning($"Error appending biome setup {biomeEnvironment.m_name}:\n{e}");
+                    LogWarning($"Error appending biome setup {biomeEnvironmentDefault.m_name}:\n{e}");
                 }
             }
         }
@@ -521,5 +524,30 @@ namespace Seasons
                                 || __instance.name == "Yule" && season == Season.Winter;
         }
     }
-    
+
+    [HarmonyPatch(typeof(Character), nameof(Character.ApplyDamage))]
+    public static class Character_ApplyDamage_PreventDeathFromFreezing
+    {
+        private static void Prefix(Character __instance, ref HitData hit)
+        {
+            if (!preventDeathFromFreezing.Value)
+                return;
+
+            if (!__instance.IsPlayer())
+                return;
+
+            if (__instance != Player.m_localPlayer) 
+                return;
+
+            if (hit.m_hitType != HitData.HitType.Freezing) 
+                return;
+
+            Heightmap.Biome biome = (__instance as Player).GetCurrentBiome();
+            if (biome == Heightmap.Biome.Mountain || biome == Heightmap.Biome.DeepNorth)
+                return;
+
+            if (hit.GetTotalDamage() >= __instance.GetHealth() + 0.1f)
+                hit.ApplyModifier(0f);
+        }
+    }
 }
