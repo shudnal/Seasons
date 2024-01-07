@@ -34,6 +34,11 @@ namespace Seasons
         public static ConfigEntry<bool> enableSeasonalItems;
         public static ConfigEntry<bool> preventDeathFromFreezing;
 
+        public static ConfigEntry<StationHover> hoverBeeHive;
+        public static ConfigEntry<bool> hoverBeeHiveTotal;
+        public static ConfigEntry<StationHover> hoverPlant;
+        public static ConfigEntry<bool> seasonalMinimapBorderColor;
+
         public static ConfigEntry<bool> overrideSeason;
         public static ConfigEntry<Season> seasonOverrided;
 
@@ -138,6 +143,13 @@ namespace Seasons
             TimeToEnd
         }
         
+        public enum StationHover
+        {
+            Vanilla,
+            Percentage,
+            MinutesSeconds
+        }
+
         private void Awake()
         {
             harmony.PatchAll();
@@ -191,7 +203,7 @@ namespace Seasons
 
         public void ConfigInit()
         {
-            config("General", "NexusID", 0, "Nexus mod ID for updates", false);
+            config("General", "NexusID", 2654, "Nexus mod ID for updates", false);
 
             configLocked = config("General", "Lock Configuration", defaultValue: true, "Configuration is locked and can be changed by server admins only.");
             loggingEnabled = config("General", "Logging enabled", defaultValue: false, "Enable logging. [Not Synced with Server]", false);
@@ -199,6 +211,11 @@ namespace Seasons
             seasonsTimerFormat = config("Season", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
             enableSeasonalItems = config("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
             preventDeathFromFreezing = config("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
+           
+            hoverBeeHive = Config.Bind("UI", "Bee Hive Hover", defaultValue: StationHover.Vanilla, "Hover text for bee hive.");
+            hoverBeeHiveTotal = Config.Bind("UI", "Bee Hive Show total", defaultValue: true, "Show total needed time/percent for bee hive.");
+            hoverPlant = Config.Bind("UI", "Plants Hover", defaultValue: StationHover.Vanilla, "Hover text for plants.");
+            seasonalMinimapBorderColor = Config.Bind("UI", "Seasonal colored minimap border", defaultValue: true, "Change minimap border color according to current season");
 
             overrideSeason = config("Seasons override", "Override", defaultValue: false, "The season will be overrided by set season.");
             seasonOverrided = config("Seasons override", "Season", defaultValue: Season.Spring, "The season to set.");
@@ -302,7 +319,6 @@ namespace Seasons
         private void Test()
         {
             
-            
         }
 
         private Color GetColorConfig(string fieldName)
@@ -371,6 +387,12 @@ namespace Seasons
         {
             return instance.GetSpriteConfig($"icon{season}");
         }
-       
+
+        public static string FromSeconds(double seconds)
+        {
+            TimeSpan ts = TimeSpan.FromSeconds(seconds);
+            return ts.ToString(ts.Hours > 0 ? @"h\:mm\:ss" : @"m\:ss");
+        }
+
     }
 }

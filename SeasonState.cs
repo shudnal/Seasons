@@ -7,6 +7,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
+using BepInEx;
+using static MeleeWeaponTrail;
 
 namespace Seasons
 {
@@ -83,9 +85,29 @@ namespace Seasons
             return settings.m_daysInSeason;
         }
 
+        public int GetDaysInSeason(Season season)
+        {
+            return GetSeasonSettings(season).m_daysInSeason;
+        }
+
+        public float GetPlantsGrowthMultiplier(Season season)
+        {
+            return GetSeasonSettings(season).m_plantsGrowthMultiplier;
+        }
+
         public Season GetNextSeason()
         {
-            return NextSeason(m_season);
+            return GetNextSeason(m_season);
+        }
+
+        public Season GetPreviousSeason(Season season)
+        {
+            return (Season)((seasonsCount + (int)season - 1) % seasonsCount);
+        }
+
+        public Season GetNextSeason(Season season)
+        {
+            return (Season)(((int)season + 1) % seasonsCount);
         }
 
         public int GetNightLength()
@@ -217,6 +239,37 @@ namespace Seasons
             EnvMan.instance.m_environmentPeriod--;
         }
 
+        public double GetEndOfCurrentSeason()
+        {
+            return GetStartOfCurrentSeason() + seasonState.GetDaysInSeason() * EnvMan.instance.m_dayLengthSec;
+        }
+
+        public double GetStartOfCurrentSeason()
+        {
+            double startOfDay = ZNet.instance.GetTimeSeconds() - ZNet.instance.GetTimeSeconds() % EnvMan.instance.m_dayLengthSec;
+            return startOfDay - (GetCurrentDay() - 1) * EnvMan.instance.m_dayLengthSec;
+        }
+
+        public float DayStartFraction()
+        {
+            return (seasonState.GetNightLength() / 2f) / 100f;
+        }
+
+        public float GetBeehiveProductionMultiplier()
+        {
+            return GetBeehiveProductionMultiplier(seasonState.GetCurrentSeason());
+        }
+
+        public float GetBeehiveProductionMultiplier(Season season)
+        {
+            return GetSeasonSettings(season).m_beehiveProductionMultiplier;
+        }
+
+        private SeasonSettings GetSeasonSettings(Season season)
+        {
+            return seasonsSettings[season] ?? new SeasonSettings(season);
+        }
+
         private Season GetSeason(int day)
         {
             int dayOfYear = GetDayOfYear(day);
@@ -250,21 +303,6 @@ namespace Seasons
             return day % GetYearLengthInDays();
         }
 
-        private int GetDaysInSeason(Season season)
-        {
-            return (seasonsSettings[season] ?? new SeasonSettings(season)).m_daysInSeason;
-        }
-
-        private Season PreviousSeason(Season season)
-        {
-            return (Season)((seasonsCount + (int)season - 1) % seasonsCount);
-        }
-
-        private Season NextSeason(Season season)
-        {
-            return (Season)(((int)season + 1) % seasonsCount);
-        }
-
         private void CheckIfSeasonChanged(int season)
         {
             if (season == (int)m_season)
@@ -276,6 +314,7 @@ namespace Seasons
             UpdateBiomeEnvironments();
             UpdateCurrentEnvironment();
             UpdateTorchesFireWarmth();
+            UpdateMinimapBorder();
 
             if (Player.m_localPlayer != null)
             {
@@ -363,6 +402,32 @@ namespace Seasons
             ItemDrop item = prefab.GetComponent<ItemDrop>();
             PatchTorchItemData(item.m_itemData);
         }
+
+        public void UpdateMinimapBorder()
+        {
+            if (!seasonalMinimapBorderColor.Value || Minimap.instance == null)
+                return;
+
+            if (!Minimap.instance.m_smallRoot.TryGetComponent(out UnityEngine.UI.Image image) || image.sprite == null || image.sprite.name != "InputFieldBackground")
+                return;
+
+            switch (GetCurrentSeason())
+            {
+                case Season.Spring:
+                    image.color = new Color(0.44f, 0.56f, 0.03f, image.color.a);
+                    break;
+                case Season.Summer:
+                    image.color = new Color(0.69f, 0.73f, 0.05f, image.color.a);
+                    break;
+                case Season.Fall:
+                    image.color = new Color(0.79f, 0.32f, 0f, image.color.a);
+                    break;
+                case Season.Winter:
+                    image.color = new Color(0.89f, 0.94f, 0.96f, image.color.a);
+                    break;
+            }
+        }
+            
     }
 
     [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.UpdateTriggers))]
@@ -414,9 +479,7 @@ namespace Seasons
             if (!seasonState.OverrideNightLength())
                 return true;
 
-            float dayStart = (seasonState.GetNightLength() / 2f) / 100f;
-
-            __result = (float)(day * __instance.m_dayLengthSec) + (float)__instance.m_dayLengthSec * dayStart;
+            __result = (float)(day * __instance.m_dayLengthSec) + (float)__instance.m_dayLengthSec * seasonState.DayStartFraction();
             return false;
         }
     }
@@ -429,10 +492,8 @@ namespace Seasons
             if (!seasonState.OverrideNightLength())
                 return true;
 
-            float dayStart = (seasonState.GetNightLength() / 2f) / 100f;
-
             double timeSeconds = ZNet.instance.GetTimeSeconds();
-            double time = timeSeconds - (double)((float)__instance.m_dayLengthSec * dayStart);
+            double time = timeSeconds - (double)((float)__instance.m_dayLengthSec * seasonState.DayStartFraction());
             int day = __instance.GetDay(time);
             double morningStartSec = __instance.GetMorningStartSec(day + 1);
             ___m_skipTime = true;
@@ -550,4 +611,175 @@ namespace Seasons
                 hit.ApplyModifier(0f);
         }
     }
+
+    [HarmonyPatch(typeof(Plant), nameof(Plant.TimeSincePlanted))]
+    public static class Plant_TimeSincePlanted_PlantsGrowthMultiplier
+    {
+        private static void Postfix(ref double __result)
+        {
+            double timeSeconds = ZNet.instance.GetTimeSeconds();
+            double seasonStart = seasonState.GetStartOfCurrentSeason();
+            Season season = seasonState.GetCurrentSeason();
+            double rescaledResult = 0d;
+
+            do
+            {
+                rescaledResult += (timeSeconds - seasonStart >= __result ? __result : timeSeconds - seasonStart) * seasonState.GetPlantsGrowthMultiplier(season);
+                
+                __result -= timeSeconds - seasonStart;
+                timeSeconds = seasonStart;
+                season = seasonState.GetPreviousSeason(season);
+                seasonStart -= seasonState.GetDaysInSeason(season) * EnvMan.instance.m_dayLengthSec;
+
+            } while (__result > 0);
+            
+            __result = rescaledResult;
+        }
+    }
+
+    [HarmonyPatch(typeof(Plant), nameof(Plant.GetHoverText))]
+    public static class Plant_GetHoverText_Duration
+    {
+        private static double GetGrowTime(Plant plant)
+        {
+            double timeSeconds = ZNet.instance.GetTimeSeconds();
+
+            Season season = seasonState.GetCurrentSeason();
+            float growthMultiplier = seasonState.GetPlantsGrowthMultiplier(season);
+            
+            double secondsToGrow = 0d;
+            double secondsToSeasonEnd = seasonState.GetEndOfCurrentSeason() - timeSeconds;
+            double secondsLeft = plant.GetGrowTime() - plant.TimeSincePlanted();//growthMultiplier == 0 ? growTime - timeSincePlanted : Math.Max(0, (growTime - timeSincePlanted) / growthMultiplier); 
+
+            do
+            {
+                double timeInSeasonLeft = growthMultiplier == 0 ? secondsToSeasonEnd : Math.Min(secondsLeft / growthMultiplier, secondsToSeasonEnd);
+                
+                secondsToGrow += timeInSeasonLeft;
+                secondsLeft -= timeInSeasonLeft * growthMultiplier;
+               
+                season = seasonState.GetNextSeason(season);
+                growthMultiplier = seasonState.GetPlantsGrowthMultiplier(season);
+                
+                secondsToSeasonEnd = seasonState.GetDaysInSeason(season) * EnvMan.instance.m_dayLengthSec;
+
+            } while (secondsLeft > 0);
+
+            return secondsToGrow;
+        }
+
+        private static void Postfix(Plant __instance, ZNetView ___m_nview, ref string __result)
+        {
+            if (hoverPlant.Value == StationHover.Vanilla)
+                return;
+
+            if (__result.IsNullOrWhiteSpace())
+                return;
+
+            if (__instance.GetStatus() != Plant.Status.Healthy)
+                return;
+
+            if (hoverPlant.Value == StationHover.Percentage)
+                __result += $"\n{__instance.TimeSincePlanted() / __instance.GetGrowTime():P0}";
+            else if (hoverPlant.Value == StationHover.MinutesSeconds)
+                __result += $"\n{FromSeconds(GetGrowTime(__instance))}";
+        }
+    }
+
+    [HarmonyPatch(typeof(Minimap), nameof(Minimap.Start))]
+    public static class Minimap_Start_MinimapSeasonalBorderColor
+    {
+        private static void Postfix()
+        {
+            if (!seasonState.IsActive)
+                return;
+
+            seasonState.UpdateMinimapBorder();
+        }
+    }
+
+    [HarmonyPatch(typeof(Beehive), nameof(Beehive.Interact))]
+    public static class Beehive_Interact_BeesInteractionMessage
+    {
+        private static void Prefix(ref Beehive __instance, ref string __state)
+        {
+            __state = __instance.m_happyText;
+            if (seasonState.GetBeehiveProductionMultiplier() == 0f)
+                __instance.m_happyText = __instance.m_sleepText;
+        }
+
+        private static void Postfix(ref Beehive __instance, ref string __state)
+        {
+            __instance.m_happyText = __state;
+        }
+    }
+
+    [HarmonyPatch(typeof(Beehive), nameof(Beehive.GetTimeSinceLastUpdate))]
+    public static class Beehive_GetTimeSinceLastUpdate_BeesProduction
+    {
+        private static void Postfix(ref float __result)
+        {
+            __result *= seasonState.GetBeehiveProductionMultiplier();
+        }
+    }
+
+    [HarmonyPatch(typeof(Beehive), nameof(Beehive.GetHoverText))]
+    public static class Beehive_GetHoverText_Duration
+    {
+        private static double GetNextProduct(Beehive beehive, float product, int count = 1)
+        {
+            double timeSeconds = ZNet.instance.GetTimeSeconds();
+
+            Season season = seasonState.GetCurrentSeason();
+            float multiplier = seasonState.GetBeehiveProductionMultiplier(season);
+
+            double secondsToProduct = 0d;
+            double secondsToSeasonEnd = seasonState.GetEndOfCurrentSeason() - timeSeconds;
+            double secondsLeft = beehive.m_secPerUnit * count - product;
+
+            do
+            {
+                double timeInSeasonLeft = multiplier == 0 ? secondsToSeasonEnd : Math.Min(secondsLeft / multiplier, secondsToSeasonEnd);
+
+                secondsToProduct += timeInSeasonLeft;
+                secondsLeft -= timeInSeasonLeft * multiplier;
+
+                season = seasonState.GetNextSeason(season);
+                multiplier = seasonState.GetBeehiveProductionMultiplier(season);
+
+                secondsToSeasonEnd = seasonState.GetDaysInSeason(season) * EnvMan.instance.m_dayLengthSec;
+
+            } while (secondsLeft > 0);
+
+            return secondsToProduct;
+        }
+
+        private static void Postfix(Beehive __instance, ref string __result)
+        {
+            if (hoverBeeHive.Value == StationHover.Vanilla)
+                return;
+
+            if (__result.IsNullOrWhiteSpace())
+                return;
+
+            int honeyLevel = __instance.GetHoneyLevel();
+
+            if (!PrivateArea.CheckAccess(__instance.transform.position, 0f, flash: false) || honeyLevel == __instance.m_maxHoney)
+                return;
+
+            float product = __instance.m_nview.GetZDO().GetFloat(ZDOVars.s_product);
+
+            if (hoverBeeHive.Value == StationHover.Percentage)
+                __result += $"\n{product / __instance.m_secPerUnit:P0}";
+            else if (hoverBeeHive.Value == StationHover.MinutesSeconds)
+                __result += $"\n{FromSeconds(GetNextProduct(__instance, product, 1))}";
+
+            if (hoverBeeHiveTotal.Value && honeyLevel < 3)
+                if (hoverBeeHive.Value == StationHover.Percentage)
+                    __result += $"\n{(product + __instance.m_secPerUnit * honeyLevel) / (__instance.m_secPerUnit * __instance.m_maxHoney):P0}";
+                else if (hoverBeeHive.Value == StationHover.MinutesSeconds)
+                    __result += $"\n{FromSeconds(GetNextProduct(__instance, product, __instance.m_maxHoney - honeyLevel))}";
+        }
+    }
+
 }

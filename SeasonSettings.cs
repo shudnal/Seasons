@@ -18,6 +18,8 @@ namespace Seasons
         public int nightLength;
         public bool torchAsFiresource;
         public float torchDurabilityDrain;
+        public float plantsGrowthMultiplier;
+        public float beehiveProductionMultiplier;
 
         public SeasonSettingsFile(SeasonSettings settings)
         {
@@ -25,6 +27,8 @@ namespace Seasons
             nightLength = settings.m_nightLength;
             torchAsFiresource = settings.m_torchAsFiresource;
             torchDurabilityDrain = settings.m_torchDurabilityDrain;
+            plantsGrowthMultiplier = settings.m_plantsGrowthMultiplier;
+            beehiveProductionMultiplier = settings.m_beehiveProductionMultiplier;
         }
 
         public SeasonSettingsFile()
@@ -573,6 +577,8 @@ namespace Seasons
         public int m_nightLength = nightLentghDefault;
         public bool m_torchAsFiresource = false;
         public float m_torchDurabilityDrain = 0.1f;
+        public float m_plantsGrowthMultiplier = 1.0f;
+        public float m_beehiveProductionMultiplier = 1.0f;
 
         public SeasonSettings(Season season)
         {
@@ -606,20 +612,28 @@ namespace Seasons
             {
                 case Season.Spring:
                     {
+                        m_plantsGrowthMultiplier = 2.0f;
+                        m_beehiveProductionMultiplier = 0.5f;
                         break;
                     }
                 case Season.Summer:
                     {
+                        m_plantsGrowthMultiplier = 1.5f;
+                        m_beehiveProductionMultiplier = 2f;
                         m_nightLength = 15;
                         break;
                     }
                 case Season.Fall:
                     {
+                        m_plantsGrowthMultiplier = 0.5f;
+                        m_beehiveProductionMultiplier = 1.5f;
                         m_torchAsFiresource = true;
                         break;
                     }
                 case Season.Winter:
                     {
+                        m_plantsGrowthMultiplier = 0f;
+                        m_beehiveProductionMultiplier = 0f;
                         m_nightLength = 45;
                         m_torchAsFiresource = true;
                         break;

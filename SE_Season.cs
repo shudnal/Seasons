@@ -54,11 +54,11 @@ namespace Seasons
             else if (seasonsTimerFormat.Value == TimerFormat.CurrentDay)
                 return seasonState.GetCurrentDay() >= seasonState.GetDaysInSeason() && !String.IsNullOrEmpty(MessageNextSeason()) ? MessageNextSeason() : Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}");
 
-            long startOfSeason = seasonState.GetDaysInSeason() * EnvMan.instance.m_dayLengthSec;
-            TimeSpan span = TimeSpan.FromSeconds(startOfSeason - ZNet.instance.GetTimeSeconds() % startOfSeason);
-            if (span <= TimeSpan.Zero)
+            double secondsToEndOfSeason = seasonState.GetEndOfCurrentSeason() - ZNet.instance.GetTimeSeconds();
+            if (secondsToEndOfSeason <= 0d)
                 return MessageNextSeason();
-
+            
+            TimeSpan span = TimeSpan.FromSeconds(secondsToEndOfSeason);
             return span.TotalHours > 24 ? string.Format("{0:d2}:{1:d2}:{2:d2}", (int)span.TotalHours, span.Minutes, span.Seconds) : span.ToString(span.Hours > 0 ? @"hh\:mm\:ss" : @"mm\:ss");
         }
 

@@ -496,7 +496,7 @@ namespace Seasons
 
     public static class SeasonalTextureVariantsGenerator
     {
-        public static bool GetColorVariants(string prefabName, string rendererName, Material material, string propertyName, Color color, out Color[] colors)
+        public static bool GetColorVariants(string prefabName, string rendererName, Material material, string propertyName, Color color, out Color[] colors, bool isPlant)
         {
             colors = null;
 
@@ -514,7 +514,7 @@ namespace Seasons
                 for (int i = 1; i <= seasonColorVariants; i++)
                 {
                     Color colorVariant;
-                    if (isGrass)
+                    if (isGrass || isPlant)
                         colorVariant = GetGrassConfigColor(season, i);
                     else if (isMoss)
                         colorVariant = GetMossConfigColor(season, i);
@@ -602,7 +602,7 @@ namespace Seasons
             return false;
         }
 
-        public static bool GetTextureVariants(string prefabName, string rendererName, Material material, string propertyName, Texture texture, out TextureVariants textureVariants)
+        public static bool GetTextureVariants(string prefabName, string rendererName, Material material, string propertyName, Texture texture, out TextureVariants textureVariants, bool isPlant)
         {
             textureVariants = new TextureVariants(texture);
 
@@ -627,7 +627,7 @@ namespace Seasons
                 for (int i = 1; i <= seasonColorVariants; i++)
                 {
                     Color colorVariant;
-                    if (isGrass)
+                    if (isGrass || isPlant)
                         colorVariant = GetGrassConfigColor(season, i);
                     else if (isMoss)
                         colorVariant = GetMossConfigColor(season, i);
@@ -1006,7 +1006,7 @@ namespace Seasons
             }
         }
 
-        private static void CacheMaterials(Material[] materials, string prefabName, string rendererName, string rendererType, string transformPath, int lodLevel = -1, bool isSingleRenderer = false, bool isLodInHierarchy = false)
+        private static void CacheMaterials(Material[] materials, string prefabName, string rendererName, string rendererType, string transformPath, int lodLevel = -1, bool isSingleRenderer = false, bool isLodInHierarchy = false, bool isPlant = false)
         {
             for (int m = 0; m < materials.Length; m++)
             {
@@ -1042,7 +1042,7 @@ namespace Seasons
                         if (color == null || color == Color.clear || color == Color.white || color == Color.black)
                             continue;
 
-                        if (SeasonalTextureVariantsGenerator.GetColorVariants(prefabName, rendererName, material, propertyName, color, out Color[] colors))
+                        if (SeasonalTextureVariantsGenerator.GetColorVariants(prefabName, rendererName, material, propertyName, color, out Color[] colors, isPlant: isPlant))
                             cachedRenderer.AddMaterialColors(material, propertyName, colors);
                     }
                 }
@@ -1053,7 +1053,7 @@ namespace Seasons
                         if (color == null || color == Color.clear || color == Color.white || color == Color.black)
                             continue;
 
-                        if (SeasonalTextureVariantsGenerator.GetColorVariants(prefabName, rendererName, material, propertyName, color, out Color[] colors))
+                        if (SeasonalTextureVariantsGenerator.GetColorVariants(prefabName, rendererName, material, propertyName, color, out Color[] colors, isPlant: isPlant))
                             cachedRenderer.AddMaterialColors(material, propertyName, colors);
                     }
 
@@ -1070,7 +1070,7 @@ namespace Seasons
                         {
                             cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
                         }
-                        else if (SeasonalTextureVariantsGenerator.GetTextureVariants(prefabName, rendererName, material, propertyName, texture, out TextureVariants textureVariants))
+                        else if (SeasonalTextureVariantsGenerator.GetTextureVariants(prefabName, rendererName, material, propertyName, texture, out TextureVariants textureVariants, isPlant: isPlant))
                         {
                             SeasonalTextureVariants.textures.Add(textureID, textureVariants);
                             cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
@@ -1090,7 +1090,7 @@ namespace Seasons
                         {
                             cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
                         }
-                        else if (SeasonalTextureVariantsGenerator.GetTextureVariants(prefabName, rendererName, material, propertyName, texture, out TextureVariants textureVariants))
+                        else if (SeasonalTextureVariantsGenerator.GetTextureVariants(prefabName, rendererName, material, propertyName, texture, out TextureVariants textureVariants, isPlant: isPlant))
                         {
                             SeasonalTextureVariants.textures.Add(textureID, textureVariants);
                             cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
@@ -1209,6 +1209,8 @@ namespace Seasons
                 }
                 else if (prefab.layer != 9)
                 {
+                    bool isPlant = prefab.TryGetComponent<Pickable>(out _) || prefab.TryGetComponent<Plant>(out _);
+
                     if (prefab.TryGetComponent(out WearNTear wnt))
                     {
                         if (wnt.m_new != null && wnt.m_new.TryGetComponent(out LODGroup wntLodGroupNew))
@@ -1223,7 +1225,7 @@ namespace Seasons
                     
                     if (prefab.TryGetComponent(out LODGroup lodGroup) && lodGroup.lodCount > 1)
                     {
-                        CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: false);
+                        CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: false, isPlant:isPlant);
                     }
                     else
                     {
@@ -1232,7 +1234,7 @@ namespace Seasons
                             if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
                                 continue;
 
-                            CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
+                            CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath(), isPlant: isPlant);
                         }
                     }
                 }
@@ -1258,7 +1260,7 @@ namespace Seasons
             }
         }
 
-        private static void CachePrefabLODGroup(LODGroup lodGroup, string prefabName, bool isLodInHierarchy)
+        private static void CachePrefabLODGroup(LODGroup lodGroup, string prefabName, bool isLodInHierarchy, bool isPlant = false)
         {
             LOD[] LODs = lodGroup.GetLODs();
             for (int lodLevel = 0; lodLevel < lodGroup.lodCount; lodLevel++)
@@ -1274,7 +1276,7 @@ namespace Seasons
                     if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
                         continue;
 
-                    CacheMaterials(renderer.sharedMaterials, prefabName, renderer.name, renderer.GetType().Name, lodGroup.transform.GetPath(), lodLevel, isLodInHierarchy: isLodInHierarchy);
+                    CacheMaterials(renderer.sharedMaterials, prefabName, renderer.name, renderer.GetType().Name, lodGroup.transform.GetPath(), lodLevel, isLodInHierarchy: isLodInHierarchy, isPlant: isPlant);
                 }
             }
         }
