@@ -25,6 +25,9 @@ namespace Seasons
         public float fireplaceDrainMultiplier;
         public float sapCollectingSpeedMultiplier;
         public bool rainProtection;
+        public float woodFromTreesMultiplier;
+        public float windIntensityMultiplier;
+        public float restedBuffDurationMultiplier;
 
         public SeasonSettingsFile(SeasonSettings settings)
         {
@@ -39,6 +42,9 @@ namespace Seasons
             fireplaceDrainMultiplier = settings.m_fireplaceDrainMultiplier;
             sapCollectingSpeedMultiplier = settings.m_sapCollectingSpeedMultiplier;
             rainProtection = settings.m_rainProtection;
+            woodFromTreesMultiplier = settings.m_woodFromTreesMultiplier;
+            windIntensityMultiplier = settings.m_windIntensityMultiplier;
+            restedBuffDurationMultiplier = settings.m_restedBuffDurationMultiplier;
         }
 
         public SeasonSettingsFile()
@@ -594,6 +600,9 @@ namespace Seasons
         public float m_fireplaceDrainMultiplier = 1.0f;
         public float m_sapCollectingSpeedMultiplier = 1.0f;
         public bool m_rainProtection = false;
+        public float m_woodFromTreesMultiplier = 1.0f;
+        public float m_windIntensityMultiplier = 1.0f;
+        public float m_restedBuffDurationMultiplier = 1.0f;
 
         public SeasonSettings(Season season)
         {
@@ -631,6 +640,9 @@ namespace Seasons
                         m_beehiveProductionMultiplier = 0.5f;
                         m_fireplaceDrainMultiplier = 0.75f;
                         m_sapCollectingSpeedMultiplier = 2.0f;
+                        m_woodFromTreesMultiplier = 0.75f;
+                        m_windIntensityMultiplier = 0.9f;
+                        m_restedBuffDurationMultiplier = 1.25f;
                         break;
                     }
                 case Season.Summer:
@@ -642,6 +654,9 @@ namespace Seasons
                         m_staminaDrainMultiplier = 0.8f;
                         m_fireplaceDrainMultiplier = 0.25f;
                         m_sapCollectingSpeedMultiplier = 1.25f;
+                        m_woodFromTreesMultiplier = 0.75f;
+                        m_windIntensityMultiplier = 1.1f;
+                        m_restedBuffDurationMultiplier = 1.5f;
                         break;
                     }
                 case Season.Fall:
@@ -651,6 +666,9 @@ namespace Seasons
                         m_fireplaceDrainMultiplier = 1f;
                         m_torchAsFiresource = true;
                         m_sapCollectingSpeedMultiplier = 0.5f;
+                        m_woodFromTreesMultiplier = 1.25f;
+                        m_windIntensityMultiplier = 1.2f;
+                        m_restedBuffDurationMultiplier = 0.85f;
                         break;
                     }
                 case Season.Winter:
@@ -664,6 +682,9 @@ namespace Seasons
                         m_fireplaceDrainMultiplier = 2f;
                         m_sapCollectingSpeedMultiplier = 0.25f;
                         m_rainProtection = true;
+                        m_woodFromTreesMultiplier = 1.5f;
+                        m_windIntensityMultiplier = 0.9f;
+                        m_restedBuffDurationMultiplier = 0.75f;
                         break;
                     }
             }

@@ -8,7 +8,6 @@ using System.IO;
 using System.Linq;
 using UnityEngine;
 using BepInEx;
-using static MeleeWeaponTrail;
 
 namespace Seasons
 {
@@ -215,7 +214,8 @@ namespace Seasons
             {
                 try
                 {
-                    BiomeEnvSetup biomeEnvironment = JsonUtility.FromJson<BiomeEnvSetup>(JsonUtility.ToJson(biomeEnvironmentDefault));
+                    BiomeEnvSetup biomeEnvironment = JsonUtility.FromJson<BiomeEnvSetup>(JsonUtility.ToJson(biomeEnvironmentDefault));
+
                     foreach (SeasonBiomeEnvironment.EnvironmentReplace replace in biomeEnv.replace)
                         biomeEnvironment.m_environments.DoIf(env => env.m_environment == replace.m_environment, env => env.m_environment = replace.replace_to);
 
@@ -289,6 +289,21 @@ namespace Seasons
         public bool GetRainProtection()
         {
             return settings.m_rainProtection;
+        }
+
+        public float GetWoodFromTreesMultiplier()
+        {
+            return settings.m_woodFromTreesMultiplier;
+        }
+
+        public float GetWindIntensityMultiplier()
+        {
+            return settings.m_windIntensityMultiplier;
+        }
+
+        public float GetRestedBuffDurationMultiplier()
+        {
+            return settings.m_restedBuffDurationMultiplier;
         }
 
         private SeasonSettings GetSeasonSettings(Season season)
@@ -808,6 +823,18 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(Beehive), nameof(Beehive.UpdateBees))]
+    public static class Beehive_UpdateBees_BeesSleeping
+    {
+        private static void Postfix(ref GameObject ___m_beeEffect)
+        {
+            if (seasonState.GetBeehiveProductionMultiplier() == 0f)
+            {
+                ___m_beeEffect.SetActive(false);
+            }
+        }
+    }
+
     [HarmonyPatch(typeof(Player), nameof(Player.UpdateFood))]
     public static class Player_UpdateFood_FoodDrainMultiplier
     {
@@ -911,5 +938,115 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(TreeBase), nameof(TreeBase.RPC_Damage))]
+    public static class TreeBase_RPC_Damage_TreeWoodDrop
+    {
+        private static void Prefix(TreeBase __instance, ZNetView ___m_nview, ref float __state)
+        {
+            if (seasonState.GetWoodFromTreesMultiplier() == 1.0f)
+                return;
+
+            if (!___m_nview.IsOwner())
+                return;
+
+            if (___m_nview == null || !___m_nview.IsValid())
+                return;
+
+            __state = Game.m_resourceRate;
+            Game.m_resourceRate *= seasonState.GetWoodFromTreesMultiplier();
+        }
+
+        private static void Postfix(float __state)
+        {
+            if (seasonState.GetWoodFromTreesMultiplier() == 1.0f)
+                return;
+
+            if (__state != 0f) return;
+
+            Game.m_resourceRate = __state;
+        }
+    }
+
+    [HarmonyPatch(typeof(TreeLog), nameof(TreeLog.Destroy))]
+    public static class TreeLog_Destroy_TreeWoodDrop
+    {
+        private static void Prefix(TreeLog __instance, ZNetView ___m_nview, ref float __state)
+        {
+            if (seasonState.GetWoodFromTreesMultiplier() == 1.0f)
+                return;
+
+            if (!___m_nview.IsOwner())
+                return;
+
+            if (___m_nview == null || !___m_nview.IsValid())
+                return;
+
+            __state = Game.m_resourceRate;
+            Game.m_resourceRate *= seasonState.GetWoodFromTreesMultiplier();
+        }
+
+        private static void Postfix(float __state)
+        {
+            if (seasonState.GetWoodFromTreesMultiplier() == 1.0f)
+                return;
+
+            if (__state != 0f) return;
+
+            Game.m_resourceRate = __state;
+        }
+    }
+
+    [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.GetWindForce))]
+    public static class EnvMan_GetWindForce_WindIntensityMultiplier
+    {
+        private static void Prefix(ref Vector4 ___m_wind, ref float __state)
+        {
+            if (seasonState.GetWindIntensityMultiplier() == 1.0f)
+                return;
+
+            __state = ___m_wind.w;
+            ___m_wind.w *= seasonState.GetWindIntensityMultiplier();
+        }
+
+        private static void Postfix(ref Vector4 ___m_wind, float __state)
+        {
+            if (seasonState.GetWindIntensityMultiplier() == 1.0f)
+                return;
+
+            ___m_wind.w = __state;
+        }
+    }
+
+    [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.GetWindIntensity))]
+    public static class EnvMan_GetWindIntensity_WindIntensityMultiplier
+    {
+        private static void Postfix(ref float __result)
+        {
+            __result *= seasonState.GetWindIntensityMultiplier();
+        }
+    }
+
+    [HarmonyPatch(typeof(SE_Rested), nameof(SE_Rested.UpdateTTL))]
+    public static class SE_Rested_UpdateTTL_RestedBuffDuration
+    {
+        private static void Prefix(ref float ___m_baseTTL, ref float ___m_TTLPerComfortLevel, ref Tuple<float, float> __state)
+        {
+            if (seasonState.GetRestedBuffDurationMultiplier() == 1.0f)
+                return;
+
+            __state = new Tuple<float, float> (___m_baseTTL, ___m_TTLPerComfortLevel);
+            ___m_baseTTL *= seasonState.GetRestedBuffDurationMultiplier();
+            ___m_TTLPerComfortLevel *= seasonState.GetRestedBuffDurationMultiplier();
+        }
+
+        private static void Postfix(ref float ___m_baseTTL, ref float ___m_TTLPerComfortLevel, Tuple<float, float> __state)
+        {
+            if (seasonState.GetRestedBuffDurationMultiplier() == 1.0f)
+                return;
+
+            ___m_baseTTL = __state.Item1;
+            ___m_TTLPerComfortLevel = __state.Item2;
+        }
+    }
 
 }
