@@ -90,6 +90,11 @@ namespace Seasons
             return GetSeasonSettings(season).m_daysInSeason;
         }
 
+        public float GetPlantsGrowthMultiplier()
+        {
+            return GetPlantsGrowthMultiplier(GetCurrentSeason());
+        }
+
         public float GetPlantsGrowthMultiplier(Season season)
         {
             return GetSeasonSettings(season).m_plantsGrowthMultiplier;
@@ -457,19 +462,22 @@ namespace Seasons
             if (!Minimap.instance.m_smallRoot.TryGetComponent(out UnityEngine.UI.Image image) || image.sprite == null || image.sprite.name != "InputFieldBackground")
                 return;
 
+            if (minimapBorderColor == Color.clear)
+                minimapBorderColor = image.color;
+
             switch (GetCurrentSeason())
             {
                 case Season.Spring:
-                    image.color = new Color(0.44f, 0.56f, 0.03f, image.color.a);
+                    image.color = new Color(0.44f, 0.56f, 0.03f, minimapBorderColor.a / 2f);
                     break;
                 case Season.Summer:
-                    image.color = new Color(0.69f, 0.73f, 0.05f, image.color.a);
+                    image.color = new Color(0.69f, 0.73f, 0.05f, minimapBorderColor.a / 2f);
                     break;
                 case Season.Fall:
-                    image.color = new Color(0.79f, 0.32f, 0f, image.color.a);
+                    image.color = new Color(0.79f, 0.32f, 0f, minimapBorderColor.a / 2f);
                     break;
                 case Season.Winter:
-                    image.color = new Color(0.89f, 0.94f, 0.96f, image.color.a);
+                    image.color = new Color(0.89f, 0.94f, 0.96f, minimapBorderColor.a / 2f);
                     break;
             }
         }
@@ -655,6 +663,35 @@ namespace Seasons
 
             if (hit.GetTotalDamage() >= __instance.GetHealth() + 0.1f)
                 hit.ApplyModifier(0f);
+        }
+    }
+
+    [HarmonyPatch(typeof(Pickable), nameof(Pickable.UpdateRespawn))]
+    public static class Pickable_UpdateRespawn_PlantsGrowthMultiplier
+    {
+        private static bool Prefix(Pickable __instance, ref int ___m_respawnTimeMinutes, ZNetView ___m_nview, bool ___m_picked, ref int state)
+        {
+            if (seasonState.GetPlantsGrowthMultiplier() == 0f)
+                return false;
+
+            if (!___m_nview.IsValid() || !___m_nview.IsOwner() || !___m_picked)
+                return true;
+
+            if (__instance.m_itemPrefab == null || !__instance.m_itemPrefab.TryGetComponent(out ItemDrop itemDrop) || itemDrop.m_itemData.m_shared.m_itemType != ItemDrop.ItemData.ItemType.Consumable)
+                return true;
+
+            state = ___m_respawnTimeMinutes;
+            ___m_respawnTimeMinutes = (int)(___m_respawnTimeMinutes / seasonState.GetPlantsGrowthMultiplier());
+
+            return true;
+        }
+
+        private static void Postfix(ref int ___m_respawnTimeMinutes, ZNetView ___m_nview, bool ___m_picked, ref int state)
+        {
+            if (state == 0)
+                return;
+
+            ___m_respawnTimeMinutes = state;
         }
     }
 

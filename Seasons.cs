@@ -30,6 +30,7 @@ namespace Seasons
         private static ConfigEntry<bool> loggingEnabled;
         public static ConfigEntry<CacheFormat> cacheStorageFormat;
 
+        public static ConfigEntry<bool> showCurrentSeasonBuff;
         public static ConfigEntry<TimerFormat> seasonsTimerFormat;
         public static ConfigEntry<bool> enableSeasonalItems;
         public static ConfigEntry<bool> preventDeathFromFreezing;
@@ -120,6 +121,7 @@ namespace Seasons
         public static readonly CustomSyncedValue<string> customBiomeEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom biome environments JSON", "");
 
         public static readonly List<BiomeEnvSetup> biomesDefault = new List<BiomeEnvSetup>();
+        public static Color minimapBorderColor = Color.clear;
 
         public enum Season
         {
@@ -208,6 +210,7 @@ namespace Seasons
             configLocked = config("General", "Lock Configuration", defaultValue: true, "Configuration is locked and can be changed by server admins only.");
             loggingEnabled = config("General", "Logging enabled", defaultValue: false, "Enable logging. [Not Synced with Server]", false);
 
+            showCurrentSeasonBuff = config("Season", "Show current season buff", defaultValue: true, "Show current season buff.");
             seasonsTimerFormat = config("Season", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
             enableSeasonalItems = config("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
             preventDeathFromFreezing = config("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
@@ -385,7 +388,7 @@ namespace Seasons
 
         public static Sprite GetSeasonIcon(Season season)
         {
-            return instance.GetSpriteConfig($"icon{season}");
+            return showCurrentSeasonBuff.Value ? instance.GetSpriteConfig($"icon{season}") : null;
         }
 
         public static string FromSeconds(double seconds)
