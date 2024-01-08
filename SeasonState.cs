@@ -21,7 +21,8 @@ namespace Seasons
         public static SeasonBiomeEnvironments seasonBiomeEnvironments = new SeasonBiomeEnvironments();
         public static List<SeasonEnvironment> seasonEnvironments = SeasonEnvironment.GetDefaultCustomEnvironments();
 
-        private SeasonSettings settings { 
+        private SeasonSettings settings
+        {
             get
             {
                 if (!seasonsSettings.ContainsKey(m_season))
@@ -114,7 +115,7 @@ namespace Seasons
         {
             return settings.m_nightLength;
         }
-        
+
         public bool OverrideNightLength()
         {
             float nightLength = GetNightLength();
@@ -265,6 +266,31 @@ namespace Seasons
             return GetSeasonSettings(season).m_beehiveProductionMultiplier;
         }
 
+        public float GetFoodDrainMultiplier()
+        {
+            return settings.m_foodDrainMultiplier;
+        }
+
+        public float GetStaminaDrainMultiplier()
+        {
+            return settings.m_staminaDrainMultiplier;
+        }
+
+        public float GetFireplaceDrainMultiplier()
+        {
+            return settings.m_fireplaceDrainMultiplier;
+        }
+
+        public float GetSapCollectingSpeedMultiplier()
+        {
+            return settings.m_sapCollectingSpeedMultiplier;
+        }
+
+        public bool GetRainProtection()
+        {
+            return settings.m_rainProtection;
+        }
+
         private SeasonSettings GetSeasonSettings(Season season)
         {
             return seasonsSettings[season] ?? new SeasonSettings(season);
@@ -398,7 +424,7 @@ namespace Seasons
                 return;
 
             component.m_type = seasonState.settings.m_torchAsFiresource ? EffectArea.Type.Heat | EffectArea.Type.Fire : EffectArea.Type.Fire;
-            
+
             ItemDrop item = prefab.GetComponent<ItemDrop>();
             PatchTorchItemData(item.m_itemData);
         }
@@ -427,7 +453,7 @@ namespace Seasons
                     break;
             }
         }
-            
+
     }
 
     [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.UpdateTriggers))]
@@ -597,10 +623,10 @@ namespace Seasons
             if (!__instance.IsPlayer())
                 return;
 
-            if (__instance != Player.m_localPlayer) 
+            if (__instance != Player.m_localPlayer)
                 return;
 
-            if (hit.m_hitType != HitData.HitType.Freezing) 
+            if (hit.m_hitType != HitData.HitType.Freezing)
                 return;
 
             Heightmap.Biome biome = (__instance as Player).GetCurrentBiome();
@@ -625,14 +651,14 @@ namespace Seasons
             do
             {
                 rescaledResult += (timeSeconds - seasonStart >= __result ? __result : timeSeconds - seasonStart) * seasonState.GetPlantsGrowthMultiplier(season);
-                
+
                 __result -= timeSeconds - seasonStart;
                 timeSeconds = seasonStart;
                 season = seasonState.GetPreviousSeason(season);
                 seasonStart -= seasonState.GetDaysInSeason(season) * EnvMan.instance.m_dayLengthSec;
 
             } while (__result > 0);
-            
+
             __result = rescaledResult;
         }
     }
@@ -646,7 +672,7 @@ namespace Seasons
 
             Season season = seasonState.GetCurrentSeason();
             float growthMultiplier = seasonState.GetPlantsGrowthMultiplier(season);
-            
+
             double secondsToGrow = 0d;
             double secondsToSeasonEnd = seasonState.GetEndOfCurrentSeason() - timeSeconds;
             double secondsLeft = plant.GetGrowTime() - plant.TimeSincePlanted();//growthMultiplier == 0 ? growTime - timeSincePlanted : Math.Max(0, (growTime - timeSincePlanted) / growthMultiplier); 
@@ -654,13 +680,13 @@ namespace Seasons
             do
             {
                 double timeInSeasonLeft = growthMultiplier == 0 ? secondsToSeasonEnd : Math.Min(secondsLeft / growthMultiplier, secondsToSeasonEnd);
-                
+
                 secondsToGrow += timeInSeasonLeft;
                 secondsLeft -= timeInSeasonLeft * growthMultiplier;
-               
+
                 season = seasonState.GetNextSeason(season);
                 growthMultiplier = seasonState.GetPlantsGrowthMultiplier(season);
-                
+
                 secondsToSeasonEnd = seasonState.GetDaysInSeason(season) * EnvMan.instance.m_dayLengthSec;
 
             } while (secondsLeft > 0);
@@ -781,5 +807,109 @@ namespace Seasons
                     __result += $"\n{FromSeconds(GetNextProduct(__instance, product, __instance.m_maxHoney - honeyLevel))}";
         }
     }
+
+    [HarmonyPatch(typeof(Player), nameof(Player.UpdateFood))]
+    public static class Player_UpdateFood_FoodDrainMultiplier
+    {
+        private static void Prefix(Player __instance, float dt, bool forceUpdate)
+        {
+            if (seasonState.GetFoodDrainMultiplier() == 1.0f)
+                return;
+
+            if (__instance == null)
+                return;
+
+            if (!(dt + __instance.m_foodUpdateTimer >= 1f || forceUpdate))
+                return;
+
+            foreach (Player.Food food in __instance.m_foods)
+                food.m_time += 1f - Math.Max(0f, seasonState.GetFoodDrainMultiplier());
+        }
+    }
+
+    [HarmonyPatch(typeof(Player), nameof(Player.UseStamina))]
+    public static class Player_UseStamina_StaminaDrainMultiplier
+    {
+        private static void Prefix(Player __instance, ref float v)
+        {
+            if (__instance == null)
+                return;
+
+            v *= Math.Max(0f, seasonState.GetStaminaDrainMultiplier());
+        }
+    }
+
+    [HarmonyPatch(typeof(Fireplace), nameof(Fireplace.GetTimeSinceLastUpdate))]
+    static class Fireplace_GetTimeSinceLastUpdate_FireplaceDrainMultiplier
+    {
+        private static void Postfix(Fireplace __instance, ref double __result)
+        {
+            __result *= (double)Math.Max(0f, seasonState.GetFireplaceDrainMultiplier());
+        }
+    }
+
+    [HarmonyPatch(typeof(Smelter), nameof(Smelter.GetDeltaTime))]
+    static class Smelter_GetDeltaTime_FireplaceDrainMultiplier_SmeltingSpeedMultiplier
+    {
+        private static void Postfix(Smelter __instance, ref double __result)
+        {
+            if (__instance.m_name != "$piece_bathtub")
+                return;
+
+            __result *= (double)Math.Max(0f, seasonState.GetFireplaceDrainMultiplier());
+        }
+    }
+
+    [HarmonyPatch(typeof(CookingStation), nameof(CookingStation.UpdateFuel))]
+    static class CookingStation_UpdateFuel_FireplaceDrainMultiplier
+    {
+        private static void Prefix(Smelter __instance, ref float dt, ref float __state)
+        {
+            __state = dt;
+            dt *= Math.Max(0f, seasonState.GetFireplaceDrainMultiplier());
+        }
+
+        private static void Postfix(Smelter __instance, ref float dt, float __state)
+        {
+            dt = __state;
+        }
+    }
+
+    [HarmonyPatch(typeof(SapCollector), nameof(SapCollector.GetTimeSinceLastUpdate))]
+    static class SapCollector_GetTimeSinceLastUpdate_SapCollectingSpeedMultiplier
+    {
+        private static void Postfix(SapCollector __instance, ref float __result)
+        {
+            __result *= Math.Max(0f, seasonState.GetSapCollectingSpeedMultiplier());
+        }
+    }
+
+    [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateWear))]
+    public static class WearNTear_UpdateWear_RainProtection
+    {
+        private static void Prefix(WearNTear __instance, ZNetView ___m_nview, ref bool ___m_noRoofWear, ref bool __state)
+        {
+            if (!seasonState.GetRainProtection())
+                return;
+
+            if (___m_nview == null || !___m_nview.IsValid())
+                return;
+
+            __state = ___m_noRoofWear;
+
+            ___m_noRoofWear = false;
+        }
+
+        private static void Postfix(ref bool ___m_noRoofWear, bool __state)
+        {
+            if (!seasonState.GetRainProtection())
+                return;
+
+            if (__state != true) return;
+
+            ___m_noRoofWear = __state;
+        }
+    }
+
 
 }

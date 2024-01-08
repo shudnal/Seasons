@@ -20,6 +20,11 @@ namespace Seasons
         public float torchDurabilityDrain;
         public float plantsGrowthMultiplier;
         public float beehiveProductionMultiplier;
+        public float foodDrainMultiplier;
+        public float staminaDrainMultiplier;
+        public float fireplaceDrainMultiplier;
+        public float sapCollectingSpeedMultiplier;
+        public bool rainProtection;
 
         public SeasonSettingsFile(SeasonSettings settings)
         {
@@ -29,6 +34,11 @@ namespace Seasons
             torchDurabilityDrain = settings.m_torchDurabilityDrain;
             plantsGrowthMultiplier = settings.m_plantsGrowthMultiplier;
             beehiveProductionMultiplier = settings.m_beehiveProductionMultiplier;
+            foodDrainMultiplier = settings.m_foodDrainMultiplier;
+            staminaDrainMultiplier = settings.m_staminaDrainMultiplier;
+            fireplaceDrainMultiplier = settings.m_fireplaceDrainMultiplier;
+            sapCollectingSpeedMultiplier = settings.m_sapCollectingSpeedMultiplier;
+            rainProtection = settings.m_rainProtection;
         }
 
         public SeasonSettingsFile()
@@ -579,6 +589,11 @@ namespace Seasons
         public float m_torchDurabilityDrain = 0.1f;
         public float m_plantsGrowthMultiplier = 1.0f;
         public float m_beehiveProductionMultiplier = 1.0f;
+        public float m_foodDrainMultiplier = 1.0f;
+        public float m_staminaDrainMultiplier = 1.0f;
+        public float m_fireplaceDrainMultiplier = 1.0f;
+        public float m_sapCollectingSpeedMultiplier = 1.0f;
+        public bool m_rainProtection = false;
 
         public SeasonSettings(Season season)
         {
@@ -614,28 +629,41 @@ namespace Seasons
                     {
                         m_plantsGrowthMultiplier = 2.0f;
                         m_beehiveProductionMultiplier = 0.5f;
+                        m_fireplaceDrainMultiplier = 0.75f;
+                        m_sapCollectingSpeedMultiplier = 2.0f;
                         break;
                     }
                 case Season.Summer:
                     {
                         m_plantsGrowthMultiplier = 1.5f;
                         m_beehiveProductionMultiplier = 2f;
+                        m_foodDrainMultiplier = 0.75f;
                         m_nightLength = 15;
+                        m_staminaDrainMultiplier = 0.8f;
+                        m_fireplaceDrainMultiplier = 0.25f;
+                        m_sapCollectingSpeedMultiplier = 1.25f;
                         break;
                     }
                 case Season.Fall:
                     {
                         m_plantsGrowthMultiplier = 0.5f;
                         m_beehiveProductionMultiplier = 1.5f;
+                        m_fireplaceDrainMultiplier = 1f;
                         m_torchAsFiresource = true;
+                        m_sapCollectingSpeedMultiplier = 0.5f;
                         break;
                     }
                 case Season.Winter:
                     {
                         m_plantsGrowthMultiplier = 0f;
                         m_beehiveProductionMultiplier = 0f;
+                        m_foodDrainMultiplier = 1.25f;
                         m_nightLength = 45;
                         m_torchAsFiresource = true;
+                        m_staminaDrainMultiplier = 1.2f;
+                        m_fireplaceDrainMultiplier = 2f;
+                        m_sapCollectingSpeedMultiplier = 0.25f;
+                        m_rainProtection = true;
                         break;
                     }
             }
