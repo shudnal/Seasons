@@ -28,6 +28,7 @@ namespace Seasons
         public float woodFromTreesMultiplier;
         public float windIntensityMultiplier;
         public float restedBuffDurationMultiplier;
+        public float livestockProcreationMultiplier;
 
         public SeasonSettingsFile(SeasonSettings settings)
         {
@@ -45,6 +46,7 @@ namespace Seasons
             woodFromTreesMultiplier = settings.m_woodFromTreesMultiplier;
             windIntensityMultiplier = settings.m_windIntensityMultiplier;
             restedBuffDurationMultiplier = settings.m_restedBuffDurationMultiplier;
+            livestockProcreationMultiplier = settings.m_livestockProcreationMultiplier;
         }
 
         public SeasonSettingsFile()
@@ -603,6 +605,7 @@ namespace Seasons
         public float m_woodFromTreesMultiplier = 1.0f;
         public float m_windIntensityMultiplier = 1.0f;
         public float m_restedBuffDurationMultiplier = 1.0f;
+        public float m_livestockProcreationMultiplier = 1.0f;
 
         public SeasonSettings(Season season)
         {
@@ -643,6 +646,7 @@ namespace Seasons
                         m_woodFromTreesMultiplier = 0.75f;
                         m_windIntensityMultiplier = 0.9f;
                         m_restedBuffDurationMultiplier = 1.25f;
+                        m_livestockProcreationMultiplier = 1.5f;
                         break;
                     }
                 case Season.Summer:
@@ -657,6 +661,7 @@ namespace Seasons
                         m_woodFromTreesMultiplier = 0.75f;
                         m_windIntensityMultiplier = 1.1f;
                         m_restedBuffDurationMultiplier = 1.5f;
+                        m_livestockProcreationMultiplier = 1.25f;
                         break;
                     }
                 case Season.Fall:
@@ -669,6 +674,7 @@ namespace Seasons
                         m_woodFromTreesMultiplier = 1.25f;
                         m_windIntensityMultiplier = 1.2f;
                         m_restedBuffDurationMultiplier = 0.85f;
+                        m_livestockProcreationMultiplier = 0.75f;
                         break;
                     }
                 case Season.Winter:
@@ -685,6 +691,7 @@ namespace Seasons
                         m_woodFromTreesMultiplier = 1.5f;
                         m_windIntensityMultiplier = 0.9f;
                         m_restedBuffDurationMultiplier = 0.75f;
+                        m_livestockProcreationMultiplier = 0.5f;
                         break;
                     }
             }

@@ -306,6 +306,11 @@ namespace Seasons
             return settings.m_restedBuffDurationMultiplier;
         }
 
+        public float GetLivestockProcreationMultiplier()
+        {
+            return settings.m_livestockProcreationMultiplier;
+        }
+
         private SeasonSettings GetSeasonSettings(Season season)
         {
             return seasonsSettings[season] ?? new SeasonSettings(season);
@@ -1049,4 +1054,39 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(Procreation), nameof(Procreation.Procreate))]
+    public static class Procreation_Procreate_ProcreationMultiplier
+    {
+        private static void Prefix(ref Procreation __instance, ref Dictionary<string, float> __state)
+        {
+            if (seasonState.GetLivestockProcreationMultiplier() == 1.0f)
+                return;
+
+            __state = new Dictionary<string, float>() {
+                { "m_totalCheckRange", __instance.m_totalCheckRange },
+                { "m_partnerCheckRange", __instance.m_partnerCheckRange },
+                { "m_pregnancyChance", __instance.m_pregnancyChance },
+                { "m_pregnancyDuration", __instance.m_pregnancyDuration },
+            };
+
+            __instance.m_pregnancyChance *= seasonState.GetLivestockProcreationMultiplier();
+            __instance.m_partnerCheckRange *= seasonState.GetLivestockProcreationMultiplier();
+            if (seasonState.GetLivestockProcreationMultiplier() != 0f)
+            {
+                __instance.m_totalCheckRange /= seasonState.GetLivestockProcreationMultiplier();
+                __instance.m_pregnancyDuration /= seasonState.GetLivestockProcreationMultiplier();
+            }
+        }
+
+        private static void Postfix(ref Procreation __instance, ref Dictionary<string, float> __state)
+        {
+            if (seasonState.GetLivestockProcreationMultiplier() == 1.0f)
+                return;
+
+            __instance.m_pregnancyChance *= __state["m_pregnancyChance"];
+            __instance.m_totalCheckRange *= __state["m_totalCheckRange"];
+            __instance.m_partnerCheckRange *= __state["m_partnerCheckRange"];
+            __instance.m_pregnancyDuration *= __state["m_pregnancyDuration"];
+        }
+    }
 }
