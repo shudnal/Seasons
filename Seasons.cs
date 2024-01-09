@@ -106,6 +106,9 @@ namespace Seasons
         public const string statusEffectSeasonName = "Season";
         public static int statusEffectSeasonHash = statusEffectSeasonName.GetStableHashCode();
 
+        public const string statusEffectOverheatName = "Overheat";
+        public static int statusEffectOverheatHash = statusEffectOverheatName.GetStableHashCode();
+
         public static Sprite iconSpring;
         public static Sprite iconSummer;
         public static Sprite iconFall;
@@ -179,9 +182,7 @@ namespace Seasons
                 return;
 
             if (!player.GetSEMan().HaveStatusEffect(statusEffectSeasonHash))
-            {
                 player.GetSEMan().AddStatusEffect(statusEffectSeasonHash);
-            }
         }
 
         private void OnDestroy()
@@ -214,7 +215,9 @@ namespace Seasons
             seasonsTimerFormat = config("Season", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
             enableSeasonalItems = config("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
             preventDeathFromFreezing = config("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
-           
+
+            showCurrentSeasonBuff.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectShowStatus();
+
             hoverBeeHive = Config.Bind("UI", "Bee Hive Hover", defaultValue: StationHover.Vanilla, "Hover text for bee hive.");
             hoverBeeHiveTotal = Config.Bind("UI", "Bee Hive Show total", defaultValue: true, "Show total needed time/percent for bee hive.");
             hoverPlant = Config.Bind("UI", "Plants Hover", defaultValue: StationHover.Vanilla, "Hover text for plants.");
@@ -222,6 +225,8 @@ namespace Seasons
 
             overrideSeason = config("Seasons override", "Override", defaultValue: false, "The season will be overrided by set season.");
             seasonOverrided = config("Seasons override", "Season", defaultValue: Season.Spring, "The season to set.");
+
+            overrideSeason.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
 
             vegetationSpringColor1 = config("Seasons - Spring", "Color 1", defaultValue: new Color(0.27f, 0.80f, 0.27f, 0.75f), "Color 1");
             vegetationSpringColor2 = config("Seasons - Spring", "Color 2", defaultValue: new Color(0.69f, 0.84f, 0.15f, 0.75f), "Color 2");

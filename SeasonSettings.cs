@@ -29,6 +29,7 @@ namespace Seasons
         public float windIntensityMultiplier;
         public float restedBuffDurationMultiplier;
         public float livestockProcreationMultiplier;
+        public bool overheatIn2WarmClothes;
 
         public SeasonSettingsFile(SeasonSettings settings)
         {
@@ -47,6 +48,7 @@ namespace Seasons
             windIntensityMultiplier = settings.m_windIntensityMultiplier;
             restedBuffDurationMultiplier = settings.m_restedBuffDurationMultiplier;
             livestockProcreationMultiplier = settings.m_livestockProcreationMultiplier;
+            overheatIn2WarmClothes = settings.m_overheatIn2WarmClothes;
         }
 
         public SeasonSettingsFile()
@@ -606,6 +608,7 @@ namespace Seasons
         public float m_windIntensityMultiplier = 1.0f;
         public float m_restedBuffDurationMultiplier = 1.0f;
         public float m_livestockProcreationMultiplier = 1.0f;
+        public bool m_overheatIn2WarmClothes = false;
 
         public SeasonSettings(Season season)
         {
@@ -662,6 +665,7 @@ namespace Seasons
                         m_windIntensityMultiplier = 1.1f;
                         m_restedBuffDurationMultiplier = 1.5f;
                         m_livestockProcreationMultiplier = 1.25f;
+                        m_overheatIn2WarmClothes = true;
                         break;
                     }
                 case Season.Fall:

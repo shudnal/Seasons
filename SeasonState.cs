@@ -316,6 +316,11 @@ namespace Seasons
             return settings.m_livestockProcreationMultiplier;
         }
 
+        public bool GetOverheatIn2WarmClothes()
+        {
+            return settings.m_overheatIn2WarmClothes;
+        }
+
         private SeasonSettings GetSeasonSettings(Season season)
         {
             return seasonsSettings[season] ?? new SeasonSettings(season);
@@ -370,6 +375,7 @@ namespace Seasons
             if (Player.m_localPlayer != null)
             {
                 Player.m_localPlayer.UpdateCurrentSeason();
+                CheckOverheatStatus(Player.m_localPlayer);
             }
         }
 
@@ -405,7 +411,7 @@ namespace Seasons
             if (torch.m_shared.m_itemType != ItemDrop.ItemData.ItemType.Torch)
                 return;
 
-            if (seasonState.settings.m_torchAsFiresource && (EnvMan.instance.IsWet() || EnvMan.instance.IsCold() || EnvMan.instance.IsFreezing()))
+            if (seasonState.settings.m_torchAsFiresource && IsActive && (EnvMan.instance.IsWet() || EnvMan.instance.IsCold() || EnvMan.instance.IsFreezing()))
                 torch.m_shared.m_durabilityDrain = seasonState.settings.m_torchDurabilityDrain;
             else
                 torch.m_shared.m_durabilityDrain = 0.0333f;
@@ -482,6 +488,30 @@ namespace Seasons
             }
         }
 
+        public void CheckOverheatStatus(Humanoid humanoid)
+        {
+            bool getOverheat = seasonState.GetOverheatIn2WarmClothes();
+            int warmClothesCount = humanoid.GetInventory().GetEquippedItems().Count(itemData => itemData.m_shared.m_damageModifiers.Any(dmod => dmod.m_type == HitData.DamageType.Frost && dmod.m_modifier == HitData.DamageModifier.Resistant));
+            bool haveOverheat = humanoid.GetSEMan().HaveStatusEffect(statusEffectOverheatHash);
+            if (!getOverheat)
+            {
+                if (haveOverheat)
+                    humanoid.GetSEMan().RemoveStatusEffect(statusEffectOverheatHash);
+            }
+            else
+            {
+                if (!haveOverheat && warmClothesCount > 1)
+                    humanoid.GetSEMan().AddStatusEffect(statusEffectOverheatHash);
+                else if (haveOverheat && warmClothesCount <= 1)
+                    humanoid.GetSEMan().RemoveStatusEffect(statusEffectOverheatHash);
+            }
+        }
+
+        public static void CheckSeasonChange()
+        {
+            if (seasonState.IsActive)
+                seasonState.UpdateState(EnvMan.instance.GetCurrentDay(), seasonCanBeChanged: true);
+        }
     }
 
     [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.UpdateTriggers))]
@@ -583,6 +613,16 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(ObjectDB), nameof(ObjectDB.CopyOtherDB))]
+    public static class ObjectDB_CopyOtherDB_TorchPatch
+    {
+        [HarmonyPriority(Priority.Last)]
+        private static void Postfix()
+        {
+            seasonState.UpdateTorchesFireWarmth();
+        }
+    }
+
     [HarmonyPatch(typeof(Player), nameof(Player.AddKnownItem))]
     public static class Player_AddKnownItem_TorchPatch
     {
@@ -633,6 +673,9 @@ namespace Seasons
     {
         private static void Postfix(SeasonalItemGroup __instance, ref bool __result)
         {
+            if (!enableSeasonalItems.Value)
+                return;
+
             Season season = seasonState.GetCurrentSeason();
             __result = __result || __instance.name == "Halloween" && season == Season.Fall
                                 || __instance.name == "Midsummer" && season == Season.Summer
@@ -669,7 +712,7 @@ namespace Seasons
     [HarmonyPatch(typeof(Pickable), nameof(Pickable.UpdateRespawn))]
     public static class Pickable_UpdateRespawn_PlantsGrowthMultiplier
     {
-        private static bool Prefix(Pickable __instance, ref int ___m_respawnTimeMinutes, ZNetView ___m_nview, bool ___m_picked, ref int state)
+        private static bool Prefix(Pickable __instance, ref int ___m_respawnTimeMinutes, ZNetView ___m_nview, bool ___m_picked, ref int __state)
         {
             if (seasonState.GetPlantsGrowthMultiplier() == 0f)
                 return false;
@@ -680,18 +723,18 @@ namespace Seasons
             if (__instance.m_itemPrefab == null || !__instance.m_itemPrefab.TryGetComponent(out ItemDrop itemDrop) || itemDrop.m_itemData.m_shared.m_itemType != ItemDrop.ItemData.ItemType.Consumable)
                 return true;
 
-            state = ___m_respawnTimeMinutes;
-            ___m_respawnTimeMinutes = (int)(___m_respawnTimeMinutes / seasonState.GetPlantsGrowthMultiplier());
+            __state = ___m_respawnTimeMinutes;
+            ___m_respawnTimeMinutes = Mathf.CeilToInt(___m_respawnTimeMinutes / seasonState.GetPlantsGrowthMultiplier());
 
             return true;
         }
 
-        private static void Postfix(ref int ___m_respawnTimeMinutes, ZNetView ___m_nview, bool ___m_picked, ref int state)
+        private static void Postfix(ref int ___m_respawnTimeMinutes, ref int __state)
         {
-            if (state == 0)
+            if (__state == 0)
                 return;
 
-            ___m_respawnTimeMinutes = state;
+            ___m_respawnTimeMinutes = __state;
         }
     }
 
@@ -888,6 +931,9 @@ namespace Seasons
             if (__instance == null)
                 return;
 
+            if (__instance.InInterior() || __instance.InShelter())
+                return;
+
             if (!(dt + __instance.m_foodUpdateTimer >= 1f || forceUpdate))
                 return;
 
@@ -902,6 +948,9 @@ namespace Seasons
         private static void Prefix(Player __instance, ref float v)
         {
             if (__instance == null)
+                return;
+
+            if (__instance.InInterior() || __instance.InShelter())
                 return;
 
             v *= Math.Max(0f, seasonState.GetStaminaDrainMultiplier());
@@ -1126,4 +1175,23 @@ namespace Seasons
             __instance.m_pregnancyDuration *= __state["m_pregnancyDuration"];
         }
     }
+
+    [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.EquipItem))]
+    public static class Humanoid_EquipItem_OverheatIn2WarmClothes
+    {
+        private static void Postfix(Humanoid __instance)
+        {
+            seasonState.CheckOverheatStatus(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.UnequipItem))]
+    public static class Humanoid_UnequipItem_OverheatIn2WarmClothes
+    {
+        private static void Postfix(Humanoid __instance)
+        {
+            seasonState.CheckOverheatStatus(__instance);
+        }
+    }
+
 }

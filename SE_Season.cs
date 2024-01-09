@@ -19,8 +19,7 @@ namespace Seasons
             if (newSeason != m_season)
             {
                 m_season = newSeason;
-                m_name = GetSeasonName(m_season);
-                m_icon = GetSeasonIcon(m_season);
+                UpdateShowStatus();
             }
         }
 
@@ -29,8 +28,7 @@ namespace Seasons
             base.Setup(character);
 
             m_season = seasonState.GetCurrentSeason();
-            m_name = GetSeasonName(m_season);
-            m_icon = GetSeasonIcon(m_season);
+            UpdateShowStatus();
         }
 
         public override string GetTooltipString()
@@ -70,6 +68,22 @@ namespace Seasons
             return "";
         }
         
+        public void UpdateShowStatus()
+        {
+            m_name = GetSeasonName(m_season);
+            m_icon = GetSeasonIcon(m_season);
+        }
+
+        public static void UpdateSeasonStatusEffectShowStatus()
+        {
+            if (ObjectDB.instance == null)
+                return;
+
+            SE_Season statusEffect = ObjectDB.instance.GetStatusEffect(statusEffectSeasonHash) as SE_Season;
+            if (statusEffect != null)
+                statusEffect.UpdateShowStatus();
+        }
+
         private static string MessageNextSeason()
         {
             return GetSeasonIsComing(seasonState.GetNextSeason());
@@ -77,19 +91,43 @@ namespace Seasons
     }
 
     [HarmonyPatch(typeof(ObjectDB), nameof(ObjectDB.Awake))]
-    public static class ObjectDB_Awake_SE_Season
+    public static class ObjectDB_Awake_AddStatusEffects
     {
+        public static void AddCustomStatusEffects(ObjectDB odb)
+        {
+            if (odb.m_StatusEffects.Count > 0)
+            {
+                if (!odb.m_StatusEffects.Any(se => se.name == statusEffectSeasonName))
+                {
+                    SE_Season seasonEffect = ScriptableObject.CreateInstance<SE_Season>();
+                    seasonEffect.name = statusEffectSeasonName;
+                    seasonEffect.m_nameHash = statusEffectSeasonHash;
+                    seasonEffect.m_icon = iconSpring;
+
+                    odb.m_StatusEffects.Add(seasonEffect);
+                }
+
+                SE_Stats warm = odb.m_StatusEffects.Find(se => se.name == "Warm") as SE_Stats;
+                if (warm != null && !odb.m_StatusEffects.Any(se => se.name == statusEffectOverheatName))
+                {
+                    SE_Stats overheat = ScriptableObject.CreateInstance<SE_Stats>();
+                    overheat.name = statusEffectOverheatName;
+                    overheat.m_nameHash = statusEffectOverheatHash;
+                    overheat.m_icon = warm.m_icon;
+                    overheat.m_name = warm.m_name;
+                    overheat.m_tooltip = warm.m_tooltip;
+                    overheat.m_startMessage = warm.m_startMessage;
+                    overheat.m_staminaRegenMultiplier = 0.8f;
+                    overheat.m_eitrRegenMultiplier = 0.8f;
+
+                    odb.m_StatusEffects.Add(overheat);
+                }
+            }
+        }
+
         private static void Postfix(ObjectDB __instance)
         {
-            if (__instance.m_StatusEffects.Count > 0 && !__instance.m_StatusEffects.Any(se => se.m_name == statusEffectSeasonName))
-            {
-                SE_Season seasonEffect = ScriptableObject.CreateInstance<SE_Season>();
-                seasonEffect.name = statusEffectSeasonName;
-                seasonEffect.m_nameHash = statusEffectSeasonHash;
-                seasonEffect.m_icon = iconSpring;
-
-                __instance.m_StatusEffects.Add(seasonEffect);
-            }
+            AddCustomStatusEffects(__instance);
         }
     }
 
@@ -98,16 +136,7 @@ namespace Seasons
     {
         private static void Postfix(ObjectDB __instance)
         {
-            if (__instance.m_StatusEffects.Count > 0 && !__instance.m_StatusEffects.Any(se => se.m_name == statusEffectSeasonName))
-            {
-                SE_Season seasonEffect = ScriptableObject.CreateInstance<SE_Season>();
-                seasonEffect.name = statusEffectSeasonName;
-                seasonEffect.m_nameHash = statusEffectSeasonHash;
-                seasonEffect.m_icon = iconSpring;
-
-                __instance.m_StatusEffects.Add(seasonEffect);
-            }
+            ObjectDB_Awake_AddStatusEffects.AddCustomStatusEffects(__instance);
         }
     }
-
 }
