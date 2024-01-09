@@ -556,7 +556,7 @@ namespace Seasons
     [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.RescaleDayFraction))]
     public static class EnvMan_RescaleDayFraction_DayNightLength
     {
-        public static bool Prefix(EnvMan __instance, float fraction, ref float __result)
+        public static bool Prefix(float fraction, ref float __result)
         {
             if (!seasonState.OverrideNightLength())
                 return true;
@@ -823,7 +823,7 @@ namespace Seasons
             return secondsToGrow;
         }
 
-        private static void Postfix(Plant __instance, ZNetView ___m_nview, ref string __result)
+        private static void Postfix(Plant __instance, ref string __result)
         {
             if (hoverPlant.Value == StationHover.Vanilla)
                 return;
@@ -989,7 +989,7 @@ namespace Seasons
     [HarmonyPatch(typeof(Fireplace), nameof(Fireplace.GetTimeSinceLastUpdate))]
     static class Fireplace_GetTimeSinceLastUpdate_FireplaceDrainMultiplier
     {
-        private static void Postfix(Fireplace __instance, ref double __result)
+        private static void Postfix(ref double __result)
         {
             __result *= (double)Math.Max(0f, seasonState.GetFireplaceDrainMultiplier());
         }
@@ -1010,13 +1010,13 @@ namespace Seasons
     [HarmonyPatch(typeof(CookingStation), nameof(CookingStation.UpdateFuel))]
     static class CookingStation_UpdateFuel_FireplaceDrainMultiplier
     {
-        private static void Prefix(Smelter __instance, ref float dt, ref float __state)
+        private static void Prefix(ref float dt, ref float __state)
         {
             __state = dt;
             dt *= Math.Max(0f, seasonState.GetFireplaceDrainMultiplier());
         }
 
-        private static void Postfix(Smelter __instance, ref float dt, float __state)
+        private static void Postfix(ref float dt, float __state)
         {
             dt = __state;
         }
@@ -1025,7 +1025,7 @@ namespace Seasons
     [HarmonyPatch(typeof(SapCollector), nameof(SapCollector.GetTimeSinceLastUpdate))]
     static class SapCollector_GetTimeSinceLastUpdate_SapCollectingSpeedMultiplier
     {
-        private static void Postfix(SapCollector __instance, ref float __result)
+        private static void Postfix(ref float __result)
         {
             __result *= Math.Max(0f, seasonState.GetSapCollectingSpeedMultiplier());
         }
@@ -1034,7 +1034,7 @@ namespace Seasons
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateWear))]
     public static class WearNTear_UpdateWear_RainProtection
     {
-        private static void Prefix(WearNTear __instance, ZNetView ___m_nview, ref bool ___m_noRoofWear, ref bool __state)
+        private static void Prefix(ZNetView ___m_nview, ref bool ___m_noRoofWear, ref bool __state)
         {
             if (!seasonState.GetRainProtection())
                 return;
@@ -1061,7 +1061,7 @@ namespace Seasons
     [HarmonyPatch(typeof(TreeBase), nameof(TreeBase.RPC_Damage))]
     public static class TreeBase_RPC_Damage_TreeWoodDrop
     {
-        private static void Prefix(TreeBase __instance, ZNetView ___m_nview, ref float __state)
+        private static void Prefix(ZNetView ___m_nview, ref float __state)
         {
             if (seasonState.GetWoodFromTreesMultiplier() == 1.0f)
                 return;
@@ -1090,7 +1090,7 @@ namespace Seasons
     [HarmonyPatch(typeof(TreeLog), nameof(TreeLog.Destroy))]
     public static class TreeLog_Destroy_TreeWoodDrop
     {
-        private static void Prefix(TreeLog __instance, ZNetView ___m_nview, ref float __state)
+        private static void Prefix(ZNetView ___m_nview, ref float __state)
         {
             if (seasonState.GetWoodFromTreesMultiplier() == 1.0f)
                 return;
@@ -1282,7 +1282,7 @@ namespace Seasons
         }
 
         [HarmonyPriority(Priority.Last)]
-        public static void Prefix(EnvMan __instance, EnvSetup env, ref Dictionary<string, Color> __state)
+        public static void Prefix(EnvSetup env, ref Dictionary<string, Color> __state)
         {
             if (!controlLightings.Value)
                 return;
