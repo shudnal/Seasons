@@ -80,8 +80,7 @@ namespace Seasons
                 return;
 
             SE_Season statusEffect = ObjectDB.instance.GetStatusEffect(statusEffectSeasonHash) as SE_Season;
-            if (statusEffect != null)
-                statusEffect.UpdateShowStatus();
+            statusEffect?.UpdateShowStatus();
         }
 
         private static string MessageNextSeason()

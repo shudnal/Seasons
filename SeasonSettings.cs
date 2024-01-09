@@ -584,11 +584,139 @@ namespace Seasons
         }
     }
 
+    [Serializable]
+    public class SeasonRandomEvent
+    {
+        public string m_name;
+        public string m_biomes;
+        public int m_weight;
+
+        public SeasonRandomEvent()
+        {
+
+        }
+
+        public SeasonRandomEvent(RandomEvent randomEvent)
+        {
+            m_name = randomEvent.m_name;
+            m_weight = 1;
+            m_biomes = randomEvent.m_biome.ToString();
+        }
+
+        public Heightmap.Biome GetBiome()
+        {
+            return (Heightmap.Biome)Enum.Parse(typeof(Heightmap.Biome), m_biomes);
+        }
+    }
+
+    [Serializable]
+    public class SeasonRandomEvents
+    {
+        public List<SeasonRandomEvent> Spring = new List<SeasonRandomEvent>();
+        public List<SeasonRandomEvent> Summer = new List<SeasonRandomEvent>();
+        public List<SeasonRandomEvent> Fall = new List<SeasonRandomEvent>();
+        public List<SeasonRandomEvent> Winter = new List<SeasonRandomEvent>();
+
+        public SeasonRandomEvents()
+        {
+            Spring.Add(new SeasonRandomEvent() 
+            {
+                m_name = "foresttrolls",
+                m_weight = 2
+            });
+            Spring.Add(new SeasonRandomEvent()
+            {
+                m_name = "bats",
+                m_weight = 0
+            });
+            Spring.Add(new SeasonRandomEvent()
+            {
+                m_name = "army_eikthyr",
+                m_weight = 2
+            });
+            Spring.Add(new SeasonRandomEvent()
+            {
+                m_name = "army_theelder",
+                m_weight = 2
+            });
+
+            Summer.Add(new SeasonRandomEvent()
+            {
+                m_name = "bats",
+                m_weight = 2
+            });
+            Summer.Add(new SeasonRandomEvent()
+            {
+                m_name = "surtlings",
+                m_weight = 2
+            });
+            Summer.Add(new SeasonRandomEvent()
+            {
+                m_name = "wolves",
+                m_weight = 0
+            });
+            Summer.Add(new SeasonRandomEvent()
+            {
+                m_name = "army_goblin",
+                m_weight = 2
+            });
+
+            Fall.Add(new SeasonRandomEvent()
+            {
+                m_name = "skeletons",
+                m_weight = 2
+            });
+            Fall.Add(new SeasonRandomEvent()
+            {
+                m_name = "blobs",
+                m_weight = 2
+            });
+            Fall.Add(new SeasonRandomEvent()
+            {
+                m_name = "army_bonemass",
+                m_weight = 2
+            });
+
+            Winter.Add(new SeasonRandomEvent()
+            {
+                m_name = "wolves",
+                m_biomes = "Meadows, Swamp, Mountain, BlackForest, Plains, DeepNorth",
+                m_weight = 2
+            });
+            Winter.Add(new SeasonRandomEvent()
+            {
+                m_name = "army_moder",
+                m_weight = 2
+            });
+            Winter.Add(new SeasonRandomEvent()
+            {
+                m_name = "skeletons",
+                m_weight = 0
+            });
+            Winter.Add(new SeasonRandomEvent()
+            {
+                m_name = "foresttrolls",
+                m_weight = 0
+            });
+            Winter.Add(new SeasonRandomEvent()
+            {
+                m_name = "surtlings",
+                m_weight = 0
+            });
+            Winter.Add(new SeasonRandomEvent()
+            {
+                m_name = "blobs",
+                m_weight = 0
+            });
+        }
+    }
+
     public class SeasonSettings
     {
         public const string defaultsSubdirectory = "Default settings";
         public const string customEnvironmentsFileName = "Custom environments.json";
         public const string customBiomeEnvironmentsFileName = "Custom Biome Environments.json";
+        public const string customEventsFileName = "Custom events.json";
         public const int nightLentghDefault = 30;
         public const string itemDropNameTorch = "$item_torch";
         public const string itemNameTorch = "Torch";
@@ -768,6 +896,17 @@ namespace Seasons
                     {
                         LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
                     }
+
+                if (file.Name == customEventsFileName)
+                    try
+                    {
+                        customEventsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
+                    }
+                    catch (Exception e)
+                    {
+                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
+                    }
+                
             };
 
             seasonsSettingsJSON.AssignLocalValue(localConfig);
@@ -778,6 +917,7 @@ namespace Seasons
             seasonState.UpdateSeasonSettings();
             seasonState.UpdateSeasonEnvironments();
             seasonState.UpdateBiomeEnvironments();
+            seasonState.UpdateEventEnvironments();
         }
 
         public static void SaveDefaultEnvironments(string folder)
@@ -805,6 +945,26 @@ namespace Seasons
 
             LogInfo($"Saving default custom biome environments settings");
             File.WriteAllText(Path.Combine(folder, customBiomeEnvironmentsFileName), JsonConvert.SerializeObject(new SeasonBiomeEnvironments(), Formatting.Indented));
+        }
+
+        public static void SaveDefaultEvents(string folder)
+        {
+            if (eventsDefault.Count == 0)
+                eventsDefault.AddRange(RandEventSystem.instance.m_events.ToList());
+
+            List<SeasonRandomEvent> list = new List<SeasonRandomEvent>();
+            eventsDefault.DoIf(randevent => randevent.m_random, randevent => list.Add(new SeasonRandomEvent(randevent)));
+
+            JsonSerializerSettings jsonSerializerSettings = new JsonSerializerSettings
+            {
+                NullValueHandling = NullValueHandling.Ignore,
+            };
+
+            LogInfo($"Saving default events settings");
+            File.WriteAllText(Path.Combine(folder, "Events.json"), JsonConvert.SerializeObject(list, Formatting.Indented, jsonSerializerSettings));
+
+            LogInfo($"Saving default custom events settings");
+            File.WriteAllText(Path.Combine(folder, customEventsFileName), JsonConvert.SerializeObject(new SeasonRandomEvents(), Formatting.Indented, jsonSerializerSettings));
         }
 
     }

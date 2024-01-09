@@ -122,8 +122,10 @@ namespace Seasons
         public static readonly CustomSyncedValue<Dictionary<int, string>> seasonsSettingsJSON = new CustomSyncedValue<Dictionary<int, string>>(configSync, "Seasons settings JSON", new Dictionary<int, string>());
         public static readonly CustomSyncedValue<string> customEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom environments JSON", "");
         public static readonly CustomSyncedValue<string> customBiomeEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom biome environments JSON", "");
+        public static readonly CustomSyncedValue<string> customEventsJSON = new CustomSyncedValue<string>(configSync, "Custom events JSON", ""); 
 
         public static readonly List<BiomeEnvSetup> biomesDefault = new List<BiomeEnvSetup>();
+        public static readonly List<RandomEvent> eventsDefault = new List<RandomEvent>();
         public static Color minimapBorderColor = Color.clear;
 
         public enum Season

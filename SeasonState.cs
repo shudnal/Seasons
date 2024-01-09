@@ -19,6 +19,7 @@ namespace Seasons
         public static readonly Dictionary<Season, SeasonSettings> seasonsSettings = new Dictionary<Season, SeasonSettings>();
         public static SeasonBiomeEnvironments seasonBiomeEnvironments = new SeasonBiomeEnvironments();
         public static List<SeasonEnvironment> seasonEnvironments = SeasonEnvironment.GetDefaultCustomEnvironments();
+        public static SeasonRandomEvents seasonRandomEvents = new SeasonRandomEvents();
 
         private SeasonSettings settings
         {
@@ -51,6 +52,7 @@ namespace Seasons
             }
 
             SeasonSettings.SaveDefaultEnvironments(folder);
+            SeasonSettings.SaveDefaultEvents(folder); 
         }
 
         public bool IsActive => EnvMan.instance != null;
@@ -243,6 +245,25 @@ namespace Seasons
         public void UpdateCurrentEnvironment()
         {
             EnvMan.instance.m_environmentPeriod--;
+        }
+
+        public void UpdateEventEnvironments()
+        {
+            if (!IsActive)
+                return;
+
+            if (!String.IsNullOrEmpty(customEventsJSON.Value))
+            {
+                try
+                {
+                    seasonRandomEvents = JsonConvert.DeserializeObject<SeasonRandomEvents>(customEventsJSON.Value);
+                    LogInfo($"Custom events updated");
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error parsing custom events:\n{e}");
+                }
+            }
         }
 
         public double GetEndOfCurrentSeason()
@@ -1194,4 +1215,69 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(RandEventSystem), nameof(RandEventSystem.GetPossibleRandomEvents))]
+    public static class RandEventSystem_GetPossibleRandomEvents_RandomEventWeights
+    {
+        private static void Prefix(RandEventSystem __instance, ref List<RandomEvent> __state)
+        {            
+            List<SeasonRandomEvent> randEvents = new List<SeasonRandomEvent>();
+            switch (seasonState.GetCurrentSeason())
+            {
+                case Season.Spring:
+                    {
+                        randEvents = SeasonState.seasonRandomEvents.Spring;
+                        break;
+                    }
+                case Season.Summer:
+                    {
+                        randEvents = SeasonState.seasonRandomEvents.Summer;
+                        break;
+                    }
+                case Season.Fall:
+                    {
+                        randEvents = SeasonState.seasonRandomEvents.Fall;
+                        break;
+                    }
+                case Season.Winter:
+                    {
+                        randEvents = SeasonState.seasonRandomEvents.Winter;
+                        break;
+                    }
+            }
+
+            __state = new List<RandomEvent>();
+
+            for (int i = 0; i < __instance.m_events.Count; i++)
+            {
+                RandomEvent randEvent = __instance.m_events[i];
+                __state.Add(JsonUtility.FromJson<RandomEvent>(JsonUtility.ToJson(randEvent)));
+
+                SeasonRandomEvent seasonRandEvent = randEvents.Find(re => re.m_name == randEvent.m_name);
+                if (seasonRandEvent != null)
+                {
+                    if (seasonRandEvent.m_biomes != null)
+                        randEvent.m_biome = seasonRandEvent.GetBiome();
+
+                    if (seasonRandEvent.m_weight == 0)
+                    {
+                        randEvent.m_enabled = false;
+                    }
+                    else if (seasonRandEvent.m_weight > 1)
+                    {
+                        for (int r = 2; r <= seasonRandEvent.m_weight; r++)
+                        {
+                            RandEventSystem.instance.m_events.Insert(i, randEvent);
+                            i++;
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void Postfix(ref RandEventSystem __instance, List<RandomEvent> __state)
+        {
+            __instance.m_events.Clear();
+            __instance.m_events.AddRange(__state.ToList());
+        }
+    }
 }
