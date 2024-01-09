@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using UnityEngine;
 using BepInEx;
+using static Seasons.SeasonLightings;
 
 namespace Seasons
 {
@@ -20,6 +21,7 @@ namespace Seasons
         public static SeasonBiomeEnvironments seasonBiomeEnvironments = new SeasonBiomeEnvironments();
         public static List<SeasonEnvironment> seasonEnvironments = SeasonEnvironment.GetDefaultCustomEnvironments();
         public static SeasonRandomEvents seasonRandomEvents = new SeasonRandomEvents();
+        public static SeasonLightings seasonLightings = new SeasonLightings();
 
         private SeasonSettings settings
         {
@@ -52,7 +54,8 @@ namespace Seasons
             }
 
             SeasonSettings.SaveDefaultEnvironments(folder);
-            SeasonSettings.SaveDefaultEvents(folder); 
+            SeasonSettings.SaveDefaultEvents(folder);
+            SeasonSettings.SaveDefaultLightings(folder);
         }
 
         public bool IsActive => EnvMan.instance != null;
@@ -155,6 +158,9 @@ namespace Seasons
             if (!IsActive)
                 return;
 
+            if (!controlEnvironments.Value)
+                return;
+
             if (!String.IsNullOrEmpty(customEnvironmentsJSON.Value))
             {
                 try
@@ -177,6 +183,9 @@ namespace Seasons
             if (!IsActive)
                 return;
 
+            if (!controlEnvironments.Value)
+                return;
+
             if (!String.IsNullOrEmpty(customBiomeEnvironmentsJSON.Value))
             {
                 try
@@ -190,30 +199,7 @@ namespace Seasons
                 }
             }
 
-            SeasonBiomeEnvironment biomeEnv = new SeasonBiomeEnvironment();
-            switch (GetCurrentSeason())
-            {
-                case Season.Spring:
-                    {
-                        biomeEnv = seasonBiomeEnvironments.Spring;
-                        break;
-                    }
-                case Season.Summer:
-                    {
-                        biomeEnv = seasonBiomeEnvironments.Summer;
-                        break;
-                    }
-                case Season.Fall:
-                    {
-                        biomeEnv = seasonBiomeEnvironments.Fall;
-                        break;
-                    }
-                case Season.Winter:
-                    {
-                        biomeEnv = seasonBiomeEnvironments.Winter;
-                        break;
-                    }
-            }
+            SeasonBiomeEnvironment biomeEnv = seasonBiomeEnvironments.GetSeasonBiomeEnvironment(GetCurrentSeason());
 
             EnvMan.instance.m_biomes.Clear();
 
@@ -244,6 +230,9 @@ namespace Seasons
 
         public void UpdateCurrentEnvironment()
         {
+            if (!controlEnvironments.Value)
+                return;
+
             EnvMan.instance.m_environmentPeriod--;
         }
 
@@ -262,6 +251,25 @@ namespace Seasons
                 catch (Exception e)
                 {
                     LogWarning($"Error parsing custom events:\n{e}");
+                }
+            }
+        }
+
+        public void UpdateLightings()
+        {
+            if (!IsActive)
+                return;
+
+            if (!String.IsNullOrEmpty(customLightingsJSON.Value))
+            {
+                try
+                {
+                    seasonLightings = JsonConvert.DeserializeObject<SeasonLightings>(customLightingsJSON.Value);
+                    LogInfo($"Custom lightings updated");
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error parsing custom lightings:\n{e}");
                 }
             }
         }
@@ -1219,34 +1227,13 @@ namespace Seasons
     public static class RandEventSystem_GetPossibleRandomEvents_RandomEventWeights
     {
         private static void Prefix(RandEventSystem __instance, ref List<RandomEvent> __state)
-        {            
-            List<SeasonRandomEvent> randEvents = new List<SeasonRandomEvent>();
-            switch (seasonState.GetCurrentSeason())
-            {
-                case Season.Spring:
-                    {
-                        randEvents = SeasonState.seasonRandomEvents.Spring;
-                        break;
-                    }
-                case Season.Summer:
-                    {
-                        randEvents = SeasonState.seasonRandomEvents.Summer;
-                        break;
-                    }
-                case Season.Fall:
-                    {
-                        randEvents = SeasonState.seasonRandomEvents.Fall;
-                        break;
-                    }
-                case Season.Winter:
-                    {
-                        randEvents = SeasonState.seasonRandomEvents.Winter;
-                        break;
-                    }
-            }
+        {
+            if (!controlRandomEvents.Value)
+                return;
+
+            List<SeasonRandomEvent> randEvents = SeasonState.seasonRandomEvents.GetSeasonEvents(seasonState.GetCurrentSeason());
 
             __state = new List<RandomEvent>();
-
             for (int i = 0; i < __instance.m_events.Count; i++)
             {
                 RandomEvent randEvent = __instance.m_events[i];
@@ -1276,8 +1263,157 @@ namespace Seasons
 
         private static void Postfix(ref RandEventSystem __instance, List<RandomEvent> __state)
         {
+            if (!controlRandomEvents.Value)
+                return;
+
             __instance.m_events.Clear();
             __instance.m_events.AddRange(__state.ToList());
         }
     }
+
+    [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.SetEnv))]
+    public static class EnvMan_SetEnv_LuminancePatch
+    {
+        public static Color ChangeColorLuminance(Color color, float luminanceMultiplier)
+        {
+            HSLColor newColor = new HSLColor(color);
+            newColor.l *= luminanceMultiplier;
+            return newColor.ToRGBA();
+        }
+
+        [HarmonyPriority(Priority.Last)]
+        public static void Prefix(EnvMan __instance, EnvSetup env, ref Dictionary<string, Color> __state)
+        {
+            if (!controlLightings.Value)
+                return;
+
+            __state = new Dictionary<string, Color>
+                {
+                    { "m_ambColorNight", env.m_ambColorNight },
+                    { "m_fogColorNight", env.m_fogColorNight },
+                    { "m_fogColorSunNight", env.m_fogColorSunNight },
+                    { "m_sunColorNight", env.m_sunColorNight },
+
+                    { "m_ambColorDay", env.m_ambColorDay },
+                    { "m_fogColorMorning", env.m_fogColorMorning },
+                    { "m_fogColorDay", env.m_fogColorDay },
+                    { "m_fogColorEvening", env.m_fogColorEvening },
+                    { "m_fogColorSunMorning", env.m_fogColorSunMorning },
+                    { "m_fogColorSunDay", env.m_fogColorSunDay },
+                    { "m_fogColorSunEvening", env.m_fogColorSunEvening },
+                    { "m_sunColorMorning", env.m_sunColorMorning },
+                    { "m_sunColorDay", env.m_sunColorDay },
+                    { "m_sunColorEvening", env.m_sunColorEvening },
+
+                    { "m_lightIntensityDay", new Color(env.m_lightIntensityDay / 100f, 0f, 0f) },
+                    { "m_lightIntensityNight", new Color(env.m_lightIntensityNight / 100f, 0f, 0f)},
+
+                    { "m_fogDensityNight", new Color(env.m_fogDensityNight, 0f, 0f) },
+                    { "m_fogDensityMorning", new Color(env.m_fogDensityMorning, 0f, 0f) },
+                    { "m_fogDensityDay", new Color(env.m_fogDensityDay, 0f, 0f) },
+                    { "m_fogDensityEvening", new Color(env.m_fogDensityEvening, 0f, 0f) }
+                };
+
+            SeasonLightingSettings lightingSettings = SeasonState.seasonLightings.GetSeasonLighting(seasonState.GetCurrentSeason());
+
+            if (Player.m_localPlayer != null && Player.m_localPlayer.InInterior())
+            {
+                if (lightingSettings.indoors.luminanceMultiplier != 1.0f)
+                {
+                    env.m_fogColorMorning = ChangeColorLuminance(env.m_fogColorMorning, lightingSettings.indoors.luminanceMultiplier);
+                    env.m_fogColorDay = ChangeColorLuminance(env.m_fogColorDay, lightingSettings.indoors.luminanceMultiplier);
+                    env.m_fogColorEvening = ChangeColorLuminance(env.m_fogColorEvening, lightingSettings.indoors.luminanceMultiplier);
+                    env.m_fogColorSunMorning = ChangeColorLuminance(env.m_fogColorSunMorning, lightingSettings.indoors.luminanceMultiplier);
+                    env.m_fogColorSunDay = ChangeColorLuminance(env.m_fogColorSunDay, lightingSettings.indoors.luminanceMultiplier);
+                    env.m_fogColorSunEvening = ChangeColorLuminance(env.m_fogColorSunEvening, lightingSettings.indoors.luminanceMultiplier);
+                    env.m_sunColorMorning = ChangeColorLuminance(env.m_sunColorMorning, lightingSettings.indoors.luminanceMultiplier);
+                    env.m_sunColorDay = ChangeColorLuminance(env.m_sunColorDay, lightingSettings.indoors.luminanceMultiplier);
+                    env.m_sunColorEvening = ChangeColorLuminance(env.m_sunColorEvening, lightingSettings.indoors.luminanceMultiplier);
+                    env.m_ambColorNight = ChangeColorLuminance(env.m_ambColorNight, lightingSettings.indoors.luminanceMultiplier);
+                    env.m_fogColorNight = ChangeColorLuminance(env.m_fogColorNight, lightingSettings.indoors.luminanceMultiplier);
+                    env.m_fogColorSunNight = ChangeColorLuminance(env.m_fogColorSunNight, lightingSettings.indoors.luminanceMultiplier);
+                    env.m_sunColorNight = ChangeColorLuminance(env.m_sunColorNight, lightingSettings.indoors.luminanceMultiplier);
+
+                }
+
+                if (lightingSettings.indoors.fogDensityMultiplier != 1.0f)
+                {
+                    env.m_fogDensityNight *= lightingSettings.indoors.fogDensityMultiplier;
+                    env.m_fogDensityMorning *= lightingSettings.indoors.fogDensityMultiplier;
+                    env.m_fogDensityEvening *= lightingSettings.indoors.fogDensityMultiplier;
+                    env.m_fogDensityDay *= lightingSettings.indoors.fogDensityMultiplier;
+                }
+            }
+            else
+            {
+                env.m_ambColorNight = ChangeColorLuminance(env.m_ambColorNight, lightingSettings.night.luminanceMultiplier);
+                env.m_fogColorNight = ChangeColorLuminance(env.m_fogColorNight, lightingSettings.night.luminanceMultiplier);
+                env.m_fogColorSunNight = ChangeColorLuminance(env.m_fogColorSunNight, lightingSettings.night.luminanceMultiplier);
+                env.m_sunColorNight = ChangeColorLuminance(env.m_sunColorNight, lightingSettings.night.luminanceMultiplier);
+
+                env.m_fogDensityNight *= lightingSettings.night.fogDensityMultiplier;
+
+                env.m_fogColorMorning = ChangeColorLuminance(env.m_fogColorMorning, lightingSettings.morning.luminanceMultiplier);
+                env.m_fogColorSunMorning = ChangeColorLuminance(env.m_fogColorSunMorning, lightingSettings.morning.luminanceMultiplier);
+                env.m_sunColorMorning = ChangeColorLuminance(env.m_sunColorMorning, lightingSettings.morning.luminanceMultiplier);
+
+                env.m_fogDensityMorning *= lightingSettings.morning.fogDensityMultiplier;
+
+                env.m_fogColorDay = ChangeColorLuminance(env.m_fogColorDay, lightingSettings.day.luminanceMultiplier);
+                env.m_fogColorSunDay = ChangeColorLuminance(env.m_fogColorSunDay, lightingSettings.day.luminanceMultiplier);
+                env.m_sunColorDay = ChangeColorLuminance(env.m_sunColorDay, lightingSettings.day.luminanceMultiplier);
+
+                env.m_fogDensityDay *= lightingSettings.day.fogDensityMultiplier;
+
+                env.m_fogColorEvening = ChangeColorLuminance(env.m_fogColorEvening, lightingSettings.evening.luminanceMultiplier);
+                env.m_fogColorSunEvening = ChangeColorLuminance(env.m_fogColorSunEvening, lightingSettings.evening.luminanceMultiplier);
+                env.m_sunColorEvening = ChangeColorLuminance(env.m_sunColorEvening, lightingSettings.evening.luminanceMultiplier);
+
+                env.m_fogDensityEvening *= lightingSettings.evening.fogDensityMultiplier;
+            }
+
+            if (lightingSettings.lightIntensityDayMultiplier != 1.0f)
+            {
+                env.m_lightIntensityDay *= lightingSettings.lightIntensityDayMultiplier;
+            }
+
+            if (lightingSettings.lightIntensityNightMultiplier != 1.0f)
+            {
+                env.m_lightIntensityNight *= lightingSettings.lightIntensityNightMultiplier;
+            }
+        }
+
+        [HarmonyPriority(Priority.First)]
+        public static void Postfix(EnvSetup env, ref Dictionary<string, Color> __state)
+        {
+            if (!controlLightings.Value)
+                return;
+
+            env.m_ambColorNight = __state["m_ambColorNight"];
+            env.m_fogColorNight = __state["m_fogColorNight"];
+            env.m_fogColorSunNight = __state["m_fogColorSunNight"];
+            env.m_sunColorNight = __state["m_sunColorNight"];
+
+            env.m_fogColorMorning = __state["m_fogColorMorning"];
+            env.m_fogColorDay = __state["m_fogColorDay"];
+            env.m_fogColorEvening = __state["m_fogColorEvening"];
+            env.m_fogColorSunMorning = __state["m_fogColorSunMorning"];
+            env.m_fogColorSunDay = __state["m_fogColorSunDay"];
+            env.m_fogColorSunEvening = __state["m_fogColorSunEvening"];
+            env.m_sunColorMorning = __state["m_sunColorMorning"];
+            env.m_sunColorDay = __state["m_sunColorDay"];
+            env.m_sunColorEvening = __state["m_sunColorEvening"];
+
+            env.m_fogDensityNight = __state["m_fogDensityNight"].r;
+            env.m_fogDensityMorning = __state["m_fogDensityMorning"].r;
+            env.m_fogDensityDay = __state["m_fogDensityDay"].r;
+            env.m_fogDensityEvening = __state["m_fogDensityEvening"].r;
+
+            env.m_lightIntensityDay = __state["m_lightIntensityDay"].r * 100f;
+
+            env.m_lightIntensityNight = __state["m_lightIntensityNight"].r * 100f;
+        }
+
+    }
+
 }

@@ -30,6 +30,13 @@ namespace Seasons
         private static ConfigEntry<bool> loggingEnabled;
         public static ConfigEntry<CacheFormat> cacheStorageFormat;
 
+        public static ConfigEntry<bool> overrideSeason;
+        public static ConfigEntry<Season> seasonOverrided;
+
+        public static ConfigEntry<bool> controlEnvironments;
+        public static ConfigEntry<bool> controlRandomEvents;
+        public static ConfigEntry<bool> controlLightings;
+
         public static ConfigEntry<bool> showCurrentSeasonBuff;
         public static ConfigEntry<TimerFormat> seasonsTimerFormat;
         public static ConfigEntry<bool> enableSeasonalItems;
@@ -39,9 +46,6 @@ namespace Seasons
         public static ConfigEntry<bool> hoverBeeHiveTotal;
         public static ConfigEntry<StationHover> hoverPlant;
         public static ConfigEntry<bool> seasonalMinimapBorderColor;
-
-        public static ConfigEntry<bool> overrideSeason;
-        public static ConfigEntry<Season> seasonOverrided;
 
         public static ConfigEntry<Color> vegetationSpringColor1;
         public static ConfigEntry<Color> vegetationSpringColor2;
@@ -122,7 +126,8 @@ namespace Seasons
         public static readonly CustomSyncedValue<Dictionary<int, string>> seasonsSettingsJSON = new CustomSyncedValue<Dictionary<int, string>>(configSync, "Seasons settings JSON", new Dictionary<int, string>());
         public static readonly CustomSyncedValue<string> customEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom environments JSON", "");
         public static readonly CustomSyncedValue<string> customBiomeEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom biome environments JSON", "");
-        public static readonly CustomSyncedValue<string> customEventsJSON = new CustomSyncedValue<string>(configSync, "Custom events JSON", ""); 
+        public static readonly CustomSyncedValue<string> customEventsJSON = new CustomSyncedValue<string>(configSync, "Custom events JSON", "");
+        public static readonly CustomSyncedValue<string> customLightingsJSON = new CustomSyncedValue<string>(configSync, "Custom lightings JSON", ""); 
 
         public static readonly List<BiomeEnvSetup> biomesDefault = new List<BiomeEnvSetup>();
         public static readonly List<RandomEvent> eventsDefault = new List<RandomEvent>();
@@ -213,77 +218,82 @@ namespace Seasons
             configLocked = config("General", "Lock Configuration", defaultValue: true, "Configuration is locked and can be changed by server admins only.");
             loggingEnabled = config("General", "Logging enabled", defaultValue: false, "Enable logging. [Not Synced with Server]", false);
 
-            showCurrentSeasonBuff = config("Season", "Show current season buff", defaultValue: true, "Show current season buff.");
-            seasonsTimerFormat = config("Season", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
+            controlEnvironments = config("Season - Control", "Control environments", defaultValue: true, "Enables seasonal weathers");
+            controlRandomEvents = config("Season - Control", "Control random events", defaultValue: true, "Enables seasonal random events");
+            controlLightings = config("Season - Control", "Control lightings", defaultValue: true, "Enables seasonal lightings change (basically gamma or brightness)");
+
             enableSeasonalItems = config("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
             preventDeathFromFreezing = config("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
 
+            showCurrentSeasonBuff = config("Season - Buff", "Show current season buff", defaultValue: true, "Show current season buff.");
+            seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
+            
             showCurrentSeasonBuff.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectShowStatus();
 
-            hoverBeeHive = Config.Bind("UI", "Bee Hive Hover", defaultValue: StationHover.Vanilla, "Hover text for bee hive.");
-            hoverBeeHiveTotal = Config.Bind("UI", "Bee Hive Show total", defaultValue: true, "Show total needed time/percent for bee hive.");
-            hoverPlant = Config.Bind("UI", "Plants Hover", defaultValue: StationHover.Vanilla, "Hover text for plants.");
-            seasonalMinimapBorderColor = Config.Bind("UI", "Seasonal colored minimap border", defaultValue: true, "Change minimap border color according to current season");
+            hoverBeeHive = Config.Bind("Season - UI", "Bee Hive Hover", defaultValue: StationHover.Vanilla, "Hover text for bee hive.");
+            hoverBeeHiveTotal = Config.Bind("Season - UI", "Bee Hive Show total", defaultValue: true, "Show total needed time/percent for bee hive.");
+            hoverPlant = Config.Bind("Season - UI", "Plants Hover", defaultValue: StationHover.Vanilla, "Hover text for plants.");
+            seasonalMinimapBorderColor = Config.Bind("Season - UI", "Seasonal colored minimap border", defaultValue: true, "Change minimap border color according to current season");
 
-            overrideSeason = config("Seasons override", "Override", defaultValue: false, "The season will be overrided by set season.");
-            seasonOverrided = config("Seasons override", "Season", defaultValue: Season.Spring, "The season to set.");
+            overrideSeason = config("Season - Override", "Override", defaultValue: false, "The season will be overrided by set season.");
+            seasonOverrided = config("Season - Override", "Season", defaultValue: Season.Spring, "The season to set.");
 
             overrideSeason.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
 
-            vegetationSpringColor1 = config("Seasons - Spring", "Color 1", defaultValue: new Color(0.27f, 0.80f, 0.27f, 0.75f), "Color 1");
-            vegetationSpringColor2 = config("Seasons - Spring", "Color 2", defaultValue: new Color(0.69f, 0.84f, 0.15f, 0.75f), "Color 2");
-            vegetationSpringColor3 = config("Seasons - Spring", "Color 3", defaultValue: new Color(0.43f, 0.56f, 0.11f, 0.75f), "Color 3");
-            vegetationSpringColor4 = config("Seasons - Spring", "Color 4", defaultValue: new Color(0.0f, 1.0f, 0f, 0.0f), "Color 4");
+            vegetationSpringColor1 = config("Seasons - Color - Main - Spring", "Color 1", defaultValue: new Color(0.27f, 0.80f, 0.27f, 0.75f), "Color 1");
+            vegetationSpringColor2 = config("Seasons - Color - Main - Spring", "Color 2", defaultValue: new Color(0.69f, 0.84f, 0.15f, 0.75f), "Color 2");
+            vegetationSpringColor3 = config("Seasons - Color - Main - Spring", "Color 3", defaultValue: new Color(0.43f, 0.56f, 0.11f, 0.75f), "Color 3");
+            vegetationSpringColor4 = config("Seasons - Color - Main - Spring", "Color 4", defaultValue: new Color(0.0f, 1.0f, 0f, 0.0f), "Color 4");
 
-            vegetationSummerColor1 = config("Seasons - Summer", "Color 1", defaultValue: new Color(0.5f, 0.7f, 0.2f, 0.5f), "Color 1");
-            vegetationSummerColor2 = config("Seasons - Summer", "Color 2", defaultValue: new Color(0.7f, 0.7f, 0.2f, 0.5f), "Color 2");
-            vegetationSummerColor3 = config("Seasons - Summer", "Color 3", defaultValue: new Color(0.5f, 0.5f, 0f, 0.5f), "Color 3");
-            vegetationSummerColor4 = config("Seasons - Summer", "Color 4", defaultValue: new Color(0.7f, 0.7f, 0f, 0.2f), "Color 4");
+            vegetationSummerColor1 = config("Seasons - Color - Main - Summer", "Color 1", defaultValue: new Color(0.5f, 0.7f, 0.2f, 0.5f), "Color 1");
+            vegetationSummerColor2 = config("Seasons - Color - Main - Summer", "Color 2", defaultValue: new Color(0.7f, 0.7f, 0.2f, 0.5f), "Color 2");
+            vegetationSummerColor3 = config("Seasons - Color - Main - Summer", "Color 3", defaultValue: new Color(0.5f, 0.5f, 0f, 0.5f), "Color 3");
+            vegetationSummerColor4 = config("Seasons - Color - Main - Summer", "Color 4", defaultValue: new Color(0.7f, 0.7f, 0f, 0.2f), "Color 4");
 
-            vegetationFallColor1 = config("Seasons - Fall", "Color 1", defaultValue: new Color(0.8f, 0.5f, 0f, 0.75f), "Color 1");
-            vegetationFallColor2 = config("Seasons - Fall", "Color 2", defaultValue: new Color(0.8f, 0.3f, 0f, 0.75f), "Color 2");
-            vegetationFallColor3 = config("Seasons - Fall", "Color 3", defaultValue: new Color(0.8f, 0.2f, 0f, 0.75f), "Color 3");
-            vegetationFallColor4 = config("Seasons - Fall", "Color 4", defaultValue: new Color(0.9f, 0.5f, 0f, 0.0f), "Color 4");
+            vegetationFallColor1 = config("Seasons - Color - Main - Fall", "Color 1", defaultValue: new Color(0.8f, 0.5f, 0f, 0.75f), "Color 1");
+            vegetationFallColor2 = config("Seasons - Color - Main - Fall", "Color 2", defaultValue: new Color(0.8f, 0.3f, 0f, 0.75f), "Color 2");
+            vegetationFallColor3 = config("Seasons - Color - Main - Fall", "Color 3", defaultValue: new Color(0.8f, 0.2f, 0f, 0.75f), "Color 3");
+            vegetationFallColor4 = config("Seasons - Color - Main - Fall", "Color 4", defaultValue: new Color(0.9f, 0.5f, 0f, 0.0f), "Color 4");
 
-            vegetationWinterColor1 = config("Seasons - Winter", "Color 1", defaultValue: new Color(1f, 0.98f, 0.98f, 0.65f), "Color 1");
-            vegetationWinterColor2 = config("Seasons - Winter", "Color 2", defaultValue: new Color(1f, 1f, 1f, 0.6f), "Color 2");
-            vegetationWinterColor3 = config("Seasons - Winter", "Color 3", defaultValue: new Color(0.98f, 0.98f, 1f, 0.65f), "Color 3");
-            vegetationWinterColor4 = config("Seasons - Winter", "Color 4", defaultValue: new Color(1f, 1f, 1f, 0.65f), "Color 4");
+            vegetationWinterColor1 = config("Seasons - Color - Main - Winter", "Color 1", defaultValue: new Color(1f, 0.98f, 0.98f, 0.65f), "Color 1");
+            vegetationWinterColor2 = config("Seasons - Color - Main - Winter", "Color 2", defaultValue: new Color(1f, 1f, 1f, 0.6f), "Color 2");
+            vegetationWinterColor3 = config("Seasons - Color - Main - Winter", "Color 3", defaultValue: new Color(0.98f, 0.98f, 1f, 0.65f), "Color 3");
+            vegetationWinterColor4 = config("Seasons - Color - Main - Winter", "Color 4", defaultValue: new Color(1f, 1f, 1f, 0.65f), "Color 4");
 
-            grassSpringColor1 = config("Grass - Spring", "Color 1", defaultValue: new Color(0.27f, 0.80f, 0.27f, 0.75f), "Color 1");
-            grassSpringColor2 = config("Grass - Spring", "Color 2", defaultValue: new Color(0.69f, 0.84f, 0.15f, 0.75f), "Color 2");
-            grassSpringColor3 = config("Grass - Spring", "Color 3", defaultValue: new Color(0.43f, 0.56f, 0.11f, 0.75f), "Color 3");
-            grassSpringColor4 = config("Grass - Spring", "Color 4", defaultValue: new Color(0.0f, 1.0f, 0f, 0.0f), "Color 4");
+            grassSpringColor1 = config("Seasons - Color - Grass - Spring", "Color 1", defaultValue: new Color(0.27f, 0.80f, 0.27f, 0.75f), "Color 1");
+            grassSpringColor2 = config("Seasons - Color - Grass - Spring", "Color 2", defaultValue: new Color(0.69f, 0.84f, 0.15f, 0.75f), "Color 2");
+            grassSpringColor3 = config("Seasons - Color - Grass - Spring", "Color 3", defaultValue: new Color(0.43f, 0.56f, 0.11f, 0.75f), "Color 3");
+            grassSpringColor4 = config("Seasons - Color - Grass - Spring", "Color 4", defaultValue: new Color(0.0f, 1.0f, 0f, 0.0f), "Color 4");
 
-            grassSummerColor1 = config("Grass - Summer", "Color 1", defaultValue: new Color(0.5f, 0.7f, 0.2f, 0.5f), "Color 1");
-            grassSummerColor2 = config("Grass - Summer", "Color 2", defaultValue: new Color(0.7f, 0.75f, 0.2f, 0.5f), "Color 2");
-            grassSummerColor3 = config("Grass - Summer", "Color 3", defaultValue: new Color(0.5f, 0.5f, 0f, 0.5f), "Color 3");
-            grassSummerColor4 = config("Grass - Summer", "Color 4", defaultValue: new Color(0.7f, 0.7f, 0f, 0.2f), "Color 4");
+            grassSummerColor1 = config("Seasons - Color - Grass - Summer", "Color 1", defaultValue: new Color(0.5f, 0.7f, 0.2f, 0.5f), "Color 1");
+            grassSummerColor2 = config("Seasons - Color - Grass - Summer", "Color 2", defaultValue: new Color(0.7f, 0.75f, 0.2f, 0.5f), "Color 2");
+            grassSummerColor3 = config("Seasons - Color - Grass - Summer", "Color 3", defaultValue: new Color(0.5f, 0.5f, 0f, 0.5f), "Color 3");
+            grassSummerColor4 = config("Seasons - Color - Grass - Summer", "Color 4", defaultValue: new Color(0.7f, 0.7f, 0f, 0.2f), "Color 4");
 
-            grassFallColor1 = config("Grass - Fall", "Color 1", defaultValue: new Color(0.8f, 0.6f, 0.2f, 0.5f), "Color 1");
-            grassFallColor2 = config("Grass - Fall", "Color 2", defaultValue: new Color(0.8f, 0.5f, 0f, 0.5f), "Color 2");
-            grassFallColor3 = config("Grass - Fall", "Color 3", defaultValue: new Color(0.8f, 0.3f, 0f, 0.5f), "Color 3");
-            grassFallColor4 = config("Grass - Fall", "Color 4", defaultValue: new Color(0.9f, 0.5f, 0f, 0.0f), "Color 4");
+            grassFallColor1 = config("Seasons - Color - Grass - Fall", "Color 1", defaultValue: new Color(0.8f, 0.6f, 0.2f, 0.5f), "Color 1");
+            grassFallColor2 = config("Seasons - Color - Grass - Fall", "Color 2", defaultValue: new Color(0.8f, 0.5f, 0f, 0.5f), "Color 2");
+            grassFallColor3 = config("Seasons - Color - Grass - Fall", "Color 3", defaultValue: new Color(0.8f, 0.3f, 0f, 0.5f), "Color 3");
+            grassFallColor4 = config("Seasons - Color - Grass - Fall", "Color 4", defaultValue: new Color(0.9f, 0.5f, 0f, 0.0f), "Color 4");
 
-            grassWinterColor1 = config("Grass - Winter", "Color 1", defaultValue: new Color(1f, 0.98f, 0.98f, 0.65f), "Color 1");
-            grassWinterColor2 = config("Grass - Winter", "Color 2", defaultValue: new Color(1f, 1f, 1f, 0.6f), "Color 2");
-            grassWinterColor3 = config("Grass - Winter", "Color 3", defaultValue: new Color(0.98f, 0.98f, 1f, 0.65f), "Color 3");
-            grassWinterColor4 = config("Grass - Winter", "Color 4", defaultValue: new Color(1f, 1f, 1f, 0.65f), "Color 4");
+            grassWinterColor1 = config("Seasons - Color - Grass - Winter", "Color 1", defaultValue: new Color(1f, 0.98f, 0.98f, 0.65f), "Color 1");
+            grassWinterColor2 = config("Seasons - Color - Grass - Winter", "Color 2", defaultValue: new Color(1f, 1f, 1f, 0.6f), "Color 2");
+            grassWinterColor3 = config("Seasons - Color - Grass - Winter", "Color 3", defaultValue: new Color(0.98f, 0.98f, 1f, 0.65f), "Color 3");
+            grassWinterColor4 = config("Seasons - Color - Grass - Winter", "Color 4", defaultValue: new Color(1f, 1f, 1f, 0.65f), "Color 4");
 
-            localizationSeasonNameSpring = config("Localization", "Season name Spring", defaultValue: "Spring", "Season name");
-            localizationSeasonNameSummer = config("Localization", "Season name Summer", defaultValue: "Summer", "Season name");
-            localizationSeasonNameFall = config("Localization", "Season name Fall", defaultValue: "Fall", "Season name");
-            localizationSeasonNameWinter = config("Localization", "Season name Winter", defaultValue: "Winter", "Season name");
+            localizationSeasonNameSpring = config("Seasons - Localization", "Season name Spring", defaultValue: "Spring", "Season name");
+            localizationSeasonNameSummer = config("Seasons - Localization", "Season name Summer", defaultValue: "Summer", "Season name");
+            localizationSeasonNameFall = config("Seasons - Localization", "Season name Fall", defaultValue: "Fall", "Season name");
+            localizationSeasonNameWinter = config("Seasons - Localization", "Season name Winter", defaultValue: "Winter", "Season name");
 
-            localizationSeasonIsComingSpring = config("Localization", "Status tooltip - Spring is coming", defaultValue: "Spring is coming", "Message to be shown on the last day of the previous season.");
-            localizationSeasonIsComingSummer = config("Localization", "Status tooltip - Summer is coming", defaultValue: "Summer is coming", "Message to be shown on the last day of the previous season.");
-            localizationSeasonIsComingFall = config("Localization", "Status tooltip - Fall is coming", defaultValue: "Fall is coming", "Message to be shown on the last day of the previous season.");
-            localizationSeasonIsComingWinter = config("Localization", "Status tooltip - Winter is coming", defaultValue: "Winter is coming", "Message to be shown on the last day of the previous season.");
+            localizationSeasonIsComingSpring = config("Seasons - Localization", "Status tooltip - Spring is coming", defaultValue: "Spring is coming", "Message to be shown on the last day of the previous season.");
+            localizationSeasonIsComingSummer = config("Seasons - Localization", "Status tooltip - Summer is coming", defaultValue: "Summer is coming", "Message to be shown on the last day of the previous season.");
+            localizationSeasonIsComingFall = config("Seasons - Localization", "Status tooltip - Fall is coming", defaultValue: "Fall is coming", "Message to be shown on the last day of the previous season.");
+            localizationSeasonIsComingWinter = config("Seasons - Localization", "Status tooltip - Winter is coming", defaultValue: "Winter is coming", "Message to be shown on the last day of the previous season.");
 
-            localizationSeasonTooltipSpring = config("Localization", "Season status effect tooltip - Spring has come", defaultValue: "Spring has come", "Message to be shown on the buff tooltip and almanach.");
-            localizationSeasonTooltipSummer = config("Localization", "Season status effect tooltip - Summer has come", defaultValue: "Summer has come", "Message to be shown on the buff tooltip and almanach.");
-            localizationSeasonTooltipFall = config("Localization", "Season status effect tooltip - Fall has come", defaultValue: "Fall has come", "Message to be shown on the buff tooltip and almanach.");
-            localizationSeasonTooltipWinter = config("Localization", "Season status effect tooltip - Winter has come", defaultValue: "Winter has come", "Message to be shown on the buff tooltip and almanach.");
+            localizationSeasonTooltipSpring = config("Seasons - Localization", "Season status effect tooltip - Spring has come", defaultValue: "Spring has come", "Message to be shown on the buff tooltip and almanach.");
+            localizationSeasonTooltipSummer = config("Seasons - Localization", "Season status effect tooltip - Summer has come", defaultValue: "Summer has come", "Message to be shown on the buff tooltip and almanach.");
+            localizationSeasonTooltipFall = config("Seasons - Localization", "Season status effect tooltip - Fall has come", defaultValue: "Fall has come", "Message to be shown on the buff tooltip and almanach.");
+            localizationSeasonTooltipWinter = config("Seasons - Localization", "Season status effect tooltip - Winter has come", defaultValue: "Winter has come", "Message to be shown on the buff tooltip and almanach.");
 
             cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
 

@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Linq;
 using UnityEngine;
 using static Seasons.Seasons;
+using BepInEx.Configuration;
 
 namespace Seasons
 {
@@ -582,6 +583,23 @@ namespace Seasons
             Winter.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Mistlands", new EnvEntry { m_environment = "Twilight_Snow", m_weight = 0.1f }));
             Winter.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Mistlands", new EnvEntry { m_environment = "Twilight_SnowStorm", m_weight = 0.1f }));
         }
+
+        public SeasonBiomeEnvironment GetSeasonBiomeEnvironment(Season season)
+        {
+            switch (season)
+            {
+                case Season.Spring:
+                    return Spring;
+                case Season.Summer:
+                    return Summer;
+                case Season.Fall:
+                    return Fall;
+                case Season.Winter:
+                    return Winter;
+            }
+
+            return new SeasonBiomeEnvironment();
+        }
     }
 
     [Serializable]
@@ -709,6 +727,110 @@ namespace Seasons
                 m_weight = 0
             });
         }
+
+        public List<SeasonRandomEvent> GetSeasonEvents(Season season)
+        {
+            switch (season)
+            {
+                case Season.Spring:
+                    return Spring;
+                case Season.Summer:
+                    return Summer;
+                case Season.Fall:
+                    return Fall;
+                case Season.Winter:
+                    return Winter;
+            }
+
+            return new List<SeasonRandomEvent>();
+        }
+    }
+
+    [Serializable]
+    public class SeasonLightings
+    {
+        [Serializable]
+        public class LightingSettings
+        {
+            public float luminanceMultiplier = 1.0f;
+            public float fogDensityMultiplier = 1.0f;
+        }
+
+        [Serializable]
+        public class SeasonLightingSettings
+        {
+            public LightingSettings indoors = new LightingSettings();
+            public LightingSettings morning = new LightingSettings();
+            public LightingSettings day = new LightingSettings();
+            public LightingSettings evening = new LightingSettings();
+            public LightingSettings night = new LightingSettings();
+
+            public float lightIntensityDayMultiplier = 1.0f;
+            public float lightIntensityNightMultiplier = 1.0f;
+        }
+
+        public SeasonLightingSettings Spring = new SeasonLightingSettings();
+        public SeasonLightingSettings Summer = new SeasonLightingSettings();
+        public SeasonLightingSettings Fall = new SeasonLightingSettings();
+        public SeasonLightingSettings Winter = new SeasonLightingSettings();
+
+        public SeasonLightings()
+        {
+            Summer.indoors.fogDensityMultiplier = 0.9f;
+
+            Summer.morning.luminanceMultiplier = 1.1f;
+            Summer.morning.fogDensityMultiplier = 0.9f;
+
+            Summer.evening.luminanceMultiplier = 1.1f;
+            Summer.evening.fogDensityMultiplier = 0.9f;
+            
+            Summer.night.luminanceMultiplier = 1.1f;
+            Summer.night.fogDensityMultiplier = 0.9f;
+
+            Summer.lightIntensityNightMultiplier = 0.9f;
+
+            Fall.morning.luminanceMultiplier = 0.95f;
+            Fall.morning.fogDensityMultiplier = 1.1f;
+
+            Fall.evening.luminanceMultiplier = 0.95f;
+            Fall.evening.fogDensityMultiplier = 1.1f;
+
+            Fall.night.luminanceMultiplier = 0.9f;
+            Fall.night.fogDensityMultiplier = 1.3f;
+
+            Fall.lightIntensityNightMultiplier = 1.2f;
+
+            Winter.indoors.luminanceMultiplier = 0.9f;
+            Winter.indoors.fogDensityMultiplier = 1.1f;
+
+            Winter.morning.luminanceMultiplier = 0.9f;
+            Winter.morning.fogDensityMultiplier = 1.2f;
+
+            Winter.evening.luminanceMultiplier = 0.9f;
+            Winter.evening.fogDensityMultiplier = 1.2f;
+
+            Winter.night.luminanceMultiplier = 0.8f;
+            Winter.night.fogDensityMultiplier = 1.7f;
+
+            Winter.lightIntensityNightMultiplier = 1.5f;
+        }
+
+        public SeasonLightingSettings GetSeasonLighting(Season season)
+        {
+            switch (season)
+            {
+                case Season.Spring:
+                    return Spring;
+                case Season.Summer:
+                    return Summer;
+                case Season.Fall:
+                    return Fall;
+                case Season.Winter:
+                    return Winter;
+            }
+
+            return new SeasonLightingSettings();
+        }
     }
 
     public class SeasonSettings
@@ -717,6 +839,7 @@ namespace Seasons
         public const string customEnvironmentsFileName = "Custom environments.json";
         public const string customBiomeEnvironmentsFileName = "Custom Biome Environments.json";
         public const string customEventsFileName = "Custom events.json";
+        public const string customLightingsFileName = "Custom lightings.json";
         public const int nightLentghDefault = 30;
         public const string itemDropNameTorch = "$item_torch";
         public const string itemNameTorch = "Torch";
@@ -906,7 +1029,17 @@ namespace Seasons
                     {
                         LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
                     }
-                
+
+                if (file.Name == customLightingsFileName)
+                    try
+                    {
+                        customLightingsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
+                    }
+                    catch (Exception e)
+                    {
+                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
+                    }
+
             };
 
             seasonsSettingsJSON.AssignLocalValue(localConfig);
@@ -918,6 +1051,7 @@ namespace Seasons
             seasonState.UpdateSeasonEnvironments();
             seasonState.UpdateBiomeEnvironments();
             seasonState.UpdateEventEnvironments();
+            seasonState.UpdateLightings();
         }
 
         public static void SaveDefaultEnvironments(string folder)
@@ -967,6 +1101,11 @@ namespace Seasons
             File.WriteAllText(Path.Combine(folder, customEventsFileName), JsonConvert.SerializeObject(new SeasonRandomEvents(), Formatting.Indented, jsonSerializerSettings));
         }
 
+        public static void SaveDefaultLightings(string folder)
+        {
+            LogInfo($"Saving default custom ligthing settings");
+            File.WriteAllText(Path.Combine(folder, customLightingsFileName), JsonConvert.SerializeObject(new SeasonLightings(), Formatting.Indented));
+        }
     }
 
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Start))]
