@@ -22,6 +22,7 @@ namespace Seasons
         public static List<SeasonEnvironment> seasonEnvironments = SeasonEnvironment.GetDefaultCustomEnvironments();
         public static SeasonRandomEvents seasonRandomEvents = new SeasonRandomEvents();
         public static SeasonLightings seasonLightings = new SeasonLightings();
+        public static SeasonStats seasonStats = new SeasonStats();
 
         private SeasonSettings settings
         {
@@ -56,6 +57,7 @@ namespace Seasons
             SeasonSettings.SaveDefaultEnvironments(folder);
             SeasonSettings.SaveDefaultEvents(folder);
             SeasonSettings.SaveDefaultLightings(folder);
+            SeasonSettings.SaveDefaultStats(folder);
         }
 
         public bool IsActive => EnvMan.instance != null;
@@ -151,6 +153,8 @@ namespace Seasons
                     LogWarning($"Error parsing settings: {(Season)item.Key}\n{e}");
                 }
             }
+
+            UpdateTorchesFireWarmth();
         }
 
         public void UpdateSeasonEnvironments()
@@ -236,7 +240,7 @@ namespace Seasons
             EnvMan.instance.m_environmentPeriod--;
         }
 
-        public void UpdateEventEnvironments()
+        public void UpdateRandomEvents()
         {
             if (!IsActive)
                 return;
@@ -274,6 +278,26 @@ namespace Seasons
             }
         }
 
+        public void UpdateStats()
+        {
+            if (!IsActive)
+                return;
+
+            if (!String.IsNullOrEmpty(customStatsJSON.Value))
+            {
+                try
+                {
+                    seasonStats = JsonConvert.DeserializeObject<SeasonStats>(customStatsJSON.Value);
+                    LogInfo($"Custom stats updated");
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error parsing custom stats:\n{e}");
+                }
+            }
+
+            SE_Season.UpdateSeasonStatusEffectStats();
+        }
         public double GetEndOfCurrentSeason()
         {
             return GetStartOfCurrentSeason() + seasonState.GetDaysInSeason() * EnvMan.instance.m_dayLengthSec;

@@ -8,7 +8,7 @@ using System.Reflection;
 using System.Linq;
 using UnityEngine;
 using static Seasons.Seasons;
-using BepInEx.Configuration;
+using System.Net.NetworkInformation;
 
 namespace Seasons
 {
@@ -833,6 +833,156 @@ namespace Seasons
         }
     }
 
+    [Serializable]
+    public class SeasonStats
+    {
+        [Serializable]
+        public class Stats
+        {
+            [Header("__SE_Stats__")]
+            [Header("HP per tick")]
+            public float m_tickInterval;
+
+            public float m_healthPerTickMinHealthPercentage;
+
+            public float m_healthPerTick;
+
+            public HitData.HitType m_hitType;
+            
+            [Header("Stamina")]
+            public float m_staminaDrainPerSec;
+
+            public float m_runStaminaDrainModifier;
+
+            public float m_jumpStaminaUseModifier;
+
+            [Header("Regen modifiers")]
+            public float m_healthRegenMultiplier = 1f;
+
+            public float m_staminaRegenMultiplier = 1f;
+
+            public float m_eitrRegenMultiplier = 1f;
+
+            [Header("Skills modifiers")]
+            public Dictionary<Skills.SkillType, float> m_raiseSkills = new Dictionary<Skills.SkillType, float>();
+            public Dictionary<Skills.SkillType, float> m_skillLevels = new Dictionary<Skills.SkillType, float>();
+            public Dictionary<Skills.SkillType, float> m_modifyAttackSkills = new Dictionary<Skills.SkillType, float>();
+
+            [Header("Hit modifier")]
+            public List<HitData.DamageModPair> m_mods = new List<HitData.DamageModPair>();
+
+            [Header("Sneak")]
+            public float m_noiseModifier;
+
+            public float m_stealthModifier;
+
+            [Header("Carry weight")]
+            public float m_addMaxCarryWeight;
+
+            [Header("Speed")]
+            public float m_speedModifier;
+
+            [Header("Fall")]
+            public float m_maxMaxFallSpeed;
+
+            public float m_fallDamageModifier;
+
+            public void SetStatusEffectStats(SE_Season statusEffect)
+            {
+                foreach (FieldInfo property in GetType().GetFields())
+                {
+                    FieldInfo field = statusEffect.GetType().GetField(property.Name);
+                    if (field == null)
+                        continue;
+                        
+                    field.SetValue(statusEffect, property.GetValue(this));
+                }
+            }
+        }
+
+        public Stats Spring = new Stats();
+        public Stats Summer = new Stats();
+        public Stats Fall = new Stats();
+        public Stats Winter = new Stats();
+
+        public SeasonStats()
+        {
+            Spring.m_tickInterval = 5f;
+            Spring.m_healthPerTick = 1f;
+            Spring.m_mods.Add(new HitData.DamageModPair() { m_type = HitData.DamageType.Poison, m_modifier = HitData.DamageModifier.Resistant });
+
+            Spring.m_raiseSkills.Add(Skills.SkillType.Jump, 1.2f);
+            Spring.m_raiseSkills.Add(Skills.SkillType.Sneak, 1.2f);
+            Spring.m_raiseSkills.Add(Skills.SkillType.Run, 1.2f);
+            Spring.m_raiseSkills.Add(Skills.SkillType.Swim, 1.2f);
+            Spring.m_skillLevels.Add(Skills.SkillType.Jump, 15f);
+            Spring.m_skillLevels.Add(Skills.SkillType.Sneak, 15f);
+            Spring.m_skillLevels.Add(Skills.SkillType.Run, 15f);
+            Spring.m_skillLevels.Add(Skills.SkillType.Swim, 15f);
+
+            Summer.m_runStaminaDrainModifier = -0.1f;
+            Summer.m_jumpStaminaUseModifier = -0.1f;
+            Summer.m_healthRegenMultiplier = 1.1f;
+            Summer.m_noiseModifier = -0.2f;
+            Summer.m_stealthModifier = 0.2f;
+            Summer.m_speedModifier = 0.05f;
+
+            Summer.m_raiseSkills.Add(Skills.SkillType.Jump, 1.1f);
+            Summer.m_raiseSkills.Add(Skills.SkillType.Sneak, 1.1f);
+            Summer.m_raiseSkills.Add(Skills.SkillType.Run, 1.1f);
+            Summer.m_raiseSkills.Add(Skills.SkillType.Swim, 1.1f);
+            Summer.m_skillLevels.Add(Skills.SkillType.Jump, 10f);
+            Summer.m_skillLevels.Add(Skills.SkillType.Sneak, 10f);
+            Summer.m_skillLevels.Add(Skills.SkillType.Run, 10f);
+            Summer.m_skillLevels.Add(Skills.SkillType.Swim, 10f);
+
+            Fall.m_eitrRegenMultiplier = 1.1f;
+            Fall.m_raiseSkills.Add(Skills.SkillType.WoodCutting, 1.2f);
+            Fall.m_raiseSkills.Add(Skills.SkillType.Fishing, 1.2f);
+            Fall.m_raiseSkills.Add(Skills.SkillType.Pickaxes, 1.2f);
+            Fall.m_skillLevels.Add(Skills.SkillType.WoodCutting, 15f);
+            Fall.m_skillLevels.Add(Skills.SkillType.Fishing, 15f);
+            Fall.m_skillLevels.Add(Skills.SkillType.Pickaxes, 15f);
+
+            Winter.m_staminaRegenMultiplier = 1.1f;
+            Winter.m_noiseModifier = 0.2f;
+            Winter.m_stealthModifier = -0.2f;
+            Winter.m_speedModifier = -0.05f;
+            Winter.m_fallDamageModifier = -0.3f;
+
+            Winter.m_mods.Add(new HitData.DamageModPair() { m_type = HitData.DamageType.Fire, m_modifier = HitData.DamageModifier.Resistant });
+
+            Winter.m_raiseSkills.Add(Skills.SkillType.WoodCutting, 1.1f);
+            Winter.m_raiseSkills.Add(Skills.SkillType.Fishing, 1.1f);
+            Winter.m_raiseSkills.Add(Skills.SkillType.Pickaxes, 1.1f);
+            Winter.m_skillLevels.Add(Skills.SkillType.WoodCutting, 10f);
+            Winter.m_skillLevels.Add(Skills.SkillType.Fishing, 10f);
+            Winter.m_skillLevels.Add(Skills.SkillType.Pickaxes, 10f);
+        }
+
+        public Stats GetSeasonStats()
+        {
+            return GetSeasonStats(seasonState.GetCurrentSeason());
+        }
+
+        private Stats GetSeasonStats(Season season)
+        {
+            switch (season)
+            {
+                case Season.Spring:
+                    return Spring;
+                case Season.Summer:
+                    return Summer;
+                case Season.Fall:
+                    return Fall;
+                case Season.Winter:
+                    return Winter;
+            }
+
+            return new Stats();
+        }
+    }
+
     public class SeasonSettings
     {
         public const string defaultsSubdirectory = "Default settings";
@@ -840,6 +990,7 @@ namespace Seasons
         public const string customBiomeEnvironmentsFileName = "Custom Biome Environments.json";
         public const string customEventsFileName = "Custom events.json";
         public const string customLightingsFileName = "Custom lightings.json";
+        public const string customStatsFileName = "Custom stats.json";
         public const int nightLentghDefault = 30;
         public const string itemDropNameTorch = "$item_torch";
         public const string itemNameTorch = "Torch";
@@ -1040,6 +1191,16 @@ namespace Seasons
                         LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
                     }
 
+                if (file.Name == customStatsFileName)
+                    try
+                    {
+                        customStatsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
+                    }
+                    catch (Exception e)
+                    {
+                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
+                    }
+
             };
 
             seasonsSettingsJSON.AssignLocalValue(localConfig);
@@ -1050,8 +1211,10 @@ namespace Seasons
             seasonState.UpdateSeasonSettings();
             seasonState.UpdateSeasonEnvironments();
             seasonState.UpdateBiomeEnvironments();
-            seasonState.UpdateEventEnvironments();
+            seasonState.UpdateCurrentEnvironment();
+            seasonState.UpdateRandomEvents();
             seasonState.UpdateLightings();
+            seasonState.UpdateStats();
         }
 
         public static void SaveDefaultEnvironments(string folder)
@@ -1106,7 +1269,13 @@ namespace Seasons
             LogInfo($"Saving default custom ligthing settings");
             File.WriteAllText(Path.Combine(folder, customLightingsFileName), JsonConvert.SerializeObject(new SeasonLightings(), Formatting.Indented));
         }
+        public static void SaveDefaultStats(string folder)
+        {
+            LogInfo($"Saving default custom stats settings");
+            File.WriteAllText(Path.Combine(folder, customStatsFileName), JsonConvert.SerializeObject(new SeasonStats(), Formatting.Indented));
+        }
     }
+
 
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Start))]
     public static class ZoneSystem_Start_SeasonSettingsConfigWatcher

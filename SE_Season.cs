@@ -1,34 +1,45 @@
 ﻿using HarmonyLib;
+using Newtonsoft.Json.Linq;
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using UnityEngine;
+using static InventoryGrid;
 using static Seasons.Seasons;
+using static Seasons.SeasonStats;
 
 namespace Seasons
 {
     public class SE_Season: SE_Stats
     {
         private Season m_season = Season.Spring;
+        private bool m_indoors = false;
+
+        [Header("Skills modifiers")]
+        public Dictionary<Skills.SkillType, float> m_raiseSkills = new Dictionary<Skills.SkillType, float>();
+        public Dictionary<Skills.SkillType, float> m_skillLevels = new Dictionary<Skills.SkillType, float>();
+        public Dictionary<Skills.SkillType, float> m_modifyAttackSkills = new Dictionary<Skills.SkillType, float>();
 
         public override void UpdateStatusEffect(float dt)
         {
-            base.UpdateStatusEffect(dt);
-
-            Season newSeason = seasonState.GetCurrentSeason();
-            if (newSeason != m_season)
-            {
-                m_season = newSeason;
-                UpdateShowStatus();
-            }
+            if (m_season != seasonState.GetCurrentSeason())
+                Setup(m_character);
+            else if (seasonalStatsOutdoorsOnly.Value && m_character != null && m_character == Player.m_localPlayer && m_character.InInterior() != m_indoors)
+                Setup(m_character);
+            else
+                base.UpdateStatusEffect(dt);
         }
 
         public override void Setup(Character character)
         {
-            base.Setup(character);
-
             m_season = seasonState.GetCurrentSeason();
-            UpdateShowStatus();
+            m_indoors = m_character != null && m_character == Player.m_localPlayer && m_character.InInterior();
+
+            UpdateSeasonStatusEffect();
+
+            base.Setup(character);
         }
 
         public override string GetTooltipString()
@@ -38,10 +49,14 @@ namespace Seasons
 
             string statsTooltip = base.GetTooltipString();
             if (statsTooltip.Length > 0)
-            {
                 sb.Append(statsTooltip);
-            }
-            
+
+            foreach (KeyValuePair<Skills.SkillType, float> item in m_skillLevels.Where(kvp => kvp.Value != 0f))
+                sb.AppendFormat("{0} <color=orange>{1}</color>\n", Localization.instance.Localize("$skill_" + item.Key.ToString().ToLower()), item.Value.ToString("+0;-0"));
+
+            foreach (KeyValuePair<Skills.SkillType, float> item in m_modifyAttackSkills.Where(kvp => kvp.Value != 0f))
+                sb.AppendFormat("$inventory_dmgmod: {0} <color=orange>{1}%</color>\n", Localization.instance.Localize("$skill_" + item.Key.ToString().ToLower()), item.Value.ToString("+0;-0"));
+
             return sb.ToString();
         }
 
@@ -59,28 +74,55 @@ namespace Seasons
             TimeSpan span = TimeSpan.FromSeconds(secondsToEndOfSeason);
             return span.TotalHours > 24 ? string.Format("{0:d2}:{1:d2}:{2:d2}", (int)span.TotalHours, span.Minutes, span.Seconds) : span.ToString(span.Hours > 0 ? @"hh\:mm\:ss" : @"mm\:ss");
         }
+        
+        public override void ModifyRaiseSkill(Skills.SkillType skill, ref float value)
+        {
+            if (m_raiseSkills.ContainsKey(skill))
+                value += m_raiseSkills[skill];
+            else if (m_raiseSkills.ContainsKey(Skills.SkillType.All))
+                value += m_raiseSkills[Skills.SkillType.All];
+        }
+
+        public override void ModifySkillLevel(Skills.SkillType skill, ref float value)
+        {
+            if (m_skillLevels.ContainsKey(skill))
+                value += m_skillLevels[skill];
+            else if (m_skillLevels.ContainsKey(Skills.SkillType.All))
+                value += m_skillLevels[Skills.SkillType.All];
+        }
+
+        public override void ModifyAttack(Skills.SkillType skill, ref HitData hitData)
+        {
+            if (m_modifyAttackSkills.ContainsKey(skill))
+                hitData.m_damage.Modify(m_modifyAttackSkills[skill]);
+            else if (m_modifyAttackSkills.ContainsKey(Skills.SkillType.All))
+                hitData.m_damage.Modify(m_modifyAttackSkills[Skills.SkillType.All]);
+        }
 
         private string GetSeasonTooltip()
         {
-            if (m_season > 0)
-                return Seasons.GetSeasonTooltip(m_season);
-
-            return "";
+            return Seasons.GetSeasonTooltip(m_season);
         }
         
-        public void UpdateShowStatus()
+        public void UpdateSeasonStatusEffect()
         {
             m_name = GetSeasonName(m_season);
             m_icon = GetSeasonIcon(m_season);
+
+            Stats statsToSet = seasonalStatsOutdoorsOnly.Value && m_indoors ? new Stats() : SeasonState.seasonStats.GetSeasonStats();
+            statsToSet.SetStatusEffectStats(this);
         }
 
-        public static void UpdateSeasonStatusEffectShowStatus()
+        public static void UpdateSeasonStatusEffectStats()
         {
             if (ObjectDB.instance == null)
                 return;
 
+            if (Player.m_localPlayer == null)
+                return;
+
             SE_Season statusEffect = ObjectDB.instance.GetStatusEffect(statusEffectSeasonHash) as SE_Season;
-            statusEffect?.UpdateShowStatus();
+            statusEffect?.Setup(Player.m_localPlayer);
         }
 
         private static string MessageNextSeason()
