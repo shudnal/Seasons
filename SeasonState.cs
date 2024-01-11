@@ -1443,4 +1443,14 @@ namespace Seasons
 
     }
 
+    [HarmonyPatch(typeof(FootStep), nameof(FootStep.FindBestStepEffect))]
+    public static class FootStep_FindBestStepEffect_SnowFootsteps
+    {
+        private static void Prefix(ref FootStep.GroundMaterial material)
+        {
+            if (seasonState.GetCurrentSeason() == Season.Winter && (material == FootStep.GroundMaterial.Mud || material == FootStep.GroundMaterial.Grass | material == FootStep.GroundMaterial.GenericGround))
+                material = FootStep.GroundMaterial.Snow;
+        }
+    }
+
 }
