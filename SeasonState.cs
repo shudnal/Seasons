@@ -16,6 +16,7 @@ namespace Seasons
     {
         private Season m_season = Season.Spring;
         private int m_day = 0;
+        private bool m_seasonIsChanging = false;
 
         public static readonly Dictionary<Season, SeasonSettings> seasonsSettings = new Dictionary<Season, SeasonSettings>();
         public static SeasonBiomeEnvironments seasonBiomeEnvironments = new SeasonBiomeEnvironments(loadDefaults: true);
@@ -80,6 +81,11 @@ namespace Seasons
         public Season GetCurrentSeason()
         {
             return m_season;
+        }
+
+        public bool GetSeasonIsChanging()
+        {
+            return showFadeOnSeasonChange.Value && m_seasonIsChanging;
         }
 
         public int GetCurrentDay()
@@ -419,6 +425,66 @@ namespace Seasons
             if (season == (int)m_season)
                 return;
 
+            if (!showFadeOnSeasonChange.Value || Hud.instance == null || Hud.instance.m_loadingScreen.isActiveAndEnabled || Hud.instance.m_loadingScreen.alpha > 0)
+                SeasonChanged();
+            else
+                Seasons.instance.StartCoroutine(seasonState.SeasonChangedFadeEffect());
+        }
+
+        public IEnumerator SeasonChangedFadeEffect()
+        {
+            m_seasonIsChanging = true;
+
+            Player player = Player.m_localPlayer;
+            if (player == null || player.IsDead() || player.IsTeleporting() || Game.instance.IsShuttingDown() || player.IsSleeping())
+            {
+                SeasonChanged();
+                m_seasonIsChanging = false;
+                yield break;
+            }
+
+            float fadeDuration = fadeOnSeasonChangeDuration.Value / 2;
+
+            Hud.instance.m_loadingScreen.gameObject.SetActive(value: true);
+            Hud.instance.m_loadingProgress.SetActive(value: false);
+            Hud.instance.m_sleepingProgress.SetActive(value: false);
+            Hud.instance.m_teleportingProgress.SetActive(value: false);
+
+            while (Hud.instance.m_loadingScreen.alpha <= 0.99f)
+            {
+                if (player == null || player.IsDead() || player.IsTeleporting() || Game.instance.IsShuttingDown() || player.IsSleeping())
+                {
+                    SeasonChanged();
+                    m_seasonIsChanging = false;
+                    yield break;
+                }
+
+                Hud.instance.m_loadingScreen.alpha = Mathf.MoveTowards(Hud.instance.m_loadingScreen.alpha, 1f, Time.fixedDeltaTime / fadeDuration);
+
+                yield return new WaitForFixedUpdate();
+            }
+
+            SeasonChanged();
+
+            while (Hud.instance.m_loadingScreen.alpha > 0f)
+            {
+                if (player == null || player.IsDead() || player.IsTeleporting() || Game.instance.IsShuttingDown() || player.IsSleeping())
+                {
+                    m_seasonIsChanging = false;
+                    yield break;
+                }
+
+                Hud.instance.m_loadingScreen.alpha = Mathf.MoveTowards(Hud.instance.m_loadingScreen.alpha, 0f, Time.fixedDeltaTime / fadeDuration);
+
+                yield return new WaitForFixedUpdate();
+            }
+
+            Hud.instance.m_loadingScreen.gameObject.SetActive(value: false);
+            m_seasonIsChanging = false;
+        }
+
+        private void SeasonChanged()
+        {
             PrefabVariantController.UpdatePrefabColors();
             TerrainVariantController.UpdateTerrainColors();
             ClutterVariantController.instance.UpdateColors();
@@ -1450,6 +1516,16 @@ namespace Seasons
         {
             if (seasonState.GetCurrentSeason() == Season.Winter && (material == FootStep.GroundMaterial.Mud || material == FootStep.GroundMaterial.Grass | material == FootStep.GroundMaterial.GenericGround))
                 material = FootStep.GroundMaterial.Snow;
+        }
+    }
+
+    [HarmonyPatch(typeof(Hud), nameof(Hud.UpdateBlackScreen))]
+    public static class Hud_UpdateBlackScreen_BlackScreenFadeOnSeasonChange
+    {
+        private static bool Prefix()
+        {
+            return !seasonState.GetSeasonIsChanging();
+
         }
     }
 

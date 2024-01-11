@@ -43,6 +43,9 @@ namespace Seasons
         public static ConfigEntry<bool> preventDeathFromFreezing;
         public static ConfigEntry<bool> seasonalStatsOutdoorsOnly;
 
+        public static ConfigEntry<bool> showFadeOnSeasonChange;
+        public static ConfigEntry<float> fadeOnSeasonChangeDuration;
+
         public static ConfigEntry<StationHover> hoverBeeHive;
         public static ConfigEntry<bool> hoverBeeHiveTotal;
         public static ConfigEntry<StationHover> hoverPlant;
@@ -240,6 +243,9 @@ namespace Seasons
             seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
             
             showCurrentSeasonBuff.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
+
+            showFadeOnSeasonChange = config("Season - Fade", "Show fade effect on season change", defaultValue: true, "Show black fade loading screen when season is changed.");
+            fadeOnSeasonChangeDuration = config("Season - Fade", "Duration of fade effect", defaultValue: 0.5f, "Fade duration");
 
             hoverBeeHive = Config.Bind("Season - UI", "Bee Hive Hover", defaultValue: StationHover.Vanilla, "Hover text for bee hive.");
             hoverBeeHiveTotal = Config.Bind("Season - UI", "Bee Hive Show total", defaultValue: true, "Show total needed time/percent for bee hive.");
