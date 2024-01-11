@@ -18,11 +18,11 @@ namespace Seasons
         private int m_day = 0;
 
         public static readonly Dictionary<Season, SeasonSettings> seasonsSettings = new Dictionary<Season, SeasonSettings>();
-        public static SeasonBiomeEnvironments seasonBiomeEnvironments = new SeasonBiomeEnvironments();
+        public static SeasonBiomeEnvironments seasonBiomeEnvironments = new SeasonBiomeEnvironments(loadDefaults: true);
         public static List<SeasonEnvironment> seasonEnvironments = SeasonEnvironment.GetDefaultCustomEnvironments();
-        public static SeasonRandomEvents seasonRandomEvents = new SeasonRandomEvents();
-        public static SeasonLightings seasonLightings = new SeasonLightings();
-        public static SeasonStats seasonStats = new SeasonStats();
+        public static SeasonRandomEvents seasonRandomEvents = new SeasonRandomEvents(loadDefaults: true);
+        public static SeasonLightings seasonLightings = new SeasonLightings(loadDefaults: true);
+        public static SeasonStats seasonStats = new SeasonStats(loadDefaults: true);
 
         private SeasonSettings settings
         {
@@ -164,6 +164,8 @@ namespace Seasons
 
             if (!controlEnvironments.Value)
                 return;
+
+            SeasonEnvironment.ClearCachedObjects();
 
             if (!String.IsNullOrEmpty(customEnvironmentsJSON.Value))
             {
@@ -420,6 +422,7 @@ namespace Seasons
             PrefabVariantController.UpdatePrefabColors();
             TerrainVariantController.UpdateTerrainColors();
             ClutterVariantController.instance.UpdateColors();
+            MinimapVariantController.instance.UpdateColors();
             UpdateBiomeEnvironments();
             UpdateCurrentEnvironment();
             UpdateTorchesFireWarmth();

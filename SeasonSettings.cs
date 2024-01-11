@@ -8,7 +8,6 @@ using System.Reflection;
 using System.Linq;
 using UnityEngine;
 using static Seasons.Seasons;
-using System.Net.NetworkInformation;
 
 namespace Seasons
 {
@@ -508,6 +507,12 @@ namespace Seasons
         }
 
         private static Dictionary<string, AudioClip> _usedAudioClips = new Dictionary<string, AudioClip>();
+        
+        public static void ClearCachedObjects()
+        {
+            _usedObjects.Clear();
+            _usedAudioClips.Clear();
+        }
     }
 
     [Serializable]
@@ -518,8 +523,11 @@ namespace Seasons
         public SeasonBiomeEnvironment Fall = new SeasonBiomeEnvironment();
         public SeasonBiomeEnvironment Winter = new SeasonBiomeEnvironment();
 
-        public SeasonBiomeEnvironments()
+        public SeasonBiomeEnvironments(bool loadDefaults = false)
         {
+            if (!loadDefaults)
+                return;
+
             Summer.replace.Add(new SeasonBiomeEnvironment.EnvironmentReplace("Clear", "Clear Summer"));
             Summer.replace.Add(new SeasonBiomeEnvironment.EnvironmentReplace("Misty", "Misty Summer"));
             Summer.replace.Add(new SeasonBiomeEnvironment.EnvironmentReplace("DeepForest Mist", "DeepForest Mist Summer"));
@@ -635,8 +643,11 @@ namespace Seasons
         public List<SeasonRandomEvent> Fall = new List<SeasonRandomEvent>();
         public List<SeasonRandomEvent> Winter = new List<SeasonRandomEvent>();
 
-        public SeasonRandomEvents()
+        public SeasonRandomEvents(bool loadDefaults = false)
         {
+            if (!loadDefaults)
+                return;
+
             Spring.Add(new SeasonRandomEvent() 
             {
                 m_name = "foresttrolls",
@@ -774,8 +785,11 @@ namespace Seasons
         public SeasonLightingSettings Fall = new SeasonLightingSettings();
         public SeasonLightingSettings Winter = new SeasonLightingSettings();
 
-        public SeasonLightings()
+        public SeasonLightings(bool loadDefaults = false)
         {
+            if (!loadDefaults)
+                return;
+
             Summer.indoors.fogDensityMultiplier = 0.9f;
 
             Summer.morning.luminanceMultiplier = 1.1f;
@@ -847,7 +861,7 @@ namespace Seasons
 
             public float m_healthPerTick;
 
-            public HitData.HitType m_hitType;
+            public string m_healthHitType = "";
             
             [Header("Stamina")]
             public float m_staminaDrainPerSec;
@@ -869,7 +883,7 @@ namespace Seasons
             public Dictionary<Skills.SkillType, float> m_modifyAttackSkills = new Dictionary<Skills.SkillType, float>();
 
             [Header("Hit modifier")]
-            public List<HitData.DamageModPair> m_mods = new List<HitData.DamageModPair>();
+            public Dictionary<string, string> m_damageModifiers = new Dictionary<string, string>();
 
             [Header("Sneak")]
             public float m_noiseModifier;
@@ -897,6 +911,15 @@ namespace Seasons
                         
                     field.SetValue(statusEffect, property.GetValue(this));
                 }
+
+                statusEffect.m_mods.Clear();
+                foreach (KeyValuePair<string, string> damageMod in m_damageModifiers)
+                    if (Enum.TryParse(damageMod.Key, out HitData.DamageType m_type) && Enum.TryParse(damageMod.Value, out HitData.DamageModifier m_modifier))
+                        statusEffect.m_mods.Add(new HitData.DamageModPair() { m_type = m_type, m_modifier = m_modifier });
+
+                statusEffect.m_hitType = HitData.HitType.Undefined;
+                if (Enum.TryParse(m_healthHitType, out HitData.HitType hitType))
+                    statusEffect.m_hitType = hitType;
             }
         }
 
@@ -905,11 +928,14 @@ namespace Seasons
         public Stats Fall = new Stats();
         public Stats Winter = new Stats();
 
-        public SeasonStats()
+        public SeasonStats(bool loadDefaults = false)
         {
+            if (!loadDefaults)
+                return;
+
             Spring.m_tickInterval = 5f;
             Spring.m_healthPerTick = 1f;
-            Spring.m_mods.Add(new HitData.DamageModPair() { m_type = HitData.DamageType.Poison, m_modifier = HitData.DamageModifier.Resistant });
+            Spring.m_damageModifiers.Add(HitData.DamageType.Poison.ToString(), HitData.DamageModifier.Resistant.ToString());
 
             Spring.m_raiseSkills.Add(Skills.SkillType.Jump, 1.2f);
             Spring.m_raiseSkills.Add(Skills.SkillType.Sneak, 1.2f);
@@ -950,7 +976,7 @@ namespace Seasons
             Winter.m_speedModifier = -0.05f;
             Winter.m_fallDamageModifier = -0.3f;
 
-            Winter.m_mods.Add(new HitData.DamageModPair() { m_type = HitData.DamageType.Fire, m_modifier = HitData.DamageModifier.Resistant });
+            Winter.m_damageModifiers.Add(HitData.DamageType.Fire.ToString(), HitData.DamageModifier.Resistant.ToString());
 
             Winter.m_raiseSkills.Add(Skills.SkillType.WoodCutting, 1.1f);
             Winter.m_raiseSkills.Add(Skills.SkillType.Fishing, 1.1f);
@@ -1241,7 +1267,7 @@ namespace Seasons
             File.WriteAllText(Path.Combine(folder, "Default Biome Environments.json"), JsonConvert.SerializeObject(biomesDefault, Formatting.Indented));
 
             LogInfo($"Saving default custom biome environments settings");
-            File.WriteAllText(Path.Combine(folder, customBiomeEnvironmentsFileName), JsonConvert.SerializeObject(new SeasonBiomeEnvironments(), Formatting.Indented));
+            File.WriteAllText(Path.Combine(folder, customBiomeEnvironmentsFileName), JsonConvert.SerializeObject(new SeasonBiomeEnvironments(loadDefaults: true), Formatting.Indented));
         }
 
         public static void SaveDefaultEvents(string folder)
@@ -1261,18 +1287,18 @@ namespace Seasons
             File.WriteAllText(Path.Combine(folder, "Events.json"), JsonConvert.SerializeObject(list, Formatting.Indented, jsonSerializerSettings));
 
             LogInfo($"Saving default custom events settings");
-            File.WriteAllText(Path.Combine(folder, customEventsFileName), JsonConvert.SerializeObject(new SeasonRandomEvents(), Formatting.Indented, jsonSerializerSettings));
+            File.WriteAllText(Path.Combine(folder, customEventsFileName), JsonConvert.SerializeObject(new SeasonRandomEvents(loadDefaults: true), Formatting.Indented, jsonSerializerSettings));
         }
 
         public static void SaveDefaultLightings(string folder)
         {
             LogInfo($"Saving default custom ligthing settings");
-            File.WriteAllText(Path.Combine(folder, customLightingsFileName), JsonConvert.SerializeObject(new SeasonLightings(), Formatting.Indented));
+            File.WriteAllText(Path.Combine(folder, customLightingsFileName), JsonConvert.SerializeObject(new SeasonLightings(loadDefaults: true), Formatting.Indented));
         }
         public static void SaveDefaultStats(string folder)
         {
             LogInfo($"Saving default custom stats settings");
-            File.WriteAllText(Path.Combine(folder, customStatsFileName), JsonConvert.SerializeObject(new SeasonStats(), Formatting.Indented));
+            File.WriteAllText(Path.Combine(folder, customStatsFileName), JsonConvert.SerializeObject(new SeasonStats(loadDefaults: true), Formatting.Indented));
         }
     }
 

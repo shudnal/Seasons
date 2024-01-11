@@ -9,8 +9,6 @@ using System.Linq;
 using System.Reflection;
 using System;
 using System.IO;
-using HarmonyLib.Tools;
-using static Seasons.Seasons;
 
 namespace Seasons
 {
@@ -37,6 +35,7 @@ namespace Seasons
         public static ConfigEntry<bool> controlRandomEvents;
         public static ConfigEntry<bool> controlLightings;
         public static ConfigEntry<bool> controlStats;
+        public static ConfigEntry<bool> controlMinimap;
 
         public static ConfigEntry<bool> showCurrentSeasonBuff;
         public static ConfigEntry<TimerFormat> seasonsTimerFormat;
@@ -119,6 +118,10 @@ namespace Seasons
         public static Sprite iconSummer;
         public static Sprite iconFall;
         public static Sprite iconWinter;
+
+        public static Texture2D Minimap_Summer_ForestTex = new Texture2D(512, 512, TextureFormat.RGBA32, false);
+        public static Texture2D Minimap_Fall_ForestTex = new Texture2D(512, 512, TextureFormat.RGBA32, false);
+        public static Texture2D Minimap_Winter_ForestTex = new Texture2D(512, 512, TextureFormat.RGBA32, false);
 
         public static string configDirectory;
 
@@ -225,6 +228,7 @@ namespace Seasons
             controlRandomEvents = config("Season - Control", "Control random events", defaultValue: true, "Enables seasonal random events");
             controlLightings = config("Season - Control", "Control lightings", defaultValue: true, "Enables seasonal lightings change (basically gamma or brightness)");
             controlStats = config("Season - Control", "Control stats", defaultValue: true, "Enables seasonal stats change (status effect)");
+            controlMinimap = config("Season - Control", "Control minimap", defaultValue: true, "Enables seasonal minimap colors");
 
             controlStats.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
 
@@ -325,9 +329,28 @@ namespace Seasons
             LoadIcon("season_summer.png",   ref iconSummer);
             LoadIcon("season_fall.png",     ref iconFall);
             LoadIcon("season_winter.png",   ref iconWinter);
+
+            LoadTexture("Minimap_Summer_ForestTex.png", ref Minimap_Summer_ForestTex);
+            Minimap_Summer_ForestTex.wrapMode = TextureWrapMode.Repeat;
+            Minimap_Summer_ForestTex.filterMode = FilterMode.Bilinear;
+
+            LoadTexture("Minimap_Fall_ForestTex.png", ref Minimap_Fall_ForestTex);
+            Minimap_Fall_ForestTex.wrapMode = TextureWrapMode.Repeat;
+            Minimap_Fall_ForestTex.filterMode = FilterMode.Bilinear;
+
+            LoadTexture("Minimap_Winter_ForestTex.png", ref Minimap_Winter_ForestTex);
+            Minimap_Winter_ForestTex.wrapMode = TextureWrapMode.Repeat;
+            Minimap_Winter_ForestTex.filterMode = FilterMode.Bilinear;
         }
 
         private void LoadIcon(string filename, ref Sprite icon)
+        {
+            Texture2D tex = new Texture2D(2, 2);
+            if (LoadTexture(filename, ref tex))
+                icon = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), Vector2.zero);
+        }
+
+        private bool LoadTexture(string filename, ref Texture2D tex)
         {
             Assembly executingAssembly = Assembly.GetExecutingAssembly();
 
@@ -338,9 +361,7 @@ namespace Seasons
             byte[] data = new byte[resourceStream.Length];
             resourceStream.Read(data, 0, data.Length);
 
-            Texture2D tex = new Texture2D(2, 2);
-            if (tex.LoadImage(data, true))
-                icon = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), Vector2.zero);
+            return tex.LoadImage(data, true);
         }
 
         private void Test()

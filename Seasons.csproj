@@ -31,7 +31,11 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
+  <PropertyGroup>
+    <LangVersion>8.0</LangVersion>
+  </PropertyGroup>
   <ItemGroup>
+    <Compile Include="MinimapVariantController.cs" />
     <Compile Include="SeasonsCache.cs" />
     <Compile Include="ClutterVariantController.cs" />
     <Compile Include="HSLColor.cs" />
@@ -103,6 +107,9 @@
     <EmbeddedResource Include="Assets\season_spring.png" />
     <EmbeddedResource Include="Assets\season_summer.png" />
     <EmbeddedResource Include="Assets\season_winter.png" />
+    <EmbeddedResource Include="Assets\Minimap_Fall_ForestTex.png" />
+    <EmbeddedResource Include="Assets\Minimap_Summer_ForestTex.png" />
+    <EmbeddedResource Include="Assets\Minimap_Winter_ForestTex.png" />
     <Content Include="Libs\Newtonsoft.Json.dll" />
     <Content Include="Libs\ServerSync.dll" />
   </ItemGroup>

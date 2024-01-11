@@ -4,7 +4,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using static MeleeWeaponTrail;
 using static Seasons.PrefabController;
 using static Seasons.Seasons;
 
@@ -35,6 +34,8 @@ namespace Seasons
         private const float noiseFrequency = 10000f;
         private const double noiseDivisor = 1.1;
         private const double noisePower = 1.3;
+        
+        public static int s_rayMask = 0;
 
         public void Init(PrefabController controller, string prefabName = null)
         {
@@ -100,6 +101,9 @@ namespace Seasons
             {
                 s_pieceControllers.Add(m_wnt, this);
             }
+
+            if (s_rayMask == 0)
+                s_rayMask = LayerMask.GetMask("piece", "static_solid", "Default_small", "terrain");
         }
 
         private void OnEnable()
@@ -337,10 +341,13 @@ namespace Seasons
             if (m_wnt == null)
                 return false;
 
+            if (m_prefabName == "vines")
+                return false;
+
             if (!m_wnt.HaveRoof())
                 return false;
 
-            int num = Physics.SphereCastNonAlloc(base.transform.position + new Vector3(0, 2f, 0), 0.1f, Vector3.up, WearNTear.s_raycastHits, 100f, WearNTear.s_rayMask);
+            int num = Physics.SphereCastNonAlloc(base.transform.position + new Vector3(0, 2f, 0), 0.1f, Vector3.up, WearNTear.s_raycastHits, 100f, s_rayMask);
             for (int i = 0; i < num; i++)
             {
                 GameObject go = ((Component)(object)WearNTear.s_raycastHits[i].collider).gameObject;
