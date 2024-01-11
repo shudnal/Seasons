@@ -563,8 +563,11 @@ namespace Seasons
     [HarmonyPatch(typeof(EffectList), nameof(EffectList.Create))]
     public static class EffectList_Create_AddPrefabVariantController
     {
-        private static void Postfix(GameObject[] __result)
+        private static void Postfix(Transform baseParent, GameObject[] __result)
         {
+            if (baseParent == null)
+                return;
+
             foreach (GameObject obj in __result)
                 PrefabVariantController.AddComponentTo(obj);
         }
