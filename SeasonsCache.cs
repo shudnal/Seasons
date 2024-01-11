@@ -122,10 +122,19 @@ namespace Seasons
         public Dictionary<int, List<CachedRenderer>> lodLevelMaterials = new Dictionary<int, List<CachedRenderer>>();
         public Dictionary<string, CachedRenderer> renderersInHierarchy = new Dictionary<string, CachedRenderer>();
         public CachedRenderer cachedRenderer;
+        public Dictionary<string, string[]> particleSystemStartColors;
 
         public bool Initialized()
         {
-            return lodsInHierarchy.Count > 0 || lodLevelMaterials.Count > 0 || renderersInHierarchy.Count > 0 || cachedRenderer != null;
+            return lodsInHierarchy.Count > 0 || lodLevelMaterials.Count > 0 || renderersInHierarchy.Count > 0 || cachedRenderer != null || particleSystemStartColors != null;
+        }
+
+        public override string ToString()
+        {
+            return $"{(cachedRenderer == null ? "" : " 1 main renderer")}{(particleSystemStartColors == null ? "" : " 1 particles start color")} " +
+                        $"{(lodsInHierarchy.Count > 0 ? $" {lodsInHierarchy.Count} LOD groups" : "")}" +
+                        $"{(lodLevelMaterials.Count > 0 ? $" {lodLevelMaterials.Count} LODs" : "")}" +
+                        $"{(renderersInHierarchy.Count > 0 ? $" {renderersInHierarchy.Count} renderersInHierarchy" : "")}";
         }
     }
 
@@ -780,7 +789,7 @@ namespace Seasons
             return dh > 180 ? 360 - dh : dh;
         }
 
-        private static Color MergeColors(Color color1, Color color2, float t, bool winterColor)
+        public static Color MergeColors(Color color1, Color color2, float t, bool winterColor)
         {
             Color newColor = new Color(color2.r, color2.g, color2.b, color1.a);
             Color oldColor = winterColor ? new Color(color1.grayscale, color1.grayscale, color1.grayscale, color1.a) : new Color(color1.r, color1.g, color1.b, color1.a);
@@ -821,6 +830,18 @@ namespace Seasons
 
     public static class SeasonalTexturePrefabCache
     {
+        public static readonly List<string> particleSystemStartColors = new List<string>()
+        {
+            "leaf_particles",
+            "vfx_bush_destroyed",
+            "vfx_bush_destroyed_heath",
+            "vfx_bush_leaf_puff",
+            "vfx_bush_leaf_puff_heath",
+            "vfx_bush2_e_hit",
+            "vfx_bush2_en_destroyed",
+            "vfx_shrub_2_hit",
+        };
+
         public static readonly Dictionary<string, string[]> shaderColors = new Dictionary<string, string[]>
             {
                 { "Custom/StaticRock", new string[] { "_MossColor" }}
@@ -893,6 +914,12 @@ namespace Seasons
             "vfx_beech_cut",
             "vfx_oak_cut",
             "vfx_yggashoot_cut",
+            "vfx_bush_destroyed",
+            "vfx_bush_destroyed_heath",
+            "vfx_bush_leaf_puff",
+            "vfx_bush_leaf_puff_heath",
+            "vfx_bush2_e_hit",
+            "vfx_bush2_en_destroyed",
         };
 
         public static readonly List<string> creaturePrefab = new List<string>()
@@ -1147,10 +1174,7 @@ namespace Seasons
                     if (isNew)
                         SeasonalTextureVariants.controllers.Add(prefabName, controller);
 
-                    LogInfo($"Caching {prefabName}{(controller.cachedRenderer == null ? "" : ", main renderer,")} " +
-                        $"{(controller.lodsInHierarchy.Count > 0 ? $" {controller.lodsInHierarchy.Count} LOD groups" : "")}" +
-                        $"{(controller.lodLevelMaterials.Count > 0 ? $" {controller.lodLevelMaterials.Count} LODs" : "")}" +
-                        $"{(controller.renderersInHierarchy.Count > 0 ? $" {controller.renderersInHierarchy.Count} renderersInHierarchy" : "")}");
+                    LogInfo($"Caching {prefabName}{controller}");
 
                     if (isSingleRenderer)
                         return;
@@ -1204,6 +1228,11 @@ namespace Seasons
                             continue;
 
                         CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
+                    }
+
+                    foreach (ParticleSystem ps in prefab.GetComponentsInChildren<ParticleSystem>())
+                    {
+                        CacheParticleSystemStartColor(ps, prefab.name);
                     }
                 }
 
@@ -1276,6 +1305,22 @@ namespace Seasons
                         }
                     }
                 }
+
+                if (prefab.TryGetComponent<TreeBase>(out _) || prefab.TryGetComponent<Destructible>(out _))
+                {
+                    foreach (ParticleSystemRenderer renderer in prefab.GetComponentsInChildren<ParticleSystemRenderer>())
+                    {
+                        if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
+                            continue;
+
+                        CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
+                    }
+
+                    foreach (ParticleSystem ps in prefab.GetComponentsInChildren<ParticleSystem>())
+                    {
+                        CacheParticleSystemStartColor(ps, prefab.name);
+                    }
+                }
             }
         }
 
@@ -1300,7 +1345,45 @@ namespace Seasons
             }
         }
 
+        private static void CacheParticleSystemStartColor(ParticleSystem ps, string prefabName)
+        {
+            if (ps.main.startColor.color == Color.white)
+                return;
 
+            if (!particleSystemStartColors.Contains(ps.name) && !particleSystemStartColors.Contains(prefabName))
+                return;
+
+            string transformPath = ps.transform.GetPath();
+
+            bool isNew = !SeasonalTextureVariants.controllers.TryGetValue(prefabName, out PrefabController controller);
+
+            if (isNew)
+                controller = new PrefabController();
+            else if (controller.particleSystemStartColors != null && controller.particleSystemStartColors.ContainsKey(transformPath))
+                return;
+
+            List<string> colors = new List<string>();
+            foreach (Season season in Enum.GetValues(typeof(Season)))
+                for (int i = 1; i <= seasonColorVariants; i++)
+                {
+                    Color colorVariant = GetSeasonConfigColor(season, i);
+                    Color color = SeasonalTextureVariantsGenerator.MergeColors(ps.main.startColor.color, colorVariant, colorVariant.a, season == Season.Winter);
+                    colors.Add($"#{ColorUtility.ToHtmlStringRGBA(color)}");
+                }
+
+            if (controller.particleSystemStartColors == null)
+                controller.particleSystemStartColors = new Dictionary<string, string[]>();
+
+            controller.particleSystemStartColors.Add(transformPath, colors.ToArray());
+
+            if (controller.Initialized())
+            {
+                if (isNew)
+                    SeasonalTextureVariants.controllers.Add(prefabName, controller);
+
+                LogInfo($"Caching {prefabName}{controller}");
+            }
+        }
     }
 
 }

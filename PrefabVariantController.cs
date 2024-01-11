@@ -1,11 +1,13 @@
 ﻿using BepInEx.Logging;
 using HarmonyLib;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using static Seasons.PrefabController;
 using static Seasons.Seasons;
+using static UnityEngine.ParticleSystem;
 
 namespace Seasons
 {
@@ -28,6 +30,7 @@ namespace Seasons
 
         private readonly Dictionary<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>> m_materialVariants = new Dictionary<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>>();
         private readonly Dictionary<Renderer, Dictionary<int, Dictionary<string, Color[]>>> m_colorVariants = new Dictionary<Renderer, Dictionary<int, Dictionary<string, Color[]>>>();
+        private readonly Dictionary<ParticleSystem, Color[]> m_startColors = new Dictionary<ParticleSystem, Color[]>();
 
         private static readonly MaterialPropertyBlock s_matBlock = new MaterialPropertyBlock();
 
@@ -83,6 +86,21 @@ namespace Seasons
                 Renderer renderer = gameObject.GetComponent(controller.cachedRenderer.type) as Renderer;
                 if (renderer != null)
                     AddMaterialVariants(renderer, controller.cachedRenderer);
+            }
+
+            if (controller.particleSystemStartColors != null)
+            {
+                foreach (KeyValuePair<string, string[]> psPath in controller.particleSystemStartColors)
+                {
+                    string transformPath = GetRelativePath(psPath.Key, m_prefabName);
+
+                    Transform transformWithPS = gameObject.transform.Find(transformPath);
+                    if (transformWithPS == null)
+                        continue;
+
+                    if (transformWithPS.gameObject.TryGetComponent(out ParticleSystem ps))
+                        AddStartColorVariants(ps, psPath.Value);
+                }
             }
 
             ToggleEnabled();
@@ -183,6 +201,12 @@ namespace Seasons
                         s_matBlock.SetColor(colVar.Key, colVar.Value[(int)seasonState.GetCurrentSeason() * seasonsCount + variant]);
                         colorVariants.Key.SetPropertyBlock(s_matBlock, colorIndex.Key);
                     }
+
+            foreach (KeyValuePair<ParticleSystem, Color[]> startColor in m_startColors)
+            {
+                MainModule mainModule = startColor.Key.main;
+                mainModule.startColor = startColor.Value[(int)seasonState.GetCurrentSeason() * seasonsCount + variant];
+            }
         }
 
         private void UpdateFactors(float m_mx, float m_my)
@@ -212,7 +236,7 @@ namespace Seasons
 
         public void ToggleEnabled()
         {
-            base.enabled = Minimap.instance != null && (m_materialVariants.Count > 0 || m_colorVariants.Count > 0);
+            base.enabled = Minimap.instance != null && (m_materialVariants.Count > 0 || m_colorVariants.Count > 0) || m_startColors.Count > 0;
         }
 
         public void AddLODGroupMaterialVariants(LODGroup lodGroup, Dictionary<int, List<CachedRenderer>> lodLevelMaterials)
@@ -302,6 +326,22 @@ namespace Seasons
                         }
                     }
                 }
+            }
+        }
+
+        public void AddStartColorVariants(ParticleSystem ps, string[] colorVariants)
+        {
+            if (!m_startColors.ContainsKey(ps))
+            {
+                List<Color> colors = new List<Color>();
+                foreach (string str in colorVariants)
+                {
+                    if (!ColorUtility.TryParseHtmlString(str, out Color color))
+                        return;
+
+                    colors.Add(color);
+                }
+                m_startColors.Add(ps, colors.ToArray());
             }
         }
 
