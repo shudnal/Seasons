@@ -850,7 +850,9 @@ namespace Seasons
                 { "Custom/Grass", new string[] { "_MainTex", "_TerrainColorTex" } },
                 { "Custom/Creature", new string[] { "_MainTex" } },
                 { "Custom/Piece", new string[] { "_MainTex" }},
-                { "Custom/StaticRock", new string[] { "_MossTex" }}
+                { "Custom/StaticRock", new string[] { "_MossTex" }},
+                { "Standard", new string[] { "_MainTex" }},
+                { "Particles/Standard Surface2", new string[] { "_MainTex" }}
             };
 
         public static readonly Dictionary<string, string[]> shaderIgnoreMaterial = new Dictionary<string, string[]>
@@ -864,13 +866,16 @@ namespace Seasons
                 { "Custom/Creature", new string[] { "HildirsLox", "lox", "lox_calf", 
                                                     "Draugr_Archer_mat", "Draugr_mat", "Draugr_elite_mat", "Abomination_mat", 
                                                     "greyling", "greydwarf", "greydwarf_elite", "greydwarf_shaman" } },
+                { "Standard", new string[] { "beech_particle", "birch_particle", "branch_particle", "branch_dead_particle", "oak_particle", "shoot_leaf_particle" }},
+                { "Particles/Standard Surface2", new string[] { "shrub2_leafparticle", "shrub2_leafparticle_heath" }}
             };
 
         public static readonly Dictionary<string, string[]> shadersTypes = new Dictionary<string, string[]>
             {
                 { typeof(MeshRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass", "Custom/StaticRock", "Custom/Piece" } },
                 { typeof(InstanceRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass" } },
-                { typeof(SkinnedMeshRenderer).Name, new string[] { "Custom/Creature" } }
+                { typeof(SkinnedMeshRenderer).Name, new string[] { "Custom/Creature" } },
+                { typeof(ParticleSystemRenderer).Name, new string[] { "Standard", "Particles/Standard Surface2" } }
             };
 
         public static readonly List<string> effectPrefab = new List<string>()
@@ -885,6 +890,9 @@ namespace Seasons
             "Greydwarf_elite_ragdoll",
             "Greydwarf_Shaman_ragdoll",
             "Greyling_ragdoll",
+            "vfx_beech_cut",
+            "vfx_oak_cut",
+            "vfx_yggashoot_cut",
         };
 
         public static readonly List<string> creaturePrefab = new List<string>()
@@ -1186,6 +1194,17 @@ namespace Seasons
 
                     CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath(), isSingleRenderer: true);
                     continue;
+                }
+
+                if (prefab.TryGetComponent<TimedDestruction>(out _))
+                {
+                    foreach (ParticleSystemRenderer renderer in prefab.GetComponentsInChildren<ParticleSystemRenderer>())
+                    {
+                        if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
+                            continue;
+
+                        CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
+                    }
                 }
 
                 if (prefab.layer == 8)
