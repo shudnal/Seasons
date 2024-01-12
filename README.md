@@ -259,8 +259,15 @@ Stats file structure reflects vanilla SE_Stats status effect which has propertie
 * snow traversal takes 5% of your movement speed
 * but you take less damage from falling in the snow
 
-# Examples
-You want:
-* to change winter length in days
-    * copy Winter.json from "Default settings" to "\BepInEx\config\shudnal.Seasons", change daysInSeason parameter and save the file (there should be console log [Info   :   Seasons] Settings updated: Winter)
-* 
+
+## General settings
+* minimap will be recolored using the seasonal colors setting
+* seasonal items will be enabled in the corresponding season
+* you won't die from freezing debuff if you're not in the mountains or deep north. You will stay at 1 hp.
+* seasonal stats will be applied only outdoors. In dungeons you won't have advantage.
+* current seasonal buff can be hidden and timer format can bet set to current day or the time left to next season
+* seasons are changed in the morning of first day
+* seasons are changed with small fade effect which can be disabled
+* seasons are changed instantly and current season can be overriden
+* you can set localization strings for season names and tooltips
+* due to seasonal change of honey production and plants growth there are settings to show estimates of plants and beehive production (like in BetterUI)
