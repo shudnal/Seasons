@@ -95,6 +95,12 @@ namespace Seasons
             public string type = string.Empty;
             public Dictionary<string, CachedMaterial> materials = new Dictionary<string, CachedMaterial>();
 
+            public CachedRenderer(string rendererName, string rendererType)
+            {
+                name = rendererName;
+                type = rendererType;
+            }
+
             public bool Initialized()
             {
                 return materials.Any(m => m.Value.textureProperties.Count > 0 || m.Value.colorVariants.Count > 0);
@@ -523,7 +529,7 @@ namespace Seasons
                 for (int i = 1; i <= seasonColorVariants; i++)
                 {
                     Color colorVariant;
-                    if (isGrass || isPlant)
+                    if (isGrass || isPlant || material.name == "yggdrasil_branch")
                         colorVariant = GetGrassConfigColor(season, i);
                     else if (isMoss)
                         colorVariant = GetMossConfigColor(season, i);
@@ -650,12 +656,13 @@ namespace Seasons
                         colorVariant.a /= prefabName.Contains("goblin") ? 2f : 1.5f;
                     else if (IsCreature(material.shader.name))
                         colorVariant.a /= (prefabName.IndexOf("lox", StringComparison.OrdinalIgnoreCase) >= 0) ? 1.5f : 3f;
+                    else if (prefabName == "YggdrasilBranch" && season == Season.Winter)
+                        colorVariant.a /= 3;
 
                     if (GenerateOnlyWinterColor(prefabName, material, propertyName) && season != Season.Winter)
                         colorVariants.Add(Color.clear);
                     else
                         colorVariants.Add(colorVariant);
-
                 }
 
                 GenerateColorVariants(season, colorVariants.ToArray(), pixels, pixelsToChange.ToArray(), textureVariants.properties, textureVariants);
@@ -844,7 +851,8 @@ namespace Seasons
 
         public static readonly Dictionary<string, string[]> shaderColors = new Dictionary<string, string[]>
             {
-                { "Custom/StaticRock", new string[] { "_MossColor" }}
+                { "Custom/StaticRock", new string[] { "_MossColor" }},
+                { "Custom/Yggdrasil_root", new string[] { "_MossColor" }},
             };
 
         public static readonly Dictionary<string, string[]> materialColors = new Dictionary<string, string[]>
@@ -863,6 +871,7 @@ namespace Seasons
                 { "swamptree_stump", new string[] { "_MossTex" }},
                 { "beech_bark", new string[] { "_MossTex" }},
                 { "oak_bark", new string[] { "_MossTex" }},
+                { "yggdrasil_branch", new string[] { "_MossTex" }},
             };
 
         public static readonly Dictionary<string, string[]> shaderTextures = new Dictionary<string, string[]>
@@ -873,7 +882,8 @@ namespace Seasons
                 { "Custom/Piece", new string[] { "_MainTex" }},
                 { "Custom/StaticRock", new string[] { "_MossTex" }},
                 { "Standard", new string[] { "_MainTex" }},
-                { "Particles/Standard Surface2", new string[] { "_MainTex" }}
+                { "Particles/Standard Surface2", new string[] { "_MainTex" }},
+                { "Custom/Yggdrasil", new string[] { "_MainTex" }},
             };
 
         public static readonly Dictionary<string, string[]> shaderIgnoreMaterial = new Dictionary<string, string[]>
@@ -888,12 +898,12 @@ namespace Seasons
                                                     "Draugr_Archer_mat", "Draugr_mat", "Draugr_elite_mat", "Abomination_mat", 
                                                     "greyling", "greydwarf", "greydwarf_elite", "greydwarf_shaman" } },
                 { "Standard", new string[] { "beech_particle", "birch_particle", "branch_particle", "branch_dead_particle", "oak_particle", "shoot_leaf_particle" }},
-                { "Particles/Standard Surface2", new string[] { "shrub2_leafparticle", "shrub2_leafparticle_heath" }}
+                { "Particles/Standard Surface2", new string[] { "shrub2_leafparticle", "shrub2_leafparticle_heath" }},
             };
 
         public static readonly Dictionary<string, string[]> shadersTypes = new Dictionary<string, string[]>
             {
-                { typeof(MeshRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass", "Custom/StaticRock", "Custom/Piece" } },
+                { typeof(MeshRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass", "Custom/StaticRock", "Custom/Piece", "Custom/Yggdrasil", "Custom/Yggdrasil_root" } },
                 { typeof(InstanceRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass" } },
                 { typeof(SkinnedMeshRenderer).Name, new string[] { "Custom/Creature" } },
                 { typeof(ParticleSystemRenderer).Name, new string[] { "Standard", "Particles/Standard Surface2" } }
@@ -1004,7 +1014,20 @@ namespace Seasons
             LogInfo("Caching locations");
             AddLocations();
 
+            LogInfo("Caching yggdrasil branch");
+            AddYggdrasilBranch();
+
             LogInfo($"Added {SeasonalTextureVariants.controllers.Count} controllers, {SeasonalTextureVariants.textures.Count} textures");
+        }
+
+        private static void AddYggdrasilBranch()
+        {
+            Transform yggdrasilBranch = EnvMan.instance.transform.Find("YggdrasilBranch");
+            if (yggdrasilBranch == null)
+                return;
+
+            foreach (MeshRenderer mrenderer in yggdrasilBranch.GetComponentsInChildren<MeshRenderer>())
+                CacheMaterials(mrenderer.sharedMaterials, "YggdrasilBranch", mrenderer.name, mrenderer.GetType().Name, mrenderer.transform.GetPath(), isPlant: true);
         }
 
         private static void AddLocations()
@@ -1063,11 +1086,8 @@ namespace Seasons
                 if (isNew)
                     controller = new PrefabController();
 
-                CachedRenderer cachedRenderer = new CachedRenderer
-                {
-                    name = rendererName,
-                    type = rendererType
-                };
+                if (!controller.renderersInHierarchy.TryGetValue(transformPath, out CachedRenderer cachedRenderer))
+                    cachedRenderer = new CachedRenderer(rendererName, rendererType);
 
                 if (materialColors.TryGetValue(material.name, out string[] materialColorNames))
                 {

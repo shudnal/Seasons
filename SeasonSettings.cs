@@ -343,7 +343,7 @@ namespace Seasons
                     m_isCold = true,
                     m_isColdAtNight = true,
                     m_alwaysDark = true,
-                    m_psystems = "GroundMist,SnowStorm,FogClouds,OceanMist",
+                    m_psystems = "SnowStorm",
                     m_ambientLoop = "Wind_BlowingLoop3",
                 },
                 new SeasonEnvironment
@@ -367,7 +367,7 @@ namespace Seasons
                     m_isFreezingAtNight = true,
                     m_isColdAtNight = true,
                     m_alwaysDark = true,
-                    m_psystems = "SnowStorm,GroundMist,FogClouds,OceanMist",
+                    m_psystems = "SnowStorm",
                     m_ambientLoop = "Wind_BlowingLoop3",
                 },
                 new SeasonEnvironment
@@ -426,7 +426,7 @@ namespace Seasons
                     m_isFreezing = true,
                     m_isFreezingAtNight = true,
                     m_alwaysDark = true,
-                    m_psystems = "SnowStorm,MistlandsThunder,GroundMist",
+                    m_psystems = "SnowStorm,MistlandsThunder",
                     m_ambientLoop = "Wind_BlowingLoop3",
                 },
                 new SeasonEnvironment

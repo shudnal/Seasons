@@ -36,6 +36,7 @@ namespace Seasons
         public static ConfigEntry<bool> controlLightings;
         public static ConfigEntry<bool> controlStats;
         public static ConfigEntry<bool> controlMinimap;
+        public static ConfigEntry<bool> controlYggdrasil;
 
         public static ConfigEntry<bool> showCurrentSeasonBuff;
         public static ConfigEntry<TimerFormat> seasonsTimerFormat;
@@ -232,6 +233,7 @@ namespace Seasons
             controlLightings = config("Season - Control", "Control lightings", defaultValue: true, "Enables seasonal lightings change (basically gamma or brightness)");
             controlStats = config("Season - Control", "Control stats", defaultValue: true, "Enables seasonal stats change (status effect)");
             controlMinimap = config("Season - Control", "Control minimap", defaultValue: true, "Enables seasonal minimap colors");
+            controlYggdrasil = config("Season - Control", "Control yggdrasil branch and roots", defaultValue: true, "Enables seasonal coloring of yggdrasil branch in the sky and roots on the ground");
 
             controlStats.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
 

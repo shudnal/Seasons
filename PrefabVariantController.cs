@@ -393,21 +393,25 @@ namespace Seasons
             return false;
         }
 
-        public static void AddComponentTo(GameObject gameObject)
+        public static void AddComponentTo(GameObject gameObject, bool checkLocation = true)
         {
             if (gameObject == null)
                 return;
 
-            if (!SeasonalTextureVariants.controllers.TryGetValue(Utils.GetPrefabName(gameObject), out PrefabController controller))
+            string prefabName = Utils.GetPrefabName(gameObject);
+            if (prefabName == "YggdrasilRoot" && !controlYggdrasil.Value)
+                return;
+
+            if (!SeasonalTextureVariants.controllers.TryGetValue(prefabName, out PrefabController controller))
                 return;
 
             if (gameObject.TryGetComponent<PrefabVariantController>(out _))
                 return;
 
-            if (IsIgnoredLocation(gameObject.transform.position))
+            if (checkLocation && IsIgnoredLocation(gameObject.transform.position))
                 return;
 
-            gameObject.AddComponent<PrefabVariantController>().Init(controller);
+            gameObject.AddComponent<PrefabVariantController>().Init(controller, prefabName);
         }
 
         public static void AddComponentTo(Humanoid humanoid)
@@ -605,6 +609,22 @@ namespace Seasons
 
             foreach (GameObject obj in __result)
                 PrefabVariantController.AddComponentTo(obj);
+        }
+    }
+
+    [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Start))]
+    public static class ZoneSystem_Start_AddPrefabVariantControllerToYggdrasil
+    {
+        private static void Postfix()
+        {
+            if (!controlYggdrasil.Value)
+                return;
+
+            Transform yggdrasilBranch = EnvMan.instance.transform.Find("YggdrasilBranch");
+            if (yggdrasilBranch == null)
+                return;
+
+            PrefabVariantController.AddComponentTo(yggdrasilBranch.gameObject, checkLocation: false);
         }
     }
 }
