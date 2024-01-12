@@ -1371,8 +1371,7 @@ namespace Seasons
                     colors.Add($"#{ColorUtility.ToHtmlStringRGBA(color)}");
                 }
 
-            if (controller.particleSystemStartColors == null)
-                controller.particleSystemStartColors = new Dictionary<string, string[]>();
+            controller.particleSystemStartColors ??= new Dictionary<string, string[]>();
 
             controller.particleSystemStartColors.Add(transformPath, colors.ToArray());
 

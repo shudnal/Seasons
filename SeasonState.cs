@@ -9,6 +9,7 @@ using System.Linq;
 using UnityEngine;
 using BepInEx;
 using static Seasons.SeasonLightings;
+using static CharacterDrop;
 
 namespace Seasons
 {
@@ -360,6 +361,11 @@ namespace Seasons
         public float GetWoodFromTreesMultiplier()
         {
             return settings.m_woodFromTreesMultiplier;
+        }
+
+        public float GetMeatFromAnimalsMultiplier()
+        {
+            return settings.m_meatFromAnimalsMultiplier;
         }
 
         public float GetWindIntensityMultiplier()
@@ -1151,39 +1157,20 @@ namespace Seasons
         }
     }
 
-    [HarmonyPatch(typeof(TreeBase), nameof(TreeBase.RPC_Damage))]
-    public static class TreeBase_RPC_Damage_TreeWoodDrop
-    {
-        private static void Prefix(ZNetView ___m_nview, ref float __state)
-        {
-            if (seasonState.GetWoodFromTreesMultiplier() == 1.0f)
-                return;
-
-            if (!___m_nview.IsOwner())
-                return;
-
-            if (___m_nview == null || !___m_nview.IsValid())
-                return;
-
-            __state = Game.m_resourceRate;
-            Game.m_resourceRate *= seasonState.GetWoodFromTreesMultiplier();
-        }
-
-        private static void Postfix(float __state)
-        {
-            if (seasonState.GetWoodFromTreesMultiplier() == 1.0f)
-                return;
-
-            if (__state != 0f) return;
-
-            Game.m_resourceRate = __state;
-        }
-    }
-
     [HarmonyPatch(typeof(TreeLog), nameof(TreeLog.Destroy))]
     public static class TreeLog_Destroy_TreeWoodDrop
     {
-        private static void Prefix(ZNetView ___m_nview, ref float __state)
+        public static void ApplyWoodMultiplier(DropTable m_dropWhenDestroyed)
+        {
+            if (!m_dropWhenDestroyed.m_drops.Any(dd => dd.m_item.name == "Wood" || dd.m_item.name != "FineWood" || dd.m_item.name != "RoundLog" || dd.m_item.name != "ElderBark" || dd.m_item.name != "YggdrasilWood"))
+                return;
+
+            m_dropWhenDestroyed.m_dropMax = Mathf.CeilToInt(m_dropWhenDestroyed.m_dropMax * seasonState.GetWoodFromTreesMultiplier());
+            if (m_dropWhenDestroyed.m_dropMin < m_dropWhenDestroyed.m_dropMax)
+                m_dropWhenDestroyed.m_dropMin = m_dropWhenDestroyed.m_dropMax;
+        }
+
+        private static void Prefix(ZNetView ___m_nview, ref DropTable ___m_dropWhenDestroyed)
         {
             if (seasonState.GetWoodFromTreesMultiplier() == 1.0f)
                 return;
@@ -1194,18 +1181,48 @@ namespace Seasons
             if (___m_nview == null || !___m_nview.IsValid())
                 return;
 
-            __state = Game.m_resourceRate;
-            Game.m_resourceRate *= seasonState.GetWoodFromTreesMultiplier();
+            ApplyWoodMultiplier(___m_dropWhenDestroyed);
         }
+    }
 
-        private static void Postfix(float __state)
+    [HarmonyPatch(typeof(DropOnDestroyed), nameof(DropOnDestroyed.OnDestroyed))]
+    public static class DropOnDestroyed_OnDestroyed_TreeWoodDrop
+    {
+        private static void Prefix(DropOnDestroyed __instance, ref DropTable ___m_dropWhenDestroyed)
         {
             if (seasonState.GetWoodFromTreesMultiplier() == 1.0f)
                 return;
 
-            if (__state != 0f) return;
+            if (!__instance.TryGetComponent(out Destructible destructible) || destructible.GetDestructibleType() != DestructibleType.Tree)
+                return;
 
-            Game.m_resourceRate = __state;
+            TreeLog_Destroy_TreeWoodDrop.ApplyWoodMultiplier(___m_dropWhenDestroyed);
+        }
+    }
+
+    [HarmonyPatch(typeof(CharacterDrop), nameof(CharacterDrop.GenerateDropList))]
+    public static class CharacterDrop_GenerateDropList_TreeWoodDrop
+    {
+        public static void ApplyMeatMultiplier(List<Drop> m_drops)
+        {
+            foreach (Drop drop in m_drops)
+            {
+                if (drop.m_prefab.name != "RawMeat" && drop.m_prefab.name != "DeerMeat" && drop.m_prefab.name != "NeckTail" && drop.m_prefab.name != "WolfMeat" &&
+                    drop.m_prefab.name != "LoxMeat" && drop.m_prefab.name != "ChickenMeat" && drop.m_prefab.name != "HareMeat" && drop.m_prefab.name != "SerpentMeat")
+                    continue;
+
+                drop.m_amountMax = Mathf.CeilToInt(drop.m_amountMax * seasonState.GetMeatFromAnimalsMultiplier());
+                if (drop.m_amountMin < drop.m_amountMax)
+                    drop.m_amountMin = drop.m_amountMax;
+            }
+        }
+
+        private static void Prefix(ref List<Drop> ___m_drops)
+        {
+            if (seasonState.GetMeatFromAnimalsMultiplier() == 1.0f)
+                return;
+
+            ApplyMeatMultiplier(___m_drops);
         }
     }
 

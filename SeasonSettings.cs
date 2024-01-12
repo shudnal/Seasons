@@ -30,6 +30,7 @@ namespace Seasons
         public float restedBuffDurationMultiplier;
         public float livestockProcreationMultiplier;
         public bool overheatIn2WarmClothes;
+        public float meatFromAnimalsMultiplier;
 
         public SeasonSettingsFile(SeasonSettings settings)
         {
@@ -49,6 +50,7 @@ namespace Seasons
             restedBuffDurationMultiplier = settings.m_restedBuffDurationMultiplier;
             livestockProcreationMultiplier = settings.m_livestockProcreationMultiplier;
             overheatIn2WarmClothes = settings.m_overheatIn2WarmClothes;
+            meatFromAnimalsMultiplier = settings.m_meatFromAnimalsMultiplier;
         }
 
         public SeasonSettingsFile()
@@ -120,10 +122,13 @@ namespace Seasons
 
         public bool m_default;
 
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Include)]
         public bool m_isWet;
 
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Include)]
         public bool m_isFreezing;
 
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Include)]
         public bool m_isFreezingAtNight;
 
         [JsonProperty(DefaultValueHandling = DefaultValueHandling.Include)]
@@ -132,6 +137,7 @@ namespace Seasons
         [JsonProperty(DefaultValueHandling = DefaultValueHandling.Include)]
         public bool m_isColdAtNight;
 
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Include)]
         public bool m_alwaysDark;
 
         public string m_ambColorNight;
@@ -489,7 +495,7 @@ namespace Seasons
             }
         }
 
-        private static Dictionary<string, GameObject> _usedObjects = new Dictionary<string, GameObject>();
+        private static readonly Dictionary<string, GameObject> _usedObjects = new Dictionary<string, GameObject>();
 
         public static Dictionary<string, AudioClip> usedAudioClips
         {
@@ -506,7 +512,7 @@ namespace Seasons
             }
         }
 
-        private static Dictionary<string, AudioClip> _usedAudioClips = new Dictionary<string, AudioClip>();
+        private static readonly Dictionary<string, AudioClip> _usedAudioClips = new Dictionary<string, AudioClip>();
         
         public static void ClearCachedObjects()
         {
@@ -594,19 +600,14 @@ namespace Seasons
 
         public SeasonBiomeEnvironment GetSeasonBiomeEnvironment(Season season)
         {
-            switch (season)
+            return season switch
             {
-                case Season.Spring:
-                    return Spring;
-                case Season.Summer:
-                    return Summer;
-                case Season.Fall:
-                    return Fall;
-                case Season.Winter:
-                    return Winter;
-            }
-
-            return new SeasonBiomeEnvironment();
+                Season.Spring => Spring,
+                Season.Summer => Summer,
+                Season.Fall => Fall,
+                Season.Winter => Winter,
+                _ => new SeasonBiomeEnvironment(),
+            };
         }
     }
 
@@ -741,19 +742,14 @@ namespace Seasons
 
         public List<SeasonRandomEvent> GetSeasonEvents(Season season)
         {
-            switch (season)
+            return season switch
             {
-                case Season.Spring:
-                    return Spring;
-                case Season.Summer:
-                    return Summer;
-                case Season.Fall:
-                    return Fall;
-                case Season.Winter:
-                    return Winter;
-            }
-
-            return new List<SeasonRandomEvent>();
+                Season.Spring => Spring,
+                Season.Summer => Summer,
+                Season.Fall => Fall,
+                Season.Winter => Winter,
+                _ => new List<SeasonRandomEvent>(),
+            };
         }
     }
 
@@ -831,19 +827,14 @@ namespace Seasons
 
         public SeasonLightingSettings GetSeasonLighting(Season season)
         {
-            switch (season)
+            return season switch
             {
-                case Season.Spring:
-                    return Spring;
-                case Season.Summer:
-                    return Summer;
-                case Season.Fall:
-                    return Fall;
-                case Season.Winter:
-                    return Winter;
-            }
-
-            return new SeasonLightingSettings();
+                Season.Spring => Spring,
+                Season.Summer => Summer,
+                Season.Fall => Fall,
+                Season.Winter => Winter,
+                _ => new SeasonLightingSettings(),
+            };
         }
     }
 
@@ -993,19 +984,14 @@ namespace Seasons
 
         private Stats GetSeasonStats(Season season)
         {
-            switch (season)
+            return season switch
             {
-                case Season.Spring:
-                    return Spring;
-                case Season.Summer:
-                    return Summer;
-                case Season.Fall:
-                    return Fall;
-                case Season.Winter:
-                    return Winter;
-            }
-
-            return new Stats();
+                Season.Spring => Spring,
+                Season.Summer => Summer,
+                Season.Fall => Fall,
+                Season.Winter => Winter,
+                _ => new Stats(),
+            };
         }
     }
 
@@ -1037,6 +1023,7 @@ namespace Seasons
         public float m_restedBuffDurationMultiplier = 1.0f;
         public float m_livestockProcreationMultiplier = 1.0f;
         public bool m_overheatIn2WarmClothes = false;
+        public float m_meatFromAnimalsMultiplier = 1.0f;
 
         public SeasonSettings(Season season)
         {
@@ -1078,6 +1065,7 @@ namespace Seasons
                         m_windIntensityMultiplier = 0.9f;
                         m_restedBuffDurationMultiplier = 1.25f;
                         m_livestockProcreationMultiplier = 1.5f;
+                        m_meatFromAnimalsMultiplier = 0.5f;
                         break;
                     }
                 case Season.Summer:
@@ -1094,6 +1082,7 @@ namespace Seasons
                         m_restedBuffDurationMultiplier = 1.5f;
                         m_livestockProcreationMultiplier = 1.25f;
                         m_overheatIn2WarmClothes = true;
+                        m_meatFromAnimalsMultiplier = 0.75f;
                         break;
                     }
                 case Season.Fall:
@@ -1107,6 +1096,7 @@ namespace Seasons
                         m_windIntensityMultiplier = 1.2f;
                         m_restedBuffDurationMultiplier = 0.85f;
                         m_livestockProcreationMultiplier = 0.75f;
+                        m_meatFromAnimalsMultiplier = 1.25f;
                         break;
                     }
                 case Season.Winter:
@@ -1124,6 +1114,7 @@ namespace Seasons
                         m_windIntensityMultiplier = 0.9f;
                         m_restedBuffDurationMultiplier = 0.75f;
                         m_livestockProcreationMultiplier = 0.5f;
+                        m_meatFromAnimalsMultiplier = 1.5f;
                         break;
                     }
             }
@@ -1249,7 +1240,7 @@ namespace Seasons
             EnvMan.instance.m_environments.Do(env => list.Add(new SeasonEnvironment(env)));
 
             LogInfo($"Saving default environments settings");
-            File.WriteAllText(Path.Combine(folder, "Environments.json"), JsonConvert.SerializeObject(list, Formatting.Indented));
+            File.WriteAllText(Path.Combine(folder, "Default environments.json"), JsonConvert.SerializeObject(list, Formatting.Indented));
 
             JsonSerializerSettings jsonSerializerSettings = new JsonSerializerSettings
             {
@@ -1264,7 +1255,7 @@ namespace Seasons
                 biomesDefault.AddRange(EnvMan.instance.m_biomes.ToList());
 
             LogInfo($"Saving default biome environments settings");
-            File.WriteAllText(Path.Combine(folder, "Default Biome Environments.json"), JsonConvert.SerializeObject(biomesDefault, Formatting.Indented));
+            File.WriteAllText(Path.Combine(folder, "Default biome environments.json"), JsonConvert.SerializeObject(biomesDefault, Formatting.Indented));
 
             LogInfo($"Saving default custom biome environments settings");
             File.WriteAllText(Path.Combine(folder, customBiomeEnvironmentsFileName), JsonConvert.SerializeObject(new SeasonBiomeEnvironments(loadDefaults: true), Formatting.Indented));
@@ -1284,7 +1275,7 @@ namespace Seasons
             };
 
             LogInfo($"Saving default events settings");
-            File.WriteAllText(Path.Combine(folder, "Events.json"), JsonConvert.SerializeObject(list, Formatting.Indented, jsonSerializerSettings));
+            File.WriteAllText(Path.Combine(folder, "Default events.json"), JsonConvert.SerializeObject(list, Formatting.Indented, jsonSerializerSettings));
 
             LogInfo($"Saving default custom events settings");
             File.WriteAllText(Path.Combine(folder, customEventsFileName), JsonConvert.SerializeObject(new SeasonRandomEvents(loadDefaults: true), Formatting.Indented, jsonSerializerSettings));

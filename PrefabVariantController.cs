@@ -219,19 +219,14 @@ namespace Seasons
 
         private int GetCurrentVariant()
         {
-            switch (seasonState.GetCurrentSeason())
+            return seasonState.GetCurrentSeason() switch
             {
-                case Season.Spring:
-                    return GetVariant(m_springFactor);
-                case Season.Summer:
-                    return GetVariant(m_summerFactor);
-                case Season.Fall:
-                    return GetVariant(m_fallFactor);
-                case Season.Winter:
-                    return GetVariant(m_winterFactor);
-                default:
-                    return GetVariant(m_springFactor);
-            }
+                Season.Spring => GetVariant(m_springFactor),
+                Season.Summer => GetVariant(m_summerFactor),
+                Season.Fall => GetVariant(m_fallFactor),
+                Season.Winter => GetVariant(m_winterFactor),
+                _ => GetVariant(m_springFactor),
+            };
         }
 
         public void ToggleEnabled()
@@ -527,7 +522,7 @@ namespace Seasons
     [HarmonyPatch(typeof(MineRock5), nameof(MineRock5.Start))]
     public static class MineRock5_Start_AddPrefabVariantController
     {
-        private static void Postfix(MineRock5 __instance, MeshRenderer ___m_meshRenderer, ZNetView ___m_nview)
+        private static void Postfix(MineRock5 __instance, MeshRenderer ___m_meshRenderer)
         {
             if (___m_meshRenderer == null)
                 return;
