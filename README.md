@@ -1,3 +1,4 @@
+![](https://staticdelivery.nexusmods.com/mods/3667/images/headers/2654_1705107480.jpg)
 # Seasons
 Four customizable seasons.
 
@@ -259,7 +260,6 @@ Stats file structure reflects vanilla SE_Stats status effect which has propertie
 * snow traversal takes 5% of your movement speed
 * but you take less damage from falling in the snow
 
-
 ## General settings
 * minimap will be recolored using the seasonal colors setting
 * seasonal items will be enabled in the corresponding season
@@ -271,3 +271,18 @@ Stats file structure reflects vanilla SE_Stats status effect which has propertie
 * seasons are changed instantly and current season can be overriden
 * you can set localization strings for season names and tooltips
 * due to seasonal change of honey production and plants growth there are settings to show estimates of plants and beehive production (like in BetterUI)
+
+## Installation (manual)
+extract Seasons.dll file to your BepInEx\Plugins\ folder
+
+## Configurating
+The best way to handle configs is configuration manager. Choose one that works for you:
+
+https://www.nexusmods.com/site/mods/529
+
+https://valheim.thunderstore.io/package/Azumatt/Official_BepInEx_ConfigurationManager/
+
+## Mirrors
+[Nexus](https://www.nexusmods.com/valheim/mods/2654)
+
+[Thunderstore](https://valheim.thunderstore.io/package/shudnal/Seasons/)
