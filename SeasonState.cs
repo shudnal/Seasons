@@ -501,19 +501,23 @@ namespace Seasons
 
         private void SeasonChanged()
         {
-            PrefabVariantController.UpdatePrefabColors();
-            TerrainVariantController.UpdateTerrainColors();
-            ClutterVariantController.instance.UpdateColors();
-            MinimapVariantController.instance.UpdateColors();
             UpdateBiomeEnvironments();
             UpdateCurrentEnvironment();
-            UpdateTorchesFireWarmth();
-            UpdateMinimapBorder();
 
-            if (Player.m_localPlayer != null)
+            if (UseTextureControllers())
             {
-                Player.m_localPlayer.UpdateCurrentSeason();
-                CheckOverheatStatus(Player.m_localPlayer);
+                PrefabVariantController.UpdatePrefabColors();
+                TerrainVariantController.UpdateTerrainColors();
+                ClutterVariantController.instance.UpdateColors();
+                MinimapVariantController.instance.UpdateColors();
+                UpdateTorchesFireWarmth();
+                UpdateMinimapBorder();
+                
+                if (Player.m_localPlayer != null)
+                {
+                    Player.m_localPlayer.UpdateCurrentSeason();
+                    CheckOverheatStatus(Player.m_localPlayer);
+                }
             }
         }
 
@@ -523,7 +527,10 @@ namespace Seasons
                 return;
 
             m_day = dayInSeason;
-            ClutterVariantController.instance.UpdateColors();
+            if (UseTextureControllers())
+            {
+                ClutterVariantController.instance.UpdateColors();
+            }
         }
 
         private int GetYearLengthInDays()

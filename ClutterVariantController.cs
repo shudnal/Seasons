@@ -166,7 +166,7 @@ namespace Seasons
 
         private double GetVariantFactor(int day)
         {
-            int seed = WorldGenerator.instance.GetSeed();
+            int seed = ZNet.m_world != null ? ZNet.m_world.m_seed : WorldGenerator.instance != null ? WorldGenerator.instance.GetSeed() : 0;
             double seedFactor = Math.Log10(Math.Abs(seed));
             return (Math.Sin(Math.Sign(seed) * seedFactor * day) + Math.Sin(Math.Sqrt(seedFactor) * Math.E * day) + Math.Sin(Math.PI * day)) / 2;
         }
