@@ -1546,4 +1546,20 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.IsFreezing))]
+    public static class EnvMan_IsFreezing_SwimmingInWinterIsFreezing
+    {
+        private static void Postfix(EnvMan __instance, ref bool __result)
+        {
+            if (!freezingSwimmingInWinter.Value)
+                return;
+
+            Player player = Player.m_localPlayer;
+            if (player == null)
+                return;
+
+            __result = __result || player.IsSwimming() && seasonState.GetCurrentSeason() == Season.Winter && __instance.IsCold();
+        }
+    }
+
 }

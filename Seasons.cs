@@ -42,6 +42,7 @@ namespace Seasons
         public static ConfigEntry<TimerFormat> seasonsTimerFormat;
         public static ConfigEntry<bool> enableSeasonalItems;
         public static ConfigEntry<bool> preventDeathFromFreezing;
+        public static ConfigEntry<bool> freezingSwimmingInWinter;
         public static ConfigEntry<bool> seasonalStatsOutdoorsOnly;
 
         public static ConfigEntry<bool> showFadeOnSeasonChange;
@@ -187,8 +188,6 @@ namespace Seasons
 
             LoadIcons();
 
-            Test();
-
             seasonState = new SeasonState();
         }
 
@@ -240,6 +239,7 @@ namespace Seasons
             enableSeasonalItems = config("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
             preventDeathFromFreezing = config("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
             seasonalStatsOutdoorsOnly = config("Season", "Seasonal stats works only outdoors", defaultValue: true, "Make seasonal stats works only outdoors");
+            freezingSwimmingInWinter = config("Season", "Get freezing when swimming in cold water in winter", defaultValue: true, "Swimming in cold water during winter will get you freezing debuff");
 
             showCurrentSeasonBuff = config("Season - Buff", "Show current season buff", defaultValue: true, "Show current season buff.");
             seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
