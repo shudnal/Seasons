@@ -18,6 +18,9 @@ namespace Seasons
     {
         private static void Postfix()
         {
+            if (!UseTextureControllers())
+                return;
+
             if (!SeasonalTextureVariants.Initialize())
                 LogInfo("Missing textures variants");
         }

@@ -90,6 +90,9 @@ namespace Seasons
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(Heightmap __instance)
         {
+            if (!UseTextureControllers())
+                return;
+
             __instance.gameObject.AddComponent<TerrainVariantController>();
         }
     }

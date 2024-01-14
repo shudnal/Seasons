@@ -9,6 +9,7 @@ using System.Linq;
 using System.Reflection;
 using System;
 using System.IO;
+using UnityEngine.Rendering;
 
 namespace Seasons
 {
@@ -450,5 +451,9 @@ namespace Seasons
             return ts.ToString(ts.Hours > 0 ? @"h\:mm\:ss" : @"m\:ss");
         }
 
+        public static bool UseTextureControllers()
+        {
+            return SystemInfo.graphicsDeviceType != GraphicsDeviceType.Null;
+        }
     }
 }

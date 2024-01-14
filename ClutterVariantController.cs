@@ -178,6 +178,9 @@ namespace Seasons
         [HarmonyPriority(Priority.Last)]
         private static void Postfix()
         {
+            if (!UseTextureControllers())
+                return;
+
             ClutterSystem.instance.transform.gameObject.AddComponent<ClutterVariantController>();
         }
     }

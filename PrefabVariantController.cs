@@ -395,6 +395,9 @@ namespace Seasons
 
         public static void AddComponentTo(GameObject gameObject, bool checkLocation = true)
         {
+            if (!UseTextureControllers())
+                return;
+
             if (gameObject == null)
                 return;
 
@@ -416,6 +419,9 @@ namespace Seasons
 
         public static void AddComponentTo(Humanoid humanoid)
         {
+            if (!UseTextureControllers())
+                return;
+
             if (humanoid.InInterior())
                 return;
 
@@ -426,6 +432,9 @@ namespace Seasons
 
         public static void AddComponentTo(WearNTear wnt)
         {
+            if (!UseTextureControllers())
+                return;
+
             if (s_pieceControllers.ContainsKey(wnt) || !SeasonalTextureVariants.controllers.TryGetValue(Utils.GetPrefabName(wnt.gameObject), out PrefabController controller))
                 return;
 
@@ -437,6 +446,9 @@ namespace Seasons
 
         public static void AddComponentTo(MineRock5 mineRock)
         {
+            if (!UseTextureControllers())
+                return;
+
             if (mineRock.m_nview == null || !mineRock.m_nview.IsValid())
                 return;
 

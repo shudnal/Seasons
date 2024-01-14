@@ -153,6 +153,9 @@ namespace Seasons
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(Minimap __instance)
         {
+            if (!UseTextureControllers())
+                return;
+
             __instance.transform.gameObject.AddComponent<MinimapVariantController>();
         }
     }
