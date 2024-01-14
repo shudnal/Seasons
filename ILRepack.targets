@@ -9,8 +9,14 @@
         <ILRepack Parallel="true" DebugInfo="true" Internalize="true" InputAssemblies="@(InputAssemblies)" OutputFile="$(TargetPath)" TargetKind="SameAsPrimaryAssembly" LibraryPath="$(OutputPath)" />
     </Target>
 	<Target Name="CopyDLLPackage" AfterTargets="ILRepacker">
-		<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ProjectDir)thunderstore\" />
-		<Message Text="Copied to package folder." Importance="High" />
+		<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ProjectDir)package\nexus\$(SolutionName)\" />
+		<Message Text="Copied to nexus package folder." Importance="High" />
+	</Target>
+	<Target Name="ZipOutputPath" AfterTargets="CopyDLLPackage">
+		<ZipDirectory
+				SourceDirectory="$(ProjectDir)package\nexus\$(SolutionName)\"
+				DestinationFile="$(ProjectDir)package\nexus\$(SolutionName).zip"
+				Overwrite="true"/>
 	</Target>
 	<Target Name="CopyDLLPlugins" AfterTargets="ILRepacker">
 		<Copy SourceFiles="$(TargetPath)" DestinationFolder="F:\Steam\steamapps\common\Valheim\BepInEx\plugins\" />
