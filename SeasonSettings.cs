@@ -1048,7 +1048,7 @@ namespace Seasons
 
         public void SaveToJSON(string filename)
         {
-            File.WriteAllText("\\\\?\\" + filename, JsonConvert.SerializeObject(new SeasonSettingsFile(this), Formatting.Indented));
+            File.WriteAllText(filename, JsonConvert.SerializeObject(new SeasonSettingsFile(this), Formatting.Indented));
         }
 
         private void LoadDefaultSeasonSettings(Season season)

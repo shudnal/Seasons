@@ -323,6 +323,16 @@ namespace Seasons
             return (seasonState.GetNightLength() / 2f) / 100f;
         }
 
+        public bool GetTorchAsFiresource()
+        {
+            return settings.m_torchAsFiresource;
+        }
+
+        public float GetTorchDurabilityDrain()
+        {
+            return settings.m_torchDurabilityDrain;
+        }
+
         public float GetBeehiveProductionMultiplier()
         {
             return GetBeehiveProductionMultiplier(seasonState.GetCurrentSeason());
@@ -539,8 +549,8 @@ namespace Seasons
             if (torch.m_shared.m_itemType != ItemDrop.ItemData.ItemType.Torch)
                 return;
 
-            if (seasonState.settings.m_torchAsFiresource && IsActive && (EnvMan.instance.IsWet() || EnvMan.instance.IsCold() || EnvMan.instance.IsFreezing()))
-                torch.m_shared.m_durabilityDrain = seasonState.settings.m_torchDurabilityDrain;
+            if (seasonState.GetTorchAsFiresource() && IsActive && (EnvMan.instance.IsWet() || EnvMan.instance.IsCold() || EnvMan.instance.IsFreezing()))
+                torch.m_shared.m_durabilityDrain = seasonState.GetTorchDurabilityDrain();
             else
                 torch.m_shared.m_durabilityDrain = 0.0333f;
         }
@@ -582,7 +592,7 @@ namespace Seasons
             if (component == null)
                 return;
 
-            component.m_type = seasonState.settings.m_torchAsFiresource ? EffectArea.Type.Heat | EffectArea.Type.Fire : EffectArea.Type.Fire;
+            component.m_type = seasonState.GetTorchAsFiresource() ? EffectArea.Type.Heat | EffectArea.Type.Fire : EffectArea.Type.Fire;
 
             ItemDrop item = prefab.GetComponent<ItemDrop>();
             PatchTorchItemData(item.m_itemData);
@@ -1561,5 +1571,39 @@ namespace Seasons
             __result = __result || player.IsSwimming() && seasonState.GetCurrentSeason() == Season.Winter && __instance.IsCold();
         }
     }
+
+    [HarmonyPatch(typeof(Bed), nameof(Bed.Interact))]
+    public static class Bed_Interact_PreventSleepingWithTorchFiresource
+    {
+        private static bool m_interacting = false;
+
+        public static bool IsInteracting() => m_interacting;
+
+        [HarmonyPriority(Priority.First)]
+        private static void Prefix(Humanoid human)
+        {
+            m_interacting = human == Player.m_localPlayer;
+        }
+
+        private static void Postfix()
+        {
+            m_interacting = false;
+        }
+    }
+
+    [HarmonyPatch(typeof(Bed), nameof(Bed.CheckFire))]
+    public static class Bed_CheckFire_PreventSleepingWithTorchFiresource
+    {
+        [HarmonyPriority(Priority.First)]
+        private static void Prefix(Humanoid human)
+        {
+            if (human == Player.m_localPlayer && seasonState.GetTorchAsFiresource() && 
+                (human.GetLeftItem() != null && human.GetLeftItem().m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch
+                 || human.GetRightItem() != null && human.GetRightItem().m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch))
+                human.HideHandItems();
+        }
+    }
+
+
 
 }

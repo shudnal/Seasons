@@ -235,13 +235,13 @@ namespace Seasons
 
                 Directory.CreateDirectory(texturePath);
 
-                File.WriteAllBytes("\\\\?\\" + Path.Combine(texturePath, $"{tex.Value.name}{originalPostfix}"), tex.Value.originalPNG);
+                File.WriteAllBytes(Path.Combine(texturePath, $"{tex.Value.name}{originalPostfix}"), tex.Value.originalPNG);
 
-                File.WriteAllText("\\\\?\\" + Path.Combine(texturePath, texturePropertiesFileName), JsonUtility.ToJson(tex.Value.properties));
+                File.WriteAllText(Path.Combine(texturePath, texturePropertiesFileName), JsonUtility.ToJson(tex.Value.properties));
 
                 foreach (KeyValuePair<Season, Dictionary<int, byte[]>> season in tex.Value.variants)
                     foreach (KeyValuePair<int, byte[]> texData in season.Value)
-                        File.WriteAllBytes("\\\\?\\" + Path.Combine(texturePath, SeasonFileName(season.Key, texData.Key)), texData.Value);
+                        File.WriteAllBytes(Path.Combine(texturePath, SeasonFileName(season.Key, texData.Key)), texData.Value);
             }
 
             LogInfo($"Saved {textures.Count} textures at {directory}");
