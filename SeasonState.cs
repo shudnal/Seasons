@@ -436,6 +436,14 @@ namespace Seasons
             return day % GetYearLengthInDays();
         }
 
+        public float GetWaterSurfaceFreezeStatus()
+        {
+            if (GetCurrentSeason() != Season.Winter || waterFreezesAfterDaysOfWinter.Value <= 0)
+                return 0f;
+
+            return Mathf.Clamp01((float)GetCurrentDay() / Math.Min(waterFreezesAfterDaysOfWinter.Value, GetDaysInSeason() + 1));
+        }
+
         private void CheckIfSeasonChanged(int season)
         {
             if (season == (int)m_season)
@@ -509,6 +517,7 @@ namespace Seasons
                 PrefabVariantController.UpdatePrefabColors();
                 TerrainVariantController.UpdateTerrainColors();
                 ClutterVariantController.instance.UpdateColors();
+                WaterVariantController.UpdateWaterState();
                 MinimapVariantController.instance.UpdateColors();
                 UpdateTorchesFireWarmth();
                 UpdateMinimapBorder();
@@ -530,6 +539,7 @@ namespace Seasons
             if (UseTextureControllers())
             {
                 ClutterVariantController.instance.UpdateColors();
+                WaterVariantController.UpdateWaterState();
             }
         }
 
@@ -586,7 +596,7 @@ namespace Seasons
             inventory.GetAllItems(SeasonSettings.itemDropNameTorch, items);
 
             foreach (ItemDrop.ItemData item in items)
-                seasonState.PatchTorchItemData(item);
+                PatchTorchItemData(item);
         }
 
         public void UpdateTorchFireWarmth(GameObject prefab, string childName = "FireWarmth")
@@ -1550,6 +1560,8 @@ namespace Seasons
         {
             if (seasonState.GetCurrentSeason() == Season.Winter && (material == FootStep.GroundMaterial.Mud || material == FootStep.GroundMaterial.Grass | material == FootStep.GroundMaterial.GenericGround))
                 material = FootStep.GroundMaterial.Snow;
+            else if (WaterVariantController.IsFrozen() && material == FootStep.GroundMaterial.Water)
+                material = FootStep.GroundMaterial.Snow;
         }
     }
 
@@ -1612,5 +1624,5 @@ namespace Seasons
     }
 
 
-
+    
 }

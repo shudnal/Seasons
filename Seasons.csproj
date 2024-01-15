@@ -46,6 +46,7 @@
     <Compile Include="SE_Season.cs" />
     <Compile Include="TerrainVariantController.cs" />
     <Compile Include="PrefabVariantController.cs" />
+    <Compile Include="WaterVariantController.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="0Harmony">

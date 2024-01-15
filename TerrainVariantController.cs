@@ -8,10 +8,10 @@ namespace Seasons
 {
     public class TerrainVariantController : MonoBehaviour
     {
-       private Heightmap m_heightmap;
+        private Heightmap m_heightmap;
 
-        public int m_myListIndex = -1;
-        public static readonly List<TerrainVariantController> s_allControllers = new List<TerrainVariantController>();
+        private int m_myListIndex = -1;
+        private static readonly List<TerrainVariantController> s_allControllers = new List<TerrainVariantController>();
 
         public static Dictionary<Biome, Dictionary<Season, Biome>> seasonalBiomeOverride = new Dictionary<Biome, Dictionary<Season, Biome>>
                 {
@@ -91,6 +91,9 @@ namespace Seasons
         private static void Postfix(Heightmap __instance)
         {
             if (!UseTextureControllers())
+                return;
+
+            if (!seasonState.IsActive)
                 return;
 
             __instance.gameObject.AddComponent<TerrainVariantController>();
