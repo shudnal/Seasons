@@ -679,7 +679,7 @@ namespace Seasons
     {
         private static void Postfix(EnvMan __instance, float oldDayFraction, float newDayFraction)
         {
-            bool seasonCanBeChanged = (oldDayFraction > 0.18f && oldDayFraction < 0.23f && newDayFraction > 0.23f && newDayFraction < 0.3f);
+            bool seasonCanBeChanged = (oldDayFraction > 0.16f && oldDayFraction < 0.22f && newDayFraction > 0.22f && newDayFraction < 0.3f);
             seasonState.UpdateState(__instance.GetCurrentDay(), seasonCanBeChanged);
         }
     }

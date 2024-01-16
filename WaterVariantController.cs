@@ -1,4 +1,5 @@
-﻿using HarmonyLib;
+﻿using System;
+using HarmonyLib;
 using System.Collections.Generic;
 using UnityEngine;
 using static Seasons.Seasons;
@@ -9,7 +10,7 @@ namespace Seasons
     {
         private WaterVolume m_waterVolume;
         private MeshRenderer m_waterSurface;
-        private MeshCollider m_IceCollider;
+        private MeshCollider m_iceCollider;
         private float m_surfaceOffset;
         private int layer;
 
@@ -141,17 +142,18 @@ namespace Seasons
 
         private void SetIceCollider()
         {
-            if (m_IceCollider == null && IsWaterSurfaceFrozen())
+            if (m_iceCollider == null && IsWaterSurfaceFrozen())
             {
-                m_IceCollider = m_waterSurface.gameObject.AddComponent<MeshCollider>();
-                m_IceCollider.sharedMesh = m_waterSurface.GetComponent<MeshFilter>().sharedMesh;
-                m_IceCollider.material.staticFriction = 0.1f;
-                m_IceCollider.material.dynamicFriction = 0.1f;
-                m_IceCollider.material.frictionCombine = PhysicMaterialCombine.Minimum;
+                m_iceCollider = m_waterSurface.gameObject.AddComponent<MeshCollider>();
+                m_iceCollider.sharedMesh = m_waterSurface.GetComponent<MeshFilter>().sharedMesh;
+                m_iceCollider.material.staticFriction = 0.1f;
+                m_iceCollider.material.dynamicFriction = 0.1f;
+                m_iceCollider.material.frictionCombine = PhysicMaterialCombine.Minimum;
+                m_iceCollider.cookingOptions = MeshColliderCookingOptions.UseFastMidphase;
             }
 
-            if (m_IceCollider != null)
-                m_IceCollider.enabled = IsWaterSurfaceFrozen();
+            if (m_iceCollider != null)
+                m_iceCollider.enabled = IsWaterSurfaceFrozen();
         }
 
         public static void UpdateWaterState()
@@ -168,8 +170,16 @@ namespace Seasons
 
     }
 
-    public static class PlayerExtentions_FrozenOcean
+    public static class CharacterExtentions_FrozenOceanSliding
     {
+        private struct SlideStatus
+        {
+            public Vector3 m_iceSlipVelocity;
+            public float m_slip;
+        }
+
+        private static readonly Dictionary<Character, SlideStatus> charactersSlides = new Dictionary<Character, SlideStatus>();
+
         public static bool IsOnIce(this Character character)
         {
             if (!WaterVariantController.IsWaterSurfaceFrozen())
@@ -183,6 +193,164 @@ namespace Seasons
                 return false;
 
             return lastGroundCollider.name.ToLower() == "watersurface";
+        }
+
+        public static void StartIceSliding(this Character character, Vector3 currentVel, bool checkMagnitude = false, bool checkRunning = true)
+        {
+            if (frozenOceanSlipperiness.Value <= 0)
+                return;
+
+            if (checkRunning && character.IsRunning())
+                return;
+
+            SlideStatus slideStatus = charactersSlides.GetValueSafe(character);
+            slideStatus.m_slip = 1f;
+
+            if (checkMagnitude && slideStatus.m_iceSlipVelocity.magnitude > currentVel.magnitude)
+                return;
+
+            slideStatus.m_iceSlipVelocity = Vector3.ClampMagnitude(currentVel, 10f);
+
+            charactersSlides[character] = slideStatus;
+        }
+
+        public static void UpdateIceSliding(this Character character, float dt, ref Vector3 currentVel)
+        {
+            SlideStatus slideStatus = charactersSlides[character];
+            if (slideStatus.m_slip > 0f && (character.IsOnIce() || !character.IsOnGround()))
+            {
+                currentVel = Vector3.Lerp(currentVel, slideStatus.m_iceSlipVelocity, slideStatus.m_slip);
+                slideStatus.m_slip = Mathf.MoveTowards(slideStatus.m_slip, 0f, dt / 2 / frozenOceanSlipperiness.Value);
+                charactersSlides[character] = slideStatus;
+            }
+            else
+            {
+                character.StopIceSliding();
+            }
+        }
+
+        public static void StopIceSliding(this Character character)
+        {
+            charactersSlides.Remove(character);
+        }
+
+        [HarmonyPatch(typeof(Character), nameof(Character.OnDestroy))]
+        public static class Character_OnDestroy_WaterVariantControllerInit
+        {
+            private static void Prefix(Character __instance)
+            {
+                __instance.StopIceSliding();
+            }
+        }
+
+        [HarmonyPatch(typeof(Player), nameof(Player.SetControls))]
+        public static class Player_SetControls_FrozenOceanSlippery
+        {
+            private static void Prefix(Player __instance, bool run)
+            {
+                if (frozenOceanSlipperiness.Value == 0 || __instance != Player.m_localPlayer || !__instance.IsOnIce())
+                    return;
+
+                if (!run && __instance.m_run)
+                    __instance.StartIceSliding(__instance.m_currentVel, checkRunning: false);
+            }
+        }
+
+        [HarmonyPatch(typeof(Character), nameof(Character.SetRun))]
+        public static class Character_SetRun_FrozenOceanSlippery
+        {
+            private static void Prefix(Character __instance, bool run, ZNetView ___m_nview)
+            {
+                if (frozenOceanSlipperiness.Value == 0 || !__instance.IsOnIce() || !___m_nview.IsValid() || !___m_nview.IsOwner())
+                    return;
+
+                if (!run && __instance.m_run)
+                    __instance.StartIceSliding(__instance.m_currentVel, checkRunning: false);
+            }
+        }
+
+        [HarmonyPatch(typeof(Character), nameof(Character.UpdateGroundContact))]
+        public static class Character_UpdateGroundContact_FrozenOceanSlippery
+        {
+            private static readonly Dictionary<Character, Vector3> m_characterSlideVelocity = new Dictionary<Character, Vector3>();
+
+            public static void CheckForSlide(Character characterSyncVelocity)
+            {
+                if (m_characterSlideVelocity.TryGetValue(characterSyncVelocity, out Vector3 bodyVelocity))
+                {
+                    characterSyncVelocity.StartIceSliding(bodyVelocity, checkMagnitude: true);
+                    m_characterSlideVelocity.Remove(characterSyncVelocity);
+                }
+            }
+
+            private static void Prefix(Character __instance, ZNetView ___m_nview, float ___m_maxAirAltitude, ref Tuple<float, Vector3> __state)
+            {
+                if (frozenOceanSlipperiness.Value == 0 || !___m_nview.IsValid() || !___m_nview.IsOwner())
+                    return;
+                    
+                __state = new Tuple<float, Vector3>(Mathf.Max(0f, ___m_maxAirAltitude - __instance.transform.position.y), __instance.m_body.velocity);
+            }
+
+            private static void Postfix(Character __instance, float ___m_maxAirAltitude, Tuple<float, Vector3> __state)
+            {
+                if (__state == null)
+                    return;
+
+                if (__state.Item1 > 1f && frozenOceanSlipperiness.Value > 0 && (___m_maxAirAltitude == __instance.transform.position.y) && __instance.IsOnIce())
+                    m_characterSlideVelocity[__instance] = __state.Item2;
+            }
+
+            [HarmonyPatch(typeof(Character), nameof(Character.SyncVelocity))]
+            public static class Character_SyncVelocity_FrozenOceanSlippery
+            {
+                private static void Prefix(Character __instance)
+                {
+                    CheckForSlide(__instance);
+                }
+            }
+        }
+
+        [HarmonyPatch(typeof(Player), nameof(Player.UpdateDodge))]
+        public static class Player_UpdateDodge_FrozenOceanSlippery
+        {
+            private static bool m_initiateSlide;
+            private static Vector3 m_bodyVelocity = Vector3.zero;
+
+            [HarmonyPriority(Priority.First)]
+            private static void Prefix(Player __instance, bool ___m_inDodge, ref bool __state)
+            {
+                if (m_initiateSlide && !___m_inDodge && __instance.IsOnIce())
+                    __instance.StartIceSliding(m_bodyVelocity);
+
+                __state = frozenOceanSlipperiness.Value > 0 && ___m_inDodge && __instance == Player.m_localPlayer;
+            }
+
+            private static void Postfix(Player __instance, bool ___m_inDodge, ref bool __state)
+            {
+                m_initiateSlide = frozenOceanSlipperiness.Value > 0 && ___m_inDodge && __instance == Player.m_localPlayer;
+                m_bodyVelocity = __instance.m_queuedDodgeDir * __instance.m_body.velocity.magnitude;
+
+                if (__state && !___m_inDodge && __instance.IsOnIce())
+                    __instance.StartIceSliding(m_bodyVelocity);
+            }
+        }
+
+        [HarmonyPatch(typeof(Character), nameof(Character.ApplySlide))]
+        public static class Character_ApplySlide_FrozenOceanSlippery
+        {
+            private static void Postfix(Character __instance, float dt, ZNetView ___m_nview, ref Vector3 currentVel)
+            {
+                if (!charactersSlides.ContainsKey(__instance))
+                    return;
+
+                if (frozenOceanSlipperiness.Value == 0 || !___m_nview.IsValid() || !___m_nview.IsOwner())
+                {
+                    __instance.StopIceSliding();
+                    return;
+                }
+
+                __instance.UpdateIceSliding(dt, ref currentVel);
+            }
         }
     }
 
@@ -386,119 +554,6 @@ namespace Seasons
             ___m_collider.material.frictionCombine = PhysicMaterialCombine.Minimum;
 
             return false;
-        }
-    }
-
-    [HarmonyPatch(typeof(Player), nameof(Player.SetControls))]
-    public static class Player_SetControls_FrozenOceanSlippery
-    {
-        private static void Prefix(Player __instance, bool run)
-        {
-            if (frozenOceanSlipperiness.Value > 0 && __instance != Player.m_localPlayer || !__instance.IsOnIce())
-                return;
-
-            if (!run && __instance.m_run)
-                Character_ApplySlide_FrozenOceanSlippery.InitiateSlide(__instance, __instance.m_currentVel, "SetControls", checkRunning: false);
-        }
-    }
-
-    [HarmonyPatch(typeof(Character), nameof(Character.UpdateGroundContact))]
-    public static class Character_UpdateGroundContact_FrozenOceanSlippery
-    {
-        private static bool m_initiateSlide;
-        private static Vector3 m_bodyVelocity = Vector3.zero;
-        private static Character m_character;
-
-        public static void CheckForSlide(Character characterSyncVelocity)
-        {
-            if (m_initiateSlide && characterSyncVelocity == m_character)
-                Character_ApplySlide_FrozenOceanSlippery.InitiateSlide(m_character, m_bodyVelocity, "UpdateGroundContact", checkMagnitude: false);
-        }
-
-        private static void Prefix(Character __instance, float ___m_maxAirAltitude, ref float __state)
-        {
-            __state = Mathf.Max(0f, ___m_maxAirAltitude - __instance.transform.position.y);
-            m_character = __instance;
-            m_bodyVelocity = __instance.m_body.velocity;
-            m_initiateSlide = false;
-        }
-
-        private static void Postfix(Character __instance, float ___m_maxAirAltitude, float __state)
-        {
-            m_initiateSlide = __state > 1f && frozenOceanSlipperiness.Value > 0 && (___m_maxAirAltitude == __instance.transform.position.y) && __instance.IsOnIce() && __instance == Player.m_localPlayer;
-        }
-    }
-
-    [HarmonyPatch(typeof(Character), nameof(Character.SyncVelocity))]
-    public static class Character_SyncVelocity_FrozenOceanSlippery
-    {
-        private static void Prefix(Character __instance)
-        {
-            Character_UpdateGroundContact_FrozenOceanSlippery.CheckForSlide(__instance);
-        }
-    }        
-
-    [HarmonyPatch(typeof(Player), nameof(Player.UpdateDodge))]
-    public static class Player_UpdateDodge_FrozenOceanSlippery
-    {
-        private static bool m_initiateSlide;
-        private static Vector3 m_bodyVelocity = Vector3.zero;
-
-        [HarmonyPriority(Priority.First)]
-        private static void Prefix(Player __instance, bool ___m_inDodge, ref bool __state)
-        {
-            if (m_initiateSlide && !___m_inDodge && __instance.IsOnIce())
-            {
-                Character_ApplySlide_FrozenOceanSlippery.InitiateSlide(__instance, m_bodyVelocity, "UpdateDodge");
-            }
-            __state = frozenOceanSlipperiness.Value > 0 && ___m_inDodge && __instance == Player.m_localPlayer;
-        }
-
-        private static void Postfix(Player __instance, bool ___m_inDodge, ref bool __state)
-        {
-            m_initiateSlide = frozenOceanSlipperiness.Value > 0 && ___m_inDodge && __instance == Player.m_localPlayer;
-            m_bodyVelocity = __instance.m_queuedDodgeDir * __instance.m_body.velocity.magnitude;
-            if (__state && !___m_inDodge && __instance.IsOnIce())
-            {
-                Character_ApplySlide_FrozenOceanSlippery.InitiateSlide(__instance, m_bodyVelocity, "UpdateDodge");
-            }
-        }
-    }
-
-    [HarmonyPatch(typeof(Character), nameof(Character.ApplySlide))]
-    public static class Character_ApplySlide_FrozenOceanSlippery
-    {
-        private static Vector3 m_iceSlipVelocity = Vector3.zero;
-        private static float m_slip = 0f;
-
-        public static void InitiateSlide(Character character, Vector3 currentVel, string log, bool checkMagnitude = false, bool checkRunning = true)
-        {
-            LogInfo(log);
-            if (frozenOceanSlipperiness.Value <= 0)
-                return;
-
-            if (checkRunning && character.IsRunning())
-                return;
-
-            m_slip = 1f;
-            if (checkMagnitude && m_iceSlipVelocity.magnitude > currentVel.magnitude)
-                return;
-
-            m_iceSlipVelocity = currentVel;
-            LogInfo(true);
-        }
-
-        private static void Postfix(Character __instance, float dt, ref Vector3 currentVel)
-        {
-            if (m_slip > 0f && __instance == Player.m_localPlayer && (__instance.IsOnIce() || !__instance.IsOnGround()))
-            {
-                currentVel = Vector3.Lerp(currentVel, m_iceSlipVelocity, m_slip);
-                m_slip = Mathf.MoveTowards(m_slip, 0f, dt / 2 / frozenOceanSlipperiness.Value);
-            }
-            else
-            {
-                m_slip = 0f;
-            }
         }
     }
 

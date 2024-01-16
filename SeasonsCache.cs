@@ -566,30 +566,40 @@ namespace Seasons
                 return ReplaceCreatureColor(color, prefabName, rendererName, material.name);
             }
 
-            if (material.name.StartsWith("Pine_tree_small"))
-                if (pos % properties.width < 94 && properties.height - pos / properties.width < 45)
+            // From top left pixel
+            int widthPix = pos % properties.width;
+            int heightPix = properties.height - pos / properties.width;
+
+            if (material.name.StartsWith("Pine_tree_"))
+                if (widthPix < 94 && heightPix < 45)
                     return false;
 
             if (material.name.StartsWith("Fir_tree_sapling"))
-                if (pos % properties.width < 21 && properties.height - pos / properties.width < 12)
+                if (widthPix < 21 && heightPix < 12)
                     return false;
 
             if (prefabName == "FirTree")
-                if (pos % properties.width < 372 && properties.height - pos / properties.width < 165)
+                if (widthPix < 372 && heightPix < 165)
                     return false;
 
             if (prefabName == "Pinetree_01")
-                if (pos % properties.width > 126)
+                if (widthPix > 126)
                     return false;
 
+            if (material.name == "beehive")
+                return widthPix > 97 && heightPix < 47;
+
+            if (material.name == "Midsummerpole_mat")
+                return heightPix < 176 || widthPix > 53 && heightPix < 184;
+
             if (prefabName.IndexOf("goblin_roof", StringComparison.OrdinalIgnoreCase) >= 0 && material.name.IndexOf("GoblinVillage_Cloth", StringComparison.OrdinalIgnoreCase) >= 0)
-                return (pos % properties.width <= 130 && properties.height - pos / properties.width < 231) || (pos % properties.width < 202 && properties.height - pos / properties.width < 86);
+                return (widthPix <= 130 && heightPix < 231) || (widthPix < 202 && heightPix < 86);
 
             if (prefabName.IndexOf("darkwood_roof", StringComparison.OrdinalIgnoreCase) >= 0 && material.name.IndexOf("RoofShingles", StringComparison.OrdinalIgnoreCase) >= 0)
-                return pos % properties.width <= 54;
+                return widthPix <= 54;
 
             if (prefabName.IndexOf("copper_roof", StringComparison.OrdinalIgnoreCase) >= 0 && material.name.IndexOf("RoofShingles", StringComparison.OrdinalIgnoreCase) >= 0)
-                return pos % properties.width <= 54;
+                return widthPix <= 54;
 
             if (prefabName.IndexOf("wood_roof", StringComparison.OrdinalIgnoreCase) >= 0 && material.name.IndexOf("straw", StringComparison.OrdinalIgnoreCase) >= 0)
                 return true;
@@ -610,6 +620,9 @@ namespace Seasons
 
             if (material.name == "swamptree2_branch")
                 return true;
+
+            if (material.name == "Midsummerpole_mat")
+                return false;
 
             if (IsPiece(material))
                 return true;
@@ -896,7 +909,7 @@ namespace Seasons
 
         public static readonly Dictionary<string, string[]> shaderOnlyMaterial = new Dictionary<string, string[]>
             {
-                { "Custom/Piece", new string[] { "straw", "RoofShingles" } },
+                { "Custom/Piece", new string[] { "straw", "RoofShingles", "beehive", "Midsummerpole_mat", "Pine_tree_xmas" } },
                 { "Custom/Creature", new string[] { "HildirsLox", "lox", "lox_calf", 
                                                     "Draugr_Archer_mat", "Draugr_mat", "Draugr_elite_mat", "Abomination_mat", 
                                                     "greyling", "greydwarf", "greydwarf_elite", "greydwarf_shaman" } },
@@ -952,6 +965,9 @@ namespace Seasons
         public static readonly List<string> piecePrefab = new List<string>()
         {
             "vines",
+            "piece_beehive",
+            "piece_maypole",
+            "piece_xmastree"
         };
 
         public static readonly List<string> piecePrefabPartialName = new List<string>()

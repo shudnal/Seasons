@@ -376,7 +376,7 @@ namespace Seasons
             if (m_wnt == null)
                 return false;
 
-            if (m_prefabName == "vines")
+            if (m_prefabName == "vines")// || m_prefabName == "piece_maypole")
                 return false;
 
             if (!m_wnt.HaveRoof())
@@ -385,8 +385,11 @@ namespace Seasons
             int num = Physics.SphereCastNonAlloc(base.transform.position + new Vector3(0, 2f, 0), 0.1f, Vector3.up, WearNTear.s_raycastHits, 100f, s_rayMask);
             for (int i = 0; i < num; i++)
             {
-                GameObject go = ((Component)(object)WearNTear.s_raycastHits[i].collider).gameObject;
-                if (go != null && !go.CompareTag("leaky") && (m_wnt.m_colliders == null || !m_wnt.m_colliders.Any(coll => coll.gameObject == go)))
+                if (WearNTear.s_raycastHits[i].collider.transform.root == m_wnt.transform.root)
+                    continue;
+
+                GameObject go = WearNTear.s_raycastHits[i].collider.gameObject;
+                if (go != null && go != m_wnt && !go.CompareTag("leaky") && (m_wnt.m_colliders == null || !m_wnt.m_colliders.Any(coll => coll.gameObject == go)))
                     return true;
             }
 
