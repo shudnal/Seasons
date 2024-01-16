@@ -1,7 +1,6 @@
 ﻿using HarmonyLib;
 using System.Collections.Generic;
 using UnityEngine;
-using static Seasons.SeasonLightings;
 using static Seasons.Seasons;
 
 namespace Seasons
@@ -10,7 +9,7 @@ namespace Seasons
     {
         private WaterVolume m_waterVolume;
         private MeshRenderer m_waterSurface;
-        private MeshCollider m_snowCollider;
+        private MeshCollider m_IceCollider;
         private float m_surfaceOffset;
         private int layer;
 
@@ -39,8 +38,7 @@ namespace Seasons
         const float _DepthFade = 20f;
         const float _ShoreFade = 0f;
 
-        public static bool IsFrozen() => s_freezeStatus == 1f;
-        public static bool IsFreezing() => s_freezeStatus > 0f;
+        public static bool IsWaterSurfaceFrozen() => s_freezeStatus == 1f;
 
         private void Awake()
         {
@@ -72,7 +70,8 @@ namespace Seasons
                 m_waterVolume.m_surfaceOffset = m_surfaceOffset;
                 m_waterVolume.m_useGlobalWind = true;
             }
-                
+
+            SetIceCollider();
         }
 
         public void Init(WaterVolume waterVolume)
@@ -101,13 +100,13 @@ namespace Seasons
 
         private void UpdateState()
         {
-            if (!IsFreezing())
+            if (s_freezeStatus == 0f)
             {
                 RevertChanges();
                 return;
             }
 
-            InitSnowCollider();
+            SetIceCollider();
 
             s_matBlock.Clear();
             s_matBlock.SetColor("_FoamColor", Color.white);
@@ -116,7 +115,7 @@ namespace Seasons
             s_matBlock.SetColor("_ColorBottom", Color.Lerp(m_colorBottom, m_colorBottomFrozen, s_freezeStatus));
             s_matBlock.SetColor("_ColorBottomShallow", Color.Lerp(m_colorBottomShallow, m_colorBottomShallowFrozen, s_freezeStatus));
 
-            if (IsFrozen())
+            if (IsWaterSurfaceFrozen())
             {
                 s_matBlock.SetFloat(WaterVolume.s_shaderWaterTime, 0f);
                 s_matBlock.SetFloat(WaterVolume.s_shaderUseGlobalWind, 0f);
@@ -140,19 +139,19 @@ namespace Seasons
             m_waterSurface.SetPropertyBlock(s_matBlock);
         }
 
-        private void InitSnowCollider()
+        private void SetIceCollider()
         {
-            if (m_waterVolume == null)
-                return;
-
-            if (m_snowCollider == null && IsFrozen())
+            if (m_IceCollider == null && IsWaterSurfaceFrozen())
             {
-                m_snowCollider = m_waterVolume.m_waterSurface.gameObject.AddComponent<MeshCollider>();
-                m_snowCollider.sharedMesh = m_waterSurface.GetComponent<MeshFilter>().sharedMesh;
+                m_IceCollider = m_waterSurface.gameObject.AddComponent<MeshCollider>();
+                m_IceCollider.sharedMesh = m_waterSurface.GetComponent<MeshFilter>().sharedMesh;
+                m_IceCollider.material.staticFriction = 0.1f;
+                m_IceCollider.material.dynamicFriction = 0.1f;
+                m_IceCollider.material.frictionCombine = PhysicMaterialCombine.Minimum;
             }
 
-            if (m_snowCollider != null)
-                m_snowCollider.enabled = IsFrozen();
+            if (m_IceCollider != null)
+                m_IceCollider.enabled = IsWaterSurfaceFrozen();
         }
 
         public static void UpdateWaterState()
@@ -163,10 +162,28 @@ namespace Seasons
                 controller.UpdateState();
         }
 
-        public static bool PlayerIsOnFrozenOcean() => IsFrozen()
+        public static bool LocalPlayerIsOnFrozenOcean() => IsWaterSurfaceFrozen()
                                         && Player.m_localPlayer != null
                                         && Player.m_localPlayer.GetCurrentBiome() == Heightmap.Biome.Ocean;
 
+    }
+
+    public static class PlayerExtentions_FrozenOcean
+    {
+        public static bool IsOnIce(this Character character)
+        {
+            if (!WaterVariantController.IsWaterSurfaceFrozen())
+                return false;
+
+            if (!character.IsOnGround())
+                return false;
+
+            Collider lastGroundCollider = character.GetLastGroundCollider();
+            if (lastGroundCollider == null)
+                return false;
+
+            return lastGroundCollider.name.ToLower() == "watersurface";
+        }
     }
 
     [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.Awake))]
@@ -200,7 +217,7 @@ namespace Seasons
             if (!seasonState.IsActive)
                 return;
 
-            if (!WaterVariantController.IsFrozen())
+            if (!WaterVariantController.IsWaterSurfaceFrozen())
                 return;
 
             WaterVolume.s_waterTime = 0f;
@@ -232,7 +249,7 @@ namespace Seasons
     {
         private static bool Prefix()
         {
-            return !WaterVariantController.IsFrozen();
+            return !WaterVariantController.IsWaterSurfaceFrozen();
         }
     }
 
@@ -244,14 +261,7 @@ namespace Seasons
             if (character == null || character != Player.m_localPlayer)
                 return true;
 
-            if (!WaterVariantController.IsFrozen())
-                return true;
-
-            Collider lastGroundCollider = character.GetLastGroundCollider();
-            if (lastGroundCollider == null)
-                return true;
-
-            if (lastGroundCollider.name != "WaterSurface")
+            if (!character.IsOnIce())
                 return true;
 
             __result = Player.m_localPlayer.GetCurrentBiome() == Heightmap.Biome.Ocean ? FootStep.GroundMaterial.Default : FootStep.GroundMaterial.Snow;
@@ -271,7 +281,7 @@ namespace Seasons
             if (__result != null && __result.m_name == "home")
                 return;
 
-            if (!WaterVariantController.PlayerIsOnFrozenOcean() || !EnvMan.instance.IsNight())
+            if (!WaterVariantController.LocalPlayerIsOnFrozenOcean() || !EnvMan.instance.IsNight())
                 return;
 
             MusicMan.NamedMusic frozenOcean = __instance.FindMusic(frozenOceanMusic);
@@ -317,7 +327,7 @@ namespace Seasons
 
         public static void Prefix(EnvSetup env, ref AudioClip __state)
         {
-            if (!WaterVariantController.PlayerIsOnFrozenOcean())
+            if (!WaterVariantController.LocalPlayerIsOnFrozenOcean())
                 return;
 
             __state = env.m_ambientLoop;
@@ -327,7 +337,7 @@ namespace Seasons
 
         public static void Postfix(EnvSetup env, AudioClip __state)
         {
-            if (!WaterVariantController.PlayerIsOnFrozenOcean())
+            if (!WaterVariantController.LocalPlayerIsOnFrozenOcean())
                 return;
 
             env.m_ambientLoop = __state;
@@ -340,14 +350,14 @@ namespace Seasons
     {
         private static bool Prefix(Leviathan __instance, Rigidbody ___m_body, ZNetView ___m_nview)
         {
-            if (!WaterVariantController.IsFrozen())
+            if (!WaterVariantController.IsWaterSurfaceFrozen())
                 return true;
             
             if (___m_nview.IsValid() && ___m_nview.IsOwner())
             {
-                Vector3 position2 = __instance.transform.position;
-                position2.y = Floating.GetLiquidLevel(__instance.transform.position, 0) - 5f;
-                __instance.transform.position = position2;
+                Vector3 position2 = ___m_body.position;
+                position2.y = Floating.GetLiquidLevel(___m_body.position, 0) - 5f;
+                ___m_body.position = position2;
             }
 
             return false;
@@ -359,7 +369,7 @@ namespace Seasons
     {
         private static bool Prefix()
         {
-            return !WaterVariantController.IsFrozen();
+            return !WaterVariantController.IsWaterSurfaceFrozen();
         }
     }
 
@@ -368,22 +378,129 @@ namespace Seasons
     {
         private static bool Prefix(Character __instance, CapsuleCollider ___m_collider)
         {
-            if (__instance != Player.m_localPlayer)
+            if (!__instance.IsOnIce())
                 return true;
 
-            if (!WaterVariantController.PlayerIsOnFrozenOcean())
-                return true;
-
-            ___m_collider.material.staticFriction = 1f;
-            ___m_collider.material.dynamicFriction = 1f;
-            ___m_collider.material.frictionCombine = PhysicMaterialCombine.Maximum;
+            ___m_collider.material.staticFriction = 0.1f;
+            ___m_collider.material.dynamicFriction = 0.1f;
+            ___m_collider.material.frictionCombine = PhysicMaterialCombine.Minimum;
 
             return false;
         }
     }
 
-    
+    [HarmonyPatch(typeof(Player), nameof(Player.SetControls))]
+    public static class Player_SetControls_FrozenOceanSlippery
+    {
+        private static void Prefix(Player __instance, bool run)
+        {
+            if (frozenOceanSlipperiness.Value > 0 && __instance != Player.m_localPlayer || !__instance.IsOnIce())
+                return;
 
+            if (!run && __instance.m_run)
+                Character_ApplySlide_FrozenOceanSlippery.InitiateSlide(__instance, __instance.m_currentVel, "SetControls", checkRunning: false);
+        }
+    }
+
+    [HarmonyPatch(typeof(Character), nameof(Character.UpdateGroundContact))]
+    public static class Character_UpdateGroundContact_FrozenOceanSlippery
+    {
+        private static bool m_initiateSlide;
+        private static Vector3 m_bodyVelocity = Vector3.zero;
+        private static Character m_character;
+
+        public static void CheckForSlide(Character characterSyncVelocity)
+        {
+            if (m_initiateSlide && characterSyncVelocity == m_character)
+                Character_ApplySlide_FrozenOceanSlippery.InitiateSlide(m_character, m_bodyVelocity, "UpdateGroundContact", checkMagnitude: false);
+        }
+
+        private static void Prefix(Character __instance, float ___m_maxAirAltitude, ref float __state)
+        {
+            __state = Mathf.Max(0f, ___m_maxAirAltitude - __instance.transform.position.y);
+            m_character = __instance;
+            m_bodyVelocity = __instance.m_body.velocity;
+            m_initiateSlide = false;
+        }
+
+        private static void Postfix(Character __instance, float ___m_maxAirAltitude, float __state)
+        {
+            m_initiateSlide = __state > 1f && frozenOceanSlipperiness.Value > 0 && (___m_maxAirAltitude == __instance.transform.position.y) && __instance.IsOnIce() && __instance == Player.m_localPlayer;
+        }
+    }
+
+    [HarmonyPatch(typeof(Character), nameof(Character.SyncVelocity))]
+    public static class Character_SyncVelocity_FrozenOceanSlippery
+    {
+        private static void Prefix(Character __instance)
+        {
+            Character_UpdateGroundContact_FrozenOceanSlippery.CheckForSlide(__instance);
+        }
+    }        
+
+    [HarmonyPatch(typeof(Player), nameof(Player.UpdateDodge))]
+    public static class Player_UpdateDodge_FrozenOceanSlippery
+    {
+        private static bool m_initiateSlide;
+        private static Vector3 m_bodyVelocity = Vector3.zero;
+
+        [HarmonyPriority(Priority.First)]
+        private static void Prefix(Player __instance, bool ___m_inDodge, ref bool __state)
+        {
+            if (m_initiateSlide && !___m_inDodge && __instance.IsOnIce())
+            {
+                Character_ApplySlide_FrozenOceanSlippery.InitiateSlide(__instance, m_bodyVelocity, "UpdateDodge");
+            }
+            __state = frozenOceanSlipperiness.Value > 0 && ___m_inDodge && __instance == Player.m_localPlayer;
+        }
+
+        private static void Postfix(Player __instance, bool ___m_inDodge, ref bool __state)
+        {
+            m_initiateSlide = frozenOceanSlipperiness.Value > 0 && ___m_inDodge && __instance == Player.m_localPlayer;
+            m_bodyVelocity = __instance.m_queuedDodgeDir * __instance.m_body.velocity.magnitude;
+            if (__state && !___m_inDodge && __instance.IsOnIce())
+            {
+                Character_ApplySlide_FrozenOceanSlippery.InitiateSlide(__instance, m_bodyVelocity, "UpdateDodge");
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(Character), nameof(Character.ApplySlide))]
+    public static class Character_ApplySlide_FrozenOceanSlippery
+    {
+        private static Vector3 m_iceSlipVelocity = Vector3.zero;
+        private static float m_slip = 0f;
+
+        public static void InitiateSlide(Character character, Vector3 currentVel, string log, bool checkMagnitude = false, bool checkRunning = true)
+        {
+            LogInfo(log);
+            if (frozenOceanSlipperiness.Value <= 0)
+                return;
+
+            if (checkRunning && character.IsRunning())
+                return;
+
+            m_slip = 1f;
+            if (checkMagnitude && m_iceSlipVelocity.magnitude > currentVel.magnitude)
+                return;
+
+            m_iceSlipVelocity = currentVel;
+            LogInfo(true);
+        }
+
+        private static void Postfix(Character __instance, float dt, ref Vector3 currentVel)
+        {
+            if (m_slip > 0f && __instance == Player.m_localPlayer && (__instance.IsOnIce() || !__instance.IsOnGround()))
+            {
+                currentVel = Vector3.Lerp(currentVel, m_iceSlipVelocity, m_slip);
+                m_slip = Mathf.MoveTowards(m_slip, 0f, dt / 2 / frozenOceanSlipperiness.Value);
+            }
+            else
+            {
+                m_slip = 0f;
+            }
+        }
+    }
 
 
 }

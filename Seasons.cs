@@ -19,7 +19,7 @@ namespace Seasons
     {
         const string pluginID = "shudnal.Seasons";
         const string pluginName = "Seasons";
-        const string pluginVersion = "1.0.1";
+        const string pluginVersion = "1.0.2";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -54,6 +54,7 @@ namespace Seasons
         public static ConfigEntry<bool> seasonalStatsOutdoorsOnly;
         public static ConfigEntry<int> waterFreezesAfterDaysOfWinter;
         public static ConfigEntry<bool> enableNightMusicOnFrozenOcean;
+        public static ConfigEntry<int> frozenOceanSlipperiness;
 
         public static ConfigEntry<bool> showFadeOnSeasonChange;
         public static ConfigEntry<float> fadeOnSeasonChangeDuration;
@@ -250,8 +251,12 @@ namespace Seasons
             preventDeathFromFreezing = config("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
             seasonalStatsOutdoorsOnly = config("Season", "Seasonal stats works only outdoors", defaultValue: true, "Make seasonal stats works only outdoors");
             freezingSwimmingInWinter = config("Season", "Get freezing when swimming in cold water in winter", defaultValue: true, "Swimming in cold water during winter will get you freezing debuff");
-            waterFreezesAfterDaysOfWinter = config("Season", "Water freezes in set day of winter", defaultValue: 6, "Water will freeze in the set day of winter");
-            enableNightMusicOnFrozenOcean = config("Season", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
+
+            waterFreezesAfterDaysOfWinter = config("Season - Winter ocean", "Freeze water in set day of winter", defaultValue: 6, "Water will freeze in the set day of winter");
+            enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
+            frozenOceanSlipperiness = config("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1, "Slipperiness factor of the frozen ocean surface");
+
+            waterFreezesAfterDaysOfWinter.SettingChanged += (sender, args) => WaterVariantController.UpdateWaterState();
 
             showCurrentSeasonBuff = config("Season - Buff", "Show current season buff", defaultValue: true, "Show current season buff.");
             seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");

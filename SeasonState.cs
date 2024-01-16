@@ -449,6 +449,11 @@ namespace Seasons
             if (season == (int)m_season)
                 return;
 
+            StartSeasonChange();
+        }
+
+        public void StartSeasonChange()
+        {
             if (!showFadeOnSeasonChange.Value || Hud.instance == null || Hud.instance.m_loadingScreen.isActiveAndEnabled || Hud.instance.m_loadingScreen.alpha > 0)
                 SeasonChanged();
             else
@@ -1560,7 +1565,7 @@ namespace Seasons
         {
             if (seasonState.GetCurrentSeason() == Season.Winter && (material == FootStep.GroundMaterial.Mud || material == FootStep.GroundMaterial.Grass | material == FootStep.GroundMaterial.GenericGround))
                 material = FootStep.GroundMaterial.Snow;
-            else if (WaterVariantController.IsFrozen() && material == FootStep.GroundMaterial.Water)
+            else if (WaterVariantController.IsWaterSurfaceFrozen() && material == FootStep.GroundMaterial.Water)
                 material = FootStep.GroundMaterial.Snow;
         }
     }
