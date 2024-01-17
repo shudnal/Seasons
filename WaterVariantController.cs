@@ -220,7 +220,7 @@ namespace Seasons
             if (slideStatus.m_slip > 0f && (character.IsOnIce() || !character.IsOnGround()))
             {
                 currentVel = Vector3.Lerp(currentVel, slideStatus.m_iceSlipVelocity, slideStatus.m_slip);
-                slideStatus.m_slip = Mathf.MoveTowards(slideStatus.m_slip, 0f, dt / 2 / frozenOceanSlipperiness.Value);
+                slideStatus.m_slip = Mathf.MoveTowards(slideStatus.m_slip, 0f, character.IsOnGround() ? dt / 2 / frozenOceanSlipperiness.Value : dt * 2);
                 charactersSlides[character] = slideStatus;
             }
             else

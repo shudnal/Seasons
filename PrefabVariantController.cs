@@ -376,7 +376,7 @@ namespace Seasons
             if (m_wnt == null)
                 return false;
 
-            if (m_prefabName == "vines")// || m_prefabName == "piece_maypole")
+            if (m_prefabName == "vines")
                 return false;
 
             if (!m_wnt.HaveRoof())
