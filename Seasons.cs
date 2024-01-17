@@ -15,6 +15,7 @@ namespace Seasons
 {
     [BepInPlugin(pluginID, pluginName, pluginVersion)]
     [BepInIncompatibility("RustyMods.Seasonality")]
+    [BepInIncompatibility("TastyChickenLegs.LongerDays")]
     public class Seasons : BaseUnityPlugin
     {
         const string pluginID = "shudnal.Seasons";
