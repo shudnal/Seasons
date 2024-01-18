@@ -3,8 +3,7 @@ using HarmonyLib;
 using System.Collections.Generic;
 using UnityEngine;
 using static Seasons.Seasons;
-using System.Reflection;
-using static PrivilegeManager;
+using System.Collections;
 
 namespace Seasons
 {
@@ -33,7 +32,7 @@ namespace Seasons
 
         private static float s_freezeStatus = 0f;
 
-        public const float _winterWaterSurfaceOffset = 3f;
+        public const float _winterWaterSurfaceOffset = 2f;
 
         const float _FoamDepthFrozen = 10f;
         const float _WaveVel = 0f;
@@ -43,7 +42,11 @@ namespace Seasons
         const float _DepthFade = 20f;
         const float _ShoreFade = 0f;
 
+        private static float s_colliderHeight = 0f;
+
         public static bool IsWaterSurfaceFrozen() => s_freezeStatus == 1f;
+
+        public static float s_waterLevel => s_colliderHeight == 0f || !IsWaterSurfaceFrozen() ? ZoneSystem.instance.m_waterLevel : s_colliderHeight;
 
         private void Awake()
         {
@@ -132,74 +135,35 @@ namespace Seasons
                 s_matBlock.SetFloat("_WaveFoam", _WaveFoam);
             }
 
+            m_waterSurface.gameObject.layer = IsWaterSurfaceFrozen() ? 0 : layer;
+            m_waterSurface.SetPropertyBlock(s_matBlock);
+
+            SetupIceCollider();
+
             if (m_waterVolume != null)
             {
                 m_waterVolume.m_surfaceOffset = m_surfaceOffset - (IsWaterSurfaceFrozen() ? _winterWaterSurfaceOffset : 0);
                 m_waterVolume.m_useGlobalWind = !IsWaterSurfaceFrozen();
                 m_waterVolume.SetupMaterial();
-
-                if (IsWaterSurfaceFrozen())
-                    foreach (IWaterInteractable waterInteractable in m_waterVolume.m_inWater)
-                    {
-                        if (waterInteractable is Fish)
-                        {
-                            Fish fish = waterInteractable as Fish;
-                            if (!fish.m_nview.IsOwner())
-                                continue;
-
-                            if (fish.transform.position.y > ZoneSystem.instance.m_waterLevel)
-                                fish.transform.position = new Vector3(fish.transform.position.x, ZoneSystem.instance.m_waterLevel - _winterWaterSurfaceOffset, fish.transform.position.z);
-
-                            fish.m_body.velocity = Vector3.zero;
-                        }
-                        else if (waterInteractable is Humanoid)
-                        {
-                            Character character = waterInteractable as Character;
-                            if (!character.m_nview.IsOwner())
-                                continue;
-
-                            if (Utils.GetPrefabName(character.gameObject).IndexOf("Serpent", StringComparison.OrdinalIgnoreCase) > 0 && character.transform.position.y >= ZoneSystem.instance.m_waterLevel)
-                            {
-                                character.transform.position = new Vector3(character.transform.position.x, ZoneSystem.instance.m_waterLevel - _winterWaterSurfaceOffset, character.transform.position.z);
-                                character.m_body.velocity = Vector3.zero;
-                            }
-                            else if (character.transform.position.y <= ZoneSystem.instance.m_waterLevel)
-                            {
-                                character.m_body.velocity = Vector3.zero;
-                                character.transform.position = new Vector3(character.transform.position.x, ZoneSystem.instance.m_waterLevel + _winterWaterSurfaceOffset, character.transform.position.z);
-                            }
-                        }
-                    }
             }
-
-            m_waterSurface.gameObject.layer = IsWaterSurfaceFrozen() ? 0 : layer;
-
-            m_waterSurface.SetPropertyBlock(s_matBlock);
-
-            if (IsWaterSurfaceFrozen())
-                foreach (Ship ship in Ship.Instances)
-                {
-                    if (!ship.m_nview.IsOwner() || ship.transform.position.y > ZoneSystem.instance.m_waterLevel + ship.m_waterLevelOffset)
-                        continue;
-
-                    ship.transform.rotation = Quaternion.identity;
-                    ship.transform.position = new Vector3(ship.transform.position.x, ZoneSystem.instance.m_waterLevel + ship.m_waterLevelOffset + _winterWaterSurfaceOffset, ship.transform.position.z);
-                    ship.m_body.velocity = Vector3.zero;
-                }
-
-            SetupIceCollider();
         }
 
         private void SetupIceCollider()
         {
             if (m_iceCollider == null && IsWaterSurfaceFrozen())
             {
+                if (s_colliderHeight == 0f)
+                    s_colliderHeight = ZoneSystem.instance.m_waterLevel + 0.01f;
+
                 m_iceCollider = m_waterSurface.gameObject.AddComponent<MeshCollider>();
                 m_iceCollider.sharedMesh = m_waterSurface.GetComponent<MeshFilter>().sharedMesh;
                 m_iceCollider.material.staticFriction = 0.1f;
                 m_iceCollider.material.dynamicFriction = 0.1f;
                 m_iceCollider.material.frictionCombine = PhysicMaterialCombine.Minimum;
                 m_iceCollider.cookingOptions = MeshColliderCookingOptions.UseFastMidphase;
+
+                if (m_waterVolume != null)
+                    m_iceCollider.transform.position = new Vector3(m_iceCollider.transform.position.x, s_colliderHeight, m_iceCollider.transform.position.z);
             }
 
             if (m_iceCollider != null)
@@ -208,15 +172,94 @@ namespace Seasons
 
         public static void UpdateWaterState()
         {
+            bool wasFrozen = IsWaterSurfaceFrozen();
+
             s_freezeStatus = seasonState.GetWaterSurfaceFreezeStatus();
 
             foreach (WaterVariantController controller in s_allControllers)
                 controller.UpdateState();
+
+            if (!wasFrozen && IsWaterSurfaceFrozen())
+            {
+                Seasons.instance.StartCoroutine(UpdateWaterObjects());
+            }
         }
 
         public static bool LocalPlayerIsOnFrozenOcean() => IsWaterSurfaceFrozen()
                                         && Player.m_localPlayer != null
                                         && Player.m_localPlayer.GetCurrentBiome() == Heightmap.Biome.Ocean;
+
+        public static IEnumerator UpdateWaterObjects()
+        {
+            yield return new WaitForFixedUpdate();
+
+            foreach (Ship ship in Ship.Instances)
+            {
+                if (!ship.m_nview.IsOwner() || ship.transform.position.y > s_waterLevel + ship.m_waterLevelOffset)
+                    continue;
+
+                ship.transform.rotation = Quaternion.identity;
+                ship.transform.position = new Vector3(ship.transform.position.x, s_waterLevel + ship.m_waterLevelOffset + 0.1f, ship.transform.position.z);
+                ship.m_body.velocity = Vector3.zero;
+            }
+
+            yield return new WaitForFixedUpdate();
+
+            foreach (WaterVolume waterVolume in WaterVolume.Instances)
+                foreach (IWaterInteractable waterInteractable in waterVolume.m_inWater)
+                {
+                    if (waterInteractable is Fish)
+                    {
+                        Fish fish = waterInteractable as Fish;
+                        if (!fish.m_nview.IsOwner())
+                            continue;
+
+                        if (fish.transform.position.y > s_waterLevel)
+                            fish.transform.position = new Vector3(fish.transform.position.x, s_waterLevel - _winterWaterSurfaceOffset, fish.transform.position.z);
+
+                        fish.m_body.velocity = Vector3.zero;
+                    }
+                    else if (waterInteractable is Character)
+                    {
+                        Character character = waterInteractable as Character;
+                        if (!character.m_nview.IsOwner())
+                            continue;
+
+                        if (IsUnderwaterAI(character, out BaseAI ai))
+                        {
+                            if (character.transform.position.y >= s_waterLevel)
+                            {
+                                LogInfo(character);
+                                List<Vector3> hits = new List<Vector3>();
+                                Pathfinding.instance.FindGround(character.transform.position, testWater: true, hits, Pathfinding.instance.GetSettings(ai.m_pathAgentType));
+
+                                Vector3 hit = hits.Find(h => h.y < s_waterLevel);
+                                if (hit.y != 0)
+                                {
+                                    character.m_body.velocity = Vector3.zero;
+                                    character.transform.position = new Vector3(character.transform.position.x, Mathf.Max(s_waterLevel - _winterWaterSurfaceOffset, hit.y + 0.1f), character.transform.position.z);
+                                    LogInfo(character.transform.position);
+                                    /*character.InvalidateCachedLiquidDepth();
+                                    character.m_swimTimer = 0.0f;*/
+                                }
+                            }
+                        }
+                        else if (character.transform.position.y <= s_waterLevel && !character.IsAttachedToShip())
+                        {
+                            character.m_body.velocity = Vector3.zero;
+                            character.transform.position = new Vector3(character.transform.position.x, s_waterLevel + 0.5f, character.transform.position.z);
+                            character.InvalidateCachedLiquidDepth();
+                            character.m_maxAirAltitude = character.transform.position.y;
+                            character.m_swimTimer = 0.6f;
+                        }
+                    }
+                }
+        }
+
+        public static bool IsUnderwaterAI(Character character, out BaseAI ai)
+        {
+            return character.TryGetComponent(out ai) && (ai.m_pathAgentType == Pathfinding.AgentType.Fish || ai.m_pathAgentType == Pathfinding.AgentType.BigFish);
+        }
 
     }
 
@@ -610,7 +653,7 @@ namespace Seasons
     }
 
     [HarmonyPatch(typeof(Player), nameof(Player.TeleportTo))]
-    public static class Player_TeleportTo_FrozenOceanLeviathan
+    public static class Player_TeleportTo_FrozenOceanMinimapTeleportation
     {
         private static void Postfix(Player __instance, bool __result, ref Vector3 ___m_teleportTargetPos)
         {
@@ -621,7 +664,7 @@ namespace Seasons
                 return;
 
             if (___m_teleportTargetPos.y == 0)
-                ___m_teleportTargetPos = new Vector3 (___m_teleportTargetPos.x, ___m_teleportTargetPos.y + ZoneSystem.instance.m_waterLevel, ___m_teleportTargetPos.z);
+                ___m_teleportTargetPos = new Vector3 (___m_teleportTargetPos.x, ___m_teleportTargetPos.y + WaterVariantController.s_waterLevel, ___m_teleportTargetPos.z);
         }
     }
 
@@ -647,7 +690,7 @@ namespace Seasons
     }
 
     [HarmonyPatch(typeof(Fish), nameof(Fish.ConsiderJump))]
-    public static class Fish_ConsiderJump_FrozenOceanNoWaves
+    public static class Fish_ConsiderJump_FrozenOceanFishNoJumps
     {
         private static void Prefix(ref float ___m_jumpChance, ref float __state)
         {
@@ -667,122 +710,4 @@ namespace Seasons
         }
     }
     
-
-    /*[HarmonyPatch(typeof(BaseAI), nameof(BaseAI.RandomMovement))]
-    public static class BaseAI_RandomMovement_FrozenOceanUnderWaterAI
-    {
-        public static bool isUnderFrozenSurface;
-
-        private static void Prefix(BaseAI __instance)
-        {
-            if (!WaterVariantController.IsWaterSurfaceFrozen())
-                return;
-
-            isUnderFrozenSurface = __instance.transform.position.y < ZoneSystem.instance.m_waterLevel;//Utils.GetPrefabName(__instance.gameObject) == "Serpent";
-        }
-        private static void Postfix()
-        {
-            isUnderFrozenSurface = false;
-        }
-    }
-
-    [HarmonyPatch]
-    public static class ZoneSystem_GetSolidHeight_FrozenOceanUnderWaterAI
-    {
-        public static MethodBase TargetMethod()
-        {
-            return AccessTools.Method(
-                typeof(ZoneSystem),
-                nameof(ZoneSystem.GetSolidHeight),
-                new Type[] { typeof(Vector3), typeof(float).MakeByRefType(), typeof(int) }
-            );
-        }
-
-        private static void Postfix(Vector3 p, int ___m_solidRayMask, ref float height, ref bool __result)
-        {
-            if (!BaseAI_RandomMovement_FrozenOceanUnderWaterAI.isUnderFrozenSurface)
-                return;
-
-            if (height != ZoneSystem.instance.m_waterLevel)
-                return;
-
-            Vector3 origin = p;
-            origin.y = ZoneSystem.instance.m_waterLevel - WaterVariantController._winterWaterSurfaceOffset;
-
-            if (Physics.Raycast(origin, Vector3.down, out var hitInfo, 2000f, ___m_solidRayMask))
-            {
-                height = hitInfo.point.y;
-                __result = true;
-            }
-        }
-    }
-
-    [HarmonyPatch]
-    public static class ZoneSystem_GetGroundHeight_FrozenOceanUnderWaterAI
-    {
-        public static MethodBase TargetMethod()
-        {
-            return AccessTools.Method(
-                typeof(ZoneSystem),
-                nameof(ZoneSystem.GetGroundHeight),
-                new Type[] { typeof(Vector3), typeof(float).MakeByRefType() }
-            );
-        }
-
-        private static void Postfix(Vector3 p, int ___m_solidRayMask, ref float height, ref bool __result)
-        {
-            if (!BaseAI_RandomMovement_FrozenOceanUnderWaterAI.isUnderFrozenSurface)
-                return;
-
-            if (height != ZoneSystem.instance.m_waterLevel)
-                return;
-
-            Vector3 origin = p;
-            origin.y = ZoneSystem.instance.m_waterLevel - WaterVariantController._winterWaterSurfaceOffset;
-
-            if (Physics.Raycast(origin, Vector3.down, out var hitInfo, 2000f, ___m_solidRayMask))
-            {
-                height = hitInfo.point.y;
-                __result = true;
-            }
-        }
-    }
-
-    [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.MoveToWater))]
-    public static class BaseAI_MoveToWater_FrozenOceanUnderWaterAI
-    {
-        public static bool isUnderFrozenSurface;
-
-        private static void Prefix(BaseAI __instance)
-        {
-            if (!WaterVariantController.IsWaterSurfaceFrozen())
-                return;
-
-            isUnderFrozenSurface = __instance.transform.position.y < ZoneSystem.instance.m_waterLevel;//Utils.GetPrefabName(__instance.gameObject) == "Serpent";
-        }
-        private static void Postfix()
-        {
-            isUnderFrozenSurface = false;
-        }
-    }
-
-    [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.GetSolidHeight), new Type[] { typeof(Vector3) })]
-    public static class ZoneSystem_GetSolidHeight_Vector3_FrozenOceanUnderWaterAI
-    {
-        private static void Postfix(Vector3 p, int ___m_solidRayMask, ref float __result)
-        {
-            if (!BaseAI_MoveToWater_FrozenOceanUnderWaterAI.isUnderFrozenSurface)
-                return;
-
-            if (__result != ZoneSystem.instance.m_waterLevel)
-                return;
-
-            Vector3 origin = p;
-            origin.y = ZoneSystem.instance.m_waterLevel - WaterVariantController._winterWaterSurfaceOffset;
-
-            if (Physics.Raycast(origin, Vector3.down, out var hitInfo, 2000f, ___m_solidRayMask))
-                __result = hitInfo.point.y;
-        }
-    }*/
-
 }
