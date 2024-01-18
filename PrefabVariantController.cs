@@ -1,13 +1,11 @@
 ﻿using BepInEx.Logging;
 using HarmonyLib;
-using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using static Seasons.PrefabController;
 using static Seasons.Seasons;
-using static UnityEngine.ParticleSystem;
 
 namespace Seasons
 {
@@ -204,7 +202,7 @@ namespace Seasons
 
             foreach (KeyValuePair<ParticleSystem, Color[]> startColor in m_startColors)
             {
-                MainModule mainModule = startColor.Key.main;
+                ParticleSystem.MainModule mainModule = startColor.Key.main;
                 mainModule.startColor = startColor.Value[(int)seasonState.GetCurrentSeason() * seasonsCount + variant];
             }
         }

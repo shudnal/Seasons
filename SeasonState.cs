@@ -9,7 +9,6 @@ using System.Linq;
 using UnityEngine;
 using BepInEx;
 using static Seasons.SeasonLightings;
-using static CharacterDrop;
 
 namespace Seasons
 {
@@ -1257,9 +1256,9 @@ namespace Seasons
     [HarmonyPatch(typeof(CharacterDrop), nameof(CharacterDrop.GenerateDropList))]
     public static class CharacterDrop_GenerateDropList_TreeWoodDrop
     {
-        public static void ApplyMeatMultiplier(List<Drop> m_drops)
+        public static void ApplyMeatMultiplier(List<CharacterDrop.Drop> m_drops)
         {
-            foreach (Drop drop in m_drops)
+            foreach (CharacterDrop.Drop drop in m_drops)
             {
                 if (drop.m_prefab.name != "RawMeat" && drop.m_prefab.name != "DeerMeat" && drop.m_prefab.name != "NeckTail" && drop.m_prefab.name != "WolfMeat" &&
                     drop.m_prefab.name != "LoxMeat" && drop.m_prefab.name != "ChickenMeat" && drop.m_prefab.name != "HareMeat" && drop.m_prefab.name != "SerpentMeat")
@@ -1271,7 +1270,7 @@ namespace Seasons
             }
         }
 
-        private static void Prefix(ref List<Drop> ___m_drops)
+        private static void Prefix(ref List<CharacterDrop.Drop> ___m_drops)
         {
             if (seasonState.GetMeatFromAnimalsMultiplier() == 1.0f)
                 return;
