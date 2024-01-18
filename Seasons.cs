@@ -30,12 +30,6 @@ namespace Seasons
         private static ConfigEntry<bool> loggingEnabled;
 
         public static ConfigEntry<CacheFormat> cacheStorageFormat;
-        public static ConfigEntry<float> _Glossiness;
-        public static ConfigEntry<float> _Metallic;
-        public static ConfigEntry<float> _DepthFade;
-        public static ConfigEntry<Color> _ColorTop;
-        public static ConfigEntry<Color> _ColorBottom;
-        public static ConfigEntry<Color> _ColorBottomShallow;
 
         public static ConfigEntry<bool> overrideSeason;
         public static ConfigEntry<Season> seasonOverrided;
@@ -46,6 +40,7 @@ namespace Seasons
         public static ConfigEntry<bool> controlStats;
         public static ConfigEntry<bool> controlMinimap;
         public static ConfigEntry<bool> controlYggdrasil;
+        public static ConfigEntry<bool> controlTraders;
 
         public static ConfigEntry<bool> showCurrentSeasonBuff;
         public static ConfigEntry<TimerFormat> seasonsTimerFormat;
@@ -53,9 +48,10 @@ namespace Seasons
         public static ConfigEntry<bool> preventDeathFromFreezing;
         public static ConfigEntry<bool> freezingSwimmingInWinter;
         public static ConfigEntry<bool> seasonalStatsOutdoorsOnly;
+
         public static ConfigEntry<int> waterFreezesAfterDaysOfWinter;
         public static ConfigEntry<bool> enableNightMusicOnFrozenOcean;
-        public static ConfigEntry<int> frozenOceanSlipperiness;
+        public static ConfigEntry<float> frozenOceanSlipperiness;
 
         public static ConfigEntry<bool> showFadeOnSeasonChange;
         public static ConfigEntry<float> fadeOnSeasonChangeDuration;
@@ -151,6 +147,7 @@ namespace Seasons
         public static readonly CustomSyncedValue<string> customEventsJSON = new CustomSyncedValue<string>(configSync, "Custom events JSON", "");
         public static readonly CustomSyncedValue<string> customLightingsJSON = new CustomSyncedValue<string>(configSync, "Custom lightings JSON", "");
         public static readonly CustomSyncedValue<string> customStatsJSON = new CustomSyncedValue<string>(configSync, "Custom stats JSON", "");
+        public static readonly CustomSyncedValue<string> customTraderItemsJSON = new CustomSyncedValue<string>(configSync, "Custom traders JSON", "");
 
         public static readonly List<BiomeEnvSetup> biomesDefault = new List<BiomeEnvSetup>();
         public static readonly List<RandomEvent> eventsDefault = new List<RandomEvent>();
@@ -245,6 +242,7 @@ namespace Seasons
             controlStats = config("Season - Control", "Control stats", defaultValue: true, "Enables seasonal stats change (status effect)");
             controlMinimap = config("Season - Control", "Control minimap", defaultValue: true, "Enables seasonal minimap colors");
             controlYggdrasil = config("Season - Control", "Control yggdrasil branch and roots", defaultValue: true, "Enables seasonal coloring of yggdrasil branch in the sky and roots on the ground");
+            controlTraders = config("Season - Control", "Control trader seasonal items list", defaultValue: true, "Enables seasonal changes of trader additional item availability");
 
             controlStats.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
 
@@ -252,12 +250,6 @@ namespace Seasons
             preventDeathFromFreezing = config("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
             seasonalStatsOutdoorsOnly = config("Season", "Seasonal stats works only outdoors", defaultValue: true, "Make seasonal stats works only outdoors");
             freezingSwimmingInWinter = config("Season", "Get freezing when swimming in cold water in winter", defaultValue: true, "Swimming in cold water during winter will get you freezing debuff");
-
-            waterFreezesAfterDaysOfWinter = config("Season - Winter ocean", "Freeze water in set day of winter", defaultValue: 6, "Water will freeze in the set day of winter");
-            enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
-            frozenOceanSlipperiness = config("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1, "Slipperiness factor of the frozen ocean surface");
-
-            waterFreezesAfterDaysOfWinter.SettingChanged += (sender, args) => WaterVariantController.UpdateWaterState();
 
             showCurrentSeasonBuff = config("Season - Buff", "Show current season buff", defaultValue: true, "Show current season buff.");
             seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
@@ -276,6 +268,12 @@ namespace Seasons
             seasonOverrided = config("Season - Override", "Season", defaultValue: Season.Spring, "The season to set.");
 
             overrideSeason.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
+
+            waterFreezesAfterDaysOfWinter = config("Season - Winter ocean", "Freeze water in set day of winter", defaultValue: 6, "Water will freeze in the set day of winter");
+            enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
+            frozenOceanSlipperiness = config("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1f, "Slipperiness factor of the frozen ocean surface");
+
+            waterFreezesAfterDaysOfWinter.SettingChanged += (sender, args) => WaterVariantController.UpdateWaterState();
 
             vegetationSpringColor1 = config("Seasons - Color - Main - Spring", "Color 1", defaultValue: new Color(0.27f, 0.80f, 0.27f, 0.75f), "Color 1");
             vegetationSpringColor2 = config("Seasons - Color - Main - Spring", "Color 2", defaultValue: new Color(0.69f, 0.84f, 0.15f, 0.75f), "Color 2");
@@ -333,12 +331,6 @@ namespace Seasons
             localizationSeasonTooltipWinter = config("Seasons - Localization", "Season status effect tooltip - Winter has come", defaultValue: "Winter has come", "Message to be shown on the buff tooltip and almanach.");
 
             cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
-            _Glossiness = config("Test", "_Glossiness", defaultValue: 1.5f, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
-            _Metallic = config("Test", "_Metallic", defaultValue: 0.3f, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
-            _DepthFade = config("Test", "_DepthFade", defaultValue: 20f, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
-            _ColorTop = config("Test", "_ColorTop", defaultValue: Color.white, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
-            _ColorBottom = config("Test", "_ColorBottom", defaultValue: Color.white, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
-            _ColorBottomShallow = config("Test", "_ColorBottomShallow", defaultValue: Color.white, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
 
             configDirectory = Path.Combine(Paths.ConfigPath, pluginID);
         }

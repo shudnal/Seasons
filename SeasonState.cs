@@ -25,6 +25,7 @@ namespace Seasons
         public static SeasonRandomEvents seasonRandomEvents = new SeasonRandomEvents(loadDefaults: true);
         public static SeasonLightings seasonLightings = new SeasonLightings(loadDefaults: true);
         public static SeasonStats seasonStats = new SeasonStats(loadDefaults: true);
+        public static SeasonTraderItems seasonTraderItems = new SeasonTraderItems(loadDefaults: true);
 
         private SeasonSettings settings
         {
@@ -60,6 +61,7 @@ namespace Seasons
             SeasonSettings.SaveDefaultEvents(folder);
             SeasonSettings.SaveDefaultLightings(folder);
             SeasonSettings.SaveDefaultStats(folder);
+            SeasonSettings.SaveDefaultTraderItems(folder);
         }
 
         public bool IsActive => EnvMan.instance != null;
@@ -307,6 +309,26 @@ namespace Seasons
 
             SE_Season.UpdateSeasonStatusEffectStats();
         }
+
+        public void UpdateTraderItems()
+        {
+            if (!IsActive)
+                return;
+
+            if (!String.IsNullOrEmpty(customTraderItemsJSON.Value))
+            {
+                try
+                {
+                    seasonTraderItems = JsonConvert.DeserializeObject<SeasonTraderItems>(customTraderItemsJSON.Value);
+                    LogInfo($"Custom trader items updated");
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error parsing custom trader items:\n{e}");
+                }
+            }
+        }
+
         public double GetEndOfCurrentSeason()
         {
             return GetStartOfCurrentSeason() + seasonState.GetDaysInSeason() * EnvMan.instance.m_dayLengthSec;
@@ -1628,6 +1650,15 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(Trader), nameof(Trader.GetAvailableItems))]
+    public static class Trader_GetAvailableItems_SeasonalTraderItems
+    {
+        [HarmonyPriority(Priority.First)]
+        static void Postfix(Trader __instance, ref List<Trader.TradeItem> __result)
+        {
+            SeasonState.seasonTraderItems.AddSeasonalTraderItems(__instance, __result);
+        }
+    }
 
-    
+
 }
