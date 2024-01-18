@@ -44,10 +44,12 @@ namespace Seasons
 
         public static ConfigEntry<bool> showCurrentSeasonBuff;
         public static ConfigEntry<TimerFormat> seasonsTimerFormat;
+        
         public static ConfigEntry<bool> enableSeasonalItems;
         public static ConfigEntry<bool> preventDeathFromFreezing;
         public static ConfigEntry<bool> freezingSwimmingInWinter;
         public static ConfigEntry<bool> seasonalStatsOutdoorsOnly;
+        public static ConfigEntry<bool> changeSeasonOnlyAfterSleep;
 
         public static ConfigEntry<int> waterFreezesAfterDaysOfWinter;
         public static ConfigEntry<bool> enableNightMusicOnFrozenOcean;
@@ -250,6 +252,7 @@ namespace Seasons
             preventDeathFromFreezing = config("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
             seasonalStatsOutdoorsOnly = config("Season", "Seasonal stats works only outdoors", defaultValue: true, "Make seasonal stats works only outdoors");
             freezingSwimmingInWinter = config("Season", "Get freezing when swimming in cold water in winter", defaultValue: true, "Swimming in cold water during winter will get you freezing debuff");
+            changeSeasonOnlyAfterSleep = config("Season", "Change season only after sleep", defaultValue: false, "Season can be changed regular way only after sleep");
 
             showCurrentSeasonBuff = config("Season - Buff", "Show current season buff", defaultValue: true, "Show current season buff.");
             seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
@@ -268,6 +271,7 @@ namespace Seasons
             seasonOverrided = config("Season - Override", "Season", defaultValue: Season.Spring, "The season to set.");
 
             overrideSeason.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
+            seasonOverrided.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
 
             waterFreezesAfterDaysOfWinter = config("Season - Winter ocean", "Freeze water in set day of winter", defaultValue: 6, "Water will freeze in the set day of winter");
             enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");

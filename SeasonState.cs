@@ -8,7 +8,6 @@ using System.IO;
 using System.Linq;
 using UnityEngine;
 using BepInEx;
-using static Seasons.SeasonLightings;
 
 namespace Seasons
 {
@@ -65,19 +64,42 @@ namespace Seasons
 
         public bool IsActive => EnvMan.instance != null;
 
-        public void UpdateState(int day, bool seasonCanBeChanged)
+        public void UpdateState(bool timeForSeasonToChange = false, bool forceSeasonChange = false)
         {
-            int dayInSeason = GetDayInSeason(day);
+            int dayInSeason = GetDayInSeason(EnvMan.instance.GetCurrentDay());
 
             int season = (int)m_season;
 
+            forceSeasonChange = forceSeasonChange || GetSeason(EnvMan.instance.GetCurrentDay()) == GetPreviousSeason(m_season);
+
+            bool seasonCanBeChanged = !changeSeasonOnlyAfterSleep.Value || Game.instance.EverybodyIsTryingToSleep() || forceSeasonChange;
+            bool seasonShouldBeChanged = dayInSeason < GetCurrentDay() || forceSeasonChange;
+            timeForSeasonToChange = timeForSeasonToChange || forceSeasonChange;
+
             if (overrideSeason.Value)
                 m_season = seasonOverrided.Value;
-            else if (seasonCanBeChanged)
-                m_season = GetSeason(day);
+            else if (timeForSeasonToChange && seasonShouldBeChanged)
+            {
+                if (seasonCanBeChanged)
+                {
+                    m_season = GetSeason(EnvMan.instance.GetCurrentDay());
+                }
+                else if (changeSeasonOnlyAfterSleep.Value && ZNet.instance.IsServer())
+                {
+                    double timeSeconds = ZNet.instance.GetTimeSeconds() - EnvMan.instance.m_dayLengthSec;
+                    
+                    EnvMan.instance.m_skipTime = false;
+                    ZNet.instance.SetNetTime(Math.Max(timeSeconds, 0));
+                    EnvMan.instance.m_totalSeconds = ZNet.instance.GetTimeSeconds();
+
+                    dayInSeason = GetDayInSeason(EnvMan.instance.GetCurrentDay());
+                }
+            }
+
+            LogInfo($"{timeForSeasonToChange} {seasonCanBeChanged} {seasonShouldBeChanged} {dayInSeason} {m_day} {season} {m_season} {EnvMan.instance.GetCurrentDay()} {EnvMan.instance.m_smoothDayFraction} {EnvMan.instance.m_skipTime}");
 
             CheckIfSeasonChanged(season);
-            CheckIfDayChanged(dayInSeason);
+            CheckIfDayChanged(dayInSeason, season);
         }
 
         public Season GetCurrentSeason()
@@ -442,19 +464,22 @@ namespace Seasons
         {
             int dayOfYear = GetDayOfYear(day);
             int days = 0;
+            int daysInSeason = 0;
             foreach (Season season in Enum.GetValues(typeof(Season)))
             {
-                int daysInSeason = GetDaysInSeason(season);
-                if (dayOfYear <= days + daysInSeason)
-                    break;
+                daysInSeason = GetDaysInSeason(season);
+                if (dayOfYear < days + daysInSeason)
+                    return dayOfYear - days;
                 days += daysInSeason;
             }
-            return dayOfYear - days;
+            return dayOfYear >= days ? daysInSeason : dayOfYear - days;
         }
 
         private int GetDayOfYear(int day)
         {
-            return day % GetYearLengthInDays();
+            int yearLength = GetYearLengthInDays();
+            int dayOfYear = day % yearLength;
+            return dayOfYear == day ? dayOfYear : (dayOfYear == 0 ? yearLength : dayOfYear);
         }
 
         public float GetWaterSurfaceFreezeStatus()
@@ -556,9 +581,11 @@ namespace Seasons
             }
         }
 
-        private void CheckIfDayChanged(int dayInSeason)
+        private void CheckIfDayChanged(int dayInSeason, int season)
         {
             if (m_day == dayInSeason)
+                return;
+            else if (m_day > dayInSeason && season == (int)m_season)
                 return;
 
             m_day = dayInSeason;
@@ -691,7 +718,7 @@ namespace Seasons
         public static void CheckSeasonChange()
         {
             if (seasonState.IsActive)
-                seasonState.UpdateState(EnvMan.instance.GetCurrentDay(), seasonCanBeChanged: true);
+                seasonState.UpdateState(forceSeasonChange: true);
         }
     }
 
@@ -700,8 +727,9 @@ namespace Seasons
     {
         private static void Postfix(EnvMan __instance, float oldDayFraction, float newDayFraction)
         {
-            bool seasonCanBeChanged = (oldDayFraction > 0.16f && oldDayFraction < 0.22f && newDayFraction > 0.22f && newDayFraction < 0.3f);
-            seasonState.UpdateState(__instance.GetCurrentDay(), seasonCanBeChanged);
+            float fraction = changeSeasonOnlyAfterSleep.Value ? 0.2498f : 0.24f;
+            bool timeForSeasonToChange = (oldDayFraction > 0.16f && oldDayFraction <= fraction && newDayFraction >= fraction && newDayFraction < 0.3f);
+            seasonState.UpdateState(timeForSeasonToChange || __instance.m_debugTimeOfDay || __instance.m_skipTime);
         }
     }
 
@@ -1477,7 +1505,7 @@ namespace Seasons
                     { "m_fogDensityEvening", new Color(env.m_fogDensityEvening, 0f, 0f) }
                 };
 
-            SeasonLightingSettings lightingSettings = SeasonState.seasonLightings.GetSeasonLighting(seasonState.GetCurrentSeason());
+            SeasonLightings.SeasonLightingSettings lightingSettings = SeasonState.seasonLightings.GetSeasonLighting(seasonState.GetCurrentSeason());
 
             if (Player.m_localPlayer != null && Player.m_localPlayer.InInterior())
             {

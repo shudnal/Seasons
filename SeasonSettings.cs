@@ -1408,6 +1408,8 @@ namespace Seasons
             seasonState.UpdateLightings();
             seasonState.UpdateStats();
             seasonState.UpdateTraderItems();
+
+            SeasonState.CheckSeasonChange();
         }
 
         public static void SaveDefaultEnvironments(string folder)
