@@ -96,8 +96,6 @@ namespace Seasons
                 }
             }
 
-            LogInfo($"{timeForSeasonToChange} {seasonCanBeChanged} {seasonShouldBeChanged} {dayInSeason} {m_day} {season} {m_season} {EnvMan.instance.GetCurrentDay()} {EnvMan.instance.m_smoothDayFraction} {EnvMan.instance.m_skipTime}");
-
             CheckIfSeasonChanged(season);
             CheckIfDayChanged(dayInSeason, season);
         }

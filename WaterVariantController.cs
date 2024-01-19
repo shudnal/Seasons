@@ -229,7 +229,6 @@ namespace Seasons
                         {
                             if (character.transform.position.y >= s_waterLevel)
                             {
-                                LogInfo(character);
                                 List<Vector3> hits = new List<Vector3>();
                                 Pathfinding.instance.FindGround(character.transform.position, testWater: true, hits, Pathfinding.instance.GetSettings(ai.m_pathAgentType));
 
@@ -238,9 +237,6 @@ namespace Seasons
                                 {
                                     character.m_body.velocity = Vector3.zero;
                                     character.transform.position = new Vector3(character.transform.position.x, Mathf.Max(s_waterLevel - _winterWaterSurfaceOffset, hit.y + 0.1f), character.transform.position.z);
-                                    LogInfo(character.transform.position);
-                                    /*character.InvalidateCachedLiquidDepth();
-                                    character.m_swimTimer = 0.0f;*/
                                 }
                             }
                         }

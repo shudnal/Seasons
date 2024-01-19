@@ -361,6 +361,6 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
-/thunderstore
 /package/nexus
-/package/thunderstore
+package/thunderstore/Seasons/Seasons
+/package/thunderstore/Seasons.zip

@@ -327,4 +327,4 @@ https://valheim.thunderstore.io/package/Azumatt/Official_BepInEx_ConfigurationMa
 ## Mirrors
 [Nexus](https://www.nexusmods.com/valheim/mods/2654)
 
-[Thunderstore](https://valheim.thunderstore.io/package/shudnal/Seasons/)
+[Github](https://github.com/shudnal/Seasons)
