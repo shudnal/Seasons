@@ -1,3 +1,6 @@
+# 1.0.3
+* fixed typo in traders list synchronization from server
+
 # 1.0.2
 * water surface will be frozen after set day of winter (and become slippery)
 * beehive, maypole, xmastree recolor (delete Cache folder to get new textures)

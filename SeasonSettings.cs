@@ -1386,7 +1386,7 @@ namespace Seasons
                 if (file.Name == customTraderItemsFileName)
                     try
                     {
-                        customStatsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
+                        customTraderItemsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
                     }
                     catch (Exception e)
                     {
