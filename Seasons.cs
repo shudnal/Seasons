@@ -20,7 +20,7 @@ namespace Seasons
     {
         const string pluginID = "shudnal.Seasons";
         const string pluginName = "Seasons";
-        const string pluginVersion = "1.0.3";
+        const string pluginVersion = "1.0.4";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -54,6 +54,7 @@ namespace Seasons
         public static ConfigEntry<int> waterFreezesAfterDaysOfWinter;
         public static ConfigEntry<bool> enableNightMusicOnFrozenOcean;
         public static ConfigEntry<float> frozenOceanSlipperiness;
+        public static ConfigEntry<bool> placeShipAboveFrozenOcean;
 
         public static ConfigEntry<bool> showFadeOnSeasonChange;
         public static ConfigEntry<float> fadeOnSeasonChangeDuration;
@@ -276,8 +277,10 @@ namespace Seasons
             waterFreezesAfterDaysOfWinter = config("Season - Winter ocean", "Freeze water in set day of winter", defaultValue: 6, "Water will freeze in the set day of winter");
             enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
             frozenOceanSlipperiness = config("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1f, "Slipperiness factor of the frozen ocean surface");
+            placeShipAboveFrozenOcean = config("Season - Winter ocean", "Place ship above frozen ocean surface", defaultValue: false, "Place ship above frozen ocean surface to prevent unpredictable collisions");
 
             waterFreezesAfterDaysOfWinter.SettingChanged += (sender, args) => WaterVariantController.UpdateWaterState();
+            placeShipAboveFrozenOcean.SettingChanged += (sender, args) => WaterVariantController.UpdateShipsPositions();
 
             vegetationSpringColor1 = config("Seasons - Color - Main - Spring", "Color 1", defaultValue: new Color(0.27f, 0.80f, 0.27f, 0.75f), "Color 1");
             vegetationSpringColor2 = config("Seasons - Color - Main - Spring", "Color 2", defaultValue: new Color(0.69f, 0.84f, 0.15f, 0.75f), "Color 2");
@@ -394,6 +397,7 @@ namespace Seasons
 
         private void Test()
         {
+            
             
         }
 

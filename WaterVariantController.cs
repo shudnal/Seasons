@@ -172,17 +172,12 @@ namespace Seasons
 
         public static void UpdateWaterState()
         {
-            bool wasFrozen = IsWaterSurfaceFrozen();
-
             s_freezeStatus = seasonState.GetWaterSurfaceFreezeStatus();
 
             foreach (WaterVariantController controller in s_allControllers)
                 controller.UpdateState();
 
-            if (!wasFrozen && IsWaterSurfaceFrozen())
-            {
-                Seasons.instance.StartCoroutine(UpdateWaterObjects());
-            }
+            Seasons.instance.StartCoroutine(UpdateWaterObjects());
         }
 
         public static bool LocalPlayerIsOnFrozenOcean() => IsWaterSurfaceFrozen()
@@ -193,63 +188,16 @@ namespace Seasons
         {
             yield return new WaitForFixedUpdate();
 
-            foreach (Ship ship in Ship.Instances)
-            {
-                if (!ship.m_nview.IsOwner() || ship.transform.position.y > s_waterLevel + ship.m_waterLevelOffset)
-                    continue;
-
-                ship.transform.rotation = Quaternion.identity;
-                ship.transform.position = new Vector3(ship.transform.position.x, s_waterLevel + ship.m_waterLevelOffset + 0.1f, ship.transform.position.z);
-                ship.m_body.velocity = Vector3.zero;
-            }
+            UpdateShipsPositions();
 
             yield return new WaitForFixedUpdate();
 
             foreach (WaterVolume waterVolume in WaterVolume.Instances)
                 foreach (IWaterInteractable waterInteractable in waterVolume.m_inWater)
-                {
                     if (waterInteractable is Fish)
-                    {
-                        Fish fish = waterInteractable as Fish;
-                        if (!fish.m_nview.IsOwner())
-                            continue;
-
-                        if (fish.transform.position.y > s_waterLevel)
-                            fish.transform.position = new Vector3(fish.transform.position.x, s_waterLevel - _winterWaterSurfaceOffset, fish.transform.position.z);
-
-                        fish.m_body.velocity = Vector3.zero;
-                    }
+                        CheckIfFishAboveSurface(waterInteractable as Fish);
                     else if (waterInteractable is Character)
-                    {
-                        Character character = waterInteractable as Character;
-                        if (!character.m_nview.IsOwner())
-                            continue;
-
-                        if (IsUnderwaterAI(character, out BaseAI ai))
-                        {
-                            if (character.transform.position.y >= s_waterLevel)
-                            {
-                                List<Vector3> hits = new List<Vector3>();
-                                Pathfinding.instance.FindGround(character.transform.position, testWater: true, hits, Pathfinding.instance.GetSettings(ai.m_pathAgentType));
-
-                                Vector3 hit = hits.Find(h => h.y < s_waterLevel);
-                                if (hit.y != 0)
-                                {
-                                    character.m_body.velocity = Vector3.zero;
-                                    character.transform.position = new Vector3(character.transform.position.x, Mathf.Max(s_waterLevel - _winterWaterSurfaceOffset, hit.y + 0.1f), character.transform.position.z);
-                                }
-                            }
-                        }
-                        else if (character.transform.position.y <= s_waterLevel && !character.IsAttachedToShip())
-                        {
-                            character.m_body.velocity = Vector3.zero;
-                            character.transform.position = new Vector3(character.transform.position.x, s_waterLevel + 0.5f, character.transform.position.z);
-                            character.InvalidateCachedLiquidDepth();
-                            character.m_maxAirAltitude = character.transform.position.y;
-                            character.m_swimTimer = 0.6f;
-                        }
-                    }
-                }
+                        CheckIfCharacterAboveSurface(waterInteractable as Character);
         }
 
         public static bool IsUnderwaterAI(Character character, out BaseAI ai)
@@ -257,6 +205,82 @@ namespace Seasons
             return character.TryGetComponent(out ai) && (ai.m_pathAgentType == Pathfinding.AgentType.Fish || ai.m_pathAgentType == Pathfinding.AgentType.BigFish);
         }
 
+        public static void UpdateShipsPositions()
+        {
+            foreach (Ship ship in Ship.Instances)
+                if (ship.m_nview.IsOwner())
+                    PlaceShip(ship);
+        }
+
+        public static IEnumerator CheckIfShipBelowSurface(Ship ship)
+        {
+            while (!ship.m_nview.HasOwner())
+                yield return new WaitForFixedUpdate();
+
+            if (!ship.m_nview.IsOwner())
+                yield break;
+
+            PlaceShip(ship);
+        }
+
+        public static void PlaceShip(Ship ship)
+        {
+            ship.m_body.isKinematic = false;
+
+            if (ship.m_body.position.y > s_waterLevel + ship.m_waterLevelOffset || !IsWaterSurfaceFrozen())
+                return;
+
+            ship.m_body.WakeUp();
+            ship.m_body.isKinematic = !placeShipAboveFrozenOcean.Value;
+
+            if (placeShipAboveFrozenOcean.Value)
+            {
+                ship.m_body.rotation = Quaternion.identity;
+                ship.m_body.position = new Vector3(ship.m_body.position.x, s_waterLevel + ship.m_waterLevelOffset + 0.1f, ship.m_body.position.z);
+                ship.m_body.velocity = Vector3.zero;
+            }
+        }
+
+        public static void CheckIfFishAboveSurface(Fish fish)
+        {
+            if (!fish.m_nview.IsOwner())
+                return;
+
+            if (fish.transform.position.y > s_waterLevel)
+                fish.transform.position = new Vector3(fish.transform.position.x, s_waterLevel - _winterWaterSurfaceOffset, fish.transform.position.z);
+
+            fish.m_body.velocity = Vector3.zero;
+        }
+
+        public static void CheckIfCharacterAboveSurface(Character character)
+        {
+            if (!character.m_nview.IsOwner())
+                return;
+
+            if (IsUnderwaterAI(character, out BaseAI ai))
+            {
+                if (character.transform.position.y >= s_waterLevel)
+                {
+                    List<Vector3> hits = new List<Vector3>();
+                    Pathfinding.instance.FindGround(character.transform.position, testWater: true, hits, Pathfinding.instance.GetSettings(ai.m_pathAgentType));
+
+                    Vector3 hit = hits.Find(h => h.y < s_waterLevel);
+                    if (hit.y != 0)
+                    {
+                        character.m_body.velocity = Vector3.zero;
+                        character.transform.position = new Vector3(character.transform.position.x, Mathf.Max(s_waterLevel - _winterWaterSurfaceOffset, hit.y + 0.1f), character.transform.position.z);
+                    }
+                }
+            }
+            else if (character.transform.position.y <= s_waterLevel && !character.IsAttachedToShip())
+            {
+                character.m_body.velocity = Vector3.zero;
+                character.transform.position = new Vector3(character.transform.position.x, s_waterLevel + 0.5f, character.transform.position.z);
+                character.InvalidateCachedLiquidDepth();
+                character.m_maxAirAltitude = character.transform.position.y;
+                character.m_swimTimer = 0.6f;
+            }
+        }
     }
 
     public static class CharacterExtentions_FrozenOceanSliding
@@ -705,5 +729,37 @@ namespace Seasons
             ___m_jumpChance = __state;
         }
     }
-    
+
+    [HarmonyPatch(typeof(Ship), nameof(Ship.Start))]
+    public static class Ship_Start_FrozenOceanShip
+    {
+        private static void Postfix(Ship __instance)
+        {
+            __instance.StartCoroutine(WaterVariantController.CheckIfShipBelowSurface(__instance));
+        }
+    }
+
+    [HarmonyPatch(typeof(Character), nameof(Character.Awake))]
+    public static class Character_Awake_FrozenOceanCharacter
+    {
+        private static void Postfix(Character __instance)
+        {
+            if (!WaterVariantController.IsWaterSurfaceFrozen())
+                return;
+
+            WaterVariantController.CheckIfCharacterAboveSurface(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(Fish), nameof(Fish.Awake))]
+    public static class Fish_Awake_FrozenOceanCharacter
+    {
+        private static void Postfix(Fish __instance)
+        {
+            if (!WaterVariantController.IsWaterSurfaceFrozen())
+                return;
+
+            WaterVariantController.CheckIfFishAboveSurface(__instance);
+        }
+    }
 }

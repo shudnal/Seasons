@@ -567,9 +567,14 @@ namespace Seasons
                 TerrainVariantController.UpdateTerrainColors();
                 ClutterVariantController.instance.UpdateColors();
                 WaterVariantController.UpdateWaterState();
-                MinimapVariantController.instance.UpdateColors();
+
                 UpdateTorchesFireWarmth();
-                UpdateMinimapBorder();
+
+                if (MinimapVariantController.instance != null)
+                {
+                    MinimapVariantController.instance.UpdateColors();
+                    UpdateMinimapBorder();
+                }
                 
                 if (Player.m_localPlayer != null)
                 {
