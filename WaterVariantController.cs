@@ -528,7 +528,10 @@ namespace Seasons
     {
         private static void Postfix()
         {
-            if (!controlYggdrasil.Value)
+            if (!UseTextureControllers())
+                return;
+
+            if (!seasonState.IsActive)
                 return;
 
             Transform waterPlane = EnvMan.instance.transform.Find("WaterPlane");

@@ -1,5 +1,4 @@
-﻿using BepInEx.Logging;
-using HarmonyLib;
+﻿using HarmonyLib;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -229,7 +228,7 @@ namespace Seasons
 
         public void ToggleEnabled()
         {
-            base.enabled = Minimap.instance != null && (m_materialVariants.Count > 0 || m_colorVariants.Count > 0) || m_startColors.Count > 0;
+            enabled = Minimap.instance != null && (m_materialVariants.Count > 0 || m_colorVariants.Count > 0) || m_startColors.Count > 0;
         }
 
         public void AddLODGroupMaterialVariants(LODGroup lodGroup, Dictionary<int, List<CachedRenderer>> lodLevelMaterials)

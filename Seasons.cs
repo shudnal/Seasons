@@ -404,8 +404,6 @@ namespace Seasons
 
         private void Test()
         {
-            
-            
         }
 
         private Color GetColorConfig(string fieldName)

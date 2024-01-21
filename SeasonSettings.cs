@@ -1364,6 +1364,7 @@ namespace Seasons
             fileSystemWatcher1.Changed += new FileSystemEventHandler(ReadConfigs);
             fileSystemWatcher1.Created += new FileSystemEventHandler(ReadConfigs);
             fileSystemWatcher1.Renamed += new RenamedEventHandler(ReadConfigs);
+            fileSystemWatcher1.Deleted += new FileSystemEventHandler(ReadConfigs);
             fileSystemWatcher1.IncludeSubdirectories = false;
             fileSystemWatcher1.SynchronizingObject = ThreadingHelper.SynchronizingObject;
             fileSystemWatcher1.EnableRaisingEvents = true;

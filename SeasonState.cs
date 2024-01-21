@@ -1324,10 +1324,7 @@ namespace Seasons
             if (seasonState.GetWoodFromTreesMultiplier() == 1.0f)
                 return;
 
-            if (!___m_nview.IsOwner())
-                return;
-
-            if (___m_nview == null || !___m_nview.IsValid())
+            if (___m_nview == null || !___m_nview.IsValid() || !___m_nview.IsOwner())
                 return;
 
             ApplyWoodMultiplier(___m_dropWhenDestroyed);
@@ -1345,7 +1342,7 @@ namespace Seasons
             if (!__instance.TryGetComponent(out Destructible destructible) || destructible.GetDestructibleType() != DestructibleType.Tree)
                 return;
 
-            TreeLog_Destroy_TreeWoodDrop.ApplyWoodMultiplier(___m_dropWhenDestroyed);
+                TreeLog_Destroy_TreeWoodDrop.ApplyWoodMultiplier(___m_dropWhenDestroyed);
         }
     }
 
@@ -1693,7 +1690,6 @@ namespace Seasons
         private static bool Prefix()
         {
             return !seasonState.GetSeasonIsChanging();
-
         }
     }
 
@@ -1710,25 +1706,6 @@ namespace Seasons
                 return;
 
             __result = __result || player.IsSwimming() && seasonState.GetCurrentSeason() == Season.Winter && __instance.IsCold();
-        }
-    }
-
-    [HarmonyPatch(typeof(Bed), nameof(Bed.Interact))]
-    public static class Bed_Interact_PreventSleepingWithTorchFiresource
-    {
-        private static bool m_interacting = false;
-
-        public static bool IsInteracting() => m_interacting;
-
-        [HarmonyPriority(Priority.First)]
-        private static void Prefix(Humanoid human)
-        {
-            m_interacting = human == Player.m_localPlayer;
-        }
-
-        private static void Postfix()
-        {
-            m_interacting = false;
         }
     }
 
