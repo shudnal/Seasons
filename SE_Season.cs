@@ -118,8 +118,7 @@ namespace Seasons
             if (Player.m_localPlayer == null)
                 return;
 
-            SE_Season statusEffect = ObjectDB.instance.GetStatusEffect(statusEffectSeasonHash) as SE_Season;
-            statusEffect?.Setup(Player.m_localPlayer);
+            (Player.m_localPlayer.GetSEMan().GetStatusEffect(statusEffectSeasonHash) as SE_Season)?.Setup(Player.m_localPlayer);
         }
 
         private static string MessageNextSeason()
@@ -177,4 +176,35 @@ namespace Seasons
             ObjectDB_Awake_AddStatusEffects.AddCustomStatusEffects(__instance);
         }
     }
+
+    [HarmonyPatch(typeof(TextsDialog), nameof(TextsDialog.AddActiveEffects))]
+    public static class TextsDialog_AddActiveEffects_SeasonTooltipWhenBuffDisabled
+    {
+        public static bool isActiveEffectsListCall = false;
+
+        private static void Prefix()
+        {
+            isActiveEffectsListCall = true;
+        }
+
+        private static void Postfix()
+        {
+            isActiveEffectsListCall = false;
+        }
+    }
+
+    [HarmonyPatch(typeof(SEMan), nameof(SEMan.GetHUDStatusEffects))]
+    public static class SEMan_GetHUDStatusEffects_SeasonTooltipWhenBuffDisabled
+    {
+        private static void Postfix(Character ___m_character, List<StatusEffect> ___m_statusEffects, List<StatusEffect> effects)
+        {
+            if (TextsDialog_AddActiveEffects_SeasonTooltipWhenBuffDisabled.isActiveEffectsListCall && Player.m_localPlayer != null && ___m_character == Player.m_localPlayer && !effects.Any(effect => effect is SE_Season))
+            {
+                StatusEffect seasonStatusEffect = ___m_statusEffects.Find(se => se is SE_Season);
+                if (seasonStatusEffect != null)
+                    effects.Insert(0, seasonStatusEffect);
+            }
+        }
+    }
+
 }

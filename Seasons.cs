@@ -255,6 +255,8 @@ namespace Seasons
             freezingSwimmingInWinter = config("Season", "Get freezing when swimming in cold water in winter", defaultValue: true, "Swimming in cold water during winter will get you freezing debuff");
             changeSeasonOnlyAfterSleep = config("Season", "Change season only after sleep", defaultValue: false, "Season can be changed regular way only after sleep");
 
+            seasonalStatsOutdoorsOnly.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
+
             showCurrentSeasonBuff = config("Season - Buff", "Show current season buff", defaultValue: true, "Show current season buff.");
             seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
             
@@ -383,6 +385,10 @@ namespace Seasons
 
         private bool LoadTexture(string filename, ref Texture2D tex)
         {
+            string fileInConfigFolder = Path.Combine(configDirectory, filename);
+            if (File.Exists(fileInConfigFolder))
+                return tex.LoadImage(File.ReadAllBytes(fileInConfigFolder));
+            
             Assembly executingAssembly = Assembly.GetExecutingAssembly();
 
             string name = executingAssembly.GetManifestResourceNames().Single(str => str.EndsWith(filename));

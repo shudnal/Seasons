@@ -731,8 +731,8 @@ namespace Seasons
         private static void Postfix(EnvMan __instance, float oldDayFraction, float newDayFraction)
         {
             float fraction = changeSeasonOnlyAfterSleep.Value ? 0.2498f : 0.24f;
-            bool timeForSeasonToChange = (oldDayFraction > 0.16f && oldDayFraction <= fraction && newDayFraction >= fraction && newDayFraction < 0.3f);
-            seasonState.UpdateState(timeForSeasonToChange || __instance.m_debugTimeOfDay || __instance.m_skipTime);
+            bool timeForSeasonToChange = oldDayFraction > 0.16f && oldDayFraction <= fraction && newDayFraction >= fraction && newDayFraction < 0.3f;
+            seasonState.UpdateState(timeForSeasonToChange || __instance.m_debugTimeOfDay || __instance.m_skipTime && Hud.instance?.m_loadingScreen.alpha == 1f);
         }
     }
 

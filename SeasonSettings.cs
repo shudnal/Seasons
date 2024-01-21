@@ -1159,6 +1159,18 @@ namespace Seasons
         }
     }
 
+    [Serializable]
+    public class SeasonWorldSettings
+    {
+        [Serializable]
+        public class SeasonWorld
+        {
+            public string name;
+        }
+
+
+    }
+
     public class SeasonSettings
     {
         public const string defaultsSubdirectory = "Default settings";
