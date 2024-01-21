@@ -64,7 +64,7 @@ namespace Seasons
             else if (seasonsTimerFormat.Value == TimerFormat.CurrentDay)
                 return seasonState.GetCurrentDay() >= seasonState.GetDaysInSeason() && !String.IsNullOrEmpty(MessageNextSeason()) ? MessageNextSeason() : Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}");
 
-            double secondsToEndOfSeason = seasonState.GetEndOfCurrentSeason() - ZNet.instance.GetTimeSeconds();
+            double secondsToEndOfSeason = seasonState.GetEndOfCurrentSeason() - seasonState.GetTotalSeconds();
             if (secondsToEndOfSeason <= 0d)
                 return MessageNextSeason();
             

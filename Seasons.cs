@@ -151,7 +151,8 @@ namespace Seasons
         public static readonly CustomSyncedValue<string> customLightingsJSON = new CustomSyncedValue<string>(configSync, "Custom lightings JSON", "");
         public static readonly CustomSyncedValue<string> customStatsJSON = new CustomSyncedValue<string>(configSync, "Custom stats JSON", "");
         public static readonly CustomSyncedValue<string> customTraderItemsJSON = new CustomSyncedValue<string>(configSync, "Custom traders JSON", "");
-
+        public static readonly CustomSyncedValue<string> customWorldSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom world settings JSON", "");
+        
         public static readonly List<BiomeEnvSetup> biomesDefault = new List<BiomeEnvSetup>();
         public static readonly List<RandomEvent> eventsDefault = new List<RandomEvent>();
         public static Color minimapBorderColor = Color.clear;

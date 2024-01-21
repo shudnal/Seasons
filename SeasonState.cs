@@ -16,6 +16,7 @@ namespace Seasons
         private Season m_season = Season.Spring;
         private int m_day = 0;
         private bool m_seasonIsChanging = false;
+        private bool m_isUsingIngameDays = true;
 
         public static readonly Dictionary<Season, SeasonSettings> seasonsSettings = new Dictionary<Season, SeasonSettings>();
         public static SeasonBiomeEnvironments seasonBiomeEnvironments = new SeasonBiomeEnvironments(loadDefaults: true);
@@ -24,6 +25,7 @@ namespace Seasons
         public static SeasonLightings seasonLightings = new SeasonLightings(loadDefaults: true);
         public static SeasonStats seasonStats = new SeasonStats(loadDefaults: true);
         public static SeasonTraderItems seasonTraderItems = new SeasonTraderItems(loadDefaults: true);
+        public static SeasonWorldSettings seasonWorldSettings = new SeasonWorldSettings();
 
         private SeasonSettings settings
         {
@@ -45,6 +47,8 @@ namespace Seasons
                 if (!seasonsSettings.ContainsKey(season))
                     seasonsSettings.Add(season, new SeasonSettings(season));
 
+            UpdateUsingOfIngameDays();
+
             string folder = Path.Combine(configDirectory, SeasonSettings.defaultsSubdirectory);
             Directory.CreateDirectory(folder);
 
@@ -60,17 +64,23 @@ namespace Seasons
             SeasonSettings.SaveDefaultLightings(folder);
             SeasonSettings.SaveDefaultStats(folder);
             SeasonSettings.SaveDefaultTraderItems(folder);
+            SeasonSettings.SaveDefaultWorldSettings(folder);
         }
 
         public bool IsActive => EnvMan.instance != null;
 
+        public int GetCurrentWorldDay()
+        {
+            return (int)(GetTotalSeconds() / GetDayLengthInSeconds());
+        }
+
         public void UpdateState(bool timeForSeasonToChange = false, bool forceSeasonChange = false)
         {
-            int dayInSeason = GetDayInSeason(EnvMan.instance.GetCurrentDay());
+            int dayInSeason = GetDayInSeason(GetCurrentWorldDay());
 
             int season = (int)m_season;
 
-            forceSeasonChange = forceSeasonChange || GetSeason(EnvMan.instance.GetCurrentDay()) == GetPreviousSeason(m_season);
+            forceSeasonChange = forceSeasonChange || !m_isUsingIngameDays || GetSeason(GetCurrentWorldDay()) == GetPreviousSeason(m_season);
 
             bool seasonCanBeChanged = !changeSeasonOnlyAfterSleep.Value || Game.instance.EverybodyIsTryingToSleep() || forceSeasonChange;
             bool seasonShouldBeChanged = dayInSeason < GetCurrentDay() || forceSeasonChange;
@@ -82,22 +92,51 @@ namespace Seasons
             {
                 if (seasonCanBeChanged)
                 {
-                    m_season = GetSeason(EnvMan.instance.GetCurrentDay());
+                    m_season = GetSeason(GetCurrentWorldDay());
                 }
-                else if (changeSeasonOnlyAfterSleep.Value && ZNet.instance.IsServer())
+                else if (m_isUsingIngameDays && changeSeasonOnlyAfterSleep.Value && ZNet.instance.IsServer())
                 {
-                    double timeSeconds = ZNet.instance.GetTimeSeconds() - EnvMan.instance.m_dayLengthSec;
+                    double timeSeconds = GetTotalSeconds() - GetDayLengthInSeconds();
                     
                     EnvMan.instance.m_skipTime = false;
                     ZNet.instance.SetNetTime(Math.Max(timeSeconds, 0));
-                    EnvMan.instance.m_totalSeconds = ZNet.instance.GetTimeSeconds();
+                    EnvMan.instance.m_totalSeconds = GetTotalSeconds();
 
-                    dayInSeason = GetDayInSeason(EnvMan.instance.GetCurrentDay());
+                    dayInSeason = GetDayInSeason(GetCurrentWorldDay());
                 }
             }
 
             CheckIfSeasonChanged(season);
             CheckIfDayChanged(dayInSeason, season);
+        }
+
+        private World GetCurrentWorld()
+        {
+            return ZNet.m_world ?? (WorldGenerator.instance?.m_world);
+        }
+
+        private void UpdateUsingOfIngameDays()
+        {
+            bool previous = m_isUsingIngameDays;
+            m_isUsingIngameDays = !seasonWorldSettings.HasWorldSettings(GetCurrentWorld());
+
+            if (m_isUsingIngameDays != previous)
+                UpdateState(forceSeasonChange: true);
+        }
+
+        private DateTime GetStartTimeUTC()
+        {
+            return seasonWorldSettings.GetStartTimeUTC(GetCurrentWorld());
+        }
+
+        public double GetTotalSeconds()
+        {
+            return m_isUsingIngameDays ? ZNet.instance.GetTimeSeconds() : DateTime.UtcNow.Subtract(GetStartTimeUTC()).TotalSeconds;
+        }
+
+        public long GetDayLengthInSeconds()
+        {
+            return Math.Max(60, m_isUsingIngameDays ? (EnvMan.instance == null ? 1800L : EnvMan.instance.m_dayLengthSec) : seasonWorldSettings.GetDayLengthSeconds(GetCurrentWorld()));
         }
 
         public Season GetCurrentSeason()
@@ -117,12 +156,22 @@ namespace Seasons
 
         public int GetDaysInSeason()
         {
-            return settings.m_daysInSeason;
+            return Math.Max(1, settings.m_daysInSeason);
         }
 
         public int GetDaysInSeason(Season season)
         {
-            return GetSeasonSettings(season).m_daysInSeason;
+            return Math.Max(1, GetSeasonSettings(season).m_daysInSeason);
+        }
+
+        public long GetSecondsInSeason()
+        {
+            return GetDaysInSeason() * GetDayLengthInSeconds();
+        }
+
+        public long GetSecondsInSeason(Season season)
+        {
+            return GetDaysInSeason(season) * GetDayLengthInSeconds();
         }
 
         public float GetPlantsGrowthMultiplier()
@@ -181,6 +230,8 @@ namespace Seasons
                     LogWarning($"Error parsing settings: {(Season)item.Key}\n{e}");
                 }
             }
+
+            UpdateUsingOfIngameDays();
 
             UpdateTorchesFireWarmth();
         }
@@ -260,12 +311,6 @@ namespace Seasons
                     LogWarning($"Error appending biome setup {biomeEnvironmentDefault.m_name}:\n{e}");
                 }
             }
-        }
-
-        public void UpdateCurrentEnvironment()
-        {
-            if (!controlEnvironments.Value)
-                return;
 
             EnvMan.instance.m_environmentPeriod--;
         }
@@ -348,15 +393,36 @@ namespace Seasons
             }
         }
 
+        public void UpdateWorldSettings()
+        {
+            if (!IsActive)
+                return;
+
+            if (!String.IsNullOrEmpty(customWorldSettingsJSON.Value))
+            {
+                try
+                {
+                    seasonWorldSettings = JsonConvert.DeserializeObject<SeasonWorldSettings>(customWorldSettingsJSON.Value);
+                    LogInfo($"Custom world settings updated");
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error parsing world settings items:\n{e}");
+                }
+            }
+
+            UpdateUsingOfIngameDays();
+        }
+
         public double GetEndOfCurrentSeason()
         {
-            return GetStartOfCurrentSeason() + seasonState.GetDaysInSeason() * EnvMan.instance.m_dayLengthSec;
+            return GetStartOfCurrentSeason() + seasonState.GetSecondsInSeason();
         }
 
         public double GetStartOfCurrentSeason()
         {
-            double startOfDay = ZNet.instance.GetTimeSeconds() - ZNet.instance.GetTimeSeconds() % EnvMan.instance.m_dayLengthSec;
-            return startOfDay - (GetCurrentDay() - 1) * EnvMan.instance.m_dayLengthSec;
+            double startOfDay = GetTotalSeconds() - GetTotalSeconds() % GetDayLengthInSeconds();
+            return startOfDay - (GetCurrentDay() - 1) * GetDayLengthInSeconds();
         }
 
         public float DayStartFraction()
@@ -466,7 +532,7 @@ namespace Seasons
             foreach (Season season in Enum.GetValues(typeof(Season)))
             {
                 daysInSeason = GetDaysInSeason(season);
-                if (dayOfYear < days + daysInSeason)
+                if (dayOfYear <= days + daysInSeason)
                     return dayOfYear - days;
                 days += daysInSeason;
             }
@@ -559,7 +625,6 @@ namespace Seasons
         private void SeasonChanged()
         {
             UpdateBiomeEnvironments();
-            UpdateCurrentEnvironment();
 
             if (UseTextureControllers())
             {
@@ -955,7 +1020,7 @@ namespace Seasons
     {
         private static void Postfix(ref double __result)
         {
-            double timeSeconds = ZNet.instance.GetTimeSeconds();
+            double timeSeconds = seasonState.GetTotalSeconds();
             double seasonStart = seasonState.GetStartOfCurrentSeason();
             Season season = seasonState.GetCurrentSeason();
             double rescaledResult = 0d;
@@ -967,7 +1032,7 @@ namespace Seasons
                 __result -= timeSeconds - seasonStart;
                 timeSeconds = seasonStart;
                 season = seasonState.GetPreviousSeason(season);
-                seasonStart -= seasonState.GetDaysInSeason(season) * EnvMan.instance.m_dayLengthSec;
+                seasonStart -= seasonState.GetDaysInSeason(season) * seasonState.GetDayLengthInSeconds();
 
             } while (__result > 0);
 
@@ -980,7 +1045,7 @@ namespace Seasons
     {
         private static double GetGrowTime(Plant plant)
         {
-            double timeSeconds = ZNet.instance.GetTimeSeconds();
+            double timeSeconds = seasonState.GetTotalSeconds();
 
             Season season = seasonState.GetCurrentSeason();
             float growthMultiplier = seasonState.GetPlantsGrowthMultiplier(season);
@@ -999,7 +1064,7 @@ namespace Seasons
                 season = seasonState.GetNextSeason(season);
                 growthMultiplier = seasonState.GetPlantsGrowthMultiplier(season);
 
-                secondsToSeasonEnd = seasonState.GetDaysInSeason(season) * EnvMan.instance.m_dayLengthSec;
+                secondsToSeasonEnd = seasonState.GetDaysInSeason(season) * seasonState.GetDayLengthInSeconds();
 
             } while (secondsLeft > 0);
 
@@ -1066,7 +1131,7 @@ namespace Seasons
     {
         private static double GetNextProduct(Beehive beehive, float product, int count = 1)
         {
-            double timeSeconds = ZNet.instance.GetTimeSeconds();
+            double timeSeconds = seasonState.GetTotalSeconds();
 
             Season season = seasonState.GetCurrentSeason();
             float multiplier = seasonState.GetBeehiveProductionMultiplier(season);
@@ -1085,7 +1150,7 @@ namespace Seasons
                 season = seasonState.GetNextSeason(season);
                 multiplier = seasonState.GetBeehiveProductionMultiplier(season);
 
-                secondsToSeasonEnd = seasonState.GetDaysInSeason(season) * EnvMan.instance.m_dayLengthSec;
+                secondsToSeasonEnd = seasonState.GetDaysInSeason(season) * seasonState.GetDayLengthInSeconds();
 
             } while (secondsLeft > 0);
 

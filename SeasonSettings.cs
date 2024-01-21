@@ -1165,10 +1165,54 @@ namespace Seasons
         [Serializable]
         public class SeasonWorld
         {
-            public string name;
+            public string startTimeUTC = "";
+            public long dayLengthSeconds = 0L;
+
+            public SeasonWorld(DateTime timeUTC, long seconds)
+            {
+                startTimeUTC = timeUTC.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+                dayLengthSeconds = seconds;
+            }
         }
 
+        public Dictionary<string, SeasonWorld> worlds = new Dictionary<string, SeasonWorld>();
 
+        public SeasonWorldSettings(bool loadDefaults = false)
+        {
+            if (!loadDefaults)
+                return;
+
+            worlds.Add("ExampleSeasonsWorld", new SeasonWorld(DateTime.UtcNow, 86400L));
+        }
+
+        public DateTime GetStartTimeUTC(World world)
+        {
+            if (HasWorldSettings(world) && DateTime.TryParse(GetWorldSettings(world).startTimeUTC, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime result))
+                return result;
+
+            return DateTime.UtcNow.Subtract(TimeSpan.FromSeconds(ZNet.instance.GetTimeSeconds()));
+        }
+
+        public long GetDayLengthSeconds(World world)
+        {
+            if (!HasWorldSettings(world))
+                return EnvMan.instance == null ? 1800L : EnvMan.instance.m_dayLengthSec;
+
+            return Math.Max(GetWorldSettings(world).dayLengthSeconds, 60L);
+        }
+
+        public bool HasWorldSettings(World world)
+        {
+            return world != null && worlds.ContainsKey(world.m_name);
+        }
+
+        public SeasonWorld GetWorldSettings(World world)
+        {
+            if (!HasWorldSettings(world))
+                return null;
+           
+            return worlds[world.m_name];
+        }
     }
 
     public class SeasonSettings
@@ -1179,7 +1223,8 @@ namespace Seasons
         public const string customEventsFileName = "Custom events.json";
         public const string customLightingsFileName = "Custom lightings.json";
         public const string customStatsFileName = "Custom stats.json";
-        public const string customTraderItemsFileName = "Custom trader items.json"; 
+        public const string customTraderItemsFileName = "Custom trader items.json";
+        public const string customWorldSettingsFileName = "Custom world settings.json";
         public const int nightLentghDefault = 30;
         public const string itemDropNameTorch = "$item_torch";
         public const string itemNameTorch = "Torch";
@@ -1405,6 +1450,16 @@ namespace Seasons
                         LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
                     }
 
+                if (file.Name == customWorldSettingsFileName)
+                    try
+                    {
+                        customWorldSettingsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
+                    }
+                    catch (Exception e)
+                    {
+                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
+                    }
+
             };
 
             seasonsSettingsJSON.AssignLocalValue(localConfig);
@@ -1415,11 +1470,11 @@ namespace Seasons
             seasonState.UpdateSeasonSettings();
             seasonState.UpdateSeasonEnvironments();
             seasonState.UpdateBiomeEnvironments();
-            seasonState.UpdateCurrentEnvironment();
             seasonState.UpdateRandomEvents();
             seasonState.UpdateLightings();
             seasonState.UpdateStats();
             seasonState.UpdateTraderItems();
+            seasonState.UpdateWorldSettings();
 
             SeasonState.CheckSeasonChange();
         }
@@ -1488,7 +1543,12 @@ namespace Seasons
             LogInfo($"Saving default custom trader items settings");
             File.WriteAllText(Path.Combine(folder, customTraderItemsFileName), JsonConvert.SerializeObject(new SeasonTraderItems(loadDefaults: true), Formatting.Indented));
         }
-        
+
+        public static void SaveDefaultWorldSettings(string folder)
+        {
+            LogInfo($"Saving default custom world settings");
+            File.WriteAllText(Path.Combine(folder, customWorldSettingsFileName), JsonConvert.SerializeObject(new SeasonWorldSettings(loadDefaults: true), Formatting.Indented));
+        }
     }
 
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Start))]
