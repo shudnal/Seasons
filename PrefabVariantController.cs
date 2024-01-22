@@ -535,6 +535,16 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.PlaceVegetation))]
+    public static class ZoneSystem_PlaceVegetation_AddPrefabVariantController
+    {
+        private static void Postfix(List<GameObject> spawnedObjects)
+        {
+            foreach (GameObject obj in spawnedObjects)
+                PrefabVariantController.AddComponentTo(obj);
+        }
+    }
+
     [HarmonyPatch(typeof(MineRock5), nameof(MineRock5.Start))]
     public static class MineRock5_Start_AddPrefabVariantController
     {

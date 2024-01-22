@@ -35,7 +35,7 @@ namespace Seasons
         public const float _colliderOffset = -0.01f;
         public const string _iceSurfaceName = "IceSurface";
 
-        private static float s_colliderHeight = 0f;
+        public static float s_colliderHeight = 0f;
 
         public static GameObject s_iceSurface;
 
@@ -782,4 +782,29 @@ namespace Seasons
             WaterVariantController.CheckIfFishAboveSurface(__instance);
         }
     }
+
+    [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.IsBlocked))]
+    public static class ZoneSystem_IsBlocked_VegetationPlacing
+    {
+        private static bool Prefix(Vector3 p, int ___m_blockRayMask, ref bool __result)
+        {
+            if (!UseTextureControllers())
+                return true;
+
+            if (!seasonState.IsActive)
+                return true;
+
+            if (!WaterVariantController.IsWaterSurfaceFrozen())
+                return true;
+
+            Vector3 origin = p;
+            origin.y += 2000f;
+            __result = Physics.Raycast(origin, Vector3.down, out var hitInfo, 10000f, ___m_blockRayMask);
+            if (__result && hitInfo.point.y == WaterVariantController.s_colliderHeight)
+                __result = Physics.Raycast(hitInfo.point + new Vector3(0, WaterVariantController._colliderOffset, 0), Vector3.down, 10000f, ___m_blockRayMask);
+
+            return false;
+        }
+    }
+
 }
