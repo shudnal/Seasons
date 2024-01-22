@@ -44,6 +44,7 @@ namespace Seasons
             StringBuilder sb = new StringBuilder();
             sb.AppendFormat("{0}\n", GetSeasonTooltip());
             sb.AppendFormat("{0}\n", Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}"));
+            sb.AppendFormat("{0}: {1}\n", MessageNextSeason(), TimerString(seasonState.GetEndOfCurrentSeason() - seasonState.GetTotalSeconds()));
 
             string statsTooltip = base.GetTooltipString();
             if (statsTooltip.Length > 0)
@@ -68,9 +69,8 @@ namespace Seasons
             double secondsToEndOfSeason = seasonState.GetEndOfCurrentSeason() - seasonState.GetTotalSeconds();
             if (secondsToEndOfSeason <= 0d)
                 return MessageNextSeason();
-            
-            TimeSpan span = TimeSpan.FromSeconds(secondsToEndOfSeason);
-            return span.TotalHours > 24 ? string.Format("{0:d2}:{1:d2}:{2:d2}", (int)span.TotalHours, span.Minutes, span.Seconds) : span.ToString(span.Hours > 0 ? @"hh\:mm\:ss" : @"mm\:ss");
+            else
+                return TimerString(secondsToEndOfSeason);
         }
         
         public override void ModifyRaiseSkill(Skills.SkillType skill, ref float value)
@@ -126,6 +126,13 @@ namespace Seasons
         {
             return GetSeasonIsComing(seasonState.GetNextSeason());
         }
+    
+        private static string TimerString(double secondsToEndOfSeason)
+        {
+            TimeSpan span = TimeSpan.FromSeconds(secondsToEndOfSeason);
+            return span.TotalHours > 24 ? string.Format("{0:d2}:{1:d2}:{2:d2}", (int)span.TotalHours, span.Minutes, span.Seconds) : span.ToString(span.Hours > 0 ? @"hh\:mm\:ss" : @"mm\:ss");
+        }
+    }
     }
 
     [HarmonyPatch(typeof(ObjectDB), nameof(ObjectDB.Awake))]
