@@ -11,9 +11,8 @@ namespace Seasons
     {
         private WaterVolume m_waterVolume;
         private MeshRenderer m_waterSurface;
-        private MeshCollider m_iceCollider;
+        private GameObject m_iceSurface;
         private float m_surfaceOffset;
-        private int layer;
 
         private float m_foamDepth;
 
@@ -33,6 +32,12 @@ namespace Seasons
         private static float s_freezeStatus = 0f;
 
         public const float _winterWaterSurfaceOffset = 2f;
+        public const float _colliderOffset = -0.01f;
+        public const string _iceSurfaceName = "IceSurface";
+
+        private static float s_colliderHeight = 0f;
+
+        public static GameObject s_iceSurface;
 
         const float _FoamDepthFrozen = 10f;
         const float _WaveVel = 0f;
@@ -41,9 +46,7 @@ namespace Seasons
         const float _Metallic = 0.1f;
         const float _DepthFade = 20f;
         const float _ShoreFade = 0f;
-
-        private static float s_colliderHeight = 0f;
-
+        
         public static bool IsWaterSurfaceFrozen() => s_freezeStatus == 1f;
 
         public static float s_waterLevel => s_colliderHeight == 0f || !IsWaterSurfaceFrozen() ? ZoneSystem.instance.m_waterLevel : s_colliderHeight;
@@ -70,7 +73,6 @@ namespace Seasons
             if (m_waterSurface != null)
             {
                 m_waterSurface.SetPropertyBlock(null);
-                m_waterSurface.gameObject.layer = layer;
             };
 
             if (m_waterVolume != null)
@@ -93,7 +95,6 @@ namespace Seasons
         public void Init(MeshRenderer waterSurface)
         {
             m_waterSurface = waterSurface;
-            layer = m_waterSurface.gameObject.layer;
 
             m_colorTop = m_waterSurface.sharedMaterial.GetColor("_ColorTop");
             m_colorBottom = m_waterSurface.sharedMaterial.GetColor("_ColorBottom");
@@ -135,7 +136,6 @@ namespace Seasons
                 s_matBlock.SetFloat("_WaveFoam", _WaveFoam);
             }
 
-            m_waterSurface.gameObject.layer = IsWaterSurfaceFrozen() ? 0 : layer;
             m_waterSurface.SetPropertyBlock(s_matBlock);
 
             SetupIceCollider();
@@ -150,24 +150,41 @@ namespace Seasons
 
         private void SetupIceCollider()
         {
-            if (m_iceCollider == null && IsWaterSurfaceFrozen())
+            if (m_waterVolume != null && m_iceSurface == null)
             {
-                if (s_colliderHeight == 0f)
-                    s_colliderHeight = ZoneSystem.instance.m_waterLevel + 0.01f;
-
-                m_iceCollider = m_waterSurface.gameObject.AddComponent<MeshCollider>();
-                m_iceCollider.sharedMesh = m_waterSurface.GetComponent<MeshFilter>().sharedMesh;
-                m_iceCollider.material.staticFriction = 0.1f;
-                m_iceCollider.material.dynamicFriction = 0.1f;
-                m_iceCollider.material.frictionCombine = PhysicMaterialCombine.Minimum;
-                m_iceCollider.cookingOptions = MeshColliderCookingOptions.UseFastMidphase;
-
-                if (m_waterVolume != null)
-                    m_iceCollider.transform.position = new Vector3(m_iceCollider.transform.position.x, s_colliderHeight, m_iceCollider.transform.position.z);
+                m_iceSurface = m_waterVolume.transform.parent.Find(_iceSurfaceName).gameObject;
             }
 
-            if (m_iceCollider != null)
-                m_iceCollider.enabled = IsWaterSurfaceFrozen();
+            m_iceSurface?.SetActive(IsWaterSurfaceFrozen());
+        }
+
+        public static void AddIceCollider(GameObject zonePrefab)
+        {
+            if (s_iceSurface != null)
+                return;
+
+            Transform water = zonePrefab.transform.Find("Water");
+            if (water == null)
+                return;
+
+            Transform waterSurface = water.Find("WaterSurface");
+
+            if (s_colliderHeight == 0f)
+                s_colliderHeight = waterSurface.transform.position.y + _colliderOffset;
+
+            s_iceSurface = new GameObject(_iceSurfaceName);
+            s_iceSurface.transform.SetParent(water);
+            s_iceSurface.layer = 0;
+            s_iceSurface.transform.localScale = new Vector3(waterSurface.transform.localScale.x, Math.Abs(_colliderOffset), waterSurface.transform.localScale.z);
+            s_iceSurface.transform.localPosition = new Vector3(0, _colliderOffset, 0);
+            s_iceSurface.SetActive(false);
+
+            MeshCollider iceCollider = s_iceSurface.gameObject.AddComponent<MeshCollider>();
+            iceCollider.sharedMesh = waterSurface.GetComponent<MeshFilter>().sharedMesh;
+            iceCollider.material.staticFriction = 0.1f;
+            iceCollider.material.dynamicFriction = 0.1f;
+            iceCollider.material.frictionCombine = PhysicMaterialCombine.Minimum;
+            iceCollider.cookingOptions = MeshColliderCookingOptions.UseFastMidphase;
         }
 
         public static void UpdateWaterState()
@@ -305,7 +322,7 @@ namespace Seasons
             if (lastGroundCollider == null)
                 return false;
 
-            return lastGroundCollider.name.ToLower() == "watersurface";
+            return lastGroundCollider.name == WaterVariantController._iceSurfaceName;
         }
 
         public static void StartIceSliding(this Character character, Vector3 currentVel, bool checkMagnitude = false, bool checkRunning = true)
@@ -526,7 +543,7 @@ namespace Seasons
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Start))]
     public static class ZoneSystem_Start_AddWaterVariantControllerToWaterPlane
     {
-        private static void Postfix()
+        private static void Postfix(ZoneSystem __instance)
         {
             if (!UseTextureControllers())
                 return;
@@ -534,15 +551,15 @@ namespace Seasons
             if (!seasonState.IsActive)
                 return;
 
+            WaterVariantController.AddIceCollider(__instance.m_zonePrefab);
+
             Transform waterPlane = EnvMan.instance.transform.Find("WaterPlane");
-            if (waterPlane == null)
-                return;
-
-            MeshRenderer watersurface = waterPlane.GetComponentInChildren<MeshRenderer>();
-            if (watersurface == null)
-                return;
-
-            waterPlane.gameObject.AddComponent<WaterVariantController>().Init(watersurface);
+            if (waterPlane != null)
+            {
+                MeshRenderer watersurface = waterPlane.GetComponentInChildren<MeshRenderer>();
+                if (watersurface != null)
+                    waterPlane.gameObject.AddComponent<WaterVariantController>().Init(watersurface);
+            }
         }
     }
 
