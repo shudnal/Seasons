@@ -136,7 +136,7 @@ namespace Seasons
 
         public long GetDayLengthInSeconds()
         {
-            return Math.Max(60, m_isUsingIngameDays ? (EnvMan.instance == null ? 1800L : EnvMan.instance.m_dayLengthSec) : seasonWorldSettings.GetDayLengthSeconds(GetCurrentWorld()));
+            return Math.Max(5, m_isUsingIngameDays ? (EnvMan.instance == null ? 1800L : EnvMan.instance.m_dayLengthSec) : seasonWorldSettings.GetDayLengthSeconds(GetCurrentWorld()));
         }
 
         public Season GetCurrentSeason()
@@ -1083,7 +1083,7 @@ namespace Seasons
 
             double secondsToGrow = 0d;
             double secondsToSeasonEnd = seasonState.GetEndOfCurrentSeason() - timeSeconds;
-            double secondsLeft = plant.GetGrowTime() - plant.TimeSincePlanted();//growthMultiplier == 0 ? growTime - timeSincePlanted : Math.Max(0, (growTime - timeSincePlanted) / growthMultiplier); 
+            double secondsLeft = plant.GetGrowTime() - plant.TimeSincePlanted();
 
             do
             {

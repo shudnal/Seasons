@@ -1188,7 +1188,7 @@ namespace Seasons
         public DateTime GetStartTimeUTC(World world)
         {
             if (HasWorldSettings(world) && DateTime.TryParse(GetWorldSettings(world).startTimeUTC, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime result))
-                return result;
+                return DateTime.Compare(result, new DateTime(2023, 1, 1, 0, 0, 0)) < 0 ? new DateTime(2023, 1, 1, 0, 0, 0) : result;
 
             return DateTime.UtcNow.Subtract(TimeSpan.FromSeconds(ZNet.instance.GetTimeSeconds()));
         }
@@ -1198,7 +1198,7 @@ namespace Seasons
             if (!HasWorldSettings(world))
                 return EnvMan.instance == null ? 1800L : EnvMan.instance.m_dayLengthSec;
 
-            return Math.Max(GetWorldSettings(world).dayLengthSeconds, 60L);
+            return Math.Max(GetWorldSettings(world).dayLengthSeconds, 5);
         }
 
         public bool HasWorldSettings(World world)
