@@ -43,6 +43,7 @@ namespace Seasons
         {
             StringBuilder sb = new StringBuilder();
             sb.AppendFormat("{0}\n", GetSeasonTooltip());
+            sb.AppendFormat("{0}\n", Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}"));
 
             string statsTooltip = base.GetTooltipString();
             if (statsTooltip.Length > 0)
