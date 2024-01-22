@@ -414,6 +414,36 @@ namespace Seasons
             UpdateUsingOfIngameDays();
         }
 
+        public void UpdateGlobalKeys()
+        {
+            if (!enableSeasonalGlobalKeys.Value)
+                return;
+
+            foreach (Season season in Enum.GetValues(typeof(Season)))
+            {
+                string globalKey = GetSeasonalGlobalKey(season);
+                if (globalKey.IsNullOrWhiteSpace())
+                    continue;
+
+                if (season == GetCurrentSeason())
+                    ZoneSystem.instance.SetGlobalKey(globalKey);
+                else
+                    ZoneSystem.instance.RemoveGlobalKey(globalKey);
+            }
+        }
+
+        public string GetSeasonalGlobalKey(Season season)
+        {
+            return season switch
+            {
+                Season.Spring => seasonalGlobalKeySpring.Value,
+                Season.Summer => seasonalGlobalKeySummer.Value,
+                Season.Fall => seasonalGlobalKeyFall.Value,
+                Season.Winter => seasonalGlobalKeyWinter.Value,
+                _ => seasonalGlobalKeySpring.Value
+            };
+        }
+
         public double GetEndOfCurrentSeason()
         {
             return GetStartOfCurrentSeason() + seasonState.GetSecondsInSeason();
@@ -625,6 +655,7 @@ namespace Seasons
         private void SeasonChanged()
         {
             UpdateBiomeEnvironments();
+            UpdateGlobalKeys();
 
             if (UseTextureControllers())
             {

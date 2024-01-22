@@ -275,7 +275,7 @@ Stats file structure reflects vanilla SE_Stats status effect which has propertie
 
 File "Custom trader items.json" contains default custom trader items and their distribution between seasons.
 
-Items customized distinctly between seasons and traders. You can use custom traders names.
+Items can be customized distinctly between seasons and traders. You can use custom traders names.
 
 You can adapt items list from https://valheim.thunderstore.io/package/shudnal/TradersExtended/ as it shares the item structure.
 

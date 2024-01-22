@@ -119,6 +119,12 @@ namespace Seasons
         public static ConfigEntry<string> localizationSeasonTooltipFall;
         public static ConfigEntry<string> localizationSeasonTooltipWinter;
 
+        public static ConfigEntry<bool> enableSeasonalGlobalKeys;
+        public static ConfigEntry<string> seasonalGlobalKeyFall;
+        public static ConfigEntry<string> seasonalGlobalKeySpring;
+        public static ConfigEntry<string> seasonalGlobalKeySummer;
+        public static ConfigEntry<string> seasonalGlobalKeyWinter;
+
         public static Seasons instance;
         public static SeasonState seasonState;
         internal const int seasonsCount = 4;
@@ -324,6 +330,12 @@ namespace Seasons
             grassWinterColor2 = config("Seasons - Color - Grass - Winter", "Color 2", defaultValue: new Color(1f, 1f, 1f, 0.6f), "Color 2");
             grassWinterColor3 = config("Seasons - Color - Grass - Winter", "Color 3", defaultValue: new Color(0.98f, 0.98f, 1f, 0.65f), "Color 3");
             grassWinterColor4 = config("Seasons - Color - Grass - Winter", "Color 4", defaultValue: new Color(1f, 1f, 1f, 0.65f), "Color 4");
+
+            enableSeasonalGlobalKeys = config("Seasons - Global keys", "Enable setting seasonal Global Keys", defaultValue: false, "Enables setting seasonal global key");
+            seasonalGlobalKeyFall = config("Seasons - Global keys", "Fall", defaultValue: "Season_Fall", "Seasonal global key for automn");
+            seasonalGlobalKeySpring = config("Seasons - Global keys", "Spring", defaultValue: "Season_Spring", "Seasonal global key for spring");
+            seasonalGlobalKeySummer = config("Seasons - Global keys", "Summer", defaultValue: "Season_Summer", "Seasonal global key for summer");
+            seasonalGlobalKeyWinter = config("Seasons - Global keys", "Winter", defaultValue: "Season_Winter", "Seasonal global key for winter");
 
             localizationSeasonNameSpring = config("Seasons - Localization", "Season name Spring", defaultValue: "Spring", "Season name");
             localizationSeasonNameSummer = config("Seasons - Localization", "Season name Summer", defaultValue: "Summer", "Season name");
