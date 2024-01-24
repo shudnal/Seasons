@@ -96,7 +96,7 @@ namespace Seasons
                             || !changeSeasonOnlyAfterSleep.Value
                             || Game.instance.m_sleeping;
 
-            LogInfo($"{m_season} {m_day} {m_worldDay} {newSeason} {dayInSeason} {worldDay} {EnvMan.instance.GetDayFraction(),-6:F4} {newSeason != GetCurrentSeason()} {timeForSeasonToChange} {sleepCheck} {forceSeasonChange} {timeForSeasonToChange && !forceSeasonChange && !sleepCheck && m_isUsingIngameDays && changeSeasonOnlyAfterSleep.Value && GetCurrentDay() == GetDaysInSeason() && dayInSeason != GetCurrentDay()}");
+            //LogInfo($"{m_season} {m_day} {m_worldDay} {newSeason} {dayInSeason} {worldDay} {EnvMan.instance.GetDayFraction(),-6:F4} {newSeason != GetCurrentSeason()} {timeForSeasonToChange} {sleepCheck} {forceSeasonChange} {timeForSeasonToChange && !forceSeasonChange && !sleepCheck && m_isUsingIngameDays && changeSeasonOnlyAfterSleep.Value && GetCurrentDay() == GetDaysInSeason() && dayInSeason != GetCurrentDay()}");
 
             if (overrideSeason.Value)
                 m_season = seasonOverrided.Value;
@@ -213,13 +213,12 @@ namespace Seasons
 
         public int GetNightLength()
         {
-            return settings.m_nightLength;
+            return GetNightLength(GetCurrentSeason());
         }
 
-        public bool OverrideNightLength()
+        public int GetNightLength(Season season)
         {
-            float nightLength = GetNightLength();
-            return nightLength > 0 && nightLength != SeasonSettings.nightLentghDefault;
+            return GetSeasonSettings(season).m_nightLength;
         }
 
         public void UpdateSeasonSettings()
@@ -469,7 +468,12 @@ namespace Seasons
 
         public float DayStartFraction()
         {
-            return (seasonState.GetNightLength() / 2f) / 100f;
+            return DayStartFraction(GetCurrentSeason());
+        }
+
+        public float DayStartFraction(Season season)
+        {
+            return (seasonState.GetNightLength(season) / 2f) / 100f;
         }
 
         public bool GetTorchAsFiresource()
@@ -552,7 +556,7 @@ namespace Seasons
             return seasonsSettings[season] ?? new SeasonSettings(season);
         }
 
-        private Season GetSeason(int day)
+        public Season GetSeason(int day)
         {
             int dayOfYear = GetDayOfYear(day);
             int days = 0;
@@ -875,9 +879,6 @@ namespace Seasons
     {
         public static bool Prefix(float fraction, ref float __result)
         {
-            if (!seasonState.OverrideNightLength())
-                return true;
-
             float dayStart = (seasonState.GetNightLength() / 2f) / 100f;
             float nightStart = 1.0f - dayStart;
 
@@ -906,10 +907,7 @@ namespace Seasons
     {
         public static bool Prefix(EnvMan __instance, int day, ref double __result)
         {
-            if (!seasonState.OverrideNightLength())
-                return true;
-
-            __result = (float)(day * __instance.m_dayLengthSec) + (float)__instance.m_dayLengthSec * seasonState.DayStartFraction();
+            __result = (float)(day * __instance.m_dayLengthSec) + (float)(__instance.m_dayLengthSec * seasonState.DayStartFraction(seasonState.GetSeason(day)));
             return false;
         }
     }
@@ -919,15 +917,15 @@ namespace Seasons
     {
         public static bool Prefix(EnvMan __instance, ref bool ___m_skipTime, ref double ___m_skipToTime, ref double ___m_timeSkipSpeed)
         {
-            if (!seasonState.OverrideNightLength())
-                return true;
-
             double timeSeconds = ZNet.instance.GetTimeSeconds();
-            double time = timeSeconds - (double)((float)__instance.m_dayLengthSec * seasonState.DayStartFraction());
-            int day = __instance.GetDay(time);
+            double startOfMorning = timeSeconds - timeSeconds % __instance.m_dayLengthSec + __instance.m_dayLengthSec * seasonState.DayStartFraction();
+            
+            int day = __instance.GetDay(startOfMorning);
             double morningStartSec = __instance.GetMorningStartSec(day + 1);
+
             ___m_skipTime = true;
             ___m_skipToTime = morningStartSec;
+
             double num = morningStartSec - timeSeconds;
             ___m_timeSkipSpeed = num / 12.0;
             ZLog.Log("Time " + timeSeconds + ", day:" + day + "    nextm:" + morningStartSec + "  skipspeed:" + ___m_timeSkipSpeed);
