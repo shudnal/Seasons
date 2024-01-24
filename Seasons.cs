@@ -20,7 +20,7 @@ namespace Seasons
     {
         const string pluginID = "shudnal.Seasons";
         const string pluginName = "Seasons";
-        const string pluginVersion = "1.0.4";
+        const string pluginVersion = "1.0.5";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -149,6 +149,9 @@ namespace Seasons
 
         public static Dictionary<string, PrefabController> prefabControllers = SeasonalTextureVariants.controllers;
         public static Dictionary<int, TextureVariants> texturesVariants = SeasonalTextureVariants.textures;
+       
+        public static readonly CustomSyncedValue<int> currentSeason = new CustomSyncedValue<int>(configSync, "Current season");
+        public static readonly CustomSyncedValue<int> currentDay = new CustomSyncedValue<int>(configSync, "Current day");
 
         public static readonly CustomSyncedValue<Dictionary<int, string>> seasonsSettingsJSON = new CustomSyncedValue<Dictionary<int, string>>(configSync, "Seasons settings JSON", new Dictionary<int, string>());
         public static readonly CustomSyncedValue<string> customEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom environments JSON", "");
@@ -158,7 +161,7 @@ namespace Seasons
         public static readonly CustomSyncedValue<string> customStatsJSON = new CustomSyncedValue<string>(configSync, "Custom stats JSON", "");
         public static readonly CustomSyncedValue<string> customTraderItemsJSON = new CustomSyncedValue<string>(configSync, "Custom traders JSON", "");
         public static readonly CustomSyncedValue<string> customWorldSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom world settings JSON", "");
-        
+
         public static readonly List<BiomeEnvSetup> biomesDefault = new List<BiomeEnvSetup>();
         public static readonly List<RandomEvent> eventsDefault = new List<RandomEvent>();
         public static Color minimapBorderColor = Color.clear;
@@ -201,6 +204,8 @@ namespace Seasons
             ConfigInit();
             _ = configSync.AddLockingConfigEntry(configLocked);
 
+            currentSeason.ValueChanged += new Action(SeasonState.OnSeasonChange);
+            currentDay.ValueChanged += new Action(SeasonState.OnDayChange);
             seasonsSettingsJSON.ValueChanged += new Action(SeasonSettings.UpdateSeasonSettings);
 
             Game.isModded = true;

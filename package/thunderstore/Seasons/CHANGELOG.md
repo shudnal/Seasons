@@ -1,3 +1,7 @@
+# 1.0.5
+* optional global key setting
+* timer to the end of current season in Raven menu
+
 # 1.0.4
 * optional placing ships above the ice surface
 * more stable freezing ships in the ice surface

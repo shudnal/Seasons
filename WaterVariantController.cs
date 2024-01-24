@@ -263,7 +263,7 @@ namespace Seasons
             if (!fish.m_nview.IsOwner())
                 return;
 
-            if (fish.transform.position.y > s_waterLevel)
+            if (fish.transform.position.y > s_waterLevel - _winterWaterSurfaceOffset)
                 fish.transform.position = new Vector3(fish.transform.position.x, s_waterLevel - _winterWaterSurfaceOffset, fish.transform.position.z);
 
             fish.m_body.velocity = Vector3.zero;
