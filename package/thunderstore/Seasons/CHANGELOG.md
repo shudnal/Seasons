@@ -1,6 +1,11 @@
 # 1.0.5
 * optional global key setting
 * timer to the end of current season in Raven menu
+* total day in season counter in Raven menu
+* fish pushed above frozen surface fix
+* fixed season sync in multiplayer
+* fixed occasional bug leading to long sleep skip between seasons
+* fixed rescaled time calculation
 
 # 1.0.4
 * optional placing ships above the ice surface

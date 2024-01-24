@@ -6,7 +6,6 @@ using UnityEngine;
 using System.IO;
 using HarmonyLib;
 using Object = UnityEngine.Object;
-using BepInEx.Logging;
 using Newtonsoft.Json;
 using System.Runtime.Serialization.Formatters.Binary;
 using static Seasons.PrefabController;
