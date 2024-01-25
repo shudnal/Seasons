@@ -199,6 +199,8 @@ namespace Seasons
 
         public static void UpdateWater(WaterVolume waterVolume, WaterState waterState, bool revertState = false)
         {
+            SetupIceCollider(waterVolume, waterState, revertState);
+
             if (s_freezeStatus == 0f || revertState)
             {
                 waterVolume.m_waterSurface?.SetPropertyBlock(null);
@@ -211,8 +213,6 @@ namespace Seasons
             }
 
             UpdateWaterSurface(waterVolume.m_waterSurface, waterState);
-
-            SetupIceCollider(waterVolume, waterState);
 
             waterVolume.m_surfaceOffset = waterState.m_surfaceOffset - (IsWaterSurfaceFrozen() ? _winterWaterSurfaceOffset : 0);
             waterVolume.m_useGlobalWind = !IsWaterSurfaceFrozen();
@@ -247,12 +247,15 @@ namespace Seasons
             waterSurface.SetPropertyBlock(s_matBlock);
         }
 
-        private static void SetupIceCollider(WaterVolume waterVolume, WaterState waterState)
+        private static void SetupIceCollider(WaterVolume waterVolume, WaterState waterState, bool revertState)
         {
             if (waterState.m_iceSurface == null)
                 waterState.m_iceSurface = waterVolume.transform.parent.Find(_iceSurfaceName)?.gameObject;
-
-            waterState.m_iceSurface?.SetActive(IsWaterSurfaceFrozen());
+            
+            if (revertState)
+                waterState.m_iceSurface?.SetActive(false);
+            else
+                waterState.m_iceSurface?.SetActive(IsWaterSurfaceFrozen());
         }
 
         public static bool LocalPlayerIsOnFrozenOcean() => IsWaterSurfaceFrozen()
@@ -263,7 +266,7 @@ namespace Seasons
         {
             yield return waitForFixedUpdate;
 
-            foreach (WaterVolume waterVolume in WaterVolume.Instances)
+            foreach (WaterVolume waterVolume in waterStates.Keys)
                 foreach (IWaterInteractable waterInteractable in waterVolume.m_inWater)
                     if (waterInteractable is Fish)
                         CheckIfFishAboveSurface(waterInteractable as Fish);
@@ -608,8 +611,8 @@ namespace Seasons
         }
     }
 
-    [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.OnEnable))]
-    public static class WaterVolume_OnEnable_WaterState
+    [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.Awake))]
+    public static class WaterVolume_Awake_WaterState
     {
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(WaterVolume __instance)
@@ -627,6 +630,24 @@ namespace Seasons
                 return;
 
             waterStates.Add(__instance, new WaterState(__instance));
+        }
+    }
+
+    [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.OnEnable))]
+    public static class WaterVolume_OnEnable_WaterState
+    {
+        [HarmonyPriority(Priority.Last)]
+        private static void Postfix(WaterVolume __instance)
+        {
+            if (!UseTextureControllers())
+                return;
+
+            if (!seasonState.IsActive)
+                return;
+
+            if (!waterStates.ContainsKey(__instance))
+                return;
+
             UpdateWater(__instance, waterStates[__instance]);
         }
     }
@@ -647,6 +668,23 @@ namespace Seasons
                 return;
 
             UpdateWater(__instance, waterStates[__instance], revertState: true);
+        }
+    }
+
+    [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.OnDestroy))]
+    public static class WaterVolume_OnDestroy_WaterState
+    {
+        [HarmonyPriority(Priority.Last)]
+        private static void Postfix(WaterVolume __instance)
+        {
+            if (!UseTextureControllers())
+                return;
+
+            if (!seasonState.IsActive)
+                return;
+
+            if (!waterStates.ContainsKey(__instance))
+                return;
 
             waterStates.Remove(__instance);
         }
