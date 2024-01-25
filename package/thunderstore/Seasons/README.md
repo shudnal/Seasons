@@ -341,6 +341,16 @@ You can place files in the config folder to replace current buff icon (restart r
 * season_summer.png
 * season_winter.png
 
+## Seasonal global key
+
+You can enable setting of season related server wide global key. It's disabled by default. You can customize the key in case you need it.
+
+Default seasonal keys:
+* season_fall
+* season_spring
+* season_summer
+* season_winter
+
 ## Installation (manual)
 extract Seasons folder to your BepInEx\Plugins\ folder
 
