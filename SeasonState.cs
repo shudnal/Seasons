@@ -652,7 +652,7 @@ namespace Seasons
 
                 Hud.instance.m_loadingScreen.alpha = Mathf.MoveTowards(Hud.instance.m_loadingScreen.alpha, 1f, Time.fixedDeltaTime / fadeDuration);
 
-                yield return new WaitForFixedUpdate();
+                yield return waitForFixedUpdate;
             }
 
             SeasonChanged();
@@ -667,7 +667,7 @@ namespace Seasons
 
                 Hud.instance.m_loadingScreen.alpha = Mathf.MoveTowards(Hud.instance.m_loadingScreen.alpha, 0f, Time.fixedDeltaTime / fadeDuration);
 
-                yield return new WaitForFixedUpdate();
+                yield return waitForFixedUpdate;
             }
 
             Hud.instance.m_loadingScreen.gameObject.SetActive(value: false);
@@ -1495,17 +1495,25 @@ namespace Seasons
     [HarmonyPatch(typeof(Procreation), nameof(Procreation.Procreate))]
     public static class Procreation_Procreate_ProcreationMultiplier
     {
-        private static void Prefix(ref Procreation __instance, ref Dictionary<string, float> __state)
+        private class ProcreateState
+        {
+            public float m_totalCheckRange;
+            public float m_partnerCheckRange;
+            public float m_pregnancyChance;
+            public float m_pregnancyDuration;
+        }
+
+        private static readonly ProcreateState _procreateState = new ProcreateState();
+
+        private static void Prefix(ref Procreation __instance)
         {
             if (seasonState.GetLivestockProcreationMultiplier() == 1.0f)
                 return;
 
-            __state = new Dictionary<string, float>() {
-                { "m_totalCheckRange", __instance.m_totalCheckRange },
-                { "m_partnerCheckRange", __instance.m_partnerCheckRange },
-                { "m_pregnancyChance", __instance.m_pregnancyChance },
-                { "m_pregnancyDuration", __instance.m_pregnancyDuration },
-            };
+            _procreateState.m_totalCheckRange = __instance.m_totalCheckRange;
+            _procreateState.m_partnerCheckRange = __instance.m_partnerCheckRange;
+            _procreateState.m_pregnancyChance = __instance.m_pregnancyChance;
+            _procreateState.m_pregnancyDuration = __instance.m_pregnancyDuration;
 
             __instance.m_pregnancyChance *= seasonState.GetLivestockProcreationMultiplier();
             __instance.m_partnerCheckRange *= seasonState.GetLivestockProcreationMultiplier();
@@ -1516,15 +1524,15 @@ namespace Seasons
             }
         }
 
-        private static void Postfix(ref Procreation __instance, ref Dictionary<string, float> __state)
+        private static void Postfix(ref Procreation __instance)
         {
             if (seasonState.GetLivestockProcreationMultiplier() == 1.0f)
                 return;
 
-            __instance.m_pregnancyChance *= __state["m_pregnancyChance"];
-            __instance.m_totalCheckRange *= __state["m_totalCheckRange"];
-            __instance.m_partnerCheckRange *= __state["m_partnerCheckRange"];
-            __instance.m_pregnancyDuration *= __state["m_pregnancyDuration"];
+            __instance.m_pregnancyChance = _procreateState.m_pregnancyChance;
+            __instance.m_totalCheckRange = _procreateState.m_totalCheckRange;
+            __instance.m_partnerCheckRange = _procreateState.m_partnerCheckRange;
+            __instance.m_pregnancyDuration = _procreateState.m_pregnancyDuration;
         }
     }
 
@@ -1597,6 +1605,35 @@ namespace Seasons
     [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.SetEnv))]
     public static class EnvMan_SetEnv_LuminancePatch
     {
+        private class LightState
+        {
+            public Color m_ambColorNight;
+            public Color m_fogColorNight;
+            public Color m_fogColorSunNight;
+            public Color m_sunColorNight;
+
+            public Color m_ambColorDay;
+            public Color m_fogColorMorning;
+            public Color m_fogColorDay;
+            public Color m_fogColorEvening;
+            public Color m_fogColorSunMorning;
+            public Color m_fogColorSunDay;
+            public Color m_fogColorSunEvening;
+            public Color m_sunColorMorning;
+            public Color m_sunColorDay;
+            public Color m_sunColorEvening;
+
+            public float m_lightIntensityDay;
+            public float m_lightIntensityNight;
+
+            public float m_fogDensityNight;
+            public float m_fogDensityMorning;
+            public float m_fogDensityDay;
+            public float m_fogDensityEvening;
+        }
+
+        private static readonly LightState _lightState = new LightState();
+
         public static Color ChangeColorLuminance(Color color, float luminanceMultiplier)
         {
             HSLColor newColor = new HSLColor(color);
@@ -1605,37 +1642,34 @@ namespace Seasons
         }
 
         [HarmonyPriority(Priority.Last)]
-        public static void Prefix(EnvSetup env, ref Dictionary<string, Color> __state)
+        public static void Prefix(EnvSetup env)
         {
-            if (!controlLightings.Value)
+            if (!controlLightings.Value || !UseTextureControllers())
                 return;
 
-            __state = new Dictionary<string, Color>
-                {
-                    { "m_ambColorNight", env.m_ambColorNight },
-                    { "m_fogColorNight", env.m_fogColorNight },
-                    { "m_fogColorSunNight", env.m_fogColorSunNight },
-                    { "m_sunColorNight", env.m_sunColorNight },
+            _lightState.m_ambColorNight = env.m_ambColorNight;
+            _lightState.m_fogColorNight = env.m_fogColorNight;
+            _lightState.m_fogColorSunNight = env.m_fogColorSunNight;
+            _lightState.m_sunColorNight = env.m_sunColorNight;
 
-                    { "m_ambColorDay", env.m_ambColorDay },
-                    { "m_fogColorMorning", env.m_fogColorMorning },
-                    { "m_fogColorDay", env.m_fogColorDay },
-                    { "m_fogColorEvening", env.m_fogColorEvening },
-                    { "m_fogColorSunMorning", env.m_fogColorSunMorning },
-                    { "m_fogColorSunDay", env.m_fogColorSunDay },
-                    { "m_fogColorSunEvening", env.m_fogColorSunEvening },
-                    { "m_sunColorMorning", env.m_sunColorMorning },
-                    { "m_sunColorDay", env.m_sunColorDay },
-                    { "m_sunColorEvening", env.m_sunColorEvening },
+            _lightState.m_ambColorDay = env.m_ambColorDay;
+            _lightState.m_fogColorMorning = env.m_fogColorMorning;
+            _lightState.m_fogColorDay = env.m_fogColorDay;
+            _lightState.m_fogColorEvening = env.m_fogColorEvening;
+            _lightState.m_fogColorSunMorning = env.m_fogColorSunMorning;
+            _lightState.m_fogColorSunDay = env.m_fogColorSunDay;
+            _lightState.m_fogColorSunEvening = env.m_fogColorSunEvening;
+            _lightState.m_sunColorMorning = env.m_sunColorMorning;
+            _lightState.m_sunColorDay = env.m_sunColorDay;
+            _lightState.m_sunColorEvening = env.m_sunColorEvening;
 
-                    { "m_lightIntensityDay", new Color(env.m_lightIntensityDay / 100f, 0f, 0f) },
-                    { "m_lightIntensityNight", new Color(env.m_lightIntensityNight / 100f, 0f, 0f)},
+            _lightState.m_lightIntensityDay = env.m_lightIntensityDay;
+            _lightState.m_lightIntensityNight = env.m_lightIntensityNight;
 
-                    { "m_fogDensityNight", new Color(env.m_fogDensityNight, 0f, 0f) },
-                    { "m_fogDensityMorning", new Color(env.m_fogDensityMorning, 0f, 0f) },
-                    { "m_fogDensityDay", new Color(env.m_fogDensityDay, 0f, 0f) },
-                    { "m_fogDensityEvening", new Color(env.m_fogDensityEvening, 0f, 0f) }
-                };
+            _lightState.m_fogDensityNight = env.m_fogDensityNight;
+            _lightState.m_fogDensityMorning = env.m_fogDensityMorning;
+            _lightState.m_fogDensityDay = env.m_fogDensityDay;
+            _lightState.m_fogDensityEvening = env.m_fogDensityEvening;
 
             SeasonLightings.SeasonLightingSettings lightingSettings = SeasonState.seasonLightings.GetSeasonLighting(seasonState.GetCurrentSeason());
 
@@ -1707,36 +1741,34 @@ namespace Seasons
         }
 
         [HarmonyPriority(Priority.First)]
-        public static void Postfix(EnvSetup env, ref Dictionary<string, Color> __state)
+        public static void Postfix(EnvSetup env)
         {
-            if (!controlLightings.Value)
+            if (!controlLightings.Value || !UseTextureControllers())
                 return;
 
-            env.m_ambColorNight = __state["m_ambColorNight"];
-            env.m_fogColorNight = __state["m_fogColorNight"];
-            env.m_fogColorSunNight = __state["m_fogColorSunNight"];
-            env.m_sunColorNight = __state["m_sunColorNight"];
+            env.m_ambColorNight = _lightState.m_ambColorNight;
+            env.m_fogColorNight = _lightState.m_fogColorNight;
+            env.m_fogColorSunNight = _lightState.m_fogColorSunNight;
+            env.m_sunColorNight = _lightState.m_sunColorNight;
 
-            env.m_fogColorMorning = __state["m_fogColorMorning"];
-            env.m_fogColorDay = __state["m_fogColorDay"];
-            env.m_fogColorEvening = __state["m_fogColorEvening"];
-            env.m_fogColorSunMorning = __state["m_fogColorSunMorning"];
-            env.m_fogColorSunDay = __state["m_fogColorSunDay"];
-            env.m_fogColorSunEvening = __state["m_fogColorSunEvening"];
-            env.m_sunColorMorning = __state["m_sunColorMorning"];
-            env.m_sunColorDay = __state["m_sunColorDay"];
-            env.m_sunColorEvening = __state["m_sunColorEvening"];
+            env.m_fogColorMorning = _lightState.m_fogColorMorning;
+            env.m_fogColorDay = _lightState.m_fogColorDay;
+            env.m_fogColorEvening = _lightState.m_fogColorEvening;
+            env.m_fogColorSunMorning = _lightState.m_fogColorSunMorning;
+            env.m_fogColorSunDay = _lightState.m_fogColorSunDay;
+            env.m_fogColorSunEvening = _lightState.m_fogColorSunEvening;
+            env.m_sunColorMorning = _lightState.m_sunColorMorning;
+            env.m_sunColorDay = _lightState.m_sunColorDay;
+            env.m_sunColorEvening = _lightState.m_sunColorEvening;
 
-            env.m_fogDensityNight = __state["m_fogDensityNight"].r;
-            env.m_fogDensityMorning = __state["m_fogDensityMorning"].r;
-            env.m_fogDensityDay = __state["m_fogDensityDay"].r;
-            env.m_fogDensityEvening = __state["m_fogDensityEvening"].r;
+            env.m_fogDensityNight = _lightState.m_fogDensityNight;
+            env.m_fogDensityMorning = _lightState.m_fogDensityMorning;
+            env.m_fogDensityDay = _lightState.m_fogDensityDay;
+            env.m_fogDensityEvening = _lightState.m_fogDensityEvening;
 
-            env.m_lightIntensityDay = __state["m_lightIntensityDay"].r * 100f;
-
-            env.m_lightIntensityNight = __state["m_lightIntensityNight"].r * 100f;
+            env.m_lightIntensityDay = _lightState.m_lightIntensityDay;
+            env.m_lightIntensityNight = _lightState.m_lightIntensityNight;
         }
-
     }
 
     [HarmonyPatch(typeof(FootStep), nameof(FootStep.FindBestStepEffect))]

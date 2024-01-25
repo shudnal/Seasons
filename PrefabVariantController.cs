@@ -30,19 +30,21 @@ namespace Seasons
         private readonly Dictionary<ParticleSystem, Color[]> m_startColors = new Dictionary<ParticleSystem, Color[]>();
 
         private static readonly MaterialPropertyBlock s_matBlock = new MaterialPropertyBlock();
+        
+        private static readonly List<Renderer> s_tempRenderers = new List<Renderer>();
+        private static readonly List<Color> s_tempColors = new List<Color>();
+        private static readonly Dictionary<string, string> s_tempPrefabNames = new Dictionary<string, string>();
 
         private const float noiseFrequency = 10000f;
         private const double noiseDivisor = 1.1;
         private const double noisePower = 1.3;
         
         public static int s_rayMask = 0;
+        public static float s_seed = 0.0f;
 
         public void Init(PrefabController controller, string prefabName = null)
         {
-            if (String.IsNullOrEmpty(prefabName))
-                m_prefabName = Utils.GetPrefabName(gameObject);
-            else
-                m_prefabName = prefabName;
+            m_prefabName = String.IsNullOrEmpty(prefabName) ? GetPrefabName(gameObject) : prefabName;
 
             foreach (KeyValuePair<string, Dictionary<int, List<CachedRenderer>>> rendererPath in controller.lodsInHierarchy)
             {
@@ -71,10 +73,10 @@ namespace Seasons
 
                 string[] transformPath = path.Split(new char[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
 
-                List<Renderer> renderers = new List<Renderer>();
-                CheckRenderersInHierarchy(gameObject.transform, rendererPath.Value.type, transformPath, 0, renderers);
+                s_tempRenderers.Clear();
+                CheckRenderersInHierarchy(gameObject.transform, rendererPath.Value.type, transformPath, 0, s_tempRenderers);
 
-                foreach (Renderer renderer in renderers) 
+                foreach (Renderer renderer in s_tempRenderers) 
                     AddMaterialVariants(renderer, rendererPath.Value);
             }
 
@@ -305,15 +307,15 @@ namespace Seasons
                             foreach (KeyValuePair<string, string[]> tex in cachedRendererMaterial.Value.colorVariants)
                                 if (!colorVariants.ContainsKey(tex.Key))
                                 {
-                                    List<Color> colors = new List<Color>();
+                                    s_tempColors.Clear();
                                     foreach (string str in tex.Value)
                                     {
                                         if (!ColorUtility.TryParseHtmlString(str, out Color color))
                                             return;
 
-                                        colors.Add(color);
+                                        s_tempColors.Add(color);
                                     }
-                                    colorVariants.Add(tex.Key, colors.ToArray());
+                                    colorVariants.Add(tex.Key, s_tempColors.ToArray());
                                 }
                         }
                     }
@@ -325,15 +327,15 @@ namespace Seasons
         {
             if (!m_startColors.ContainsKey(ps))
             {
-                List<Color> colors = new List<Color>();
+                s_tempColors.Clear();
                 foreach (string str in colorVariants)
                 {
                     if (!ColorUtility.TryParseHtmlString(str, out Color color))
                         return;
 
-                    colors.Add(color);
+                    s_tempColors.Add(color);
                 }
-                m_startColors.Add(ps, colors.ToArray());
+                m_startColors.Add(ps, s_tempColors.ToArray());
             }
         }
 
@@ -401,7 +403,7 @@ namespace Seasons
             if (gameObject == null)
                 return;
 
-            string prefabName = Utils.GetPrefabName(gameObject);
+            string prefabName = GetPrefabName(gameObject);
             if (prefabName == "YggdrasilRoot" && !controlYggdrasil.Value)
                 return;
 
@@ -425,7 +427,7 @@ namespace Seasons
             if (humanoid.InInterior())
                 return;
 
-            if (SeasonalTextureVariants.controllers.TryGetValue(Utils.GetPrefabName(humanoid.gameObject), out PrefabController controller))
+            if (SeasonalTextureVariants.controllers.TryGetValue(GetPrefabName(humanoid.gameObject), out PrefabController controller))
                 if (!humanoid.gameObject.TryGetComponent<PrefabVariantController>(out _))
                     humanoid.gameObject.AddComponent<PrefabVariantController>().Init(controller);
         }
@@ -435,7 +437,7 @@ namespace Seasons
             if (!UseTextureControllers())
                 return;
 
-            if (s_pieceControllers.ContainsKey(wnt) || !SeasonalTextureVariants.controllers.TryGetValue(Utils.GetPrefabName(wnt.gameObject), out PrefabController controller))
+            if (s_pieceControllers.ContainsKey(wnt) || !SeasonalTextureVariants.controllers.TryGetValue(GetPrefabName(wnt.gameObject), out PrefabController controller))
                 return;
 
             if (IsIgnoredLocation(wnt.transform.position))
@@ -496,9 +498,20 @@ namespace Seasons
 
         public static double GetNoise(float mx, float my)
         {
-            float seed = WorldGenerator.instance != null ? Mathf.Log10(Math.Abs(WorldGenerator.instance.GetSeed())) : 0f;
+            float seed = GetSeed();
             return Math.Round(Math.Pow(((double)Mathf.PerlinNoise(mx * noiseFrequency + seed, my * noiseFrequency - seed) +
                 (double)Mathf.PerlinNoise(mx * 2 * noiseFrequency - seed, my * 2 * noiseFrequency + seed) * 0.5) / noiseDivisor, noisePower) * 20) / 20;
+        }
+
+        public static float GetSeed()
+        {
+            if (s_seed != 0f)
+                return s_seed;
+
+            int seed = ZNet.m_world != null ? ZNet.m_world.m_seed : WorldGenerator.instance != null ? WorldGenerator.instance.GetSeed() : 0;
+            s_seed = seed == 0 ? 0 : Mathf.Log10(Math.Abs(seed));
+
+            return s_seed;
         }
 
         public static bool IsIgnoredLocation(Vector3 position)
@@ -526,6 +539,17 @@ namespace Seasons
 
                 AddComponentTo(yggdrasilBranch.gameObject, checkLocation: false);
             }
+        }
+
+        public static string GetPrefabName(GameObject go)
+        {
+            if (!s_tempPrefabNames.TryGetValue(go.name, out string prefabName))
+            {
+                prefabName = Utils.GetPrefabName(go);
+                s_tempPrefabNames.Add(go.name, prefabName);
+            }
+
+            return prefabName;
         }
     }
 

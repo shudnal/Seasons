@@ -261,7 +261,7 @@ namespace Seasons
 
         public static IEnumerator UpdateWaterObjects()
         {
-            yield return new WaitForFixedUpdate();
+            yield return waitForFixedUpdate;
 
             foreach (WaterVolume waterVolume in WaterVolume.Instances)
                 foreach (IWaterInteractable waterInteractable in waterVolume.m_inWater)
@@ -270,7 +270,7 @@ namespace Seasons
                     else if (waterInteractable is Character)
                         CheckIfCharacterAboveSurface(waterInteractable as Character);
 
-            yield return new WaitForFixedUpdate();
+            yield return waitForFixedUpdate;
 
             foreach (Ship ship in Ship.Instances)
                 yield return CheckIfShipBelowSurface(ship);
@@ -291,7 +291,7 @@ namespace Seasons
         public static IEnumerator CheckIfShipBelowSurface(Ship ship)
         {
             while (!ship.m_nview.HasOwner())
-                yield return new WaitForFixedUpdate();
+                yield return waitForFixedUpdate;
 
             if (!ship.m_nview.IsOwner())
                 yield break;

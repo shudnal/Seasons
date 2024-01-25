@@ -165,6 +165,8 @@ namespace Seasons
         public static readonly List<RandomEvent> eventsDefault = new List<RandomEvent>();
         public static Color minimapBorderColor = Color.clear;
 
+        public static WaitForFixedUpdate waitForFixedUpdate = new WaitForFixedUpdate();
+
         public enum Season
         {
             Spring = 0,
