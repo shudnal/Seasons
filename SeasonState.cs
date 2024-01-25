@@ -682,9 +682,9 @@ namespace Seasons
             if (UseTextureControllers())
             {
                 PrefabVariantController.UpdatePrefabColors();
-                TerrainVariantController.UpdateTerrainColors();
+                ZoneSystemVariantController.UpdateTerrainColors();
                 ClutterVariantController.instance.UpdateColors();
-                WaterVariantController.UpdateWaterState();
+                ZoneSystemVariantController.UpdateWaterState();
 
                 UpdateTorchesFireWarmth();
 
@@ -858,7 +858,7 @@ namespace Seasons
             if (UseTextureControllers())
             {
                 ClutterVariantController.instance.UpdateColors();
-                WaterVariantController.UpdateWaterState();
+                ZoneSystemVariantController.UpdateWaterState();
             }
         }
     }
@@ -866,7 +866,7 @@ namespace Seasons
     [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.UpdateTriggers))]
     public static class EnvMan_UpdateTriggers_SeasonStateUpdate
     {
-        private static void Postfix(EnvMan __instance, float oldDayFraction, float newDayFraction)
+        private static void Postfix(float oldDayFraction, float newDayFraction)
         {
             float fraction = changeSeasonOnlyAfterSleep.Value ? 0.2498f : 0.24f;
             bool timeForSeasonToChange = oldDayFraction > 0.16f && oldDayFraction <= fraction && newDayFraction >= fraction && newDayFraction < 0.3f;
@@ -1746,7 +1746,7 @@ namespace Seasons
         {
             if (seasonState.GetCurrentSeason() == Season.Winter && (material == FootStep.GroundMaterial.Mud || material == FootStep.GroundMaterial.Grass | material == FootStep.GroundMaterial.GenericGround))
                 material = FootStep.GroundMaterial.Snow;
-            else if (WaterVariantController.IsWaterSurfaceFrozen() && material == FootStep.GroundMaterial.Water)
+            else if (ZoneSystemVariantController.IsWaterSurfaceFrozen() && material == FootStep.GroundMaterial.Water)
                 material = FootStep.GroundMaterial.Snow;
         }
     }

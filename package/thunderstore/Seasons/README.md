@@ -335,7 +335,7 @@ It will mean your world has week long seasons starting from set Monday.
 
 ## Seasonal buff icon replacement
 
-You can place files in the config folder to replace current buff icon (restart needed):
+You can place files in the config folder to replace current buff icon (restart required):
 * season_fall.png
 * season_spring.png
 * season_summer.png

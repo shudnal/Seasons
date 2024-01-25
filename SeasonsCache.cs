@@ -15,12 +15,18 @@ namespace Seasons
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Start))]
     public static class ZoneSystem_Start_SeasonsCache
     {
-        private static void Postfix()
+        private static void Postfix(ZoneSystem __instance)
         {
             if (!UseTextureControllers())
                 return;
 
-            if (!SeasonalTextureVariants.Initialize())
+            if (SeasonalTextureVariants.Initialize())
+            {
+                PrefabVariantController.AddControllerToPrefabs();
+                ClutterVariantController.Init();
+                __instance.gameObject.AddComponent<ZoneSystemVariantController>().Init(__instance);
+            }
+            else
                 LogInfo("Missing textures variants");
         }
     }

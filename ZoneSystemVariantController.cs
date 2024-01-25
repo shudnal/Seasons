@@ -1,171 +1,169 @@
-﻿using System;
-using HarmonyLib;
+﻿using HarmonyLib;
+using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using static Heightmap;
 using static Seasons.Seasons;
-using System.Collections;
+using static Seasons.ZoneSystemVariantController;
 
 namespace Seasons
 {
-    internal class WaterVariantController : MonoBehaviour
+    public class ZoneSystemVariantController : MonoBehaviour
     {
-        private WaterVolume m_waterVolume;
-        private MeshRenderer m_waterSurface;
-        private GameObject m_iceSurface;
-        private float m_surfaceOffset;
+        public class WaterState 
+        {
+            public GameObject m_iceSurface;
 
-        private float m_foamDepth;
+            public float m_surfaceOffset;
+            public float m_foamDepth;
 
-        private Color m_colorTop;
-        private Color m_colorBottom;
-        private Color m_colorBottomShallow;
+            public Color m_colorTop;
+            public Color m_colorBottom;
+            public Color m_colorBottomShallow;
 
-        private Color m_colorTopFrozen;
-        private Color m_colorBottomFrozen;
-        private Color m_colorBottomShallowFrozen;
+            public Color m_colorTopFrozen;
+            public Color m_colorBottomFrozen;
+            public Color m_colorBottomShallowFrozen;
 
-        private int m_myListIndex = -1;
-        private static readonly List<WaterVariantController> s_allControllers = new List<WaterVariantController>();
+            public WaterState(WaterVolume waterVolume)
+            {
+                m_surfaceOffset = waterVolume.m_surfaceOffset;
+                m_foamDepth = waterVolume.m_waterSurface.sharedMaterial.GetFloat("_FoamDepth");
 
+                m_colorTop = waterVolume.m_waterSurface.sharedMaterial.GetColor("_ColorTop");
+                m_colorBottom = waterVolume.m_waterSurface.sharedMaterial.GetColor("_ColorBottom");
+                m_colorBottomShallow = waterVolume.m_waterSurface.sharedMaterial.GetColor("_ColorBottomShallow");
+                
+                InitFrozenColors();
+            }
+
+            public WaterState(MeshRenderer waterSurface)
+            {
+                m_foamDepth = waterSurface.sharedMaterial.GetFloat("_FoamDepth");
+
+                m_colorTop = waterSurface.sharedMaterial.GetColor("_ColorTop");
+                m_colorBottom = waterSurface.sharedMaterial.GetColor("_ColorBottom");
+                m_colorBottomShallow = waterSurface.sharedMaterial.GetColor("_ColorBottomShallow");
+
+                InitFrozenColors();
+            }
+
+            private void InitFrozenColors()
+            {
+                m_colorTopFrozen = new Color(0.98f, 0.98f, 1f);
+                m_colorBottomFrozen = Color.Lerp(m_colorBottom, Color.white, 0.5f);
+                m_colorBottomShallowFrozen = Color.Lerp(m_colorBottomShallow, Color.white, 0.5f);
+            }
+        }
+
+        private static MeshRenderer s_waterPlane;
+        private static WaterState s_waterPlaneState;
+
+        public static readonly Dictionary<Biome, Dictionary<Season, Biome>> seasonalBiomeColorOverride = new Dictionary<Biome, Dictionary<Season, Biome>>
+                {
+                    { Biome.BlackForest, new Dictionary<Season, Biome>() { { Season.Fall, Biome.Swamp }, { Season.Winter, Biome.Mountain } } },
+                    { Biome.Meadows, new Dictionary<Season, Biome>() { { Season.Fall, Biome.Plains }, { Season.Winter, Biome.Mountain } } },
+                    { Biome.Plains, new Dictionary<Season, Biome>() { { Season.Spring, Biome.Meadows }, { Season.Winter, Biome.Mountain } } },
+                    { Biome.Mistlands, new Dictionary<Season, Biome>() { { Season.Winter, Biome.Mountain } } },
+                    { Biome.Swamp, new Dictionary<Season, Biome>() { { Season.Winter, Biome.Mountain } } },
+                };
+        
+        public static readonly Dictionary<WaterVolume, WaterState> waterStates = new Dictionary<WaterVolume, WaterState>();
+        
         private static readonly MaterialPropertyBlock s_matBlock = new MaterialPropertyBlock();
 
         private static float s_freezeStatus = 0f;
+
+        public static float s_colliderHeight = 0f;
 
         public const float _winterWaterSurfaceOffset = 2f;
         public const float _colliderOffset = -0.01f;
         public const string _iceSurfaceName = "IceSurface";
 
-        public static float s_colliderHeight = 0f;
-
         public static GameObject s_iceSurface;
 
-        const float _FoamDepthFrozen = 10f;
-        const float _WaveVel = 0f;
-        const float _WaveFoam = 0f;
-        const float _Glossiness = 0.95f;
-        const float _Metallic = 0.1f;
-        const float _DepthFade = 20f;
-        const float _ShoreFade = 0f;
-        
+        private const float _FoamDepthFrozen = 10f;
+        private const float _WaveVel = 0f;
+        private const float _WaveFoam = 0f;
+        private const float _Glossiness = 0.95f;
+        private const float _Metallic = 0.1f;
+        private const float _DepthFade = 20f;
+        private const float _ShoreFade = 0f;
+
         public static bool IsWaterSurfaceFrozen() => s_freezeStatus == 1f;
 
         public static float s_waterLevel => s_colliderHeight == 0f || !IsWaterSurfaceFrozen() ? ZoneSystem.instance.m_waterLevel : s_colliderHeight;
 
-        private void Awake()
-        {
-            s_allControllers.Add(this);
-            m_myListIndex = s_allControllers.Count - 1;
-        }
-
         private void OnDestroy()
         {
-            if (m_myListIndex >= 0)
-            {
-                s_allControllers[m_myListIndex] = s_allControllers[s_allControllers.Count - 1];
-                s_allControllers[m_myListIndex].m_myListIndex = m_myListIndex;
-                s_allControllers.RemoveAt(s_allControllers.Count - 1);
-                m_myListIndex = -1;
-            }
+            s_waterPlane = null;
+            s_waterPlaneState = null;
+            s_iceSurface = null;
+            waterStates.Clear();
         }
 
-        private void RevertChanges()
+        public void Init(ZoneSystem instance)
         {
-            if (m_waterSurface != null)
-            {
-                m_waterSurface.SetPropertyBlock(null);
-            };
+            Transform waterPlane = EnvMan.instance.transform.Find("WaterPlane");
+            if (waterPlane != null)
+                s_waterPlane = waterPlane.GetComponentInChildren<MeshRenderer>();
 
-            if (m_waterVolume != null)
-            {
-                m_waterVolume.m_surfaceOffset = m_surfaceOffset;
-                m_waterVolume.m_useGlobalWind = true;
-                m_waterVolume.SetupMaterial();
-            }
+            s_waterPlaneState = new WaterState(s_waterPlane);
 
-            SetupIceCollider();
+            Transform water = instance.m_zonePrefab.transform.Find("Water");
+            if (water != null)
+                AddIceCollider(water);
         }
 
-        public void Init(WaterVolume waterVolume)
+        private static void UpdateTerrainColor(Heightmap heightmap)
         {
-            m_waterVolume = waterVolume;
-            m_surfaceOffset = waterVolume.m_surfaceOffset;
-            Init(waterVolume.m_waterSurface);
-        }
-
-        public void Init(MeshRenderer waterSurface)
-        {
-            m_waterSurface = waterSurface;
-
-            m_colorTop = m_waterSurface.sharedMaterial.GetColor("_ColorTop");
-            m_colorBottom = m_waterSurface.sharedMaterial.GetColor("_ColorBottom");
-            m_colorBottomShallow = m_waterSurface.sharedMaterial.GetColor("_ColorBottomShallow");
-            m_foamDepth = m_waterSurface.sharedMaterial.GetFloat("_FoamDepth");
-
-            m_colorTopFrozen = new Color(0.98f, 0.98f, 1f);
-            m_colorBottomFrozen = Color.Lerp(m_colorBottom, Color.white, 0.5f);
-            m_colorBottomShallowFrozen = Color.Lerp(m_colorBottomShallow, Color.white, 0.5f);
-
-            UpdateState();
-        }
-
-        private void UpdateState()
-        {
-            if (s_freezeStatus == 0f)
-            {
-                RevertChanges();
+            if (heightmap.m_renderMesh == null)
                 return;
-            }
 
-            s_matBlock.Clear();
-            s_matBlock.SetColor("_FoamColor", new Color(0.95f, 0.96f, 0.98f));
-            s_matBlock.SetFloat("_FoamDepth", Mathf.Lerp(m_foamDepth, _FoamDepthFrozen, s_freezeStatus));
-            s_matBlock.SetColor("_ColorTop", Color.Lerp(m_colorTop, m_colorTopFrozen, s_freezeStatus));
-            s_matBlock.SetColor("_ColorBottom", Color.Lerp(m_colorBottom, m_colorBottomFrozen, s_freezeStatus));
-            s_matBlock.SetColor("_ColorBottomShallow", Color.Lerp(m_colorBottomShallow, m_colorBottomShallowFrozen, s_freezeStatus));
-
-            if (IsWaterSurfaceFrozen())
+            int num = heightmap.m_width + 1;
+            Vector3 vector = heightmap.transform.position + new Vector3((float)((double)heightmap.m_width * (double)heightmap.m_scale * -0.5), 0f, (float)((double)heightmap.m_width * (double)heightmap.m_scale * -0.5));
+            s_tempColors.Clear();
+            for (int i = 0; i < num; i++)
             {
-                s_matBlock.SetFloat(WaterVolume.s_shaderWaterTime, 0f);
-                s_matBlock.SetFloat(WaterVolume.s_shaderUseGlobalWind, 0f);
-
-                s_matBlock.SetFloat("_DepthFade", _DepthFade);
-                s_matBlock.SetFloat("_Glossiness", _Glossiness);
-                s_matBlock.SetFloat("_Metallic", _Metallic);
-                s_matBlock.SetFloat("_ShoreFade", _ShoreFade);
-                s_matBlock.SetFloat("_WaveVel", _WaveVel);
-                s_matBlock.SetFloat("_WaveFoam", _WaveFoam);
+                float iy = DUtils.SmoothStep(0f, 1f, (float)((double)i / (double)heightmap.m_width));
+                for (int j = 0; j < num; j++)
+                {
+                    float ix = DUtils.SmoothStep(0f, 1f, (float)((double)j / (double)heightmap.m_width));
+                    if (heightmap.m_isDistantLod)
+                    {
+                        float wx = (float)((double)vector.x + (double)j * (double)heightmap.m_scale);
+                        float wy = (float)((double)vector.z + (double)i * (double)heightmap.m_scale);
+                        Biome biome = WorldGenerator.instance.GetBiome(wx, wy);
+                        s_tempColors.Add(GetBiomeColor(biome));
+                    }
+                    else
+                    {
+                        s_tempColors.Add(heightmap.GetBiomeColor(ix, iy));
+                    }
+                }
             }
 
-            m_waterSurface.SetPropertyBlock(s_matBlock);
-
-            SetupIceCollider();
-
-            if (m_waterVolume != null)
-            {
-                m_waterVolume.m_surfaceOffset = m_surfaceOffset - (IsWaterSurfaceFrozen() ? _winterWaterSurfaceOffset : 0);
-                m_waterVolume.m_useGlobalWind = !IsWaterSurfaceFrozen();
-                m_waterVolume.SetupMaterial();
-            }
+            heightmap.m_renderMesh.SetColors(s_tempColors);
         }
 
-        private void SetupIceCollider()
+        public static void UpdateTerrainColors()
         {
-            if (m_waterVolume != null && m_iceSurface == null)
-            {
-                m_iceSurface = m_waterVolume.transform.parent.Find(_iceSurfaceName).gameObject;
-            }
-
-            m_iceSurface?.SetActive(IsWaterSurfaceFrozen());
+            foreach (Heightmap instance in Heightmap.Instances)
+                UpdateTerrainColor(instance);
         }
 
-        public static void AddIceCollider(GameObject zonePrefab)
+        public static void AddIceCollider(Transform water)
         {
             if (s_iceSurface != null)
                 return;
 
-            Transform water = zonePrefab.transform.Find("Water");
-            if (water == null)
+            Transform iceSurfaceTransform = water.Find(_iceSurfaceName);
+            if (iceSurfaceTransform != null)
+            {
+                s_iceSurface = iceSurfaceTransform.gameObject;
                 return;
+            }
 
             Transform waterSurface = water.Find("WaterSurface");
 
@@ -191,10 +189,70 @@ namespace Seasons
         {
             s_freezeStatus = seasonState.GetWaterSurfaceFreezeStatus();
 
-            foreach (WaterVariantController controller in s_allControllers)
-                controller.UpdateState();
+            foreach (KeyValuePair<WaterVolume, WaterState> waterState in waterStates)
+                UpdateWater(waterState.Key, waterState.Value);
+
+            UpdateWaterSurface(s_waterPlane, s_waterPlaneState);
 
             Seasons.instance.StartCoroutine(UpdateWaterObjects());
+        }
+
+        public static void UpdateWater(WaterVolume waterVolume, WaterState waterState, bool revertState = false)
+        {
+            if (s_freezeStatus == 0f || revertState)
+            {
+                waterVolume.m_waterSurface?.SetPropertyBlock(null);
+
+                waterVolume.m_surfaceOffset = waterState.m_surfaceOffset;
+                waterVolume.m_useGlobalWind = true;
+                waterVolume.SetupMaterial();
+
+                return;
+            }
+
+            UpdateWaterSurface(waterVolume.m_waterSurface, waterState);
+
+            SetupIceCollider(waterVolume, waterState);
+
+            waterVolume.m_surfaceOffset = waterState.m_surfaceOffset - (IsWaterSurfaceFrozen() ? _winterWaterSurfaceOffset : 0);
+            waterVolume.m_useGlobalWind = !IsWaterSurfaceFrozen();
+            waterVolume.SetupMaterial();
+        }
+
+        private static void UpdateWaterSurface(MeshRenderer waterSurface, WaterState waterState)
+        {
+            if (waterSurface == null || waterState == null)
+                return;
+
+            s_matBlock.Clear();
+            s_matBlock.SetColor("_FoamColor", new Color(0.95f, 0.96f, 0.98f));
+            s_matBlock.SetFloat("_FoamDepth", Mathf.Lerp(waterState.m_foamDepth, _FoamDepthFrozen, s_freezeStatus));
+            s_matBlock.SetColor("_ColorTop", Color.Lerp(waterState.m_colorTop, waterState.m_colorTopFrozen, s_freezeStatus));
+            s_matBlock.SetColor("_ColorBottom", Color.Lerp(waterState.m_colorBottom, waterState.m_colorBottomFrozen, s_freezeStatus));
+            s_matBlock.SetColor("_ColorBottomShallow", Color.Lerp(waterState.m_colorBottomShallow, waterState.m_colorBottomShallowFrozen, s_freezeStatus));
+
+            if (IsWaterSurfaceFrozen())
+            {
+                s_matBlock.SetFloat(WaterVolume.s_shaderWaterTime, 0f);
+                s_matBlock.SetFloat(WaterVolume.s_shaderUseGlobalWind, 0f);
+
+                s_matBlock.SetFloat("_DepthFade", _DepthFade);
+                s_matBlock.SetFloat("_Glossiness", _Glossiness);
+                s_matBlock.SetFloat("_Metallic", _Metallic);
+                s_matBlock.SetFloat("_ShoreFade", _ShoreFade);
+                s_matBlock.SetFloat("_WaveVel", _WaveVel);
+                s_matBlock.SetFloat("_WaveFoam", _WaveFoam);
+            }
+
+            waterSurface.SetPropertyBlock(s_matBlock);
+        }
+
+        private static void SetupIceCollider(WaterVolume waterVolume, WaterState waterState)
+        {
+            if (waterState.m_iceSurface == null)
+                waterState.m_iceSurface = waterVolume.transform.parent.Find(_iceSurfaceName)?.gameObject;
+
+            waterState.m_iceSurface?.SetActive(IsWaterSurfaceFrozen());
         }
 
         public static bool LocalPlayerIsOnFrozenOcean() => IsWaterSurfaceFrozen()
@@ -205,16 +263,17 @@ namespace Seasons
         {
             yield return new WaitForFixedUpdate();
 
-            UpdateShipsPositions();
-
-            yield return new WaitForFixedUpdate();
-
             foreach (WaterVolume waterVolume in WaterVolume.Instances)
                 foreach (IWaterInteractable waterInteractable in waterVolume.m_inWater)
                     if (waterInteractable is Fish)
                         CheckIfFishAboveSurface(waterInteractable as Fish);
                     else if (waterInteractable is Character)
                         CheckIfCharacterAboveSurface(waterInteractable as Character);
+
+            yield return new WaitForFixedUpdate();
+
+            foreach (Ship ship in Ship.Instances)
+                yield return CheckIfShipBelowSurface(ship);
         }
 
         public static bool IsUnderwaterAI(Character character, out BaseAI ai)
@@ -242,12 +301,12 @@ namespace Seasons
 
         public static void PlaceShip(Ship ship)
         {
+            ship.m_body.WakeUp();
             ship.m_body.isKinematic = false;
 
             if (ship.m_body.position.y > s_waterLevel + ship.m_waterLevelOffset || !IsWaterSurfaceFrozen())
                 return;
 
-            ship.m_body.WakeUp();
             ship.m_body.isKinematic = !placeShipAboveFrozenOcean.Value;
 
             if (placeShipAboveFrozenOcean.Value)
@@ -267,6 +326,8 @@ namespace Seasons
                 fish.transform.position = new Vector3(fish.transform.position.x, s_waterLevel - _winterWaterSurfaceOffset, fish.transform.position.z);
 
             fish.m_body.velocity = Vector3.zero;
+            fish.m_haveWaypoint = false;
+            fish.m_isJumping = false;
         }
 
         public static void CheckIfCharacterAboveSurface(Character character)
@@ -298,6 +359,7 @@ namespace Seasons
                 character.m_swimTimer = 0.6f;
             }
         }
+
     }
 
     public static class CharacterExtentions_FrozenOceanSliding
@@ -312,7 +374,7 @@ namespace Seasons
 
         public static bool IsOnIce(this Character character)
         {
-            if (!WaterVariantController.IsWaterSurfaceFrozen())
+            if (!IsWaterSurfaceFrozen())
                 return false;
 
             if (!character.IsOnGround())
@@ -322,7 +384,7 @@ namespace Seasons
             if (lastGroundCollider == null)
                 return false;
 
-            return lastGroundCollider.name == WaterVariantController._iceSurfaceName;
+            return lastGroundCollider.name == _iceSurfaceName;
         }
 
         public static void StartIceSliding(this Character character, Vector3 currentVel, bool checkMagnitude = false, bool checkRunning = true)
@@ -418,7 +480,7 @@ namespace Seasons
             {
                 if (frozenOceanSlipperiness.Value == 0 || !___m_nview.IsValid() || !___m_nview.IsOwner())
                     return;
-                    
+
                 __state = new Tuple<float, Vector3>(Mathf.Max(0f, ___m_maxAirAltitude - __instance.transform.position.y), __instance.m_body.velocity);
             }
 
@@ -502,8 +564,52 @@ namespace Seasons
 
     }
 
-    [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.Awake))]
-    public static class WaterVolume_Awake_WaterVariantControllerInit
+    [HarmonyPatch(typeof(Heightmap), nameof(Heightmap.GetBiomeColor), new[] { typeof(Biome) })]
+    public static class Heightmap_GetBiomeColor_TerrainColor
+    {
+        private static bool callBaseMethod = false;
+
+        private static Color32 GetBaseBiomeColor(Biome biome)
+        {
+            callBaseMethod = true;
+            Color32 color = GetBiomeColor(biome);
+            callBaseMethod = false;
+            return color;
+        }
+
+        [HarmonyPriority(Priority.Last)]
+        private static void Prefix(ref Biome biome, ref Biome __state)
+        {
+            if (callBaseMethod)
+                return;
+
+            __state = Biome.None;
+
+            if (!seasonState.IsActive)
+                return;
+
+            if (seasonalBiomeColorOverride.TryGetValue(biome, out Dictionary<Season, Biome> overrideBiome) && overrideBiome.TryGetValue(seasonState.GetCurrentSeason(), out Biome overridedBiome))
+            {
+                __state = biome;
+                biome = overridedBiome;
+            }
+        }
+
+        [HarmonyPriority(Priority.First)]
+        private static void Postfix(ref Biome biome, Biome __state)
+        {
+            if (callBaseMethod)
+                return;
+
+            if (__state == Biome.None)
+                return;
+
+            biome = __state;
+        }
+    }
+
+    [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.OnEnable))]
+    public static class WaterVolume_OnEnable_WaterState
     {
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(WaterVolume __instance)
@@ -517,12 +623,16 @@ namespace Seasons
             if (!__instance.m_useGlobalWind)
                 return;
 
-            __instance.gameObject.AddComponent<WaterVariantController>().Init(__instance);
+            if (waterStates.ContainsKey(__instance))
+                return;
+
+            waterStates.Add(__instance, new WaterState(__instance));
+            UpdateWater(__instance, waterStates[__instance]);
         }
     }
 
-    [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.UpdateWaterTime))]
-    public static class WaterVolume_UpdateWaterTime_WaterVariantControllerInit
+    [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.OnDisable))]
+    public static class WaterVolume_OnDisable_WaterState
     {
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(WaterVolume __instance)
@@ -533,17 +643,20 @@ namespace Seasons
             if (!seasonState.IsActive)
                 return;
 
-            if (!WaterVariantController.IsWaterSurfaceFrozen())
+            if (!waterStates.ContainsKey(__instance))
                 return;
 
-            WaterVolume.s_waterTime = 0f;
+            UpdateWater(__instance, waterStates[__instance], revertState: true);
+
+            waterStates.Remove(__instance);
         }
     }
 
-    [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Start))]
-    public static class ZoneSystem_Start_AddWaterVariantControllerToWaterPlane
+    [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.UpdateWaterTime))]
+    public static class WaterVolume_UpdateWaterTime_WaterVariantControllerInit
     {
-        private static void Postfix(ZoneSystem __instance)
+        [HarmonyPriority(Priority.Last)]
+        private static void Postfix()
         {
             if (!UseTextureControllers())
                 return;
@@ -551,15 +664,10 @@ namespace Seasons
             if (!seasonState.IsActive)
                 return;
 
-            WaterVariantController.AddIceCollider(__instance.m_zonePrefab);
+            if (!IsWaterSurfaceFrozen())
+                return;
 
-            Transform waterPlane = EnvMan.instance.transform.Find("WaterPlane");
-            if (waterPlane != null)
-            {
-                MeshRenderer watersurface = waterPlane.GetComponentInChildren<MeshRenderer>();
-                if (watersurface != null)
-                    waterPlane.gameObject.AddComponent<WaterVariantController>().Init(watersurface);
-            }
+            WaterVolume.s_waterTime = 0f;
         }
     }
 
@@ -568,7 +676,7 @@ namespace Seasons
     {
         private static bool Prefix()
         {
-            return !WaterVariantController.IsWaterSurfaceFrozen();
+            return !IsWaterSurfaceFrozen();
         }
     }
 
@@ -583,7 +691,7 @@ namespace Seasons
             if (!character.IsOnIce())
                 return true;
 
-            __result = Player.m_localPlayer.GetCurrentBiome() == Heightmap.Biome.Ocean ? FootStep.GroundMaterial.Default : FootStep.GroundMaterial.Snow;
+            __result = Player.m_localPlayer.GetCurrentBiome() == Biome.Ocean ? FootStep.GroundMaterial.Default : FootStep.GroundMaterial.Snow;
             return false;
         }
     }
@@ -601,7 +709,7 @@ namespace Seasons
             if (__result != null && __result.m_name == "home")
                 return;
 
-            if (!WaterVariantController.LocalPlayerIsOnFrozenOcean() || !EnvMan.instance.IsNight())
+            if (!LocalPlayerIsOnFrozenOcean() || !EnvMan.instance.IsNight())
                 return;
 
             MusicMan.NamedMusic frozenOcean = __instance.FindMusic(frozenOceanMusic);
@@ -647,7 +755,7 @@ namespace Seasons
 
         public static void Prefix(EnvSetup env, ref AudioClip __state)
         {
-            if (!WaterVariantController.LocalPlayerIsOnFrozenOcean())
+            if (!LocalPlayerIsOnFrozenOcean())
                 return;
 
             __state = env.m_ambientLoop;
@@ -657,7 +765,7 @@ namespace Seasons
 
         public static void Postfix(EnvSetup env, AudioClip __state)
         {
-            if (!WaterVariantController.LocalPlayerIsOnFrozenOcean())
+            if (!LocalPlayerIsOnFrozenOcean())
                 return;
 
             env.m_ambientLoop = __state;
@@ -667,11 +775,11 @@ namespace Seasons
     [HarmonyPatch(typeof(Leviathan), nameof(Leviathan.FixedUpdate))]
     public static class Leviathan_FixedUpdate_FrozenOceanLeviathan
     {
-        private static bool Prefix(Leviathan __instance, Rigidbody ___m_body, ZNetView ___m_nview)
+        private static bool Prefix(Rigidbody ___m_body, ZNetView ___m_nview)
         {
-            if (!WaterVariantController.IsWaterSurfaceFrozen())
+            if (!IsWaterSurfaceFrozen())
                 return true;
-            
+
             if (___m_nview.IsValid() && ___m_nview.IsOwner())
             {
                 Vector3 position2 = ___m_body.position;
@@ -688,23 +796,23 @@ namespace Seasons
     {
         private static bool Prefix()
         {
-            return !WaterVariantController.IsWaterSurfaceFrozen();
+            return !IsWaterSurfaceFrozen();
         }
     }
 
     [HarmonyPatch(typeof(Player), nameof(Player.TeleportTo))]
     public static class Player_TeleportTo_FrozenOceanMinimapTeleportation
     {
-        private static void Postfix(Player __instance, bool __result, ref Vector3 ___m_teleportTargetPos)
+        private static void Postfix(bool __result, ref Vector3 ___m_teleportTargetPos)
         {
             if (!__result)
                 return;
 
-            if (!WaterVariantController.IsWaterSurfaceFrozen())
+            if (!IsWaterSurfaceFrozen())
                 return;
 
             if (___m_teleportTargetPos.y == 0)
-                ___m_teleportTargetPos = new Vector3 (___m_teleportTargetPos.x, ___m_teleportTargetPos.y + WaterVariantController.s_waterLevel, ___m_teleportTargetPos.z);
+                ___m_teleportTargetPos = new Vector3(___m_teleportTargetPos.x, ___m_teleportTargetPos.y + s_waterLevel, ___m_teleportTargetPos.z);
         }
     }
 
@@ -713,7 +821,7 @@ namespace Seasons
     {
         private static void Prefix(ref float __state)
         {
-            if (!WaterVariantController.IsWaterSurfaceFrozen())
+            if (!IsWaterSurfaceFrozen())
                 return;
 
             __state = WaterVolume.s_globalWindAlpha;
@@ -722,7 +830,7 @@ namespace Seasons
 
         private static void Postfix(float __state)
         {
-            if (!WaterVariantController.IsWaterSurfaceFrozen())
+            if (!IsWaterSurfaceFrozen())
                 return;
 
             WaterVolume.s_globalWindAlpha = __state;
@@ -734,7 +842,7 @@ namespace Seasons
     {
         private static void Prefix(ref float ___m_jumpChance, ref float __state)
         {
-            if (!WaterVariantController.IsWaterSurfaceFrozen())
+            if (!IsWaterSurfaceFrozen())
                 return;
 
             __state = ___m_jumpChance;
@@ -743,7 +851,7 @@ namespace Seasons
 
         private static void Postfix(ref float ___m_jumpChance, float __state)
         {
-            if (!WaterVariantController.IsWaterSurfaceFrozen())
+            if (!IsWaterSurfaceFrozen())
                 return;
 
             ___m_jumpChance = __state;
@@ -755,7 +863,7 @@ namespace Seasons
     {
         private static void Postfix(Ship __instance)
         {
-            __instance.StartCoroutine(WaterVariantController.CheckIfShipBelowSurface(__instance));
+            __instance.StartCoroutine(CheckIfShipBelowSurface(__instance));
         }
     }
 
@@ -764,10 +872,10 @@ namespace Seasons
     {
         private static void Postfix(Character __instance)
         {
-            if (!WaterVariantController.IsWaterSurfaceFrozen())
+            if (!IsWaterSurfaceFrozen())
                 return;
 
-            WaterVariantController.CheckIfCharacterAboveSurface(__instance);
+            CheckIfCharacterAboveSurface(__instance);
         }
     }
 
@@ -776,10 +884,31 @@ namespace Seasons
     {
         private static void Postfix(Fish __instance)
         {
-            if (!WaterVariantController.IsWaterSurfaceFrozen())
+            if (!IsWaterSurfaceFrozen())
                 return;
 
-            WaterVariantController.CheckIfFishAboveSurface(__instance);
+            CheckIfFishAboveSurface(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.CalcWave), new Type[] { typeof(Vector3), typeof(float), typeof(Vector4), typeof(float), typeof(float) })]
+    public static class WaterVolume_CalcWave_FrozenOceanPreventWaves
+    {
+        private static void Prefix(ref float waterTime, ref float __state)
+        {
+            if (!IsWaterSurfaceFrozen())
+                return;
+
+            __state = waterTime;
+            waterTime = 0f;
+        }
+
+        private static void Postfix(ref float waterTime, float __state)
+        {
+            if (!IsWaterSurfaceFrozen())
+                return;
+
+            waterTime = __state;
         }
     }
 
@@ -794,17 +923,20 @@ namespace Seasons
             if (!seasonState.IsActive)
                 return true;
 
-            if (!WaterVariantController.IsWaterSurfaceFrozen())
+            if (!IsWaterSurfaceFrozen())
                 return true;
 
             Vector3 origin = p;
             origin.y += 2000f;
             __result = Physics.Raycast(origin, Vector3.down, out var hitInfo, 10000f, ___m_blockRayMask);
-            if (__result && hitInfo.point.y == WaterVariantController.s_colliderHeight)
-                __result = Physics.Raycast(hitInfo.point + new Vector3(0, WaterVariantController._colliderOffset, 0), Vector3.down, 10000f, ___m_blockRayMask);
+            if (__result && hitInfo.point.y == s_colliderHeight)
+                __result = Physics.Raycast(hitInfo.point + new Vector3(0, _colliderOffset, 0), Vector3.down, 10000f, ___m_blockRayMask);
 
             return false;
         }
     }
+
+
+
 
 }

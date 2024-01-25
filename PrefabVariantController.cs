@@ -515,6 +515,18 @@ namespace Seasons
 
             return biome == Heightmap.Biome.DeepNorth || biome == Heightmap.Biome.AshLands;
         }
+
+        public static void AddControllerToPrefabs()
+        {
+            if (controlYggdrasil.Value)
+            {
+                Transform yggdrasilBranch = EnvMan.instance.transform.Find("YggdrasilBranch");
+                if (yggdrasilBranch == null)
+                    return;
+
+                AddComponentTo(yggdrasilBranch.gameObject, checkLocation: false);
+            }
+        }
     }
 
     [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.CreateObject))]
@@ -631,22 +643,6 @@ namespace Seasons
 
             foreach (GameObject obj in __result)
                 PrefabVariantController.AddComponentTo(obj);
-        }
-    }
-
-    [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Start))]
-    public static class ZoneSystem_Start_AddPrefabVariantControllerToYggdrasil
-    {
-        private static void Postfix()
-        {
-            if (!controlYggdrasil.Value)
-                return;
-
-            Transform yggdrasilBranch = EnvMan.instance.transform.Find("YggdrasilBranch");
-            if (yggdrasilBranch == null)
-                return;
-
-            PrefabVariantController.AddComponentTo(yggdrasilBranch.gameObject, checkLocation: false);
         }
     }
 }

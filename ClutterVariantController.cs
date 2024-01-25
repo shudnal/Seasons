@@ -170,13 +170,8 @@ namespace Seasons
             double seedFactor = Math.Log10(Math.Abs(seed));
             return (Math.Sin(Math.Sign(seed) * seedFactor * day) + Math.Sin(Math.Sqrt(seedFactor) * Math.E * day) + Math.Sin(Math.PI * day)) / 2;
         }
-    }
 
-    [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Start))]
-    public static class ZoneSystem_Start_ClutterContollerInit
-    {
-        [HarmonyPriority(Priority.Last)]
-        private static void Postfix()
+        public static void Init()
         {
             if (!UseTextureControllers())
                 return;

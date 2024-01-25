@@ -292,8 +292,8 @@ namespace Seasons
             frozenOceanSlipperiness = config("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1f, "Slipperiness factor of the frozen ocean surface");
             placeShipAboveFrozenOcean = config("Season - Winter ocean", "Place ship above frozen ocean surface", defaultValue: false, "Place ship above frozen ocean surface to prevent unpredictable collisions");
 
-            waterFreezesAfterDaysOfWinter.SettingChanged += (sender, args) => WaterVariantController.UpdateWaterState();
-            placeShipAboveFrozenOcean.SettingChanged += (sender, args) => WaterVariantController.UpdateShipsPositions();
+            waterFreezesAfterDaysOfWinter.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
+            placeShipAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateShipsPositions();
 
             vegetationSpringColor1 = config("Seasons - Color - Main - Spring", "Color 1", defaultValue: new Color(0.27f, 0.80f, 0.27f, 0.75f), "Color 1");
             vegetationSpringColor2 = config("Seasons - Color - Main - Spring", "Color 2", defaultValue: new Color(0.69f, 0.84f, 0.15f, 0.75f), "Color 2");
