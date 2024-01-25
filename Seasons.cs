@@ -29,6 +29,7 @@ namespace Seasons
         private static ConfigEntry<bool> loggingEnabled;
 
         public static ConfigEntry<CacheFormat> cacheStorageFormat;
+        public static ConfigEntry<bool> logTime;
 
         public static ConfigEntry<bool> overrideSeason;
         public static ConfigEntry<Season> seasonOverrided;
@@ -359,6 +360,7 @@ namespace Seasons
             localizationSeasonTooltipWinter = config("Seasons - Localization", "Season status effect tooltip - Winter has come", defaultValue: "Winter has come", "Message to be shown on the buff tooltip and almanach.");
 
             cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
+            logTime = config("Test", "Log time", defaultValue: false, "Log time info on state update");
 
             configDirectory = Path.Combine(Paths.ConfigPath, pluginID);
         }

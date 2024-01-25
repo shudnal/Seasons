@@ -96,7 +96,8 @@ namespace Seasons
                             || !changeSeasonOnlyAfterSleep.Value
                             || Game.instance.m_sleeping;
 
-            //LogInfo($"{m_season} {m_day} {m_worldDay} {newSeason} {dayInSeason} {worldDay} {EnvMan.instance.GetDayFraction(),-6:F4} {newSeason != GetCurrentSeason()} {timeForSeasonToChange} {sleepCheck} {forceSeasonChange} {timeForSeasonToChange && !forceSeasonChange && !sleepCheck && m_isUsingIngameDays && changeSeasonOnlyAfterSleep.Value && GetCurrentDay() == GetDaysInSeason() && dayInSeason != GetCurrentDay()}");
+            if (logTime.Value)
+                LogInfo($"Current: {m_season} {m_day} {m_worldDay} New: {newSeason} {dayInSeason} {worldDay} Time: {EnvMan.instance.GetDayFraction(),-6:F4} Total seconds: {GetTotalSeconds(), -10:F2} Skiptime:{EnvMan.instance.m_skipTime, -5} Time to change:{timeForSeasonToChange, -5} Sleep check:{sleepCheck,-5} Force:{forceSeasonChange, -5} To past:{timeForSeasonToChange && !forceSeasonChange && !sleepCheck && m_isUsingIngameDays && changeSeasonOnlyAfterSleep.Value && GetCurrentDay() == GetDaysInSeason() && dayInSeason != GetCurrentDay(), -5}");
 
             if (overrideSeason.Value)
                 m_season = seasonOverrided.Value;
