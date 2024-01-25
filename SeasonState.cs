@@ -97,7 +97,7 @@ namespace Seasons
                             || Game.instance.m_sleeping;
 
             if (logTime.Value)
-                LogInfo($"Current: {m_season} {m_day} {m_worldDay} New: {newSeason} {dayInSeason} {worldDay} Time: {EnvMan.instance.GetDayFraction(),-6:F4} Total seconds: {GetTotalSeconds(), -10:F2} Skiptime:{EnvMan.instance.m_skipTime, -5} Time to change:{timeForSeasonToChange, -5} Sleep check:{sleepCheck,-5} Force:{forceSeasonChange, -5} To past:{timeForSeasonToChange && !forceSeasonChange && !sleepCheck && m_isUsingIngameDays && changeSeasonOnlyAfterSleep.Value && GetCurrentDay() == GetDaysInSeason() && dayInSeason != GetCurrentDay(), -5}");
+                LogInfo($"Current: {m_season} {m_day} {m_worldDay} New: {newSeason} {dayInSeason} {worldDay} Time: {EnvMan.instance.GetDayFraction(),-6:F4} TotalSeconds: {GetTotalSeconds(), -10:F2} TimeToChange:{timeForSeasonToChange, -5} SleepCheck:{sleepCheck,-5} Force:{forceSeasonChange, -5} ToPast:{timeForSeasonToChange && !forceSeasonChange && !sleepCheck && m_isUsingIngameDays && changeSeasonOnlyAfterSleep.Value && GetCurrentDay() == GetDaysInSeason() && dayInSeason != GetCurrentDay(), -5}");
 
             if (overrideSeason.Value)
                 m_season = seasonOverrided.Value;
@@ -107,8 +107,8 @@ namespace Seasons
                 {
                     double timeSeconds = ZNet.instance.GetTimeSeconds() - EnvMan.instance.m_dayLengthSec;
                     
-                    EnvMan.instance.m_skipTime = false;
                     ZNet.instance.SetNetTime(Math.Max(timeSeconds, 0));
+                    EnvMan.instance.m_skipTime = false;
                     EnvMan.instance.m_totalSeconds = ZNet.instance.GetTimeSeconds();
 
                     worldDay = GetCurrentWorldDay();
@@ -214,7 +214,7 @@ namespace Seasons
 
         public int GetNightLength()
         {
-            return GetNightLength(GetCurrentSeason());
+            return GetNightLength(GetSeason(GetCurrentWorldDay()));
         }
 
         public int GetNightLength(Season season)
@@ -469,7 +469,7 @@ namespace Seasons
 
         public float DayStartFraction()
         {
-            return DayStartFraction(GetCurrentSeason());
+            return DayStartFraction(GetSeason(GetCurrentWorldDay()));
         }
 
         public float DayStartFraction(Season season)

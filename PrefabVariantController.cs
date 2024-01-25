@@ -410,10 +410,10 @@ namespace Seasons
             if (!SeasonalTextureVariants.controllers.TryGetValue(prefabName, out PrefabController controller))
                 return;
 
-            if (gameObject.TryGetComponent<PrefabVariantController>(out _))
+            if (checkLocation && IsIgnoredLocation(gameObject.transform.position))
                 return;
 
-            if (checkLocation && IsIgnoredLocation(gameObject.transform.position))
+            if (gameObject.TryGetComponent<PrefabVariantController>(out _))
                 return;
 
             gameObject.AddComponent<PrefabVariantController>().Init(controller, prefabName);
