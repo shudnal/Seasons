@@ -580,7 +580,7 @@ namespace Seasons
             return color;
         }
 
-        [HarmonyPriority(Priority.Last)]
+        [HarmonyPriority(Priority.First)]
         private static void Prefix(ref Biome biome, ref Biome __state)
         {
             if (callBaseMethod)
