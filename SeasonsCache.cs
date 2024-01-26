@@ -22,6 +22,7 @@ namespace Seasons
 
             if (SeasonalTextureVariants.Initialize())
             {
+                __instance.gameObject.AddComponent<PrefabVariantController>();
                 PrefabVariantController.AddControllerToPrefabs();
                 ClutterVariantController.Init();
                 __instance.gameObject.AddComponent<ZoneSystemVariantController>().Init(__instance);
