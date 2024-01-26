@@ -130,7 +130,10 @@ namespace Seasons
         private static string TimerString(double secondsToEndOfSeason)
         {
             TimeSpan span = TimeSpan.FromSeconds(secondsToEndOfSeason);
-            return span.TotalHours > 24 ? string.Format("{0:d2}:{1:d2}:{2:d2}", (int)span.TotalHours, span.Minutes, span.Seconds) : span.ToString(span.Hours > 0 ? @"hh\:mm\:ss" : @"mm\:ss");
+            if (hideSecondsInTimer.Value && span.TotalSeconds > 60)
+                return string.Format("{0:d2}:{1:d2}", (int)span.TotalHours, span.Minutes);
+            else
+                return span.TotalHours > 24 ? string.Format("{0:d2}:{1:d2}:{2:d2}", (int)span.TotalHours, span.Minutes, span.Seconds) : span.ToString(span.Hours > 0 ? @"hh\:mm\:ss" : @"mm\:ss");
         }
     }
 
