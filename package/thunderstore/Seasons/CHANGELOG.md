@@ -1,3 +1,6 @@
+# 1.0.7
+* major optimization
+
 # 1.0.6
 * water and terrain control rework
 * refinements and optimizations

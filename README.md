@@ -7,7 +7,7 @@ Four customizable seasons.
 
 If you do then probably you GPU can do better. Try setting launch options
 `-gfx-enable-gfx-jobs -gfx-enable-native-gfx-jobs`
-in Valheim general settings at Steam. 
+in Valheim general settings at Steam.
 
 It unlocks more GPU power available to the game which could help.
 It's more handy than editing **boot.config** file. It won't harm at least.
@@ -275,7 +275,7 @@ Stats file structure reflects vanilla SE_Stats status effect which has propertie
 
 File "Custom trader items.json" contains default custom trader items and their distribution between seasons.
 
-Items customized distinctly between seasons and traders. You can use custom traders names.
+Items can be customized distinctly between seasons and traders. You can use custom traders names.
 
 You can adapt items list from https://valheim.thunderstore.io/package/shudnal/TradersExtended/ as it shares the item structure.
 
@@ -313,9 +313,43 @@ The structure of the trader item reflects adapted ingame tradeable item descript
 * due to seasonal change of honey production and plants growth there are settings to show estimates of plants and beehive production (like in BetterUI)
 * seasons can be set changeable only when sleeping
 * water will freeze after set amount of days in winter (day is customizable)
+* ships can be pushed out of water when the surface is frozen
 
-## Installation (manual)
-extract Seasons folder to your BepInEx\Plugins\ folder
+## Custom world settings for realtime seasons calculations
+
+File "Custom world settings.json" contains example entry of custom world settings.
+
+You can set start time in UTC timezone and the day length in seconds.
+Your world name should be equal the set world name in settings for them to activate.
+
+If the world setting is set then seasons will be calculated from set datetime using current UTC time, set daylength in seconds and days in season from season settings.
+
+That way you will not have an option to change season on the sleep. Season will change when time is come.
+
+For example you can 
+* set start time as 0:00 of Monday
+* set day length 86400 seconds (1 day)
+* set days in season = 7
+
+It will mean your world has week long seasons starting from set Monday.
+
+## Seasonal buff icon replacement
+
+You can place files in the config folder to replace current buff icon (restart required):
+* season_fall.png
+* season_spring.png
+* season_summer.png
+* season_winter.png
+
+## Seasonal global key
+
+You can enable setting of season related server wide global key. It's disabled by default. You can customize the key in case you need it.
+
+Default seasonal keys:
+* season_fall
+* season_spring
+* season_summer
+* season_winter
 
 ## Configurating
 The best way to handle configs is configuration manager. Choose one that works for you:

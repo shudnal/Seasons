@@ -3,7 +3,7 @@
 
 Four customizable seasons.
 
-## You should not feel noticable impact on fps.
+## You should not feel any impact on fps.
 
 If you do then probably you GPU can do better. Try setting launch options
 `-gfx-enable-gfx-jobs -gfx-enable-native-gfx-jobs`

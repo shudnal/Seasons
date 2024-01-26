@@ -18,7 +18,7 @@ namespace Seasons
     {
         const string pluginID = "shudnal.Seasons";
         const string pluginName = "Seasons";
-        const string pluginVersion = "1.0.6";
+        const string pluginVersion = "1.0.7";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -421,11 +421,6 @@ namespace Seasons
             resourceStream.Read(data, 0, data.Length);
 
             return tex.LoadImage(data, true);
-        }
-
-        private void Test()
-        {
-            
         }
 
         private Color GetColorConfig(string fieldName)
