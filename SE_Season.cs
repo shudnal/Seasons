@@ -19,6 +19,8 @@ namespace Seasons
         public Dictionary<Skills.SkillType, float> m_skillLevels = new Dictionary<Skills.SkillType, float>();
         public Dictionary<Skills.SkillType, float> m_modifyAttackSkills = new Dictionary<Skills.SkillType, float>();
 
+        private static StringBuilder _sb = new StringBuilder(10);
+
         public override void UpdateStatusEffect(float dt)
         {
             if (m_season != seasonState.GetCurrentSeason())
@@ -41,22 +43,22 @@ namespace Seasons
 
         public override string GetTooltipString()
         {
-            StringBuilder sb = new StringBuilder();
-            sb.AppendFormat("{0}\n", GetSeasonTooltip());
-            sb.AppendFormat("{0} / {1}\n", Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}"), seasonState.GetDaysInSeason());
-            sb.AppendFormat("{0}: {1}\n", MessageNextSeason(), TimerString(seasonState.GetEndOfCurrentSeason() - seasonState.GetTotalSeconds()));
+            _sb.Clear();
+            _sb.AppendFormat("{0}\n", GetSeasonTooltip());
+            _sb.AppendFormat("{0} / {1}\n", Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}"), seasonState.GetDaysInSeason());
+            _sb.AppendFormat("{0}: {1}\n", MessageNextSeason(), TimerString(seasonState.GetEndOfCurrentSeason() - seasonState.GetTotalSeconds()));
 
             string statsTooltip = base.GetTooltipString();
             if (statsTooltip.Length > 0)
-                sb.Append(statsTooltip);
+                _sb.Append(statsTooltip);
 
             foreach (KeyValuePair<Skills.SkillType, float> item in m_skillLevels.Where(kvp => kvp.Value != 0f))
-                sb.AppendFormat("{0} <color=orange>{1}</color>\n", Localization.instance.Localize("$skill_" + item.Key.ToString().ToLower()), item.Value.ToString("+0;-0"));
+                _sb.AppendFormat("{0} <color=orange>{1}</color>\n", Localization.instance.Localize("$skill_" + item.Key.ToString().ToLower()), item.Value.ToString("+0;-0"));
 
             foreach (KeyValuePair<Skills.SkillType, float> item in m_modifyAttackSkills.Where(kvp => kvp.Value != 0f))
-                sb.AppendFormat("$inventory_dmgmod: {0} <color=orange>{1}%</color>\n", Localization.instance.Localize("$skill_" + item.Key.ToString().ToLower()), item.Value.ToString("+0;-0"));
+                _sb.AppendFormat("$inventory_dmgmod: {0} <color=orange>{1}%</color>\n", Localization.instance.Localize("$skill_" + item.Key.ToString().ToLower()), item.Value.ToString("+0;-0"));
 
-            return sb.ToString();
+            return _sb.ToString();
         }
 
         public override string GetIconText()
@@ -129,11 +131,20 @@ namespace Seasons
     
         private static string TimerString(double secondsToEndOfSeason)
         {
+            if (secondsToEndOfSeason < 60)
+                return DateTime.FromBinary(599266080000000000).AddSeconds(secondsToEndOfSeason).ToString(@"ss\s");
+
             TimeSpan span = TimeSpan.FromSeconds(secondsToEndOfSeason);
-            if (hideSecondsInTimer.Value && span.TotalSeconds > 60)
-                return string.Format("{0:d2}:{1:d2}", (int)span.TotalHours, span.Minutes);
+            if (hideSecondsInTimer.Value)
+                if (span.Hours > 0)
+                    return $"{(int)span.TotalHours}{new DateTime(span.Ticks).ToString(@"\h mm\m")}";
+                else
+                    return new DateTime(span.Ticks).ToString(@"mm\m ss\s");
             else
-                return span.TotalHours > 24 ? string.Format("{0:d2}:{1:d2}:{2:d2}", (int)span.TotalHours, span.Minutes, span.Seconds) : span.ToString(span.Hours > 0 ? @"hh\:mm\:ss" : @"mm\:ss");
+                if (span.TotalHours > 24)
+                    return string.Format("{0:d2}:{1:d2}:{2:d2}", (int)span.TotalHours, span.Minutes, span.Seconds);
+                else
+                    return span.ToString(span.Hours > 0 ? @"hh\:mm\:ss" : @"mm\:ss");
         }
     }
 
