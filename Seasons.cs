@@ -50,6 +50,7 @@ namespace Seasons
         public static ConfigEntry<bool> freezingSwimmingInWinter;
         public static ConfigEntry<bool> seasonalStatsOutdoorsOnly;
         public static ConfigEntry<bool> changeSeasonOnlyAfterSleep;
+        public static ConfigEntry<bool> hideGrassInWinter;
 
         public static ConfigEntry<int> waterFreezesAfterDaysOfWinter;
         public static ConfigEntry<bool> enableNightMusicOnFrozenOcean;
@@ -268,8 +269,10 @@ namespace Seasons
             seasonalStatsOutdoorsOnly = config("Season", "Seasonal stats works only outdoors", defaultValue: true, "Make seasonal stats works only outdoors");
             freezingSwimmingInWinter = config("Season", "Get freezing when swimming in cold water in winter", defaultValue: true, "Swimming in cold water during winter will get you freezing debuff");
             changeSeasonOnlyAfterSleep = config("Season", "Change season only after sleep", defaultValue: false, "Season can be changed regular way only after sleep");
+            hideGrassInWinter = config("Season", "Hide grass in winter", defaultValue: false, "Hide grass in winter");
 
             seasonalStatsOutdoorsOnly.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
+            hideGrassInWinter.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateColors();
 
             showCurrentSeasonBuff = config("Season - Buff", "Show current season buff", defaultValue: true, "Show current season buff.");
             seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");

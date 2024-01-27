@@ -35,7 +35,7 @@ namespace Seasons
 
         private readonly Dictionary<Material, int> m_materialVariantOffset = new Dictionary<Material, int>();
 
-        private static Color instanced_mistlands_grass_short_color = Color.clear;
+        private readonly Dictionary<Material, Color> m_originalColors = new Dictionary<Material, Color>();
 
         public static ClutterVariantController instance => m_instance;
 
@@ -123,9 +123,9 @@ namespace Seasons
                 {
                     if (texProp.Value.HaveOriginalTexture())
                         materialVariants.Key.SetTexture(texProp.Key, texProp.Value.original);
-                    
-                    if (materialVariants.Key.name == "grasscross_mistlands_short")
-                        materialVariants.Key.color = instanced_mistlands_grass_short_color;
+
+                    if (m_originalColors.ContainsKey(materialVariants.Key))
+                        materialVariants.Key.color = m_originalColors[materialVariants.Key];
                 }
         }
 
@@ -139,14 +139,21 @@ namespace Seasons
                     if (texProp.Value.seasons.TryGetValue(seasonState.GetCurrentSeason(), out Dictionary<int, Texture2D> variants) && variants.TryGetValue(pos, out Texture2D texture))
                     {
                         if (!texProp.Value.HaveOriginalTexture())
-                        {
                             texProp.Value.SetOriginalTexture(materialVariants.Key.GetTexture(texProp.Key));
+
+                        if (!m_originalColors.ContainsKey(materialVariants.Key))
+                            m_originalColors.Add(materialVariants.Key, materialVariants.Key.color);
+
+                        if (hideGrassInWinter.Value && seasonState.GetCurrentSeason() == Season.Winter)
+                            materialVariants.Key.color = Color.clear;
+                        else
+                        {
+                            materialVariants.Key.SetTexture(texProp.Key, texture);
                             if (materialVariants.Key.name == "grasscross_mistlands_short")
-                                instanced_mistlands_grass_short_color = materialVariants.Key.color;
+                                materialVariants.Key.color = GetGrassConfigColor(seasonState.GetCurrentSeason(), pos);
+                            else
+                                materialVariants.Key.color = m_originalColors[materialVariants.Key];
                         }
-                        materialVariants.Key.SetTexture(texProp.Key, texture);
-                        if (materialVariants.Key.name == "grasscross_mistlands_short")
-                            materialVariants.Key.color = GetGrassConfigColor(seasonState.GetCurrentSeason(), pos);
                     }
                 }
         }
