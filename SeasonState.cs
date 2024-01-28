@@ -1575,7 +1575,10 @@ namespace Seasons
                 if (seasonRandEvent != null)
                 {
                     if (seasonRandEvent.m_biomes != null)
+                    {
                         randEvent.m_biome = seasonRandEvent.GetBiome();
+                        randEvent.m_spawn.ForEach(spawn => spawn.m_biome |= randEvent.m_biome);
+                    }
 
                     if (seasonRandEvent.m_weight == 0)
                     {
