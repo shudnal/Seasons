@@ -51,6 +51,7 @@ namespace Seasons
         public static ConfigEntry<bool> seasonalStatsOutdoorsOnly;
         public static ConfigEntry<bool> changeSeasonOnlyAfterSleep;
         public static ConfigEntry<bool> hideGrassInWinter;
+        public static ConfigEntry<string> hideGrassListInWinter;
 
         public static ConfigEntry<int> waterFreezesAfterDaysOfWinter;
         public static ConfigEntry<bool> enableNightMusicOnFrozenOcean;
@@ -270,9 +271,11 @@ namespace Seasons
             freezingSwimmingInWinter = config("Season", "Get freezing when swimming in cold water in winter", defaultValue: true, "Swimming in cold water during winter will get you freezing debuff");
             changeSeasonOnlyAfterSleep = config("Season", "Change season only after sleep", defaultValue: false, "Season can be changed regular way only after sleep");
             hideGrassInWinter = config("Season", "Hide grass in winter", defaultValue: false, "Hide grass in winter");
+            hideGrassListInWinter = config("Season", "Hide grass in set list in winter", defaultValue: "grasscross_meadows, grasscross_forest_brown, grasscross_forest, grasscross_swamp, grasscross_heath, grasscross_meadows_short, grasscross_heath_flower, grasscross_mistlands_short", "Hide set grass in winter");
 
             seasonalStatsOutdoorsOnly.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
             hideGrassInWinter.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateColors();
+            hideGrassListInWinter.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateColors();
 
             showCurrentSeasonBuff = config("Season - Buff", "Show current season buff", defaultValue: true, "Show current season buff.");
             seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");

@@ -144,7 +144,7 @@ namespace Seasons
                         if (!m_originalColors.ContainsKey(materialVariants.Key))
                             m_originalColors.Add(materialVariants.Key, materialVariants.Key.color);
 
-                        if (hideGrassInWinter.Value && seasonState.GetCurrentSeason() == Season.Winter)
+                        if (hideGrassInWinter.Value && seasonState.GetCurrentSeason() == Season.Winter && hideGrassListInWinter.Value.IndexOf(materialVariants.Key.name, StringComparison.OrdinalIgnoreCase) > 0)
                             materialVariants.Key.color = Color.clear;
                         else
                         {
