@@ -565,7 +565,7 @@ namespace Seasons
         public static string GetPrefabName(GameObject go)
         {
             if (!s_tempPrefabNames.TryGetValue(go.name, out string prefabName))
-            {
+        {
                 prefabName = Utils.GetPrefabName(go);
                 s_tempPrefabNames.Add(go.name, prefabName);
             }

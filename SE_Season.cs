@@ -15,11 +15,11 @@ namespace Seasons
         private bool m_indoors = false;
 
         [Header("Skills modifiers")]
-        public Dictionary<Skills.SkillType, float> m_raiseSkills = new Dictionary<Skills.SkillType, float>();
-        public Dictionary<Skills.SkillType, float> m_skillLevels = new Dictionary<Skills.SkillType, float>();
-        public Dictionary<Skills.SkillType, float> m_modifyAttackSkills = new Dictionary<Skills.SkillType, float>();
+        public Dictionary<Skills.SkillType, float> m_customRaiseSkills = new Dictionary<Skills.SkillType, float>();
+        public Dictionary<Skills.SkillType, float> m_customSkillLevels = new Dictionary<Skills.SkillType, float>();
+        public Dictionary<Skills.SkillType, float> m_customModifyAttackSkills = new Dictionary<Skills.SkillType, float>();
 
-        private static StringBuilder _sb = new StringBuilder(10);
+        private static readonly StringBuilder _sb = new StringBuilder(100);
 
         public override void UpdateStatusEffect(float dt)
         {
@@ -52,10 +52,10 @@ namespace Seasons
             if (statsTooltip.Length > 0)
                 _sb.Append(statsTooltip);
 
-            foreach (KeyValuePair<Skills.SkillType, float> item in m_skillLevels.Where(kvp => kvp.Value != 0f))
+            foreach (KeyValuePair<Skills.SkillType, float> item in m_customSkillLevels.Where(kvp => kvp.Value != 0f))
                 _sb.AppendFormat("{0} <color=orange>{1}</color>\n", Localization.instance.Localize("$skill_" + item.Key.ToString().ToLower()), item.Value.ToString("+0;-0"));
 
-            foreach (KeyValuePair<Skills.SkillType, float> item in m_modifyAttackSkills.Where(kvp => kvp.Value != 0f))
+            foreach (KeyValuePair<Skills.SkillType, float> item in m_customModifyAttackSkills.Where(kvp => kvp.Value != 0f))
                 _sb.AppendFormat("$inventory_dmgmod: {0} <color=orange>{1}%</color>\n", Localization.instance.Localize("$skill_" + item.Key.ToString().ToLower()), item.Value.ToString("+0;-0"));
 
             return _sb.ToString();
@@ -77,26 +77,26 @@ namespace Seasons
         
         public override void ModifyRaiseSkill(Skills.SkillType skill, ref float value)
         {
-            if (m_raiseSkills.ContainsKey(skill))
-                value += m_raiseSkills[skill];
-            else if (m_raiseSkills.ContainsKey(Skills.SkillType.All))
-                value += m_raiseSkills[Skills.SkillType.All];
+            if (m_customRaiseSkills.ContainsKey(skill))
+                value += m_customRaiseSkills[skill];
+            else if (m_customRaiseSkills.ContainsKey(Skills.SkillType.All))
+                value += m_customRaiseSkills[Skills.SkillType.All];
         }
 
         public override void ModifySkillLevel(Skills.SkillType skill, ref float value)
         {
-            if (m_skillLevels.ContainsKey(skill))
-                value += m_skillLevels[skill];
-            else if (m_skillLevels.ContainsKey(Skills.SkillType.All))
-                value += m_skillLevels[Skills.SkillType.All];
+            if (m_customSkillLevels.ContainsKey(skill))
+                value += m_customSkillLevels[skill];
+            else if (m_customSkillLevels.ContainsKey(Skills.SkillType.All))
+                value += m_customSkillLevels[Skills.SkillType.All];
         }
 
         public override void ModifyAttack(Skills.SkillType skill, ref HitData hitData)
         {
-            if (m_modifyAttackSkills.ContainsKey(skill))
-                hitData.m_damage.Modify(m_modifyAttackSkills[skill]);
-            else if (m_modifyAttackSkills.ContainsKey(Skills.SkillType.All))
-                hitData.m_damage.Modify(m_modifyAttackSkills[Skills.SkillType.All]);
+            if (m_customModifyAttackSkills.ContainsKey(skill))
+                hitData.m_damage.Modify(m_customModifyAttackSkills[skill]);
+            else if (m_customModifyAttackSkills.ContainsKey(Skills.SkillType.All))
+                hitData.m_damage.Modify(m_customModifyAttackSkills[Skills.SkillType.All]);
         }
 
         private string GetSeasonTooltip()
