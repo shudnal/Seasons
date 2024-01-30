@@ -392,6 +392,15 @@ namespace Seasons
                 },
                 new SeasonEnvironment
                 {
+                    m_name = "SwampRain Fall",
+                    m_cloneFrom = "SwampRain",
+                    m_isWet = true,
+                    m_isCold = true,
+                    m_isColdAtNight = true,
+                    m_alwaysDark = false,
+                },
+                new SeasonEnvironment
+                {
                     m_name = "Mistlands_clear Winter",
                     m_cloneFrom = "Mistlands_clear",
                     m_isCold = true,
@@ -560,10 +569,10 @@ namespace Seasons
             Fall.replace.Add(new SeasonBiomeEnvironment.EnvironmentReplace("ThunderStorm", "ThunderStorm Fall"));
 
             Fall.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Meadows", new EnvEntry { m_environment = "DeepForest Mist", m_weight = 0.2f }));
-            Fall.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Meadows", new EnvEntry { m_environment = "SwampRain", m_weight = 0.2f }));
+            Fall.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Meadows", new EnvEntry { m_environment = "SwampRain Fall", m_weight = 0.2f }));
 
             Fall.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Black forest", new EnvEntry { m_environment = "LightRain", m_weight = 0.1f }));
-            Fall.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Black forest", new EnvEntry { m_environment = "SwampRain", m_weight = 0.1f }));
+            Fall.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Black forest", new EnvEntry { m_environment = "SwampRain Fall", m_weight = 0.1f }));
 
             Fall.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Swamp", new EnvEntry { m_environment = "ThunderStorm", m_weight = 0.1f }));
 
@@ -571,12 +580,12 @@ namespace Seasons
 
             Fall.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Plains", new EnvEntry { m_environment = "Rain", m_weight = 0.4f }));
             Fall.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Plains", new EnvEntry { m_environment = "ThunderStorm", m_weight = 0.2f }));
-            Fall.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Plains", new EnvEntry { m_environment = "SwampRain", m_weight = 0.1f }));
+            Fall.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Plains", new EnvEntry { m_environment = "SwampRain Fall", m_weight = 0.1f }));
 
-            Fall.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Ocean", new EnvEntry { m_environment = "SwampRain", m_weight = 0.1f }));
+            Fall.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Ocean", new EnvEntry { m_environment = "SwampRain Fall", m_weight = 0.1f }));
             Fall.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Ocean", new EnvEntry { m_environment = "DeepForest Mist", m_weight = 0.1f }));
 
-            Fall.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Mistlands", new EnvEntry { m_environment = "SwampRain", m_weight = 0.1f }));
+            Fall.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Mistlands", new EnvEntry { m_environment = "SwampRain Fall", m_weight = 0.1f }));
             Fall.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Mistlands", new EnvEntry { m_environment = "DeepForest Mist", m_weight = 0.1f }));
 
             Winter.replace.Add(new SeasonBiomeEnvironment.EnvironmentReplace("Rain", "Rain Winter"));

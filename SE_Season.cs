@@ -58,9 +58,10 @@ namespace Seasons
             foreach (KeyValuePair<Skills.SkillType, float> item in m_customModifyAttackSkills.Where(kvp => kvp.Value != 0f))
                 _sb.AppendFormat("$inventory_dmgmod: {0} <color=orange>{1}%</color>\n", SkillLocalized(item.Key), item.Value.ToString("+0;-0"));
 
+            _sb.Append("\n");
             return _sb.ToString();
-            
-            string SkillLocalized(Skills.SkillType skill)
+
+            static string SkillLocalized(Skills.SkillType skill)
             {
                 return Localization.instance.Localize(skill == Skills.SkillType.All ? "$inventory_skills" : "$skill_" + skill.ToString().ToLower());
             }

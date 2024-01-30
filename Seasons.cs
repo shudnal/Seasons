@@ -18,7 +18,7 @@ namespace Seasons
     {
         const string pluginID = "shudnal.Seasons";
         const string pluginName = "Seasons";
-        const string pluginVersion = "1.0.7";
+        const string pluginVersion = "1.0.8";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -29,6 +29,7 @@ namespace Seasons
 
         public static ConfigEntry<CacheFormat> cacheStorageFormat;
         public static ConfigEntry<bool> logTime;
+        public static ConfigEntry<bool> logFloes; 
 
         public static ConfigEntry<bool> overrideSeason;
         public static ConfigEntry<Season> seasonOverrided;
@@ -53,7 +54,10 @@ namespace Seasons
         public static ConfigEntry<bool> hideGrassInWinter;
         public static ConfigEntry<string> hideGrassListInWinter;
 
-        public static ConfigEntry<int> waterFreezesAfterDaysOfWinter;
+        public static ConfigEntry<bool> enableFrozenWater;
+        public static ConfigEntry<Vector2> waterFreezesInWinterDays;
+        public static ConfigEntry<bool> enableIceFloes;
+        public static ConfigEntry<Vector2> iceFloesInWinterDays;
         public static ConfigEntry<bool> enableNightMusicOnFrozenOcean;
         public static ConfigEntry<float> frozenOceanSlipperiness;
         public static ConfigEntry<bool> placeShipAboveFrozenOcean;
@@ -297,12 +301,18 @@ namespace Seasons
             overrideSeason.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
             seasonOverrided.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
 
-            waterFreezesAfterDaysOfWinter = config("Season - Winter ocean", "Freeze water in set day of winter", defaultValue: 6, "Water will freeze in the set day of winter");
+            enableFrozenWater = config("Season - Winter ocean", "Enable frozen water", defaultValue: true, "Enable frozen water in winter");
+            waterFreezesInWinterDays = config("Season - Winter ocean", "Freeze the water at given days from to", defaultValue: new Vector2(6f, 9f), "Water will freeze in the first set day of winter and will be unfrozen after second set day");
+            enableIceFloes = config("Season - Winter ocean", "Enable ice floes in winter", defaultValue: true, "Enable ice floes in winter");
+            iceFloesInWinterDays = config("Season - Winter ocean", "Fill the water with ice floes at given days from to", defaultValue: new Vector2(4f, 10f), "Ice floes will be spawned in the first set day of winter and will be removed after second set day");
             enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
             frozenOceanSlipperiness = config("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1f, "Slipperiness factor of the frozen ocean surface");
-            placeShipAboveFrozenOcean = config("Season - Winter ocean", "Place ship above frozen ocean surface", defaultValue: false, "Place ship above frozen ocean surface to prevent unpredictable collisions");
+            placeShipAboveFrozenOcean = config("Season - Winter ocean", "Place ship above frozen ocean surface", defaultValue: false, "Place ship above frozen ocean surface to move them without destroying");
 
-            waterFreezesAfterDaysOfWinter.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
+            enableFrozenWater.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
+            enableIceFloes.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
+            waterFreezesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
+            iceFloesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             placeShipAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateShipsPositions();
 
             vegetationSpringColor1 = config("Seasons - Color - Main - Spring", "Color 1", defaultValue: new Color(0.27f, 0.80f, 0.27f, 0.75f), "Color 1");
@@ -351,23 +361,24 @@ namespace Seasons
             seasonalGlobalKeySummer = config("Seasons - Global keys", "Summer", defaultValue: "Season_Summer", "Seasonal global key for summer");
             seasonalGlobalKeyWinter = config("Seasons - Global keys", "Winter", defaultValue: "Season_Winter", "Seasonal global key for winter");
 
-            localizationSeasonNameSpring = config("Seasons - Localization", "Season name Spring", defaultValue: "Spring", "Season name");
-            localizationSeasonNameSummer = config("Seasons - Localization", "Season name Summer", defaultValue: "Summer", "Season name");
-            localizationSeasonNameFall = config("Seasons - Localization", "Season name Fall", defaultValue: "Fall", "Season name");
-            localizationSeasonNameWinter = config("Seasons - Localization", "Season name Winter", defaultValue: "Winter", "Season name");
+            localizationSeasonNameSpring = config("Seasons - Localization", "Season name Spring", defaultValue: "Spring", "Season name", false);
+            localizationSeasonNameSummer = config("Seasons - Localization", "Season name Summer", defaultValue: "Summer", "Season name", false);
+            localizationSeasonNameFall = config("Seasons - Localization", "Season name Fall", defaultValue: "Fall", "Season name", false);
+            localizationSeasonNameWinter = config("Seasons - Localization", "Season name Winter", defaultValue: "Winter", "Season name", false);
 
-            localizationSeasonIsComingSpring = config("Seasons - Localization", "Status tooltip - Spring is coming", defaultValue: "Spring is coming", "Message to be shown on the last day of the previous season.");
-            localizationSeasonIsComingSummer = config("Seasons - Localization", "Status tooltip - Summer is coming", defaultValue: "Summer is coming", "Message to be shown on the last day of the previous season.");
-            localizationSeasonIsComingFall = config("Seasons - Localization", "Status tooltip - Fall is coming", defaultValue: "Fall is coming", "Message to be shown on the last day of the previous season.");
-            localizationSeasonIsComingWinter = config("Seasons - Localization", "Status tooltip - Winter is coming", defaultValue: "Winter is coming", "Message to be shown on the last day of the previous season.");
+            localizationSeasonIsComingSpring = config("Seasons - Localization", "Status tooltip - Spring is coming", defaultValue: "Spring is coming", "Message to be shown on the last day of the previous season.", false);
+            localizationSeasonIsComingSummer = config("Seasons - Localization", "Status tooltip - Summer is coming", defaultValue: "Summer is coming", "Message to be shown on the last day of the previous season.", false);
+            localizationSeasonIsComingFall = config("Seasons - Localization", "Status tooltip - Fall is coming", defaultValue: "Fall is coming", "Message to be shown on the last day of the previous season.", false);
+            localizationSeasonIsComingWinter = config("Seasons - Localization", "Status tooltip - Winter is coming", defaultValue: "Winter is coming", "Message to be shown on the last day of the previous season.", false);
 
-            localizationSeasonTooltipSpring = config("Seasons - Localization", "Season status effect tooltip - Spring has come", defaultValue: "Spring has come", "Message to be shown on the buff tooltip and almanach.");
-            localizationSeasonTooltipSummer = config("Seasons - Localization", "Season status effect tooltip - Summer has come", defaultValue: "Summer has come", "Message to be shown on the buff tooltip and almanach.");
-            localizationSeasonTooltipFall = config("Seasons - Localization", "Season status effect tooltip - Fall has come", defaultValue: "Fall has come", "Message to be shown on the buff tooltip and almanach.");
-            localizationSeasonTooltipWinter = config("Seasons - Localization", "Season status effect tooltip - Winter has come", defaultValue: "Winter has come", "Message to be shown on the buff tooltip and almanach.");
+            localizationSeasonTooltipSpring = config("Seasons - Localization", "Season status effect tooltip - Spring has come", defaultValue: "Spring has come", "Message to be shown on the buff tooltip and almanach.", false);
+            localizationSeasonTooltipSummer = config("Seasons - Localization", "Season status effect tooltip - Summer has come", defaultValue: "Summer has come", "Message to be shown on the buff tooltip and almanach.", false);
+            localizationSeasonTooltipFall = config("Seasons - Localization", "Season status effect tooltip - Fall has come", defaultValue: "Fall has come", "Message to be shown on the buff tooltip and almanach.", false);
+            localizationSeasonTooltipWinter = config("Seasons - Localization", "Season status effect tooltip - Winter has come", defaultValue: "Winter has come", "Message to be shown on the buff tooltip and almanach.", false);
 
             cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
             logTime = config("Test", "Log time", defaultValue: false, "Log time info on state update");
+            logFloes = config("Test", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying");
 
             configDirectory = Path.Combine(Paths.ConfigPath, pluginID);
         }
@@ -415,7 +426,10 @@ namespace Seasons
         {
             string fileInConfigFolder = Path.Combine(configDirectory, filename);
             if (File.Exists(fileInConfigFolder))
+            {
+                LogInfo($"Loaded image: {fileInConfigFolder}");
                 return tex.LoadImage(File.ReadAllBytes(fileInConfigFolder));
+            }
             
             Assembly executingAssembly = Assembly.GetExecutingAssembly();
 

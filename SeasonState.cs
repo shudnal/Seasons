@@ -595,10 +595,18 @@ namespace Seasons
 
         public float GetWaterSurfaceFreezeStatus()
         {
-            if (GetCurrentSeason() != Season.Winter || waterFreezesAfterDaysOfWinter.Value <= 0)
+            if (!enableFrozenWater.Value)
                 return 0f;
 
-            return Mathf.Clamp01((float)GetCurrentDay() / Math.Min(waterFreezesAfterDaysOfWinter.Value, GetDaysInSeason() + 1));
+            int currentDay = GetCurrentDay();
+            int daysInSeason = GetDaysInSeason();
+            int firstDay = Mathf.Clamp((int)waterFreezesInWinterDays.Value.x, 0, daysInSeason + 1);
+            int lastDay = Mathf.Clamp((int)waterFreezesInWinterDays.Value.y, 0, daysInSeason + 1);
+
+            if (currentDay == 0 || GetCurrentSeason() != Season.Winter || lastDay == 0 || lastDay > daysInSeason)
+                return 0f;
+
+            return currentDay > lastDay ? Mathf.Clamp01((float)(daysInSeason - currentDay) / Math.Max(daysInSeason - lastDay, 1)) : Mathf.Clamp01((float)currentDay / Math.Max(firstDay, 1));
         }
 
         private bool CheckIfSeasonChanged(int currentSeason, int dayInSeason, int worldDay)
