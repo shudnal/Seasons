@@ -78,7 +78,7 @@ namespace Seasons
         public static float s_colliderHeight = 0f;
 
         public const float _winterWaterSurfaceOffset = 2f;
-        public const float _colliderOffset = -0.01f;
+        public const float _colliderOffset = 0.01f;
         public const string _iceSurfaceName = "IceSurface";
 
         public static GameObject s_iceSurface;
