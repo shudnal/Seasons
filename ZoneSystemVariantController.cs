@@ -1214,7 +1214,50 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(Floating), nameof(Floating.CustomFixedUpdate))]
+    public static class Floating_CustomFixedUpdate_IceFloeRotation
+    {
+        private static void AddWaveForce(Vector3[] positions, Rigidbody rbody, float fixedDeltaTime)
+        {
+            foreach (Vector3 position in positions)
+            {
+                float depthDelta = position.y - Floating.GetLiquidLevel(position);
+                if (Mathf.Abs(depthDelta) < 0.2f)
+                    continue;
+
+                Vector3 force = 0.5f * Mathf.Clamp01(Mathf.Abs(depthDelta / 4)) * (fixedDeltaTime * 50f) * depthDelta < 0 ? Vector3.up / 2 : Vector3.down;
+                rbody.AddForceAtPosition(force * 0.02f, position, ForceMode.VelocityChange);
+            }
+        }
+
+        private static void Postfix(Floating __instance, float fixedDeltaTime, ZNetView ___m_nview, Rigidbody ___m_body, Collider ___m_collider)
+        {
+            if (!___m_nview.IsValid() || !___m_nview.IsOwner())
+                return;
+
+            if (___m_nview.GetZDO().GetPrefab() != _iceFloePrefab)
+                return;
+
+            if (!__instance.HaveLiquidLevel() || __instance.GetFloatDepth() > 0f)
+                return;
+
+            Vector3 wind = WaterVolume.s_globalWindAlpha == 0f ? WaterVolume.s_globalWind1 : Vector4.Lerp(WaterVolume.s_globalWind1, WaterVolume.s_globalWind2, WaterVolume.s_globalWindAlpha);
+            Vector3 windSide = Vector3.Cross(wind, __instance.transform.up);
+
+            Vector3[] forcePositions = new Vector3[4]
+            {
+                ___m_collider.ClosestPoint(___m_body.worldCenterOfMass + wind * 100f),
+                ___m_collider.ClosestPoint(___m_body.worldCenterOfMass - wind * 100f),
+                ___m_collider.ClosestPoint(___m_body.worldCenterOfMass + windSide * 100f),
+                ___m_collider.ClosestPoint(___m_body.worldCenterOfMass - windSide * 100f)
+            };
+
+            AddWaveForce(forcePositions, ___m_body, fixedDeltaTime);
+        }
+    }
 
 
+
+    
 
 }
