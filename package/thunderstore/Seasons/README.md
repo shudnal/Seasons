@@ -312,8 +312,10 @@ The structure of the trader item reflects adapted ingame tradeable item descript
 * you can set localization strings for season names and tooltips
 * due to seasonal change of honey production and plants growth there are settings to show estimates of plants and beehive production (like in BetterUI)
 * seasons can be set changeable only when sleeping
-* water will freeze after set amount of days in winter (day is customizable)
+* ice floes will spawn in ocean in set period of days in winter
+* water will freeze in set period of days in winter
 * ships can be pushed out of water when the surface is frozen
+* you can hide certain grass materials in winter
 
 ## Custom world settings for realtime seasons calculations
 

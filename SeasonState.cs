@@ -687,13 +687,13 @@ namespace Seasons
         {
             UpdateBiomeEnvironments();
             UpdateGlobalKeys();
+            ZoneSystemVariantController.UpdateWaterState();
 
             if (UseTextureControllers())
             {
                 PrefabVariantController.UpdatePrefabColors();
                 ZoneSystemVariantController.UpdateTerrainColors();
                 ClutterVariantController.instance.UpdateColors();
-                ZoneSystemVariantController.UpdateWaterState();
 
                 UpdateTorchesFireWarmth();
 
@@ -867,8 +867,8 @@ namespace Seasons
             if (UseTextureControllers())
             {
                 ClutterVariantController.instance.UpdateColors();
-                ZoneSystemVariantController.UpdateWaterState();
             }
+            ZoneSystemVariantController.UpdateWaterState();
         }
     }
 
@@ -879,9 +879,7 @@ namespace Seasons
         {
             float fraction = changeSeasonOnlyAfterSleep.Value ? 0.2498f : 0.24f;
 
-            // track day fraction change both ways
-            bool timeForSeasonToChange = oldDayFraction > 0.16f && oldDayFraction <= fraction && newDayFraction >= fraction && newDayFraction < 0.3f
-                                      || oldDayFraction < 0.3f && oldDayFraction >= fraction && newDayFraction <= fraction && newDayFraction > 0.16f;
+            bool timeForSeasonToChange = oldDayFraction > 0.16f && oldDayFraction <= fraction && newDayFraction >= fraction && newDayFraction < 0.3f;
             seasonState.UpdateState(timeForSeasonToChange);
         }
     }

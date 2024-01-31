@@ -1,3 +1,15 @@
+# 1.0.9
+* dedicated server ice floes fix
+
+# 1.0.8
+* remade config setting for frozen water surface (now you can set period)
+* added ice floes spawning in ocean in set period of days
+* you can now build on ice (frozen water surface)
+* added option to hide grass in winter
+* fixed unmatched spawn biomes in random event
+* added custom skills support for custom buff settings (added by Jotunn or SkillsManager)
+* added localization for "All" skills in Raven menu
+
 # 1.0.7
 * major optimization
 
@@ -7,6 +19,9 @@
 * time skip refinements
 * removed incompatibility with LongerDays
 
+<details>
+<summary><b>Changelog History</b> (<i>click to expand</i>)</summary>
+
 # 1.0.5
 * optional global key setting
 * timer to the end of current season in Raven menu
@@ -15,9 +30,6 @@
 * fixed season sync in multiplayer
 * fixed occasional bug leading to long sleep skip between seasons
 * fixed rescaled time calculation
-
-<details>
-<summary><b>Changelog History</b> (<i>click to expand</i>)</summary>
 
 # 1.0.4
 * optional placing ships above the ice surface

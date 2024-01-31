@@ -241,12 +241,12 @@ namespace Seasons
         {
             s_freezeStatus = seasonState.GetWaterSurfaceFreezeStatus();
 
+            CheckToRemoveIceFloes();
+
             foreach (KeyValuePair<WaterVolume, WaterState> waterState in waterStates)
                 UpdateWater(waterState.Key, waterState.Value);
 
             UpdateWaterSurface(s_waterPlane, s_waterPlaneState);
-
-            CheckToRemoveIceFloes();
 
             Seasons.instance.StartCoroutine(UpdateWaterObjects());
         }
@@ -457,7 +457,7 @@ namespace Seasons
 
             Vector2i zoneID = ZoneSystem.instance.GetZone(position);
 
-            if (!ZoneSystem.instance.IsZoneGenerated(zoneID) || !ZoneSystem.instance.IsZoneLoaded(zoneID))
+            if (!ZoneSystem.instance.IsZoneLoaded(zoneID))
                 return false;
 
             List<ZDO> tempList = new List<ZDO>();
