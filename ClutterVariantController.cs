@@ -131,6 +131,7 @@ namespace Seasons
 
         public void UpdateColors()
         {
+            List<string> hideMaterialByName = hideGrassListInWinter.Value.Split(',').Select(p => p.Trim().ToLower()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
             int variant = GetCurrentMainVariant();
             foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
                 foreach (KeyValuePair<string, TextureVariants> texProp in materialVariants.Value)
@@ -144,7 +145,7 @@ namespace Seasons
                         if (!m_originalColors.ContainsKey(materialVariants.Key))
                             m_originalColors.Add(materialVariants.Key, materialVariants.Key.color);
 
-                        if (hideGrassInWinter.Value && seasonState.GetCurrentSeason() == Season.Winter && hideGrassListInWinter.Value.IndexOf(materialVariants.Key.name, StringComparison.OrdinalIgnoreCase) > 0)
+                        if (hideGrassInWinter.Value && seasonState.GetCurrentSeason() == Season.Winter && hideMaterialByName.Contains(materialVariants.Key.name.ToLower()))
                             materialVariants.Key.color = Color.clear;
                         else
                         {
