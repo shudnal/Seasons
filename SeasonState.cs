@@ -878,7 +878,10 @@ namespace Seasons
         private static void Postfix(float oldDayFraction, float newDayFraction)
         {
             float fraction = changeSeasonOnlyAfterSleep.Value ? 0.2498f : 0.24f;
-            bool timeForSeasonToChange = oldDayFraction > 0.16f && oldDayFraction <= fraction && newDayFraction >= fraction && newDayFraction < 0.3f;
+
+            // track day fraction change both ways
+            bool timeForSeasonToChange = oldDayFraction > 0.16f && oldDayFraction <= fraction && newDayFraction >= fraction && newDayFraction < 0.3f
+                                      || oldDayFraction < 0.3f && oldDayFraction >= fraction && newDayFraction <= fraction && newDayFraction > 0.16f;
             seasonState.UpdateState(timeForSeasonToChange);
         }
     }
