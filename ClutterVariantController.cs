@@ -39,6 +39,8 @@ namespace Seasons
 
         public static ClutterVariantController instance => m_instance;
 
+        private readonly List<string> m_hideMaterialByName = new List<string>();
+
         private void Awake()
         {
             m_instance = this;
@@ -131,7 +133,8 @@ namespace Seasons
 
         public void UpdateColors()
         {
-            List<string> hideMaterialByName = hideGrassListInWinter.Value.Split(',').Select(p => p.Trim().ToLower()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
+            m_hideMaterialByName.Clear();
+            m_hideMaterialByName.AddRange(hideGrassListInWinter.Value.Split(',').Select(p => p.Trim().ToLower()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList());
             int variant = GetCurrentMainVariant();
             foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
                 foreach (KeyValuePair<string, TextureVariants> texProp in materialVariants.Value)
@@ -145,7 +148,7 @@ namespace Seasons
                         if (!m_originalColors.ContainsKey(materialVariants.Key))
                             m_originalColors.Add(materialVariants.Key, materialVariants.Key.color);
 
-                        if (hideGrassInWinter.Value && seasonState.GetCurrentSeason() == Season.Winter && hideMaterialByName.Contains(materialVariants.Key.name.ToLower()))
+                        if (HideGrass(materialVariants.Key))
                             materialVariants.Key.color = Color.clear;
                         else
                         {
@@ -178,6 +181,21 @@ namespace Seasons
             double seedFactor = Math.Log10(Math.Abs(seed));
             return (Math.Sin(Math.Sign(seed) * seedFactor * day) + Math.Sin(Math.Sqrt(seedFactor) * Math.E * day) + Math.Sin(Math.PI * day)) / 2;
         }
+        private bool HideGrass(Material material)
+        {
+            if (!hideGrassInWinter.Value || !m_hideMaterialByName.Contains(material.name.ToLower()))
+                return false;
+
+            int currentDay = seasonState.GetCurrentDay();
+            int daysInSeason = seasonState.GetDaysInSeason();
+            int firstDay = Mathf.Clamp((int)hideGrassInWinterDays.Value.x, 0, daysInSeason + 1);
+            int lastDay = Mathf.Clamp((int)hideGrassInWinterDays.Value.y, 0, daysInSeason + 1);
+
+            if (currentDay == 0 || seasonState.GetCurrentSeason() != Season.Winter || lastDay == 0 || lastDay > daysInSeason)
+                return false;
+
+            return firstDay <= currentDay && currentDay <= lastDay;
+        }
 
         public static void Init()
         {
@@ -186,5 +204,6 @@ namespace Seasons
 
             ClutterSystem.instance.transform.gameObject.AddComponent<ClutterVariantController>();
         }
+    
     }
 }
