@@ -14,6 +14,7 @@ namespace Seasons
 {
     [BepInPlugin(pluginID, pluginName, pluginVersion)]
     [BepInIncompatibility("RustyMods.Seasonality")]
+    [BepInDependency("shudnal.GammaOfNightLights", BepInDependency.DependencyFlags.SoftDependency)]
     public class Seasons : BaseUnityPlugin
     {
         const string pluginID = "shudnal.Seasons";
@@ -154,6 +155,7 @@ namespace Seasons
         public static Texture2D Minimap_Winter_ForestTex = new Texture2D(512, 512, TextureFormat.RGBA32, false);
 
         public static string configDirectory;
+        public static bool haveGammaOfNightLights;
 
         public static Dictionary<string, PrefabController> prefabControllers = SeasonalTextureVariants.controllers;
         public static Dictionary<int, TextureVariants> texturesVariants = SeasonalTextureVariants.textures;
@@ -223,6 +225,8 @@ namespace Seasons
             LoadIcons();
 
             seasonState = new SeasonState();
+
+            haveGammaOfNightLights = GetComponent("GammaOfNightLights") != null;
         }
 
         private void FixedUpdate()

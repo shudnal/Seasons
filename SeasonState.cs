@@ -1669,19 +1669,15 @@ namespace Seasons
 
         private static readonly LightState _lightState = new LightState();
 
-        public static Color ChangeColorLuminance(Color color, float luminanceMultiplier)
+        private static Color ChangeColorLuminance(Color color, float luminanceMultiplier)
         {
             HSLColor newColor = new HSLColor(color);
             newColor.l *= luminanceMultiplier;
             return newColor.ToRGBA();
         }
 
-        [HarmonyPriority(Priority.Last)]
-        public static void Prefix(EnvSetup env)
+        public static void ChangeLightState(EnvSetup env)
         {
-            if (!controlLightings.Value || !UseTextureControllers())
-                return;
-
             _lightState.m_ambColorNight = env.m_ambColorNight;
             _lightState.m_fogColorNight = env.m_fogColorNight;
             _lightState.m_fogColorSunNight = env.m_fogColorSunNight;
@@ -1773,14 +1769,11 @@ namespace Seasons
             {
                 env.m_lightIntensityNight *= lightingSettings.lightIntensityNightMultiplier;
             }
+
         }
 
-        [HarmonyPriority(Priority.First)]
-        public static void Postfix(EnvSetup env)
+        public static void ResetLightState(EnvSetup env)
         {
-            if (!controlLightings.Value || !UseTextureControllers())
-                return;
-
             env.m_ambColorNight = _lightState.m_ambColorNight;
             env.m_fogColorNight = _lightState.m_fogColorNight;
             env.m_fogColorSunNight = _lightState.m_fogColorSunNight;
@@ -1803,6 +1796,46 @@ namespace Seasons
 
             env.m_lightIntensityDay = _lightState.m_lightIntensityDay;
             env.m_lightIntensityNight = _lightState.m_lightIntensityNight;
+        }
+
+        [HarmonyPriority(Priority.Last)]
+        public static void Prefix(EnvSetup env)
+        {
+            if (!controlLightings.Value || !UseTextureControllers() || haveGammaOfNightLights)
+                return;
+
+            ChangeLightState(env);
+        }
+
+        [HarmonyPriority(Priority.First)]
+        public static void Postfix(EnvSetup env)
+        {
+            if (!controlLightings.Value || !UseTextureControllers() || haveGammaOfNightLights)
+                return;
+
+            ResetLightState(env);
+        }
+    }
+
+    [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.SetEnv))]
+    public static class EnvMan_SetEnv_LuminancePatchHaveGoNL
+    {
+        [HarmonyPriority(Priority.First)]
+        public static void Prefix(EnvSetup env)
+        {
+            if (!controlLightings.Value || !UseTextureControllers() || !haveGammaOfNightLights)
+                return;
+
+            EnvMan_SetEnv_LuminancePatch.ChangeLightState(env);
+        }
+
+        [HarmonyPriority(Priority.Last)]
+        public static void Postfix(EnvSetup env)
+        {
+            if (!controlLightings.Value || !UseTextureControllers() || !haveGammaOfNightLights)
+                return;
+
+            EnvMan_SetEnv_LuminancePatch.ResetLightState(env);
         }
     }
 
