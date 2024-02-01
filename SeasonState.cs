@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using UnityEngine;
 using BepInEx;
+using System.Reflection;
 
 namespace Seasons
 {
@@ -869,6 +870,27 @@ namespace Seasons
                 ClutterVariantController.instance.UpdateColors();
             }
             ZoneSystemVariantController.UpdateWaterState();
+        }
+    }
+
+    [HarmonyPatch]
+    public static class EnvMan_DayLength
+    {
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.Awake));
+            yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.FixedUpdate));
+            yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.GetCurrentDay));
+            yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.GetDay));
+            yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.GetMorningStartSec));
+            yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.SkipToMorning));
+        }
+
+        [HarmonyPriority(Priority.First)]
+        private static void Prefix(ref long ___m_dayLengthSec)
+        {
+            if (dayLengthSec.Value != 0L && ___m_dayLengthSec != dayLengthSec.Value)
+                ___m_dayLengthSec = dayLengthSec.Value;
         }
     }
 

@@ -26,6 +26,7 @@ namespace Seasons
 
         private static ConfigEntry<bool> configLocked;
         private static ConfigEntry<bool> loggingEnabled;
+        public static ConfigEntry<long> dayLengthSec;
 
         public static ConfigEntry<CacheFormat> cacheStorageFormat;
         public static ConfigEntry<bool> logTime;
@@ -259,6 +260,7 @@ namespace Seasons
 
             configLocked = config("General", "Lock Configuration", defaultValue: true, "Configuration is locked and can be changed by server admins only.");
             loggingEnabled = config("General", "Logging enabled", defaultValue: false, "Enable logging. [Not Synced with Server]", false);
+            dayLengthSec = config("General", "Day length in seconds", defaultValue: 1800L, "Day length in seconds. Vanilla - 1800 seconds.");
 
             controlEnvironments = config("Season - Control", "Control environments", defaultValue: true, "Enables seasonal weathers");
             controlRandomEvents = config("Season - Control", "Control random events", defaultValue: true, "Enables seasonal random events");
@@ -276,7 +278,7 @@ namespace Seasons
             freezingSwimmingInWinter = config("Season", "Get freezing when swimming in cold water in winter", defaultValue: true, "Swimming in cold water during winter will get you freezing debuff");
             changeSeasonOnlyAfterSleep = config("Season", "Change season only after sleep", defaultValue: false, "Season can be changed regular way only after sleep");
             hideGrassInWinter = config("Season", "Hide grass in winter", defaultValue: true, "Hide grass in winter");
-            hideGrassInWinterDays = config("Season", "Hide grass in winter", defaultValue: new Vector2(3, 10), "Hide grass in winter");
+            hideGrassInWinterDays = config("Season", "Hide grass in winter day from to", defaultValue: new Vector2(3f, 10f), "Hide grass in winter");
             hideGrassListInWinter = config("Season", "Hide grass in set list in winter", defaultValue: "grasscross_meadows, grasscross_forest_brown, grasscross_forest, grasscross_swamp, grasscross_heath, grasscross_meadows_short, grasscross_heath_flower, grasscross_mistlands_short", "Hide set grass in winter");
 
             seasonalStatsOutdoorsOnly.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
