@@ -1256,8 +1256,38 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(Ship), nameof(Ship.CustomFixedUpdate))]
+    public static class Ship_CustomFixedUpdate_FrozenShip
+    {
+        private static void Prefix(ref float ___m_disableLevel, ref float __state)
+        {
+            if (!UseTextureControllers())
+                return;
 
+            if (!seasonState.IsActive)
+                return;
 
-    
+            if (!IsWaterSurfaceFrozen())
+                return;
+
+            __state = ___m_disableLevel;
+
+            ___m_disableLevel -= _winterWaterSurfaceOffset;
+        }
+
+        private static void Postfix(ref float ___m_disableLevel, float __state)
+        {
+            if (!UseTextureControllers())
+                return;
+
+            if (!seasonState.IsActive)
+                return;
+
+            if (!IsWaterSurfaceFrozen())
+                return;
+
+            ___m_disableLevel = __state;
+        }
+    }
 
 }
