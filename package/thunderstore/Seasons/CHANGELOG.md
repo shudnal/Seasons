@@ -1,3 +1,6 @@
+# 1.0.13
+* you can climb on ice floe
+
 # 1.0.12
 * option to hide buff info in Raven menu 
 * option to set amount of ice floes in winter

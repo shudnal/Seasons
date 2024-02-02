@@ -166,6 +166,8 @@ namespace Seasons
             s_iceFloe ??= ZoneSystem.instance.m_vegetation.Find(veg => veg.m_prefab?.name == _iceFloeName).Clone();
             s_iceFloe.m_biome = Biome.Ocean;
             s_iceFloe.m_randTilt = 1f;
+            if (!s_iceFloe.m_prefab.TryGetComponent<IceFloeClimb>(out _))
+                s_iceFloe.m_prefab.AddComponent<IceFloeClimb>();
         }
 
         private static void UpdateTerrainColor(Heightmap heightmap)
@@ -239,6 +241,9 @@ namespace Seasons
 
         public static void UpdateWaterState()
         {
+            if (!seasonState.IsActive)
+                return;
+
             s_freezeStatus = seasonState.GetWaterSurfaceFreezeStatus();
 
             CheckToRemoveIceFloes();
