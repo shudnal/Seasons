@@ -882,6 +882,7 @@ namespace Seasons
                 { "Vines_Mat", new string[] { "_Color" }},
                 { "carrot_blast", new string[] { "_Color" }},
                 { "barley_sapling", new string[] { "_Color" }},
+                { "Bush01_raspberry", new string[] { "_Color" }},
             };
 
         public static readonly Dictionary<string, string[]> materialTextures = new Dictionary<string, string[]>
