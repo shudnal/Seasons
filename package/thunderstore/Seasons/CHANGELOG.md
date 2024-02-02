@@ -1,3 +1,13 @@
+# 1.0.12
+* option to hide buff info in Raven menu 
+* option to set amount of ice floes in winter
+* option for crops and pickables to perish in winter 
+* option to make selected crops not to perish in winter
+* proper coloring of raspberry bushes (delete Cache folder to recreate the cache)
+* proper pickable and plants growth control 
+* proper recoloring freshly planted pickables and crops
+* seasonal changes properly ignores objects located in interior, Mountains, DeepNorth and Ashlands
+
 # 1.0.11
 * hide grass in winter enabled by default (now you can set period in days)
 * day length in seconds config option
