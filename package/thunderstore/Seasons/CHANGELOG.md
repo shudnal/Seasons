@@ -14,6 +14,9 @@
 * GammaOfNightLights better compatibility
 * minor frozen ship refinements
 
+<details>
+<summary><b>Changelog History</b> (<i>click to expand</i>)</summary>
+
 # 1.0.9
 * dedicated server ice floes fix
 
@@ -34,9 +37,6 @@
 * refinements and optimizations
 * time skip refinements
 * removed incompatibility with LongerDays
-
-<details>
-<summary><b>Changelog History</b> (<i>click to expand</i>)</summary>
 
 # 1.0.5
 * optional global key setting
