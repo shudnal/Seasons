@@ -1,4 +1,4 @@
-# 1.0.10
+# 1.0.11
 * hide grass in winter enabled by default (now you can set period in days)
 * day length in seconds config option
 * GammaOfNightLights better compatibility
