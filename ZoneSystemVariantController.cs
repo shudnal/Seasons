@@ -333,7 +333,7 @@ namespace Seasons
 
             yield return waitForFixedUpdate;
 
-            foreach (Ship ship in Ship.Instances)
+            foreach (Ship ship in Ship.Instances.ToArray())
                 yield return CheckIfShipBelowSurface(ship);
         }
 
@@ -351,10 +351,13 @@ namespace Seasons
 
         public static IEnumerator CheckIfShipBelowSurface(Ship ship)
         {
-            while (!ship.m_nview.HasOwner())
+            if (ship == null || ship.gameObject == null)
+                yield break;
+
+            while (ship.m_nview.IsValid() && !ship.m_nview.HasOwner())
                 yield return waitForFixedUpdate;
 
-            if (!ship.m_nview.IsOwner())
+            if (!ship.m_nview.IsValid() || !ship.m_nview.IsOwner())
                 yield break;
 
             PlaceShip(ship);
@@ -504,7 +507,7 @@ namespace Seasons
             ZoneVegetation item = s_iceFloe;
 
             UnityEngine.Random.InitState(seed + zoneID.x * 4271 + zoneID.y * 9187 + _iceFloePrefab);
-            int spawnCount = UnityEngine.Random.Range((int)item.m_min, (int)item.m_max + 1);
+            int spawnCount = UnityEngine.Random.Range((int)amountOfIceFloesInWinterDays.Value.x, (int)amountOfIceFloesInWinterDays.Value.y + 1);
             for (int i = 0; i < spawnCount; i++)
             {
                 Vector3 p = new Vector3(UnityEngine.Random.Range(zoneCenterPos.x - num, zoneCenterPos.x + num), 0f, UnityEngine.Random.Range(zoneCenterPos.z - num, zoneCenterPos.z + num));

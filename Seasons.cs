@@ -19,7 +19,7 @@ namespace Seasons
     {
         const string pluginID = "shudnal.Seasons";
         const string pluginName = "Seasons";
-        const string pluginVersion = "1.0.11";
+        const string pluginVersion = "1.0.12";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -47,6 +47,8 @@ namespace Seasons
         public static ConfigEntry<bool> showCurrentSeasonBuff;
         public static ConfigEntry<TimerFormat> seasonsTimerFormat;
         public static ConfigEntry<bool> hideSecondsInTimer;
+        public static ConfigEntry<bool> showCurrentSeasonInRaven;
+        public static ConfigEntry<TimerFormatRaven> seasonsTimerFormatInRaven;
 
         public static ConfigEntry<bool> enableSeasonalItems;
         public static ConfigEntry<bool> preventDeathFromFreezing;
@@ -61,6 +63,7 @@ namespace Seasons
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
         public static ConfigEntry<bool> enableIceFloes;
         public static ConfigEntry<Vector2> iceFloesInWinterDays;
+        public static ConfigEntry<Vector2> amountOfIceFloesInWinterDays;
         public static ConfigEntry<bool> enableNightMusicOnFrozenOcean;
         public static ConfigEntry<float> frozenOceanSlipperiness;
         public static ConfigEntry<bool> placeShipAboveFrozenOcean;
@@ -199,7 +202,15 @@ namespace Seasons
             CurrentDay,
             TimeToEnd
         }
-        
+
+        public enum TimerFormatRaven
+        {
+            None,
+            CurrentDay,
+            TimeToEnd,
+            CurrentDayAndTimeToEnd,
+        }
+
         public enum StationHover
         {
             Vanilla,
@@ -293,6 +304,8 @@ namespace Seasons
             showCurrentSeasonBuff = config("Season - Buff", "Show current season buff", defaultValue: true, "Show current season buff.");
             seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
             hideSecondsInTimer = config("Season - Buff", "Hide seconds", defaultValue: true, "Hide seconds at season buff timer");
+            showCurrentSeasonInRaven = config("Season - Buff", "Raven menu Show current season", defaultValue: true, "Show current season tooltip in Raven menu");
+            seasonsTimerFormatInRaven = config("Season - Buff", "Raven menu Timer format", defaultValue: TimerFormatRaven.CurrentDayAndTimeToEnd, "What to show at season buff timer in Raven menu");
 
             showCurrentSeasonBuff.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
 
@@ -314,6 +327,7 @@ namespace Seasons
             waterFreezesInWinterDays = config("Season - Winter ocean", "Freeze the water at given days from to", defaultValue: new Vector2(6f, 9f), "Water will freeze in the first set day of winter and will be unfrozen after second set day");
             enableIceFloes = config("Season - Winter ocean", "Enable ice floes in winter", defaultValue: true, "Enable ice floes in winter");
             iceFloesInWinterDays = config("Season - Winter ocean", "Fill the water with ice floes at given days from to", defaultValue: new Vector2(4f, 10f), "Ice floes will be spawned in the first set day of winter and will be removed after second set day");
+            amountOfIceFloesInWinterDays = config("Season - Winter ocean", "Amount of ice floes in one zone", defaultValue: new Vector2(10f, 20f), "Game will take random value between set numbers and will try to spawn that amount of ice floes in one zone (square 64x64)");
             enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
             frozenOceanSlipperiness = config("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1f, "Slipperiness factor of the frozen ocean surface");
             placeShipAboveFrozenOcean = config("Season - Winter ocean", "Place ship above frozen ocean surface", defaultValue: false, "Place ship above frozen ocean surface to move them without destroying");
@@ -322,6 +336,7 @@ namespace Seasons
             enableIceFloes.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             waterFreezesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             iceFloesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
+            amountOfIceFloesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             placeShipAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateShipsPositions();
 
             vegetationSpringColor1 = config("Seasons - Color - Main - Spring", "Color 1", defaultValue: new Color(0.27f, 0.80f, 0.27f, 0.75f), "Color 1");

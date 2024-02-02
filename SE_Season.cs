@@ -43,10 +43,17 @@ namespace Seasons
 
         public override string GetTooltipString()
         {
+            if (!showCurrentSeasonInRaven.Value)
+                return "";
+
             _sb.Clear();
             _sb.AppendFormat("{0}\n", GetSeasonTooltip());
-            _sb.AppendFormat("{0} / {1}\n", Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}"), seasonState.GetDaysInSeason());
-            _sb.AppendFormat("{0}: {1}\n", MessageNextSeason(), TimerString(seasonState.GetEndOfCurrentSeason() - seasonState.GetTotalSeconds()));
+            
+            if (seasonsTimerFormatInRaven.Value == TimerFormatRaven.CurrentDay || seasonsTimerFormatInRaven.Value == TimerFormatRaven.CurrentDayAndTimeToEnd)
+                _sb.AppendFormat("{0} / {1}\n", Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}"), seasonState.GetDaysInSeason());
+
+            if (seasonsTimerFormatInRaven.Value == TimerFormatRaven.TimeToEnd || seasonsTimerFormatInRaven.Value == TimerFormatRaven.CurrentDayAndTimeToEnd)
+                _sb.AppendFormat("{0}: {1}\n", MessageNextSeason(), TimerString(seasonState.GetEndOfCurrentSeason() - seasonState.GetTotalSeconds()));
 
             string statsTooltip = base.GetTooltipString();
             if (statsTooltip.Length > 0)
