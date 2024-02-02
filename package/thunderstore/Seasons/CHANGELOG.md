@@ -1,3 +1,9 @@
+# 1.0.10
+* hide grass in winter enabled by default (now you can set period in days)
+* day length in seconds config option
+* GammaOfNightLights better compatibility
+* minor frozen ship refinements
+
 # 1.0.9
 * dedicated server ice floes fix
 
