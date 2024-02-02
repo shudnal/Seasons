@@ -1085,19 +1085,41 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(Pickable), nameof(Pickable.Awake))]
+    public static class Pickable_Awake_PlantsGrowthMultiplier
+    {
+        private static void Postfix(Pickable __instance, ZNetView ___m_nview, bool ___m_picked)
+        {
+            if (!___m_nview.IsValid() || !___m_nview.IsOwner() || !ControlPlantGrowth(__instance.gameObject))
+                return;
+
+            if (IsIgnoredPosition(__instance.transform.position))
+                return;
+
+            if (!___m_picked && seasonState.GetPlantsGrowthMultiplier() == 0f && seasonState.GetCurrentSeason() == Season.Winter && seasonState.GetCurrentDay() >= cropsDiesAfterSetDayInWinter.Value && !PlantWillSurviveWinter(__instance.gameObject))
+                __instance.SetPicked(true);
+        }
+    }
+
     [HarmonyPatch(typeof(Pickable), nameof(Pickable.UpdateRespawn))]
     public static class Pickable_UpdateRespawn_PlantsGrowthMultiplier
     {
         private static bool Prefix(Pickable __instance, ref int ___m_respawnTimeMinutes, ZNetView ___m_nview, bool ___m_picked, ref int __state)
         {
+            if (!___m_nview.IsValid() || !___m_nview.IsOwner() || !ControlPlantGrowth(__instance.gameObject))
+                return true;
+
+            if (IsIgnoredPosition(__instance.transform.position))
+                return true;
+
+            if (!___m_picked && seasonState.GetPlantsGrowthMultiplier() == 0f && seasonState.GetCurrentSeason() == Season.Winter && seasonState.GetCurrentDay() >= cropsDiesAfterSetDayInWinter.Value && !PlantWillSurviveWinter(__instance.gameObject))
+            {
+                __instance.SetPicked(true);
+                return false;
+            }
+
             if (seasonState.GetPlantsGrowthMultiplier() == 0f)
                 return false;
-
-            if (!___m_nview.IsValid() || !___m_nview.IsOwner() || !___m_picked)
-                return true;
-
-            if (__instance.m_itemPrefab == null || !__instance.m_itemPrefab.TryGetComponent(out ItemDrop itemDrop) || itemDrop.m_itemData.m_shared.m_itemType != ItemDrop.ItemData.ItemType.Consumable)
-                return true;
 
             __state = ___m_respawnTimeMinutes;
             ___m_respawnTimeMinutes = Mathf.CeilToInt(___m_respawnTimeMinutes / seasonState.GetPlantsGrowthMultiplier());
@@ -1114,11 +1136,28 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(Plant), nameof(Plant.UpdateHealth))]
+    public static class Pickable_UpdateHealth_PlantsPerishInWinter
+    {
+        private static void Postfix(Plant __instance, ref Plant.Status ___m_status)
+        {
+            if (IsIgnoredPosition(__instance.transform.position))
+                return;
+
+            if (___m_status == Plant.Status.Healthy && seasonState.GetPlantsGrowthMultiplier() == 0f && seasonState.GetCurrentSeason() == Season.Winter 
+                                                    && seasonState.GetCurrentDay() >= cropsDiesAfterSetDayInWinter.Value && !PlantWillSurviveWinter(__instance.gameObject))
+                ___m_status = Plant.Status.WrongBiome;
+        }
+    }
+
     [HarmonyPatch(typeof(Plant), nameof(Plant.TimeSincePlanted))]
     public static class Plant_TimeSincePlanted_PlantsGrowthMultiplier
     {
-        private static void Postfix(ref double __result)
+        private static void Postfix(Plant __instance, ref double __result)
         {
+            if (IsIgnoredPosition(__instance.transform.position))
+                return;
+
             double timeSeconds = seasonState.GetTotalSeconds();
             double seasonStart = seasonState.GetStartOfCurrentSeason();
             Season season = seasonState.GetCurrentSeason();
@@ -1181,6 +1220,9 @@ namespace Seasons
             if (__instance.GetStatus() != Plant.Status.Healthy)
                 return;
 
+            if (IsIgnoredPosition(__instance.transform.position))
+                return;
+
             if (hoverPlant.Value == StationHover.Percentage)
                 __result += $"\n{__instance.TimeSincePlanted() / __instance.GetGrowTime():P0}";
             else if (hoverPlant.Value == StationHover.MinutesSeconds)
@@ -1203,15 +1245,21 @@ namespace Seasons
     [HarmonyPatch(typeof(Beehive), nameof(Beehive.Interact))]
     public static class Beehive_Interact_BeesInteractionMessage
     {
-        private static void Prefix(ref Beehive __instance, ref string __state)
+        private static void Prefix(Beehive __instance, ref string __state)
         {
+            if (IsIgnoredPosition(__instance.transform.position))
+                return;
+
             __state = __instance.m_happyText;
             if (seasonState.GetBeehiveProductionMultiplier() == 0f)
                 __instance.m_happyText = __instance.m_sleepText;
         }
 
-        private static void Postfix(ref Beehive __instance, ref string __state)
+        private static void Postfix(Beehive __instance, ref string __state)
         {
+            if (IsIgnoredPosition(__instance.transform.position))
+                return;
+
             __instance.m_happyText = __state;
         }
     }
@@ -1219,8 +1267,11 @@ namespace Seasons
     [HarmonyPatch(typeof(Beehive), nameof(Beehive.GetTimeSinceLastUpdate))]
     public static class Beehive_GetTimeSinceLastUpdate_BeesProduction
     {
-        private static void Postfix(ref float __result)
+        private static void Postfix(Beehive __instance, ref float __result)
         {
+            if (IsIgnoredPosition(__instance.transform.position))
+                return;
+
             __result *= seasonState.GetBeehiveProductionMultiplier();
         }
     }
@@ -1264,6 +1315,9 @@ namespace Seasons
             if (__result.IsNullOrWhiteSpace())
                 return;
 
+            if (IsIgnoredPosition(__instance.transform.position))
+                return;
+
             int honeyLevel = __instance.GetHoneyLevel();
 
             if (!PrivateArea.CheckAccess(__instance.transform.position, 0f, flash: false) || honeyLevel == __instance.m_maxHoney)
@@ -1287,8 +1341,11 @@ namespace Seasons
     [HarmonyPatch(typeof(Beehive), nameof(Beehive.UpdateBees))]
     public static class Beehive_UpdateBees_BeesSleeping
     {
-        private static void Postfix(ref GameObject ___m_beeEffect)
+        private static void Postfix(Beehive __instance, ref GameObject ___m_beeEffect)
         {
+            if (IsIgnoredPosition(__instance.transform.position))
+                return;
+
             if (seasonState.GetBeehiveProductionMultiplier() == 0f)
             {
                 ___m_beeEffect.SetActive(false);
@@ -1336,8 +1393,11 @@ namespace Seasons
     [HarmonyPatch(typeof(Fireplace), nameof(Fireplace.GetTimeSinceLastUpdate))]
     static class Fireplace_GetTimeSinceLastUpdate_FireplaceDrainMultiplier
     {
-        private static void Postfix(ref double __result)
+        private static void Postfix(Fireplace __instance, ref double __result)
         {
+            if (IsIgnoredPosition(__instance.transform.position))
+                return;
+
             __result *= (double)Math.Max(0f, seasonState.GetFireplaceDrainMultiplier());
         }
     }
@@ -1350,6 +1410,9 @@ namespace Seasons
             if (__instance.m_name != "$piece_bathtub")
                 return;
 
+            if (IsIgnoredPosition(__instance.transform.position))
+                return;
+
             __result *= (double)Math.Max(0f, seasonState.GetFireplaceDrainMultiplier());
         }
     }
@@ -1357,14 +1420,20 @@ namespace Seasons
     [HarmonyPatch(typeof(CookingStation), nameof(CookingStation.UpdateFuel))]
     static class CookingStation_UpdateFuel_FireplaceDrainMultiplier
     {
-        private static void Prefix(ref float dt, ref float __state)
+        private static void Prefix(CookingStation __instance, ref float dt, ref float __state)
         {
+            if (IsIgnoredPosition(__instance.transform.position))
+                return;
+
             __state = dt;
             dt *= Math.Max(0f, seasonState.GetFireplaceDrainMultiplier());
         }
 
-        private static void Postfix(ref float dt, float __state)
+        private static void Postfix(CookingStation __instance, ref float dt, float __state)
         {
+            if (IsIgnoredPosition(__instance.transform.position))
+                return;
+
             dt = __state;
         }
     }
@@ -1372,8 +1441,11 @@ namespace Seasons
     [HarmonyPatch(typeof(SapCollector), nameof(SapCollector.GetTimeSinceLastUpdate))]
     static class SapCollector_GetTimeSinceLastUpdate_SapCollectingSpeedMultiplier
     {
-        private static void Postfix(ref float __result)
+        private static void Postfix(SapCollector __instance, ref float __result)
         {
+            if (IsIgnoredPosition(__instance.transform.position))
+                return;
+
             __result *= Math.Max(0f, seasonState.GetSapCollectingSpeedMultiplier());
         }
     }
@@ -1381,12 +1453,15 @@ namespace Seasons
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateWear))]
     public static class WearNTear_UpdateWear_RainProtection
     {
-        private static void Prefix(ZNetView ___m_nview, ref bool ___m_noRoofWear, ref bool __state)
+        private static void Prefix(WearNTear __instance, ZNetView ___m_nview, ref bool ___m_noRoofWear, ref bool __state)
         {
             if (!seasonState.GetRainProtection())
                 return;
 
             if (___m_nview == null || !___m_nview.IsValid())
+                return;
+
+            if (IsIgnoredPosition(__instance.transform.position))
                 return;
 
             __state = ___m_noRoofWear;
@@ -1418,12 +1493,15 @@ namespace Seasons
                 m_dropWhenDestroyed.m_dropMin = m_dropWhenDestroyed.m_dropMax;
         }
 
-        private static void Prefix(ZNetView ___m_nview, ref DropTable ___m_dropWhenDestroyed)
+        private static void Prefix(TreeLog __instance, ZNetView ___m_nview, ref DropTable ___m_dropWhenDestroyed)
         {
             if (seasonState.GetWoodFromTreesMultiplier() == 1.0f)
                 return;
 
             if (___m_nview == null || !___m_nview.IsValid() || !___m_nview.IsOwner())
+                return;
+
+            if (IsIgnoredPosition(__instance.transform.position))
                 return;
 
             ApplyWoodMultiplier(___m_dropWhenDestroyed);
@@ -1441,7 +1519,10 @@ namespace Seasons
             if (!__instance.TryGetComponent(out Destructible destructible) || destructible.GetDestructibleType() != DestructibleType.Tree)
                 return;
 
-                TreeLog_Destroy_TreeWoodDrop.ApplyWoodMultiplier(___m_dropWhenDestroyed);
+            if (IsIgnoredPosition(__instance.transform.position))
+                return;
+
+            TreeLog_Destroy_TreeWoodDrop.ApplyWoodMultiplier(___m_dropWhenDestroyed);
         }
     }
 
@@ -1462,9 +1543,12 @@ namespace Seasons
             }
         }
 
-        private static void Prefix(ref List<CharacterDrop.Drop> ___m_drops)
+        private static void Prefix(CharacterDrop __instance, ref List<CharacterDrop.Drop> ___m_drops)
         {
             if (seasonState.GetMeatFromAnimalsMultiplier() == 1.0f)
+                return;
+
+            if (IsIgnoredPosition(__instance.transform.position))
                 return;
 
             ApplyMeatMultiplier(___m_drops);

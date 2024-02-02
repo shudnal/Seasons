@@ -26,6 +26,8 @@ namespace Seasons
                 PrefabVariantController.AddControllerToPrefabs();
                 ClutterVariantController.Init();
                 __instance.gameObject.AddComponent<ZoneSystemVariantController>().Init(__instance);
+                FillPickablesListToControlGrowth();
+                InvalidatePositionsCache();
             }
             else
                 LogInfo("Missing textures variants");

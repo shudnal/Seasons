@@ -58,6 +58,8 @@ namespace Seasons
         public static ConfigEntry<bool> hideGrassInWinter;
         public static ConfigEntry<Vector2> hideGrassInWinterDays;
         public static ConfigEntry<string> hideGrassListInWinter;
+        public static ConfigEntry<int> cropsDiesAfterSetDayInWinter;
+        public static ConfigEntry<string> cropsToSurviveInWinter;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -181,6 +183,10 @@ namespace Seasons
 
         public static WaitForFixedUpdate waitForFixedUpdate = new WaitForFixedUpdate();
 
+        private static HashSet<string> _PlantsToControlGrowth;
+        private static HashSet<string> _PlantsToSurviveWinter;
+        private static readonly Dictionary<Vector3, bool> _cachedIgnoredPositions = new Dictionary<Vector3, bool>();
+
         public enum Season
         {
             Spring = 0,
@@ -295,11 +301,14 @@ namespace Seasons
             hideGrassInWinter = config("Season", "Hide grass in winter", defaultValue: true, "Hide grass in winter");
             hideGrassInWinterDays = config("Season", "Hide grass in winter day from to", defaultValue: new Vector2(3f, 10f), "Hide grass in winter");
             hideGrassListInWinter = config("Season", "Hide grass in set list in winter", defaultValue: "grasscross_meadows, grasscross_forest_brown, grasscross_forest, grasscross_swamp, grasscross_heath, grasscross_meadows_short, grasscross_heath_flower, grasscross_mistlands_short", "Hide set grass in winter");
+            cropsDiesAfterSetDayInWinter = config("Season", "Crops will die after set day in winter", defaultValue: 3, "Crops and pickables will perish after set day in winter");
+            cropsToSurviveInWinter = config("Season", "Crops will survive in winter", defaultValue: "Pickable_Carrot, Pickable_Barley, Pickable_Barley_Wild, Pickable_Flax, Pickable_Flax_Wild, Pickable_Thistle, Pickable_Mushroom_Magecap", "Crops and pickables from the list will not perish after set day in winter");
 
             seasonalStatsOutdoorsOnly.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
             hideGrassInWinter.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateColors();
             hideGrassInWinterDays.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateColors();
             hideGrassListInWinter.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateColors();
+            cropsToSurviveInWinter.SettingChanged += (sender, args) => FillPickablesListToControlGrowth();
 
             showCurrentSeasonBuff = config("Season - Buff", "Show current season buff", defaultValue: true, "Show current season buff.");
             seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
@@ -543,6 +552,86 @@ namespace Seasons
         public static bool UseTextureControllers()
         {
             return SystemInfo.graphicsDeviceType != GraphicsDeviceType.Null;
+        }
+
+        public static void FillPickablesListToControlGrowth()
+        {
+            _PlantsToControlGrowth = new HashSet<string>
+            {
+                "Pickable_Barley",
+                "Pickable_Barley_Wild",
+                "Pickable_Dandelion",
+                "Pickable_Flax",
+                "Pickable_Flax_Wild",
+                "Pickable_SeedCarrot",
+                "Pickable_SeedOnion",
+                "Pickable_SeedTurnip",
+                "Pickable_Thistle",
+                "Pickable_Turnip",
+            };
+
+            _PlantsToSurviveWinter = new HashSet<string>(cropsToSurviveInWinter.Value.Split(',').Select(p => p.Trim().ToLower()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList());
+
+            foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
+            {
+                if (prefab.TryGetComponent(out Pickable pickable) && pickable.m_itemPrefab != null && 
+                    pickable.m_itemPrefab.TryGetComponent(out ItemDrop itemDrop) && itemDrop.m_itemData.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Consumable)
+                    _PlantsToControlGrowth.Add(pickable.gameObject.name);
+            }
+
+            foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
+            {
+                if (prefab.TryGetComponent(out Plant plant) && plant.m_grownPrefabs != null)
+                {
+                    if (plant.m_grownPrefabs.Any(prefab => ControlPlantGrowth(prefab)))
+                        _PlantsToControlGrowth.Add(plant.gameObject.name);
+
+                    if (plant.m_grownPrefabs.Any(prefab => PlantWillSurviveWinter(prefab)))
+                        _PlantsToSurviveWinter.Add(plant.gameObject.name.ToLower());
+                }
+            }
+        }
+
+        public static bool ControlPlantGrowth(GameObject gameObject)
+        {
+            return _PlantsToControlGrowth.Contains(PrefabVariantController.GetPrefabName(gameObject));
+        }
+
+        public static bool PlantWillSurviveWinter(GameObject gameObject)
+        {
+            return _PlantsToSurviveWinter.Contains(PrefabVariantController.GetPrefabName(gameObject).ToLower());
+        }
+
+        public static void InvalidatePositionsCache()
+        {
+            _cachedIgnoredPositions.Clear();
+        }
+
+        public static bool IsIgnoredPosition(Vector3 position)
+        {
+            if (position.y > 3000f)
+                return true;
+
+            if (WorldGenerator.instance == null)
+                return true;
+
+            if (_cachedIgnoredPositions.TryGetValue(position, out bool ignored))
+                return ignored;
+
+            float baseHeight = WorldGenerator.instance.GetBaseHeight(position.x, position.z, menuTerrain: false);
+
+            if (baseHeight > WorldGenerator.mountainBaseHeightMin + 0.05f)
+            {
+                _cachedIgnoredPositions[position] = true;
+                return true;
+            }
+
+            Heightmap.Biome biome = WorldGenerator.instance.GetBiome(position);
+
+            ignored = biome == Heightmap.Biome.DeepNorth || biome == Heightmap.Biome.AshLands;
+            
+            _cachedIgnoredPositions[position] = ignored;
+            return ignored;
         }
     }
 }

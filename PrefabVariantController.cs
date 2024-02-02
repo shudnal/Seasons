@@ -435,7 +435,7 @@ namespace Seasons
             if (!SeasonalTextureVariants.controllers.TryGetValue(prefabName, out PrefabController controller))
                 return;
 
-            if (checkLocation && IsIgnoredLocation(gameObject.transform.position))
+            if (checkLocation && IsIgnoredPosition(gameObject.transform.position))
                 return;
 
             if (m_prefabVariants.ContainsKey(gameObject))
@@ -450,8 +450,6 @@ namespace Seasons
 
         public void AddControllerTo(Humanoid humanoid)
         {
-
-
             if (humanoid.InInterior())
                 return;
 
@@ -533,21 +531,6 @@ namespace Seasons
         {
             return Math.Round(Math.Pow(((double)Mathf.PerlinNoise(mx * noiseFrequency + instance.m_seed, my * noiseFrequency - instance.m_seed) +
                 (double)Mathf.PerlinNoise(mx * 2 * noiseFrequency - instance.m_seed, my * 2 * noiseFrequency + instance.m_seed) * 0.5) / noiseDivisor, noisePower) * 20) / 20;
-        }
-
-        public static bool IsIgnoredLocation(Vector3 position)
-        {
-            if (WorldGenerator.instance == null)
-                return true;
-
-            float baseHeight = WorldGenerator.instance.GetBaseHeight(position.x, position.z, menuTerrain: false);
-
-            if (baseHeight > WorldGenerator.mountainBaseHeightMin + 0.05f)
-                return true;
-
-            Heightmap.Biome biome = WorldGenerator.instance.GetBiome(position);
-
-            return biome == Heightmap.Biome.DeepNorth || biome == Heightmap.Biome.AshLands;
         }
 
         public static void AddControllerToPrefabs()
@@ -716,6 +699,15 @@ namespace Seasons
         private static void Postfix(Plant __instance)
         {
             PrefabVariantController.instance?.AddControllerTo(__instance.gameObject, checkLocation:true, __instance.m_nview);
+        }
+    }
+
+    [HarmonyPatch(typeof(Pickable), nameof(Pickable.Awake))]
+    public static class Pickable_Awake_AddPrefabVariantController
+    {
+        private static void Postfix(Pickable __instance)
+        {
+            PrefabVariantController.instance?.AddControllerTo(__instance.gameObject, checkLocation: true, __instance.m_nview);
         }
     }
 
