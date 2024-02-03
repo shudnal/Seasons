@@ -1246,6 +1246,9 @@ namespace Seasons
             if (___m_nview.GetZDO().GetPrefab() != _iceFloePrefab)
                 return;
 
+            if (__instance.HaveLiquidLevel() && __instance.GetFloatDepth() > 0f && ___m_body.IsSleeping())
+                ___m_body.WakeUp();
+
             if (!__instance.HaveLiquidLevel() || __instance.GetFloatDepth() > 0f)
                 return;
 
