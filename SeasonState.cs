@@ -1678,7 +1678,7 @@ namespace Seasons
             if (!controlRandomEvents.Value)
                 return;
 
-            List<SeasonRandomEvent> randEvents = SeasonState.seasonRandomEvents.GetSeasonEvents(seasonState.GetCurrentSeason());
+            List<SeasonRandomEvents.SeasonRandomEvent> randEvents = SeasonState.seasonRandomEvents.GetSeasonEvents(seasonState.GetCurrentSeason());
 
             __state = new List<RandomEvent>();
             for (int i = 0; i < __instance.m_events.Count; i++)
@@ -1686,7 +1686,7 @@ namespace Seasons
                 RandomEvent randEvent = __instance.m_events[i];
                 __state.Add(JsonUtility.FromJson<RandomEvent>(JsonUtility.ToJson(randEvent)));
 
-                SeasonRandomEvent seasonRandEvent = randEvents.Find(re => re.m_name == randEvent.m_name);
+                SeasonRandomEvents.SeasonRandomEvent seasonRandEvent = randEvents.Find(re => re.m_name == randEvent.m_name);
                 if (seasonRandEvent != null)
                 {
                     if (seasonRandEvent.m_biomes != null)

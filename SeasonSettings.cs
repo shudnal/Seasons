@@ -621,33 +621,33 @@ namespace Seasons
     }
 
     [Serializable]
-    public class SeasonRandomEvent
-    {
-        public string m_name;
-        public string m_biomes;
-        public int m_weight;
-
-        public SeasonRandomEvent()
-        {
-
-        }
-
-        public SeasonRandomEvent(RandomEvent randomEvent)
-        {
-            m_name = randomEvent.m_name;
-            m_weight = 1;
-            m_biomes = randomEvent.m_biome.ToString();
-        }
-
-        public Heightmap.Biome GetBiome()
-        {
-            return (Heightmap.Biome)Enum.Parse(typeof(Heightmap.Biome), m_biomes);
-        }
-    }
-
-    [Serializable]
     public class SeasonRandomEvents
     {
+        [Serializable]
+        public class SeasonRandomEvent
+        {
+            public string m_name;
+            public string m_biomes;
+            public int m_weight;
+
+            public SeasonRandomEvent()
+            {
+
+            }
+
+            public SeasonRandomEvent(RandomEvent randomEvent)
+            {
+                m_name = randomEvent.m_name;
+                m_weight = 1;
+                m_biomes = randomEvent.m_biome.ToString();
+            }
+
+            public Heightmap.Biome GetBiome()
+            {
+                return (Heightmap.Biome)Enum.Parse(typeof(Heightmap.Biome), m_biomes);
+            }
+        }
+
         public List<SeasonRandomEvent> Spring = new List<SeasonRandomEvent>();
         public List<SeasonRandomEvent> Summer = new List<SeasonRandomEvent>();
         public List<SeasonRandomEvent> Fall = new List<SeasonRandomEvent>();
@@ -1551,8 +1551,8 @@ namespace Seasons
             if (eventsDefault.Count == 0)
                 eventsDefault.AddRange(RandEventSystem.instance.m_events.ToList());
 
-            List<SeasonRandomEvent> list = new List<SeasonRandomEvent>();
-            eventsDefault.DoIf(randevent => randevent.m_random, randevent => list.Add(new SeasonRandomEvent(randevent)));
+            List<SeasonRandomEvents.SeasonRandomEvent> list = new List<SeasonRandomEvents.SeasonRandomEvent>();
+            eventsDefault.DoIf(randevent => randevent.m_random, randevent => list.Add(new SeasonRandomEvents.SeasonRandomEvent(randevent)));
 
             JsonSerializerSettings jsonSerializerSettings = new JsonSerializerSettings
             {

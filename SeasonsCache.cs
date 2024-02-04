@@ -861,178 +861,467 @@ namespace Seasons
 
     public static class SeasonalTexturePrefabCache
     {
-        public static readonly List<string> particleSystemStartColors = new List<string>()
+        [Serializable]
+        public class MaterialCacheSettings
         {
-            "leaf_particles",
-            "vfx_bush_destroyed",
-            "vfx_bush_destroyed_heath",
-            "vfx_bush_leaf_puff",
-            "vfx_bush_leaf_puff_heath",
-            "vfx_bush2_e_hit",
-            "vfx_bush2_en_destroyed",
-            "vfx_shrub_2_hit",
-        };
+            public List<string> particleSystemStartColors;
+            public Dictionary<string, string[]> shadersTypes;
+            public Dictionary<string, string[]> shaderColors;
+            public Dictionary<string, string[]> materialColors;
+            public Dictionary<string, string[]> shaderTextures;
+            public Dictionary<string, string[]> materialTextures;
+            public Dictionary<string, string[]> shaderIgnoreMaterial;
+            public Dictionary<string, string[]> shaderOnlyMaterial;
+            public List<string> effectPrefab;
+            public List<string> creaturePrefab;
+            public List<string> piecePrefab;
+            public List<string> piecePrefabPartialName;
+            public List<string> ignorePrefab;
+            public List<string> ignorePrefabPartialName;
 
-        public static readonly Dictionary<string, string[]> shaderColors = new Dictionary<string, string[]>
+            public MaterialCacheSettings(bool loadDefaults = false)
             {
-                { "Custom/StaticRock", new string[] { "_MossColor" }},
-                { "Custom/Yggdrasil_root", new string[] { "_MossColor" }},
-            };
+                if (!loadDefaults)
+                    return;
 
-        public static readonly Dictionary<string, string[]> materialColors = new Dictionary<string, string[]>
-            {
-                { "Vines_Mat", new string[] { "_Color" }},
-                { "carrot_blast", new string[] { "_Color" }},
-                { "barley_sapling", new string[] { "_Color" }},
-                { "Bush01_raspberry", new string[] { "_Color" }},
-            };
+                particleSystemStartColors = new List<string>()
+                {
+                    "leaf_particles",
+                    "vfx_bush_destroyed",
+                    "vfx_bush_destroyed_heath",
+                    "vfx_bush_leaf_puff",
+                    "vfx_bush_leaf_puff_heath",
+                    "vfx_bush2_e_hit",
+                    "vfx_bush2_en_destroyed",
+                    "vfx_shrub_2_hit",
+                };
 
-        public static readonly Dictionary<string, string[]> materialTextures = new Dictionary<string, string[]>
-            {
-                { "swamptree1_log", new string[] { "_MossTex" }},
-                { "swamptree2_log", new string[] { "_MossTex" }},
-                { "swamptree1_bark", new string[] { "_MossTex" }},
-                { "swamptree2_bark", new string[] { "_MossTex" }},
-                { "swamptree_stump", new string[] { "_MossTex" }},
-                { "beech_bark", new string[] { "_MossTex" }},
-                { "oak_bark", new string[] { "_MossTex" }},
-                { "yggdrasil_branch", new string[] { "_MossTex" }},
-            };
+                shaderColors = new Dictionary<string, string[]>
+                {
+                    { "Custom/StaticRock", new string[] { "_MossColor" }},
+                    { "Custom/Yggdrasil_root", new string[] { "_MossColor" }},
+                };
 
-        public static readonly Dictionary<string, string[]> shaderTextures = new Dictionary<string, string[]>
-            {
-                { "Custom/Vegetation", new string[] { "_MainTex" } },
-                { "Custom/Grass", new string[] { "_MainTex", "_TerrainColorTex" } },
-                { "Custom/Creature", new string[] { "_MainTex" } },
-                { "Custom/Piece", new string[] { "_MainTex" }},
-                { "Custom/StaticRock", new string[] { "_MossTex" }},
-                { "Standard", new string[] { "_MainTex" }},
-                { "Particles/Standard Surface2", new string[] { "_MainTex" }},
-                { "Custom/Yggdrasil", new string[] { "_MainTex" }},
-            };
+                materialColors = new Dictionary<string, string[]>
+                {
+                    { "Vines_Mat", new string[] { "_Color" }},
+                    { "carrot_blast", new string[] { "_Color" }},
+                    { "barley_sapling", new string[] { "_Color" }},
+                    { "Bush01_raspberry", new string[] { "_Color" }},
+                };
 
-        public static readonly Dictionary<string, string[]> shaderIgnoreMaterial = new Dictionary<string, string[]>
-            {
-                { "Custom/Vegetation", new string[] { "bark", "trunk", "_wood", "HildirFlowerGirland_", "HildirTentCloth_", "TraderTent_" } },
-            };
+                materialTextures = new Dictionary<string, string[]>
+                {
+                    { "swamptree1_log", new string[] { "_MossTex" }},
+                    { "swamptree2_log", new string[] { "_MossTex" }},
+                    { "swamptree1_bark", new string[] { "_MossTex" }},
+                    { "swamptree2_bark", new string[] { "_MossTex" }},
+                    { "swamptree_stump", new string[] { "_MossTex" }},
+                    { "beech_bark", new string[] { "_MossTex" }},
+                    { "oak_bark", new string[] { "_MossTex" }},
+                    { "yggdrasil_branch", new string[] { "_MossTex" }},
+                };
 
-        public static readonly Dictionary<string, string[]> shaderOnlyMaterial = new Dictionary<string, string[]>
-            {
-                { "Custom/Piece", new string[] { "straw", "RoofShingles", "beehive", "Midsummerpole_mat", "Pine_tree_xmas" } },
-                { "Custom/Creature", new string[] { "HildirsLox", "lox", "lox_calf", 
-                                                    "Draugr_Archer_mat", "Draugr_mat", "Draugr_elite_mat", "Abomination_mat", 
-                                                    "greyling", "greydwarf", "greydwarf_elite", "greydwarf_shaman" } },
-                { "Standard", new string[] { "beech_particle", "birch_particle", "branch_particle", "branch_dead_particle", "oak_particle", "shoot_leaf_particle" }},
-                { "Particles/Standard Surface2", new string[] { "shrub2_leafparticle", "shrub2_leafparticle_heath" }},
-            };
+                shaderTextures = new Dictionary<string, string[]>
+                {
+                    { "Custom/Vegetation", new string[] { "_MainTex" } },
+                    { "Custom/Grass", new string[] { "_MainTex", "_TerrainColorTex" } },
+                    { "Custom/Creature", new string[] { "_MainTex" } },
+                    { "Custom/Piece", new string[] { "_MainTex" }},
+                    { "Custom/StaticRock", new string[] { "_MossTex" }},
+                    { "Standard", new string[] { "_MainTex" }},
+                    { "Particles/Standard Surface2", new string[] { "_MainTex" }},
+                    { "Custom/Yggdrasil", new string[] { "_MainTex" }},
+                };
 
-        public static readonly Dictionary<string, string[]> shadersTypes = new Dictionary<string, string[]>
-            {
-                { typeof(MeshRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass", "Custom/StaticRock", "Custom/Piece", "Custom/Yggdrasil", "Custom/Yggdrasil_root" } },
-                { typeof(InstanceRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass" } },
-                { typeof(SkinnedMeshRenderer).Name, new string[] { "Custom/Creature" } },
-                { typeof(ParticleSystemRenderer).Name, new string[] { "Standard", "Particles/Standard Surface2" } }
-            };
+                shaderIgnoreMaterial = new Dictionary<string, string[]>
+                {
+                    { "Custom/Vegetation", new string[] { "bark", "trunk", "_wood", "HildirFlowerGirland_", "HildirTentCloth_", "TraderTent_" } },
+                };
 
-        public static readonly List<string> effectPrefab = new List<string>()
+                shaderOnlyMaterial = new Dictionary<string, string[]>
+                {
+                    { "Custom/Piece", new string[] { "straw", "RoofShingles", "beehive", "Midsummerpole_mat", "Pine_tree_xmas" } },
+                    { "Custom/Creature", new string[] { "HildirsLox", "lox", "lox_calf",
+                    "Draugr_Archer_mat", "Draugr_mat", "Draugr_elite_mat", "Abomination_mat",
+                    "greyling", "greydwarf", "greydwarf_elite", "greydwarf_shaman" } },
+                    { "Standard", new string[] { "beech_particle", "birch_particle", "branch_particle", "branch_dead_particle", "oak_particle", "shoot_leaf_particle" }},
+                    { "Particles/Standard Surface2", new string[] { "shrub2_leafparticle", "shrub2_leafparticle_heath" }},
+                };
+
+                shadersTypes = new Dictionary<string, string[]>
+                {
+                    { typeof(MeshRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass", "Custom/StaticRock", "Custom/Piece", "Custom/Yggdrasil", "Custom/Yggdrasil_root" } },
+                    { typeof(InstanceRenderer).Name, new string[] { "Custom/Vegetation", "Custom/Grass" } },
+                    { typeof(SkinnedMeshRenderer).Name, new string[] { "Custom/Creature" } },
+                    { typeof(ParticleSystemRenderer).Name, new string[] { "Standard", "Particles/Standard Surface2" } }
+                };
+
+                effectPrefab = new List<string>()
+                {
+                    "lox_ragdoll",
+                    "loxcalf_ragdoll",
+                    "Draugr_elite_ragdoll",
+                    "Draugr_ragdoll",
+                    "Draugr_ranged_ragdoll",
+                    "Abomination_ragdoll",
+                    "Greydwarf_ragdoll",
+                    "Greydwarf_elite_ragdoll",
+                    "Greydwarf_Shaman_ragdoll",
+                    "Greyling_ragdoll",
+                    "vfx_beech_cut",
+                    "vfx_oak_cut",
+                    "vfx_yggashoot_cut",
+                    "vfx_bush_destroyed",
+                    "vfx_bush_destroyed_heath",
+                    "vfx_bush_leaf_puff",
+                    "vfx_bush_leaf_puff_heath",
+                    "vfx_bush2_e_hit",
+                    "vfx_bush2_en_destroyed",
+                };
+
+                creaturePrefab = new List<string>()
+                {
+                    "Lox",
+                    "Lox_Calf",
+                    "Draugr",
+                    "Draugr_Elite",
+                    "Draugr_Ranged",
+                    "Abomination",
+                    "Greydwarf",
+                    "Greydwarf_Elite",
+                    "Greydwarf_Shaman",
+                    "Greyling",
+                };
+
+                piecePrefab = new List<string>()
+                {
+                    "vines",
+                    "piece_beehive",
+                    "piece_maypole",
+                    "piece_xmastree"
+                };
+
+                piecePrefabPartialName = new List<string>()
+                {
+                    "wood_roof",
+                    "copper_roof",
+                    "goblin_roof",
+                };
+
+                ignorePrefab = new List<string>()
+                {
+                    "Rock_destructible_test",
+                    "HugeRoot1",
+                    "Hildir_cave",
+                    "PineTree_log",
+                    "PineTree_log_half",
+                    "MountainGrave01",
+                    "PineTree_log_halfOLD",
+                    "PineTree_logOLD",
+                    "sapling_magecap",
+                    "FirTree_log",
+                    "FirTree_log_half",
+                    "Hildir_crypt",
+                    "MountainGraveStone01",
+                    "crypt_skeleton_chest",
+                    "dungeon_sunkencrypt_irongate_rusty",
+                    "stonechest",
+                    "SunkenKit_int_towerwall",
+                    "SunkenKit_int_towerwall_LOD",
+                    "marker01",
+                    "marker02",
+                };
+
+                ignorePrefabPartialName = new List<string>()
+                {
+                    "Mistlands_GuardTower",
+                    "WoodHouse",
+                    "DevHouse",
+                    "StoneTower",
+                    "SunkenCrypt",
+                    "MountainCave",
+                    "Mistlands_Lighthouse",
+                    "Mistlands_Viaduct",
+                    "Mistlands_Dvergr",
+                    "Mistlands_Statue",
+                    "Mistlands_Excavation",
+                    "Mistlands_Giant",
+                    "Mistlands_Harbour",
+                    "dvergrtown_",
+                    "OLD_wood_roof",
+                    "AbandonedLogCabin",
+                    "DrakeNest",
+                };
+
+            }
+        }
+
+        [Serializable]
+        public class ColorsCacheSettings
         {
-            "lox_ragdoll",
-            "loxcalf_ragdoll",
-            "Draugr_elite_ragdoll",
-            "Draugr_ragdoll",
-            "Draugr_ranged_ragdoll",
-            "Abomination_ragdoll",
-            "Greydwarf_ragdoll",
-            "Greydwarf_elite_ragdoll",
-            "Greydwarf_Shaman_ragdoll",
-            "Greyling_ragdoll",
-            "vfx_beech_cut",
-            "vfx_oak_cut",
-            "vfx_yggashoot_cut",
-            "vfx_bush_destroyed",
-            "vfx_bush_destroyed_heath",
-            "vfx_bush_leaf_puff",
-            "vfx_bush_leaf_puff_heath",
-            "vfx_bush2_e_hit",
-            "vfx_bush2_en_destroyed",
-        };
+            [Serializable]
+            public class ColorVariant
+            {
+                public bool useColor = true;
+                public string color;
+                public float targetProportion;
+                public bool preserveAlphaChannel = true;
+                public bool reduceOriginalColorToGrayscale;
+                public bool restoreLuminance = true;
 
-        public static readonly List<string> creaturePrefab = new List<string>()
-        {
-            "Lox",
-            "Lox_Calf",
-            "Draugr",
-            "Draugr_Elite",
-            "Draugr_Ranged",
-            "Abomination",
-            "Greydwarf",
-            "Greydwarf_Elite",
-            "Greydwarf_Shaman",
-            "Greyling",
-        };
+                [NonSerialized]
+                public Color colorValue = Color.black;
 
-        public static readonly List<string> piecePrefab = new List<string>()
-        {
-            "vines",
-            "piece_beehive",
-            "piece_maypole",
-            "piece_xmastree"
-        };
+                public Color MergeColors(Color colorToMerge)
+                {
+                    if (colorValue == Color.black && ColorUtility.ToHtmlStringRGBA(colorValue) != color && !ColorUtility.TryParseHtmlString(color, out colorValue))
+                        LogInfo($"Error at parsing color: ({color})");
 
-        public static readonly List<string> piecePrefabPartialName = new List<string>()
-        {
-            "wood_roof",
-            "copper_roof",
-            "goblin_roof",
-        };
+                    Color newColor = new Color(colorValue.r, colorValue.g, colorValue.b, preserveAlphaChannel ? colorToMerge.a : colorValue.a);
+                    Color oldColor = reduceOriginalColorToGrayscale ? new Color(colorToMerge.grayscale, colorToMerge.grayscale, colorToMerge.grayscale, colorToMerge.a) : colorToMerge;
 
-        private static readonly List<string> ignorePrefab = new List<string>()
-        {
-            "Rock_destructible_test",
-            "HugeRoot1",
-            "Hildir_cave",
-            "PineTree_log",
-            "PineTree_log_half",
-            "MountainGrave01",
-            "PineTree_log_halfOLD",
-            "PineTree_logOLD",
-            "sapling_magecap",
-            "FirTree_log",
-            "FirTree_log_half",
-            "Hildir_crypt",
-            "MountainGraveStone01",
-            "crypt_skeleton_chest",
-            "dungeon_sunkencrypt_irongate_rusty",
-            "stonechest",
-            "SunkenKit_int_towerwall",
-            "SunkenKit_int_towerwall_LOD",
-            "marker01",
-            "marker02",
-        };
+                    HSLColor newHSLColor = new HSLColor(Color.Lerp(oldColor, newColor, targetProportion));
 
-        private static readonly List<string> ignorePrefabPartialName = new List<string>()
+                    if (restoreLuminance)
+                        newHSLColor.l = new HSLColor(colorToMerge).l;
+
+                    return newHSLColor.ToRGBA();
+                }
+
+                public ColorVariant()
+                {
+                    useColor = false;
+                }
+
+                public ColorVariant(Color color, float t)
+                {
+                    this.color = $"#{ColorUtility.ToHtmlStringRGBA(color)}";
+                    targetProportion = t;
+                }
+
+                public ColorVariant(Color color, float t, bool grayscale, bool restoreLuminance)
+                {
+                    this.color = $"#{ColorUtility.ToHtmlStringRGBA(color)}";
+                    targetProportion = t;
+                    reduceOriginalColorToGrayscale = grayscale;
+                    this.restoreLuminance = restoreLuminance;
+                }
+            }
+
+            [Serializable]
+            public class SeasonalColorVariants
+            {
+                public List<ColorVariant> Spring = new List<ColorVariant>();
+                public List<ColorVariant> Summer = new List<ColorVariant>();
+                public List<ColorVariant> Fall = new List<ColorVariant>();
+                public List<ColorVariant> Winter = new List<ColorVariant>();
+            }
+
+            public SeasonalColorVariants seasonal = new SeasonalColorVariants();
+            public SeasonalColorVariants grass = new SeasonalColorVariants();
+            public SeasonalColorVariants moss = new SeasonalColorVariants();
+            public SeasonalColorVariants creature = new SeasonalColorVariants();
+            public SeasonalColorVariants piece = new SeasonalColorVariants();
+            public SeasonalColorVariants conifer = new SeasonalColorVariants();
+
+            public Dictionary<string, SeasonalColorVariants> prefabOverrides = new Dictionary<string, SeasonalColorVariants>();
+
+            public ColorsCacheSettings(bool loadDefaults = false)
+            {
+                if (!loadDefaults)
+                    return;
+
+                seasonal.Spring.Add(new ColorVariant(new Color(0.27f, 0.80f, 0.27f), 0.75f));
+                seasonal.Spring.Add(new ColorVariant(new Color(0.69f, 0.84f, 0.15f), 0.75f));
+                seasonal.Spring.Add(new ColorVariant(new Color(0.43f, 0.56f, 0.11f), 0.75f));
+                seasonal.Spring.Add(new ColorVariant());
+
+                seasonal.Summer.Add(new ColorVariant(new Color(0.5f, 0.7f, 0.2f), 0.5f));
+                seasonal.Summer.Add(new ColorVariant(new Color(0.7f, 0.7f, 0.2f), 0.5f));
+                seasonal.Summer.Add(new ColorVariant(new Color(0.5f, 0.5f, 0f), 0.5f));
+                seasonal.Summer.Add(new ColorVariant(new Color(0.7f, 0.7f, 0f), 0.2f));
+
+                seasonal.Fall.Add(new ColorVariant(new Color(0.8f, 0.5f, 0f), 0.75f));
+                seasonal.Fall.Add(new ColorVariant(new Color(0.8f, 0.3f, 0f), 0.75f));
+                seasonal.Fall.Add(new ColorVariant(new Color(0.8f, 0.2f, 0f), 0.75f));
+                seasonal.Fall.Add(new ColorVariant());
+
+                seasonal.Winter.Add(new ColorVariant(new Color(1f, 0.98f, 0.98f), 0.65f, grayscale: true, restoreLuminance: false));
+                seasonal.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.6f, grayscale: true, restoreLuminance: false));
+                seasonal.Winter.Add(new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.65f, grayscale: true, restoreLuminance: false));
+                seasonal.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.65f, grayscale: true, restoreLuminance: false));
+
+                grass.Spring.Add(new ColorVariant(new Color(0.27f, 0.80f, 0.27f), 0.75f));
+                grass.Spring.Add(new ColorVariant(new Color(0.69f, 0.84f, 0.15f), 0.75f));
+                grass.Spring.Add(new ColorVariant(new Color(0.43f, 0.56f, 0.11f), 0.75f));
+                grass.Spring.Add(new ColorVariant());
+
+                grass.Summer.Add(new ColorVariant(new Color(0.5f, 0.7f, 0.2f), 0.5f));
+                grass.Summer.Add(new ColorVariant(new Color(0.7f, 0.75f, 0.2f), 0.5f));
+                grass.Summer.Add(new ColorVariant(new Color(0.5f, 0.5f, 0f), 0.5f));
+                grass.Summer.Add(new ColorVariant(new Color(0.7f, 0.7f, 0f), 0.2f));
+
+                grass.Fall.Add(new ColorVariant(new Color(0.8f, 0.6f, 0.2f), 0.5f));
+                grass.Fall.Add(new ColorVariant(new Color(0.8f, 0.5f, 0f), 0.5f));
+                grass.Fall.Add(new ColorVariant(new Color(0.8f, 0.3f, 0f), 0.5f));
+                grass.Fall.Add(new ColorVariant());
+
+                grass.Winter.Add(new ColorVariant(new Color(1f, 0.98f, 0.98f), 0.65f, grayscale: true, restoreLuminance: false));
+                grass.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.6f, grayscale: true, restoreLuminance: false));
+                grass.Winter.Add(new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.65f, grayscale: true, restoreLuminance: false));
+                grass.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.65f, grayscale: true, restoreLuminance: false));
+
+                moss.Spring.Add(new ColorVariant(new Color(0.43f, 0.56f, 0.11f), 0.25f));
+                moss.Spring.Add(new ColorVariant());
+                moss.Spring.Add(new ColorVariant(new Color(0.27f, 0.80f, 0.27f), 0.25f));
+                moss.Spring.Add(new ColorVariant(new Color(0.69f, 0.84f, 0.15f), 0.25f));
+
+                moss.Summer.Add(new ColorVariant(new Color(0.5f, 0.5f, 0f), 0.2f));
+                moss.Summer.Add(new ColorVariant(new Color(0.7f, 0.7f, 0f), 0.07f));
+                moss.Summer.Add(new ColorVariant(new Color(0.5f, 0.7f, 0.2f), 0.2f));
+                moss.Summer.Add(new ColorVariant(new Color(0.7f, 0.75f, 0.2f), 0.2f));
+
+                moss.Fall.Add(new ColorVariant(new Color(0.8f, 0.3f, 0f), 0.2f));
+                moss.Fall.Add(new ColorVariant());
+                moss.Fall.Add(new ColorVariant(new Color(0.8f, 0.6f, 0.2f), 0.2f));
+                moss.Fall.Add(new ColorVariant(new Color(0.8f, 0.5f, 0f), 0.2f));
+
+                moss.Winter.Add(new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.65f, grayscale: true, restoreLuminance: false));
+                moss.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.65f, grayscale: true, restoreLuminance: false));
+                moss.Winter.Add(new ColorVariant(new Color(1f, 0.98f, 0.98f), 0.65f, grayscale: true, restoreLuminance: false));
+                moss.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.6f, grayscale: true, restoreLuminance: false));
+
+                conifer.Spring.Add(new ColorVariant(new Color(0.27f, 0.80f, 0.27f), 0.35f));
+                conifer.Spring.Add(new ColorVariant(new Color(0.69f, 0.84f, 0.15f), 0.35f));
+                conifer.Spring.Add(new ColorVariant(new Color(0.43f, 0.56f, 0.11f), 0.35f));
+                conifer.Spring.Add(new ColorVariant());
+
+                conifer.Summer.Add(new ColorVariant(new Color(0.5f, 0.7f, 0.2f), 0.25f));
+                conifer.Summer.Add(new ColorVariant(new Color(0.7f, 0.7f, 0.2f), 0.25f));
+                conifer.Summer.Add(new ColorVariant(new Color(0.5f, 0.5f, 0f), 0.25f));
+                conifer.Summer.Add(new ColorVariant(new Color(0.7f, 0.7f, 0f), 0.1f));
+
+                conifer.Fall.Add(new ColorVariant(new Color(0.8f, 0.5f, 0f), 0.35f));
+                conifer.Fall.Add(new ColorVariant(new Color(0.8f, 0.3f, 0f), 0.35f));
+                conifer.Fall.Add(new ColorVariant(new Color(0.8f, 0.2f, 0f), 0.35f));
+                conifer.Fall.Add(new ColorVariant());
+
+                conifer.Winter.Add(new ColorVariant(new Color(1f, 0.98f, 0.98f), 0.45f, grayscale: true, restoreLuminance: false));
+                conifer.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.4f, grayscale: true, restoreLuminance: false));
+                conifer.Winter.Add(new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.45f, grayscale: true, restoreLuminance: false));
+                conifer.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.45f, grayscale: true, restoreLuminance: false));
+                
+                creature.Winter.Add(new ColorVariant(new Color(1f, 0.98f, 0.98f), 0.25f, grayscale: true, restoreLuminance: false));
+                creature.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.2f, grayscale: true, restoreLuminance: false));
+                creature.Winter.Add(new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.25f, grayscale: true, restoreLuminance: false));
+                creature.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.25f, grayscale: true, restoreLuminance: false));
+
+                piece.Winter.Add(new ColorVariant(new Color(1f, 0.98f, 0.98f), 0.4f, grayscale: true, restoreLuminance: false));
+                piece.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.3f, grayscale: true, restoreLuminance: false));
+                piece.Winter.Add(new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.4f, grayscale: true, restoreLuminance: false));
+                piece.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.4f, grayscale: true, restoreLuminance: false));
+
+                prefabOverrides.Add("lox", new SeasonalColorVariants() 
+                { 
+                    Winter = new List<ColorVariant>() 
+                    {
+                        new ColorVariant(new Color(1f, 0.98f, 0.98f), 0.5f, grayscale: true, restoreLuminance: false),
+                        new ColorVariant(new Color(1f, 1f, 1f), 0.4f, grayscale: true, restoreLuminance: false),
+                        new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.5f, grayscale: true, restoreLuminance: false),
+                        new ColorVariant(new Color(1f, 1f, 1f), 0.5f, grayscale: true, restoreLuminance: false)
+                    } 
+                });
+
+                prefabOverrides.Add("goblin", new SeasonalColorVariants()
+                {
+                    Winter = new List<ColorVariant>()
+                    {
+                        new ColorVariant(new Color(1f, 0.98f, 0.98f), 0.35f, grayscale: true, restoreLuminance: false),
+                        new ColorVariant(new Color(1f, 1f, 1f), 0.3f, grayscale: true, restoreLuminance: false),
+                        new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.35f, grayscale: true, restoreLuminance: false),
+                        new ColorVariant(new Color(1f, 1f, 1f), 0.35f, grayscale: true, restoreLuminance: false)
+                    }
+                });
+
+                prefabOverrides.Add("YggdrasilBranch", new SeasonalColorVariants()
+                {
+                    Spring = seasonal.Spring,
+                    Summer = seasonal.Summer,
+                    Fall = seasonal.Fall,
+                    Winter = new List<ColorVariant>() 
+                    {
+                        new ColorVariant(new Color(1f, 0.98f, 0.98f), 0.21f, grayscale: true, restoreLuminance: false),
+                        new ColorVariant(new Color(1f, 1f, 1f), 0.2f, grayscale: true, restoreLuminance: false),
+                        new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.21f, grayscale: true, restoreLuminance: false),
+                        new ColorVariant(new Color(1f, 1f, 1f), 0.21f, grayscale: true, restoreLuminance: false)
+                    }
+                });
+            }
+        }
+
+        public const string settingsSubdirectory = "Cache settings";
+        public const string defaultsSubdirectory = "Defaults";
+        public const string materialsSettingsFileName = "Materials.json";
+        public const string colorsSettingsFileName = "Colors.json";
+
+        public static MaterialCacheSettings materialSettings = new MaterialCacheSettings(loadDefaults: true);
+        public static ColorsCacheSettings colorSettings = new ColorsCacheSettings(loadDefaults: true);
+
+        public static void InitSettings()
         {
-            "Mistlands_GuardTower",
-            "WoodHouse",
-            "DevHouse",
-            "StoneTower",
-            "SunkenCrypt",
-            "MountainCave",
-            "Mistlands_Lighthouse",
-            "Mistlands_Viaduct",
-            "Mistlands_Dvergr",
-            "Mistlands_Statue",
-            "Mistlands_Excavation",
-            "Mistlands_Giant",
-            "Mistlands_Harbour",
-            "dvergrtown_",
-            "OLD_wood_roof",
-            "AbandonedLogCabin",
-            "DrakeNest",
-        };
+            string folder = Path.Combine(configDirectory, settingsSubdirectory);
+            Directory.CreateDirectory(folder);
+
+            SaveDefaults(folder);
+
+            string fileInConfigFolder = Path.Combine(folder, materialsSettingsFileName);
+            if (File.Exists(fileInConfigFolder))
+            {
+                LogInfo($"Loading materials settings: {fileInConfigFolder}");
+                try
+                {
+                    materialSettings = JsonConvert.DeserializeObject<MaterialCacheSettings>(File.ReadAllText(fileInConfigFolder));
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error reading file ({fileInConfigFolder})! Error: {e.Message}");
+                }
+            }
+
+            fileInConfigFolder = Path.Combine(folder, colorsSettingsFileName);
+            if (File.Exists(fileInConfigFolder))
+            {
+                LogInfo($"Loading color settings: {fileInConfigFolder}");
+                try
+                {
+                    colorSettings = JsonConvert.DeserializeObject<ColorsCacheSettings>(File.ReadAllText(fileInConfigFolder));
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error reading file ({fileInConfigFolder})! Error: {e.Message}");
+                }
+            }
+            
+        }
+
+        public static void SaveDefaults(string folder)
+        {
+            string defaultsFolder = Path.Combine(folder, defaultsSubdirectory);
+            Directory.CreateDirectory(defaultsFolder);
+
+            LogInfo($"Saving default materials settings");
+            File.WriteAllText(Path.Combine(defaultsFolder, materialsSettingsFileName), JsonConvert.SerializeObject(new MaterialCacheSettings(loadDefaults: true), Formatting.Indented));
+
+            LogInfo($"Saving default colors settings");
+            File.WriteAllText(Path.Combine(defaultsFolder, colorsSettingsFileName), JsonConvert.SerializeObject(new ColorsCacheSettings(loadDefaults: true), Formatting.Indented));
+        }
 
         public static void FillWithGameData()
         {
+            LogInfo("Initializing settings");
+            InitSettings();
+
             LogInfo("Caching clutters");
             AddClutters();
 
@@ -1065,10 +1354,10 @@ namespace Seasons
                 if (loc.m_prefab == null)
                     continue;
 
-                if (ignorePrefab.Contains(loc.m_prefabName))
+                if (materialSettings.ignorePrefab.Contains(loc.m_prefabName))
                     continue;
 
-                if (ignorePrefabPartialName.Any(namepart => loc.m_prefabName.Contains(namepart)))
+                if (materialSettings.ignorePrefabPartialName.Any(namepart => loc.m_prefabName.Contains(namepart)))
                     continue;
 
                 Transform root = loc.m_prefab.transform.Find("exterior") ?? loc.m_prefab.transform;
@@ -1083,7 +1372,7 @@ namespace Seasons
 
         private static void AddClutters()
         {
-            foreach (ClutterSystem.Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c.m_prefab != null && !ignorePrefab.Contains(c.m_prefab.name)))
+            foreach (ClutterSystem.Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c.m_prefab != null && !materialSettings.ignorePrefab.Contains(c.m_prefab.name)))
             {
                 if (!clutter.m_prefab.TryGetComponent(out InstanceRenderer renderer))
                     continue;
@@ -1101,12 +1390,12 @@ namespace Seasons
                 if (material == null)
                     continue;
 
-                if (!shadersTypes.TryGetValue(rendererType, out string[] shaders) || !shaders.Contains(material.shader.name))
+                if (!materialSettings.shadersTypes.TryGetValue(rendererType, out string[] shaders) || !shaders.Contains(material.shader.name))
                     continue;
 
-                if (!materialTextures.ContainsKey(material.name) && !materialColors.ContainsKey(material.name))
-                    if (shaderIgnoreMaterial.TryGetValue(material.shader.name, out string[] ignoreMaterial) && ignoreMaterial.Any(ignore => material.name.IndexOf(ignore, StringComparison.OrdinalIgnoreCase) >= 0)
-                       || shaderOnlyMaterial.TryGetValue(material.shader.name, out string[] onlyMaterial) && !onlyMaterial.Any(onlymat => material.name.IndexOf(onlymat, StringComparison.OrdinalIgnoreCase) >= 0))
+                if (!materialSettings.materialTextures.ContainsKey(material.name) && !materialSettings.materialColors.ContainsKey(material.name))
+                    if (materialSettings.shaderIgnoreMaterial.TryGetValue(material.shader.name, out string[] ignoreMaterial) && ignoreMaterial.Any(ignore => material.name.IndexOf(ignore, StringComparison.OrdinalIgnoreCase) >= 0)
+                       || materialSettings.shaderOnlyMaterial.TryGetValue(material.shader.name, out string[] onlyMaterial) && !onlyMaterial.Any(onlymat => material.name.IndexOf(onlymat, StringComparison.OrdinalIgnoreCase) >= 0))
                     continue;
 
                 bool isNew = !SeasonalTextureVariants.controllers.TryGetValue(prefabName, out PrefabController controller);
@@ -1117,7 +1406,7 @@ namespace Seasons
                 if (!controller.renderersInHierarchy.TryGetValue(transformPath, out CachedRenderer cachedRenderer))
                     cachedRenderer = new CachedRenderer(rendererName, rendererType);
 
-                if (materialColors.TryGetValue(material.name, out string[] materialColorNames))
+                if (materialSettings.materialColors.TryGetValue(material.name, out string[] materialColorNames))
                 {
                     foreach (string propertyName in materialColorNames)
                     {
@@ -1129,7 +1418,7 @@ namespace Seasons
                             cachedRenderer.AddMaterialColors(material, propertyName, colors);
                     }
                 }
-                else if (shaderColors.TryGetValue(material.shader.name, out string[] colorNames))
+                else if (materialSettings.shaderColors.TryGetValue(material.shader.name, out string[] colorNames))
                     foreach (string propertyName in colorNames)
                     {
                         Color color = material.GetColor(propertyName);
@@ -1140,7 +1429,7 @@ namespace Seasons
                             cachedRenderer.AddMaterialColors(material, propertyName, colors);
                     }
 
-                if (materialTextures.TryGetValue(material.name, out string[] materialTextureNames))
+                if (materialSettings.materialTextures.TryGetValue(material.name, out string[] materialTextureNames))
                 {
                     foreach (string propertyName in material.GetTexturePropertyNames().Where(mat => materialTextureNames.Any(text => mat.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0)))
                     {
@@ -1160,7 +1449,7 @@ namespace Seasons
                         }
                     }
                 }
-                else if (shaderTextures.TryGetValue(material.shader.name, out string[] textureNames))
+                else if (materialSettings.shaderTextures.TryGetValue(material.shader.name, out string[] textureNames))
                 {
                     foreach (string propertyName in material.GetTexturePropertyNames().Where(mat => textureNames.Any(text => mat.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0)))
                     {
@@ -1234,13 +1523,13 @@ namespace Seasons
         {
             foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
             {
-                if (ignorePrefab.Contains(prefab.name) || prefab.layer == 12)
+                if (materialSettings.ignorePrefab.Contains(prefab.name) || prefab.layer == 12)
                     continue;
 
-                if (ignorePrefabPartialName.Any(namepart => prefab.name.Contains(namepart)))
+                if (materialSettings.ignorePrefabPartialName.Any(namepart => prefab.name.Contains(namepart)))
                     continue;
 
-                if (prefab.layer == 8 && !effectPrefab.Contains(prefab.name))
+                if (prefab.layer == 8 && !materialSettings.effectPrefab.Contains(prefab.name))
                     continue;
 
                 if (prefab.layer == 0 && prefab.TryGetComponent<Ship>(out _))
@@ -1250,7 +1539,7 @@ namespace Seasons
                     continue;
 
                 if (prefab.layer == 10 
-                   && !(piecePrefab.Contains(prefab.name) || piecePrefabPartialName.Any(namepart => prefab.name.IndexOf(namepart, StringComparison.OrdinalIgnoreCase) >= 0))
+                   && !(materialSettings.piecePrefab.Contains(prefab.name) || materialSettings.piecePrefabPartialName.Any(namepart => prefab.name.IndexOf(namepart, StringComparison.OrdinalIgnoreCase) >= 0))
                    && !prefab.TryGetComponent<Pickable>(out _) && !prefab.TryGetComponent<Plant>(out _))
                     continue;
                 
@@ -1398,7 +1687,7 @@ namespace Seasons
             if (ps.main.startColor.color == Color.white)
                 return;
 
-            if (!particleSystemStartColors.Contains(ps.name) && !particleSystemStartColors.Contains(prefabName))
+            if (!materialSettings.particleSystemStartColors.Contains(ps.name) && !materialSettings.particleSystemStartColors.Contains(prefabName))
                 return;
 
             string transformPath = ps.transform.GetPath();
