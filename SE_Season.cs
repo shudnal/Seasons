@@ -122,7 +122,7 @@ namespace Seasons
             m_name = GetSeasonName(m_season);
             m_icon = GetSeasonIcon(m_season);
 
-            Stats statsToSet = seasonalStatsOutdoorsOnly.Value && m_indoors ? new Stats() : SeasonState.seasonStats.GetSeasonStats();
+            Stats statsToSet = !controlStats.Value || seasonalStatsOutdoorsOnly.Value && m_indoors ? new Stats() : SeasonState.seasonStats.GetSeasonStats();
             statsToSet.SetStatusEffectStats(this);
         }
 
