@@ -870,6 +870,7 @@ namespace Seasons
                 ClutterVariantController.instance.UpdateColors();
             }
             ZoneSystemVariantController.UpdateWaterState();
+            seasonState.UpdateGlobalKeys();
         }
     }
 
