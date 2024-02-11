@@ -12,6 +12,7 @@ using static Seasons.PrefabController;
 using static Seasons.SeasonalTexturePrefabCache.ColorsCacheSettings;
 using static Seasons.SeasonalTexturePrefabCache.ColorReplacementSpecifications;
 using static Seasons.SeasonalTexturePrefabCache.ColorPositionsSettings;
+using System.Diagnostics;
 
 namespace Seasons
 {
@@ -1801,6 +1802,9 @@ namespace Seasons
 
         public static void FillWithGameData()
         {
+            Stopwatch stopwatch = new Stopwatch();
+            stopwatch.Start();
+
             LogInfo("Initializing cache settings");
             InitSettings();
 
@@ -1816,7 +1820,9 @@ namespace Seasons
             LogInfo("Caching yggdrasil branch");
             AddYggdrasilBranch();
 
-            LogInfo($"Added {SeasonalTextureVariants.controllers.Count} controllers, {SeasonalTextureVariants.textures.Count} textures");
+            stopwatch.Stop();
+
+            LogInfo($"Added {SeasonalTextureVariants.controllers.Count} controllers, {SeasonalTextureVariants.textures.Count} textures in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
         }
 
         private static void AddYggdrasilBranch()
