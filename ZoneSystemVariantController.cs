@@ -73,6 +73,8 @@ namespace Seasons
         public static readonly Dictionary<WaterVolume, WaterState> waterStates = new Dictionary<WaterVolume, WaterState>();
         
         private static readonly MaterialPropertyBlock s_matBlock = new MaterialPropertyBlock();
+        private static readonly List<ZDO> m_tempZDOList = new List<ZDO>();
+        private static readonly List<Vector3> m_tempHits = new List<Vector3>();
 
         private static float s_freezeStatus = 0f;
 
@@ -105,8 +107,8 @@ namespace Seasons
 
         public readonly List<WaterVolume> waterVolumesCheckFloes = new List<WaterVolume>();
         private readonly List<WaterVolume> tempWaterVolumesList = new List<WaterVolume>();
-        public readonly List<ClearArea> m_tempClearAreas = new List<ClearArea>();
-        public readonly List<GameObject> m_tempSpawnedObjects = new List<GameObject>();
+        private readonly List<ClearArea> m_tempClearAreas = new List<ClearArea>();
+        private readonly List<GameObject> m_tempSpawnedObjects = new List<GameObject>();
 
         public static bool IsWaterSurfaceFrozen() => s_freezeStatus == 1f;
         
@@ -123,7 +125,7 @@ namespace Seasons
         {
             float deltaTime = Time.deltaTime;
             m_createDestroyTimer += deltaTime;
-            if (m_createDestroyTimer >= 1f / 30f && waterVolumesCheckFloes.Count > 0)
+            if (m_createDestroyTimer >= (1f / 15f) && waterVolumesCheckFloes.Count > 0)
             {
                 m_createDestroyTimer = 0f;
                 CreateDestroyFloes();
@@ -388,7 +390,7 @@ namespace Seasons
 
         public static void CheckIfFishAboveSurface(Fish fish)
         {
-            if (!fish.m_nview.IsOwner())
+            if (fish.m_nview.HasOwner() && !fish.m_nview.IsOwner())
                 return;
 
             if (fish.transform.position.y > s_waterLevel - _winterWaterSurfaceOffset)
@@ -408,10 +410,10 @@ namespace Seasons
             {
                 if (character.transform.position.y >= s_waterLevel)
                 {
-                    List<Vector3> hits = new List<Vector3>();
-                    Pathfinding.instance.FindGround(character.transform.position, testWater: true, hits, Pathfinding.instance.GetSettings(ai.m_pathAgentType));
+                    m_tempHits.Clear();
+                    Pathfinding.instance.FindGround(character.transform.position, testWater: true, m_tempHits, Pathfinding.instance.GetSettings(ai.m_pathAgentType));
 
-                    Vector3 hit = hits.Find(h => h.y < s_waterLevel);
+                    Vector3 hit = m_tempHits.Find(h => h.y < s_waterLevel);
                     if (hit.y != 0)
                     {
                         character.m_body.velocity = Vector3.zero;
@@ -468,20 +470,20 @@ namespace Seasons
             if (!ZoneSystem.instance.IsZoneLoaded(zoneID))
                 return false;
 
-            List<ZDO> tempList = new List<ZDO>();
-            ZDOMan.instance.FindObjects(zoneID, tempList);
-            List<ZDO> floesZDO = tempList.FindAll(zdo => zdo.GetPrefab() == _iceFloePrefab);
-            if (IsTimeForIceFloes() && floesZDO.Count > 0)
+            m_tempZDOList.Clear();
+            ZDOMan.instance.FindObjects(zoneID, m_tempZDOList);
+            m_tempZDOList.RemoveAll(zdo => zdo.GetPrefab() != _iceFloePrefab);
+            if (IsTimeForIceFloes() && m_tempZDOList.Count > 0)
                 return true;
-            else if (!IsTimeForIceFloes() && floesZDO.Count == 0)
+            else if (!IsTimeForIceFloes() && m_tempZDOList.Count == 0)
                 return true;
-            else if (!IsTimeForIceFloes() && floesZDO.Count > 0)
+            else if (!IsTimeForIceFloes() && m_tempZDOList.Count > 0)
             {
-                LogFloeState($"Removing occasional floes: {floesZDO.Count}");
-                foreach (ZDO zdo in floesZDO)
+                LogFloeState($"Removing occasional floes: {m_tempZDOList.Count}");
+                foreach (ZDO zdo in m_tempZDOList)
                     RemoveObject(zdo, force: true);
             }
-            else if (IsTimeForIceFloes() && floesZDO.Count == 0)
+            else if (IsTimeForIceFloes() && m_tempZDOList.Count == 0)
             {
                 instance.m_tempClearAreas.Clear();
                 instance.m_tempSpawnedObjects.Clear();

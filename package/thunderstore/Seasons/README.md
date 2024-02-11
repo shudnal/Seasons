@@ -3,7 +3,7 @@
 
 Four customizable seasons.
 
-## You should not feel any impact on fps.
+## If you feel impact on fps.
 
 If you do then probably you GPU can do better. Try setting launch options
 `-gfx-enable-gfx-jobs -gfx-enable-native-gfx-jobs`
@@ -11,6 +11,8 @@ in Valheim general settings at Steam.
 
 It unlocks more GPU power available to the game which could help.
 It's more handy than editing **boot.config** file. It won't harm at least.
+
+If you use RenderLimits mod and have "Distance area" setting more than 10 it may cause noticable fps loss at tree heavy areas. It couldn't be optimized further using only tools available for mods.
 
 ## What can be customized in different seasons
 * environments. Add new weathers, replace currents weathers properties, remove weather.

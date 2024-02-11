@@ -20,6 +20,7 @@ namespace Seasons
         public Dictionary<Skills.SkillType, float> m_customModifyAttackSkills = new Dictionary<Skills.SkillType, float>();
 
         private static readonly StringBuilder _sb = new StringBuilder(100);
+        private static readonly Stats emptyStats = new Stats();
 
         public override void UpdateStatusEffect(float dt)
         {
@@ -122,7 +123,7 @@ namespace Seasons
             m_name = GetSeasonName(m_season);
             m_icon = GetSeasonIcon(m_season);
 
-            Stats statsToSet = !controlStats.Value || seasonalStatsOutdoorsOnly.Value && m_indoors ? new Stats() : SeasonState.seasonStats.GetSeasonStats();
+            Stats statsToSet = !controlStats.Value || seasonalStatsOutdoorsOnly.Value && m_indoors ? emptyStats : SeasonState.seasonStats.GetSeasonStats();
             statsToSet.SetStatusEffectStats(this);
         }
 

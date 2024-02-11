@@ -29,6 +29,8 @@ namespace Seasons
         public static SeasonTraderItems seasonTraderItems = new SeasonTraderItems(loadDefaults: true);
         public static SeasonWorldSettings seasonWorldSettings = new SeasonWorldSettings();
 
+        private static List<ItemDrop.ItemData> _itemDataList = new List<ItemDrop.ItemData>();
+
         private SeasonSettings settings
         {
             get
@@ -775,10 +777,10 @@ namespace Seasons
 
         public void PatchTorchesInInventory(Inventory inventory)
         {
-            List<ItemDrop.ItemData> items = new List<ItemDrop.ItemData>();
-            inventory.GetAllItems(SeasonSettings.itemDropNameTorch, items);
+            _itemDataList.Clear();
+            inventory.GetAllItems(SeasonSettings.itemDropNameTorch, _itemDataList);
 
-            foreach (ItemDrop.ItemData item in items)
+            foreach (ItemDrop.ItemData item in _itemDataList)
                 PatchTorchItemData(item);
         }
 

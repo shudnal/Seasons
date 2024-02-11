@@ -1512,7 +1512,7 @@ namespace Seasons
                 ));
             }
 
-            public bool IsPixelToChange(Color color, int pos, TextureProperties properties, bool isGrass, bool isMoss, string prefabName, string rendererName, Material material, string propertyName, PositionSpecific positionSpec, ColorSpecific colorSpec)
+            public bool IsPixelToChange(Color color, int pos, TextureProperties properties, bool isGrass, bool isMoss, string prefabName, Material material, string propertyName, PositionSpecific positionSpec, ColorSpecific colorSpec)
             {
                 if (color.a == 0f)
                     return false;
@@ -1615,7 +1615,7 @@ namespace Seasons
 
             List<int> pixelsToChange = new List<int>();
             for (int i = 0; i < pixels.Length; i++)
-                if (colorPositions.IsPixelToChange(pixels[i], i, textureVariants.properties, isGrass, isMoss, prefabName, rendererName, material, propertyName, positionFits, colorSpecific))
+                if (colorPositions.IsPixelToChange(pixels[i], i, textureVariants.properties, isGrass, isMoss, prefabName, material, propertyName, positionFits, colorSpecific))
                     pixelsToChange.Add(i);
 
             if (pixelsToChange.Count == 0)
