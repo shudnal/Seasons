@@ -9,6 +9,9 @@ using Object = UnityEngine.Object;
 using Newtonsoft.Json;
 using System.Runtime.Serialization.Formatters.Binary;
 using static Seasons.PrefabController;
+using static Seasons.SeasonalTexturePrefabCache.ColorsCacheSettings;
+using static Seasons.SeasonalTexturePrefabCache.ColorReplacementSpecifications;
+using static Seasons.SeasonalTexturePrefabCache.ColorPositionsSettings;
 
 namespace Seasons
 {
@@ -248,7 +251,7 @@ namespace Seasons
 
                 File.WriteAllBytes(Path.Combine(texturePath, $"{tex.Value.name}{originalPostfix}"), tex.Value.originalPNG);
 
-                File.WriteAllText(Path.Combine(texturePath, texturePropertiesFileName), JsonUtility.ToJson(tex.Value.properties));
+                File.WriteAllText(Path.Combine(texturePath, texturePropertiesFileName), JsonUtility.ToJson(tex.Value.properties, true));
 
                 foreach (KeyValuePair<Season, Dictionary<int, byte[]>> season in tex.Value.variants)
                     foreach (KeyValuePair<int, byte[]> texData in season.Value)
@@ -520,349 +523,55 @@ namespace Seasons
 
     }
 
-    public static class SeasonalTextureVariantsGenerator
-    {
-        public static bool GetColorVariants(string prefabName, string rendererName, Material material, string propertyName, Color color, out Color[] colors, bool isPlant)
-        {
-            colors = null;
-
-            bool isGrass = IsGrass(material.shader.name);
-            bool isMoss = IsMoss(propertyName);
-            bool isCreature = IsCreature(material.shader.name);
-            bool replaceOverride = ReplaceColorOverride(prefabName, material.name, propertyName);
-
-            if (!replaceOverride && !(isCreature ? ReplaceCreatureColor(color, prefabName, rendererName, material.name) : ReplaceColor(color, isGrass, isMoss)))
-                return false;
-
-            List<Color> colorsList = new List<Color>();
-            foreach (Season season in Enum.GetValues(typeof(Season)))
-            {
-                for (int i = 1; i <= seasonColorVariants; i++)
-                {
-                    Color colorVariant;
-                    if (isGrass || isPlant || material.name == "yggdrasil_branch")
-                        colorVariant = GetGrassConfigColor(season, i);
-                    else if (isMoss)
-                        colorVariant = GetMossConfigColor(season, i);
-                    else if (isCreature)
-                        colorVariant = GetCreatureConfigColor(season, i);
-                    else
-                        colorVariant = GetSeasonConfigColor(season, i);
-
-                    if (IsPine(material.name, prefabName))
-                        colorVariant.a /= season == Season.Winter ? 1.5f : 2f;
-
-                    if (IsPiece(material))
-                        colorVariant.a /= 1.5f;
-
-                    if (GenerateOnlyWinterColor(prefabName, material, propertyName) && season != Season.Winter)
-                        colorsList.Add(color);
-                    else
-                        colorsList.Add(MergeColors(color, colorVariant, colorVariant.a, season == Season.Winter));
-                }
-            }
-
-            colors = colorsList.ToArray();
-
-            return true;
-        }
-
-        private static bool IsPixelToChange(Color color, int pos, TextureProperties properties, bool isGrass, bool isMoss, string prefabName, string rendererName, Material material, string propertyName)
-        {
-            if (IsCreature(material.shader.name))
-            {
-                return ReplaceCreatureColor(color, prefabName, rendererName, material.name);
-            }
-
-            // From top left pixel
-            int widthPix = pos % properties.width;
-            int heightPix = properties.height - pos / properties.width;
-
-            if (material.name.StartsWith("Pine_tree_"))
-                if (widthPix < 94 && heightPix < 45)
-                    return false;
-
-            if (material.name.StartsWith("Fir_tree_sapling"))
-                if (widthPix < 21 && heightPix < 12)
-                    return false;
-
-            if (prefabName == "FirTree")
-                if (widthPix < 372 && heightPix < 165)
-                    return false;
-
-            if (prefabName == "Pinetree_01")
-                if (widthPix > 126)
-                    return false;
-
-            if (material.name == "beehive")
-                return widthPix > 97 && heightPix < 47;
-
-            if (material.name == "Midsummerpole_mat")
-                return heightPix < 176 || widthPix > 53 && heightPix < 184;
-
-            if (prefabName.IndexOf("goblin_roof", StringComparison.OrdinalIgnoreCase) >= 0 && material.name.IndexOf("GoblinVillage_Cloth", StringComparison.OrdinalIgnoreCase) >= 0)
-                return (widthPix <= 130 && heightPix < 231) || (widthPix < 202 && heightPix < 86);
-
-            if (prefabName.IndexOf("darkwood_roof", StringComparison.OrdinalIgnoreCase) >= 0 && material.name.IndexOf("RoofShingles", StringComparison.OrdinalIgnoreCase) >= 0)
-                return widthPix <= 54;
-
-            if (prefabName.IndexOf("copper_roof", StringComparison.OrdinalIgnoreCase) >= 0 && material.name.IndexOf("RoofShingles", StringComparison.OrdinalIgnoreCase) >= 0)
-                return widthPix <= 54;
-
-            if (prefabName.IndexOf("wood_roof", StringComparison.OrdinalIgnoreCase) >= 0 && material.name.IndexOf("straw", StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
-
-            if (isGrass && !prefabName.StartsWith("Pickable_Flax") && prefabName != "sapling_flax" && prefabName != "instanced_heathflowers" && prefabName != "instanced_shrub" && prefabName != "instanced_vass")
-                return !((prefabName == "instanced_meadows_grass" && propertyName == "_MainTex") || (prefabName == "instanced_meadows_grass_short" && propertyName == "_MainTex") || (prefabName == "instanced_mistlands_grass_short" && propertyName == "_MainTex"));
-
-            return ReplaceColor(color, isGrass, isMoss);
-        }
-
-        private static bool GenerateOnlyWinterColor(string prefabName, Material material, string propertyName)
-        {
-            if (material.name == "Pine_tree_small_dead")
-                return true;
-
-            if (material.name == "swamptree1_branch")
-                return true;
-
-            if (material.name == "swamptree2_branch")
-                return true;
-
-            if (material.name == "Midsummerpole_mat")
-                return false;
-
-            if (IsPiece(material))
-                return true;
-
-            if (IsCreature(material.shader.name))
-                return true;
-
-            return false;
-        }
-
-        public static bool GetTextureVariants(string prefabName, string rendererName, Material material, string propertyName, Texture texture, out TextureVariants textureVariants, bool isPlant)
-        {
-            textureVariants = new TextureVariants(texture);
-
-            Color[] pixels = GetTexturePixels(texture, textureVariants.properties, out textureVariants.originalPNG);
-            if (pixels.Length < 1)
-                return false;
-
-            bool isGrass = IsGrass(material.shader.name);
-            bool isMoss = IsMoss(propertyName);
-
-            List<int> pixelsToChange = new List<int>();
-            for (int i = 0; i < pixels.Length; i++)
-                if (IsPixelToChange(pixels[i], i, textureVariants.properties, isGrass, isMoss, prefabName, rendererName, material, propertyName))
-                    pixelsToChange.Add(i);
-
-            if (pixelsToChange.Count == 0)
-                return false;
-
-            foreach (Season season in Enum.GetValues(typeof(Season)))
-            {
-                List<Color> colorVariants = new List<Color>();
-                for (int i = 1; i <= seasonColorVariants; i++)
-                {
-                    Color colorVariant;
-                    if (isGrass || isPlant)
-                        colorVariant = GetGrassConfigColor(season, i);
-                    else if (isMoss)
-                        colorVariant = GetMossConfigColor(season, i);
-                    else
-                        colorVariant = GetSeasonConfigColor(season, i);
-
-                    if (IsPine(material.name, prefabName))
-                        colorVariant.a /= season == Season.Winter ? 1.5f : 2f;
-
-                    if (IsPiece(material))
-                        colorVariant.a /= prefabName.Contains("goblin") ? 2f : 1.5f;
-                    else if (IsCreature(material.shader.name))
-                        colorVariant.a /= (prefabName.IndexOf("lox", StringComparison.OrdinalIgnoreCase) >= 0) ? 1.5f : 3f;
-                    else if (prefabName == "YggdrasilBranch" && season == Season.Winter)
-                        colorVariant.a /= 3;
-
-                    if (GenerateOnlyWinterColor(prefabName, material, propertyName) && season != Season.Winter)
-                        colorVariants.Add(Color.clear);
-                    else
-                        colorVariants.Add(colorVariant);
-
-                    
-                }
-
-                GenerateColorVariants(season, colorVariants.ToArray(), pixels, pixelsToChange.ToArray(), textureVariants.properties, textureVariants);
-            }
-
-            return textureVariants.Initialized();
-        }
-
-        private static Color[] GetTexturePixels(Texture texture, TextureProperties texProperties, out byte[] originalPNG)
-        {
-            RenderTexture tmp = RenderTexture.GetTemporary(
-                                    texture.width,
-                                    texture.height,
-                                    24, RenderTextureFormat.ARGB32);
-
-            tmp.autoGenerateMips = true;
-            tmp.useMipMap = true;
-            tmp.anisoLevel = texProperties.anisoLevel;
-            tmp.mipMapBias = texProperties.mipMapBias;
-            tmp.wrapMode = texProperties.wrapMode;
-            tmp.filterMode = texProperties.filterMode;
-
-            Graphics.Blit(texture, tmp);
-
-            RenderTexture previous = RenderTexture.active;
-            RenderTexture.active = tmp;
-
-            Texture2D textureCopy = new Texture2D(texture.width, texture.height, texProperties.format, texProperties.mipmapCount, false)
-            {
-                filterMode = texProperties.filterMode,
-                anisoLevel = texProperties.anisoLevel,
-                mipMapBias = texProperties.mipMapBias,
-                wrapMode = texProperties.wrapMode
-            };
-
-            textureCopy.ReadPixels(new Rect(0, 0, tmp.width, tmp.height), 0, 0, true);
-            textureCopy.Apply();
-
-            RenderTexture.active = previous;
-            RenderTexture.ReleaseTemporary(tmp);
-
-            Color[] pixels = textureCopy.GetPixels();
-            originalPNG = textureCopy.EncodeToPNG();
-
-            Object.Destroy(textureCopy);
-
-            return pixels;
-        }
-
-        private static void GenerateColorVariants(Season season, Color[] colorVariants, Color[] pixels, int[] pixelsToChange, TextureProperties texProperties, TextureVariants textureVariants)
-        {
-            List<Color[]> seasonColors = new List<Color[]>();
-            for (int i = 0; i < colorVariants.Length; i++)
-                seasonColors.Add(pixels.ToArray());
-
-            foreach (int i in pixelsToChange)
-                for (int j = 0; j < colorVariants.Length; j++)
-                    seasonColors[j][i] = MergeColors(pixels[i], colorVariants[j], colorVariants[j].a, season == Season.Winter);
-
-            for (int variant = 0; variant < colorVariants.Length; variant++)
-            {
-                Texture2D tex = new Texture2D(texProperties.width, texProperties.height, texProperties.format, texProperties.mipmapCount, false)
-                {
-                    filterMode = texProperties.filterMode,
-                    anisoLevel = texProperties.anisoLevel,
-                    mipMapBias = texProperties.mipMapBias,
-                    wrapMode = texProperties.wrapMode
-                };
-
-                tex.SetPixels(seasonColors[variant]);
-                tex.Apply();
-
-                textureVariants.AddVariant(season, variant, tex);
-            }
-        }
-
-        private static bool ReplaceColor(Color color, bool isGrass, bool isMoss)
-        {
-            if (color.a == 0f)
-                return false;
-
-            HSLColor hslcolor = new HSLColor(color);
-
-            if (isGrass)
-                return ColorFits(hslcolor, 100f, 35f, 0.13f) || ColorFits(hslcolor, 60f, 5f, 0.55f, 0.5f) || ColorFits(hslcolor, 50f, 15f, -0.35f, 0.35f) || ColorFits(hslcolor, 50f, 10f, 0.4f);
-            else if (isMoss)
-                return true;
-
-            return ColorFits(hslcolor, 120f, 40f, 0.15f) || ColorFits(hslcolor, 73f, 18f, 0.20f, 0.18f) || ColorFits(hslcolor, 45f, 12f, 0.28f, 0.26f);
-        }
-
-        private static bool ReplaceCreatureColor(Color color, string prefabName, string rendererName, string materialName)
-        {
-            if (color.a == 0f)
-                return false;
-
-            HSLColor hslcolor = new HSLColor(color);
-
-            if ((materialName == "HildirsLox" || prefabName == "Lox" || prefabName == "lox_ragdoll") && rendererName.StartsWith("Furr"))
-                return ColorFits(hslcolor, 35f, 16f, 0.40f, -0.45f) || ColorFits(hslcolor, 47f, 4f, -0.45f, -0.45f);
-            else if (prefabName == "Lox_Calf" && rendererName.StartsWith("Furr"))
-                return ColorFits(hslcolor, 50f, 12f, -0.55f, 0.18f);
-            else if (prefabName.IndexOf("draugr", StringComparison.OrdinalIgnoreCase) >= 0)
-                return ColorFits(hslcolor, 120f, 40f, 0.15f) || ColorFits(hslcolor, 73f, 18f, 0.19f, -0.40f);
-            else if (prefabName.IndexOf("Abomination", StringComparison.OrdinalIgnoreCase) >= 0)
-                return ColorFits(hslcolor, 120f, 40f, 0.15f) || ColorFits(hslcolor, 73f, 18f, 0.19f, -0.50f);
-            else if (prefabName.IndexOf("grey", StringComparison.OrdinalIgnoreCase) == 0)
-                return ColorFits(hslcolor, 120f, 40f, 0.15f) || ColorFits(hslcolor, 71f, 20f, 0.18f, -0.50f);
-
-            return false;
-        }
-
-        private static bool ReplaceColorOverride(string prefabName, string materialName, string propertyName)
-        {
-            if (materialName == "Vines_Mat")
-                return true;
-
-            return false;
-        }
-
-        private static bool ColorFits(HSLColor hslcolor, float hue, float hueDelta, float saturation = 0f, float luminance = 0f)
-        {
-            return GetHueDistance(hslcolor.h, hue) <= hueDelta
-                && (saturation == 0f || (saturation > 0 && hslcolor.s >= saturation) || (saturation < 0 && hslcolor.s <= -saturation))
-                && (luminance == 0f || (luminance > 0 && hslcolor.l >= luminance) || (luminance < 0 && hslcolor.l <= -luminance));
-        }
-
-        private static float GetHueDistance(float hue1, float hue2)
-        {
-            float dh = Math.Abs(hue1 - hue2);
-            return dh > 180 ? 360 - dh : dh;
-        }
-
-        public static Color MergeColors(Color color1, Color color2, float t, bool winterColor)
-        {
-            Color newColor = new Color(color2.r, color2.g, color2.b, color1.a);
-            Color oldColor = winterColor ? new Color(color1.grayscale, color1.grayscale, color1.grayscale, color1.a) : new Color(color1.r, color1.g, color1.b, color1.a);
-
-            HSLColor newHSLColor = new HSLColor(Color.Lerp(oldColor, newColor, t));
-
-            if (!winterColor)
-                newHSLColor.l = new HSLColor(color1).l;
-
-            return newHSLColor.ToRGBA();
-        }
-
-        private static bool IsGrass(string shaderName)
-        {
-            return shaderName == "Custom/Grass";
-        }
-
-        private static bool IsMoss(string textureName)
-        {
-            return textureName.IndexOf("moss", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        private static bool IsPiece(Material material)
-        {
-            return material.shader.name == "Custom/Piece" || material.name.StartsWith("GoblinVillage");
-        }
-
-        private static bool IsCreature(string shaderName)
-        {
-            return shaderName == "Custom/Creature";
-        }
-
-        private static bool IsPine(string materialName, string prefab)
-        {
-            return materialName.IndexOf("pine", StringComparison.OrdinalIgnoreCase) >= 0 || prefab.IndexOf("pine", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-    }
-
     public static class SeasonalTexturePrefabCache
     {
+        [Serializable]
+        public struct FloatRange
+        {
+            public float start;
+            public float end;
+
+            public FloatRange(float start, float end)
+            {
+                this.start = start;
+                this.end = end;
+            }
+
+            public bool Fits(float value)
+            {
+                return (start == 0f || start <= value) && (end == 0f || value <= end);
+            }
+            public override string ToString()
+            {
+                return $"{start}-{end}";
+            }
+
+        }
+
+        [Serializable]
+        public struct IntRange
+        {
+            public int start;
+            public int end;
+
+            public IntRange(int start, int end)
+            {
+                this.start = start;
+                this.end = end;
+            }
+
+            public bool Fits(int value)
+            {
+                return (start == 0 || start <= value) && (end == 0 || value <= end);
+            }
+
+            public override string ToString()
+            {
+                return $"{start}-{end}";
+            }
+
+        }
+
         [Serializable]
         public class MaterialCacheSettings
         {
@@ -1033,6 +742,7 @@ namespace Seasons
                     "SunkenKit_int_towerwall_LOD",
                     "marker01",
                     "marker02",
+                    "TheHive"
                 };
 
                 ignorePrefabPartialName = new List<string>()
@@ -1067,9 +777,9 @@ namespace Seasons
             {
                 public bool useColor = true;
                 public string color;
-                public float targetProportion;
+                public float targetProportion = 0f;
                 public bool preserveAlphaChannel = true;
-                public bool reduceOriginalColorToGrayscale;
+                public bool reduceOriginalColorToGrayscale = false;
                 public bool restoreLuminance = true;
 
                 [NonSerialized]
@@ -1077,6 +787,9 @@ namespace Seasons
 
                 public Color MergeColors(Color colorToMerge)
                 {
+                    if (!useColor)
+                        return colorToMerge;
+
                     if (colorValue == Color.black && ColorUtility.ToHtmlStringRGBA(colorValue) != color && !ColorUtility.TryParseHtmlString(color, out colorValue))
                         LogInfo($"Error at parsing color: ({color})");
 
@@ -1119,15 +832,15 @@ namespace Seasons
                 public List<ColorVariant> Fall = new List<ColorVariant>();
                 public List<ColorVariant> Winter = new List<ColorVariant>();
 
-                private ColorVariant GetColorVariant(Season season, int pos)
+                public ColorVariant GetColorVariant(Season season, int pos)
                 {
                     return season switch
                     {
-                        Season.Spring => Spring[Mathf.Clamp(pos, 0, 3)],
-                        Season.Summer => Summer[Mathf.Clamp(pos, 0, 3)],
-                        Season.Fall => Fall[Mathf.Clamp(pos, 0, 3)],
-                        Season.Winter => Winter[Mathf.Clamp(pos, 0, 3)],
-                        _ => Spring[Mathf.Clamp(pos, 0, 3)],
+                        Season.Spring => pos > Spring.Count - 1 ? new ColorVariant() : Spring[Mathf.Clamp(pos, 0, 3)],
+                        Season.Summer => pos > Summer.Count - 1 ? new ColorVariant() : Summer[Mathf.Clamp(pos, 0, 3)],
+                        Season.Fall => pos > Fall.Count - 1 ? new ColorVariant() : Fall[Mathf.Clamp(pos, 0, 3)],
+                        Season.Winter => pos > Winter.Count - 1 ? new ColorVariant() : Winter[Mathf.Clamp(pos, 0, 3)],
+                        _ => pos > Spring.Count - 1 ? new ColorVariant() : Spring[Mathf.Clamp(pos, 0, 3)],
                     };
                 }
             }
@@ -1306,7 +1019,7 @@ namespace Seasons
                         foreach (var prefab in prefabOverride.Key)
                             _prefabs.Add(prefab, prefabOverride.Value);
 
-                return _prefabs[name];
+                return _prefabs.GetValueSafe(name);
             }
 
             public SeasonalColorVariants GetMaterialOverride(string name)
@@ -1316,7 +1029,7 @@ namespace Seasons
                         foreach (var mat in materialOverride.Key)
                             _materials.Add(mat, materialOverride.Value);
 
-                return _materials[name];
+                return _materials.GetValueSafe(name);
             }
 
             public static bool IsGrass(string shaderName)
@@ -1351,55 +1064,48 @@ namespace Seasons
             [Serializable]
             public class ColorFits
             {
-                Tuple<float, float> hue;
-                Tuple<float, float> saturation;
-                Tuple<float, float> luminance;
+                public FloatRange hue;
+                public FloatRange saturation;
+                public FloatRange luminance;
 
                 public ColorFits(float hue1 = 0f, float hue2 = 360f, float s1 = 0f, float s2 = 1f, float l1 = 0f, float l2 = 1f)
                 {
-                    hue = Tuple.Create(hue1, hue2);
-                    saturation = Tuple.Create(s1, s2);
-                    luminance = Tuple.Create(l1, l2);
+                    hue = new FloatRange(hue1, hue2);
+                    saturation = new FloatRange(s1, s2);
+                    luminance = new FloatRange(l1, l2);
                 }
 
                 public bool Fits(HSLColor hslcolor)
                 {
-                    return hue.Item1 <= hslcolor.h && hslcolor.h <= hue.Item2
-                        && saturation.Item1 <= hslcolor.s && hslcolor.s <= saturation.Item2
-                        && luminance.Item1 <= hslcolor.l && hslcolor.l <= luminance.Item2;
+                    return hue.Fits(hslcolor.h) && saturation.Fits(hslcolor.s) && luminance.Fits(hslcolor.l);
+                }
+
+                public override string ToString()
+                {
+                    return $"hue:{hue} sat:{saturation} lum:{luminance}";
                 }
             }
 
             [Serializable]
             public class ColorSpecific
             {
-                string material;
-                string prefab;
-                string renderer;
-                public bool only = false;
-                bool partial = false;
+                public List<MaterialFits> materials = new List<MaterialFits>();
+                public List<ColorFits> colors = new List<ColorFits>();
 
-                public ColorSpecific(string material = null, string prefab = null, string renderer = null, bool only = false, bool partial = false)
+                public ColorSpecific(List<MaterialFits> materials, List<ColorFits> colors)
                 {
-                    this.material = material;
-                    this.prefab = prefab;
-                    this.renderer = renderer;
-                    this.only = only;
-                    this.partial = partial;
+                    this.materials = materials;
+                    this.colors = colors;
                 }
 
-                public bool Fits(string prefabName = null, string rendererName = null, string materialName = null)
+                public bool FitsMaterial(string prefabName, string rendererName, string materialName)
                 {
-                    if (!String.IsNullOrEmpty(prefabName))
-                        return partial ? prefabName.IndexOf(prefab, StringComparison.OrdinalIgnoreCase) >= 0 : prefabName == prefab;
+                    return MaterialFits.FitsMaterial(materials, prefabName, rendererName, materialName);
+                }
 
-                    if (!String.IsNullOrEmpty(rendererName))
-                        return partial ? rendererName.IndexOf(renderer, StringComparison.OrdinalIgnoreCase) >= 0 : rendererName == renderer;
-
-                    if (!String.IsNullOrEmpty(materialName))
-                        return partial ? materialName.IndexOf(material, StringComparison.OrdinalIgnoreCase) >= 0 : materialName == material;
-
-                    return false;
+                public bool FitsColor(HSLColor color)
+                {
+                    return Fits(colors, color);
                 }
             }
 
@@ -1407,7 +1113,7 @@ namespace Seasons
             public List<ColorFits> grass = new List<ColorFits>();
             public List<ColorFits> moss = new List<ColorFits>();
 
-            public List<Tuple<List<ColorSpecific>, List<ColorFits>>> specific = new List<Tuple<List<ColorSpecific>, List<ColorFits>>>();
+            public List<ColorSpecific> specific = new List<ColorSpecific>();
 
             public ColorReplacementSpecifications(bool loadDefaults = false)
             {
@@ -1425,13 +1131,13 @@ namespace Seasons
                 grass.Add(new ColorFits(35, 65, s2: 0.35f, l1: 0.35f));
                 grass.Add(new ColorFits(40, 60, s1: 0.4f));
 
-                specific.Add(Tuple.Create(
-                    new List<ColorSpecific>() 
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>() 
                     { 
-                        new ColorSpecific(material: "HildirsLox"), 
-                        new ColorSpecific(prefab: "Lox"), 
-                        new ColorSpecific(prefab: "lox_ragdoll"), 
-                        new ColorSpecific(renderer: "Furr", only:true, partial:true) 
+                        new MaterialFits(material: "HildirsLox"), 
+                        new MaterialFits(prefab: "Lox"), 
+                        new MaterialFits(prefab: "lox_ragdoll"), 
+                        new MaterialFits(renderer: "Furr", only:true, partial:true) 
                     }, 
                     new List<ColorFits>()
                     {
@@ -1439,21 +1145,21 @@ namespace Seasons
                         new ColorFits(43, 51, s2: 0.45f, l2: 0.45f),
                     }
                 ));
-                specific.Add(Tuple.Create(
-                    new List<ColorSpecific>()
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
                     {
-                        new ColorSpecific(prefab: "Lox_Calf"),
-                        new ColorSpecific(renderer: "Furr", only:true, partial:true)
+                        new MaterialFits(prefab: "Lox_Calf", only:true),
+                        new MaterialFits(renderer: "Furr", only:true, partial:true)
                     },
                     new List<ColorFits>()
                     {
                         new ColorFits(38, 62, s2: 0.55f, l1: 0.18f),
                     }
                 ));
-                specific.Add(Tuple.Create(
-                    new List<ColorSpecific>()
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
                     {
-                        new ColorSpecific(prefab: "draugr", only:true, partial:true)
+                        new MaterialFits(prefab: "draugr", only:true, partial:true)
                     },
                     new List<ColorFits>()
                     {
@@ -1461,10 +1167,10 @@ namespace Seasons
                         new ColorFits(55, 91, s1: 0.19f, l2: 0.40f),
                     }
                 ));
-                specific.Add(Tuple.Create(
-                    new List<ColorSpecific>()
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
                     {
-                        new ColorSpecific(prefab: "Abomination", only:true, partial:true)
+                        new MaterialFits(prefab: "Abomination", only:true, partial:true)
                     },
                     new List<ColorFits>()
                     {
@@ -1472,10 +1178,10 @@ namespace Seasons
                         new ColorFits(55, 91, s1: 0.19f, l2: 0.50f),
                     }
                 ));
-                specific.Add(Tuple.Create(
-                    new List<ColorSpecific>()
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
                     {
-                        new ColorSpecific(prefab: "grey", only:true, partial:true)
+                        new MaterialFits(prefab: "grey", only:true, partial:true)
                     },
                     new List<ColorFits>()
                     {
@@ -1483,27 +1189,77 @@ namespace Seasons
                         new ColorFits(51, 91, s1: 0.18f, l2: 0.50f),
                     }
                 ));
-                specific.Add(Tuple.Create(
-                    new List<ColorSpecific>()
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
                     {
-                        new ColorSpecific(prefab: "Vines_Mat", only:true)
+                        new MaterialFits(prefab: "Vines_Mat", only:true)
                     },
                     new List<ColorFits>()
                     {
                         new ColorFits(),
                     }
                 ));
+
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "goblin_roof", partial: true, only: true),
+                        new MaterialFits(material: "GoblinVillage_Cloth", partial: true, only: true),
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(),
+                    }
+                ));
+
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "darkwood_roof", partial: true, only: true),
+                        new MaterialFits(material: "RoofShingles", partial: true, only: true),
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(),
+                    }
+                ));
+
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "copper_roof", partial: true, only: true),
+                        new MaterialFits(material: "RoofShingles", partial: true, only: true),
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(),
+                    }
+                ));
+
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "wood_roof", partial: true, only: true),
+                        new MaterialFits(material: "straw", partial: true, only: true),
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(),
+                    }
+                ));
+
             }
 
-            public bool ReplaceColor(Color color, bool isGrass, bool isMoss, string prefabName, string rendererName, string materialName)
+            public bool ReplaceColor(Color color, bool isGrass, bool isMoss, string prefabName = null, string rendererName = null, string materialName = null)
             {
                 if (color.a == 0f)
                     return false;
 
                 HSLColor hslcolor = new HSLColor(color);
-                foreach (var spec in specific)
-                    if (SpecificFits(spec.Item1, prefabName, rendererName, materialName))
-                        return Fits(spec.Item2, hslcolor);
+                if (prefabName != null || rendererName != null || materialName != null)
+                    foreach (ColorSpecific spec in specific)
+                        if (spec.FitsMaterial(prefabName, rendererName, materialName))
+                            return spec.FitsColor(hslcolor);
 
                 if (isGrass)
                     return Fits(grass, hslcolor);
@@ -1521,20 +1277,258 @@ namespace Seasons
 
                 return false;
             }
+        }
 
-            private static bool SpecificFits(List<ColorSpecific> list, string prefabName, string rendererName, string materialName)
+        [Serializable]
+        public class MaterialFits
+        {
+            public string material;
+            public string prefab;
+            public string renderer;
+            public bool only = false;
+            public bool partial = false;
+            public bool not = false;
+
+            public MaterialFits(string material = null, string prefab = null, string renderer = null, bool only = false, bool partial = false, bool not = false)
             {
-                bool fits = true;
-                foreach (ColorSpecific colorSpecific in list.Where(spec => spec.only))
-                    fits = fits && colorSpecific.Fits(prefabName, rendererName, materialName);
+                this.material = material;
+                this.prefab = prefab;
+                this.renderer = renderer;
+                this.only = only;
+                this.partial = partial;
+                this.not = not;
+            }
 
-                if (!fits) 
+            public bool Fits(string prefabName = null, string rendererName = null, string materialName = null)
+            {
+                return Compare(prefabName, prefab) || Compare(rendererName, renderer) || Compare(materialName, material);
+            }
+
+            private bool Compare(string name, string value)
+            {
+                if (String.IsNullOrEmpty(name) || String.IsNullOrEmpty(value))
+                    return false;
+                
+                bool fits = partial ? name.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0 : name == value;
+                return not ? !fits : fits;
+            }
+
+            public static bool FitsMaterial(List<MaterialFits> materials, string prefabName, string rendererName, string materialName)
+            {
+                bool fitsAnd = true; bool fitsOr = false; int or = 0;
+                foreach (MaterialFits materialFits in materials)
+                    if (materialFits.only)
+                    {
+                        fitsAnd = fitsAnd && materialFits.Fits(prefabName, rendererName, materialName);
+                    }
+                    else
+                    {
+                        fitsOr = fitsOr || materialFits.Fits(prefabName, rendererName, materialName);
+                        or++;
+                    }
+
+                return fitsAnd && (or == 0 || fitsOr);
+            }
+
+        }
+
+        [Serializable]
+        public class ColorPositionsSettings
+        {
+            [Serializable]
+            public class PositionFits
+            {
+                public IntRange height;
+                public IntRange width;
+                public bool not = false;
+
+                public PositionFits(int heightStart = 0, int heightEnd = 0, int widthStart = 0, int widthEnd = 0, bool not = false)
+                {
+                    height = new IntRange(heightStart, heightEnd);
+                    width = new IntRange(widthStart, widthEnd);
+                    this.not = not;
+                }
+
+                public bool Fits(int textureWidth, int textureHeight, int pos)
+                {
+                    // From top left pixel
+                    int widthPix = pos % textureWidth;
+                    int heightPix = textureHeight - pos / textureWidth;
+                    bool fit = height.Fits(heightPix) && width.Fits(widthPix);
+                    return not ? !fit : fit;
+                }
+
+                public override string ToString()
+                {
+                    return $"height:{height} width:{width} not:{not}";
+                }
+            }
+
+            [Serializable]
+            public class PositionSpecific
+            {
+                public List<MaterialFits> materials = new List<MaterialFits>();
+                public List<PositionFits> bounds = new List<PositionFits>();
+               
+                public PositionSpecific(List<MaterialFits> materials, List<PositionFits> bounds)
+                {
+                    this.materials = materials;
+                    this.bounds = bounds;
+                }
+
+                public bool FitsMaterial(string prefabName, string rendererName, string materialName)
+                {
+                    return MaterialFits.FitsMaterial(materials, prefabName, rendererName, materialName);
+                }
+
+                public bool FitsPosition(int textureWidth, int textureHeight, int pos)
+                {
+                    return bounds.Any(position => position.Fits(textureWidth, textureHeight, pos));
+                }
+            }
+
+            public List<PositionSpecific> positions = new List<PositionSpecific>();
+
+            public ColorPositionsSettings(bool loadDefaults = false)
+            {
+                if (!loadDefaults)
+                    return;
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(material: "Pine_tree_", partial:true),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 44, 0, 93, not: true)
+                    }
+                ));
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(material: "Fir_tree_sapling", partial:true),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 11, 0, 20, not: true)
+                    }
+                ));
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "FirTree"),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 164, 0, 371, not: true)
+                    }
+                ));
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "Pinetree_01"),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 0, 127, 0, not: true)
+                    }
+                ));
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(material: "beehive"),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 46, 98, 0)
+                    }
+                ));
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(material: "Midsummerpole_mat"),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 175, 0, 0),
+                        new PositionFits(0, 183, 54, 0)
+                    }
+                ));
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "goblin_roof", partial: true, only: true),
+                        new MaterialFits(material: "GoblinVillage_Cloth", partial: true, only: true),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 230, 0, 130),
+                        new PositionFits(0, 85, 0, 201)
+                    }
+                ));
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "darkwood_roof", partial: true, only: true),
+                        new MaterialFits(material: "RoofShingles", partial: true, only: true),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 0, 0, 54),
+                    }
+                ));
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "copper_roof", partial: true, only: true),
+                        new MaterialFits(material: "RoofShingles", partial: true, only: true),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 0, 0, 54),
+                    }
+                ));
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "wood_roof", partial: true, only: true),
+                        new MaterialFits(material: "straw", partial: true, only: true),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 0, 0, 0),
+                    }
+                ));
+            }
+
+            public bool IsPixelToChange(Color color, int pos, TextureProperties properties, bool isGrass, bool isMoss, string prefabName, string rendererName, Material material, string propertyName, PositionSpecific positionSpec, ColorSpecific colorSpec)
+            {
+                if (color.a == 0f)
                     return false;
 
-                foreach (ColorSpecific colorSpecific in list.Where(spec => !spec.only))
-                    fits = fits || colorSpecific.Fits(prefabName, rendererName, materialName);
+                if (isGrass && !prefabName.StartsWith("Pickable_Flax") && prefabName != "sapling_flax" && prefabName != "instanced_heathflowers" && prefabName != "instanced_shrub" && prefabName != "instanced_vass")
+                    return !((prefabName == "instanced_meadows_grass" && propertyName == "_MainTex") || (prefabName == "instanced_meadows_grass_short" && propertyName == "_MainTex") || (prefabName == "instanced_mistlands_grass_short" && propertyName == "_MainTex"));
 
-                return fits;
+                if (positionSpec != null && !positionSpec.FitsPosition(properties.width, properties.height, pos))
+                    return false;
+
+                if (colorSpec != null)
+                    return colorSpec.FitsColor(color);
+
+                if (IsCreature(material.shader.name) && positionSpec == null && colorSpec == null)
+                    return false;
+
+                return colorReplacement.ReplaceColor(color, isGrass, isMoss);
             }
         }
 
@@ -1543,53 +1537,184 @@ namespace Seasons
         public const string materialsSettingsFileName = "Materials.json";
         public const string colorsSettingsFileName = "Colors.json";
         public const string colorsReplacementsFileName = "Color ranges.json";
+        public const string colorsPositionsFileName = "Color positions.json";
 
         public static MaterialCacheSettings materialSettings = new MaterialCacheSettings(loadDefaults: true);
         public static ColorsCacheSettings colorSettings = new ColorsCacheSettings(loadDefaults: true);
         public static ColorReplacementSpecifications colorReplacement = new ColorReplacementSpecifications(loadDefaults: true);
+        public static ColorPositionsSettings colorPositions = new ColorPositionsSettings(loadDefaults: true);
 
         public static bool GetColorVariants(string prefabName, string rendererName, Material material, string propertyName, Color color, out Color[] colors, bool isPlant)
         {
             colors = null;
 
-            bool isGrass = ColorsCacheSettings.IsGrass(material.shader.name);
-            bool isMoss = ColorsCacheSettings.IsMoss(propertyName);
-            bool isCreature = ColorsCacheSettings.IsCreature(material.shader.name);
+            bool isGrass = IsGrass(material.shader.name);
+            bool isMoss = IsMoss(propertyName);
+            bool isCreature = IsCreature(material.shader.name);
 
             if (!colorReplacement.ReplaceColor(color, isGrass, isMoss, prefabName, rendererName, material.name))
                 return false;
 
-            List<Color> colorsList = new List<Color>();
-            /*foreach (Season season in Enum.GetValues(typeof(Season)))
+            SeasonalColorVariants colorVariants = colorSettings.GetPrefabOverride(prefabName) ?? colorSettings.GetMaterialOverride(material.name);
+            if (colorVariants == null)
             {
+                if (IsPine(material.name, prefabName))
+                    colorVariants = colorSettings.conifer;
+                else if (IsPiece(material))
+                    colorVariants = colorSettings.piece;
+                else if (isGrass || isPlant)
+                    colorVariants = colorSettings.grass;
+                else if (isMoss)
+                    colorVariants = colorSettings.moss;
+                else if (isCreature)
+                    colorVariants = colorSettings.creature;
+                else
+                    colorVariants = colorSettings.seasonal;
+            }
+
+            List<Color> colorsList = new List<Color>();
+            foreach (Season season in Enum.GetValues(typeof(Season)))
                 for (int i = 0; i <= seasonColorVariants - 1; i++)
-                {
-                    Color colorVariant;
-                    if (isGrass || isPlant || material.name == "yggdrasil_branch")
-                        colorVariant = GetGrassConfigColor(season, i);
-                    else if (isMoss)
-                        colorVariant = GetMossConfigColor(season, i);
-                    else if (isCreature)
-                        colorVariant = GetCreatureConfigColor(season, i);
-                    else
-                        colorVariant = GetSeasonConfigColor(season, i);
-
-                    if (IsPine(material.name, prefabName))
-                        colorVariant.a /= season == Season.Winter ? 1.5f : 2f;
-
-                    if (IsPiece(material))
-                        colorVariant.a /= 1.5f;
-
-                    if (GenerateOnlyWinterColor(prefabName, material, propertyName) && season != Season.Winter)
-                        colorsList.Add(color);
-                    else
-                        colorsList.Add(MergeColors(color, colorVariant, colorVariant.a, season == Season.Winter));
-                }
-            }*/
+                    colorsList.Add(colorVariants.GetColorVariant(season, i).MergeColors(color));
 
             colors = colorsList.ToArray();
 
             return true;
+        }
+
+        public static bool GetTextureVariants(string prefabName, string rendererName, Material material, string propertyName, Texture texture, out TextureVariants textureVariants, bool isPlant)
+        {
+            textureVariants = new TextureVariants(texture);
+
+            Color[] pixels = GetTexturePixels(texture, textureVariants.properties, out textureVariants.originalPNG);
+            if (pixels.Length < 1)
+                return false;
+
+            bool isGrass = IsGrass(material.shader.name);
+            bool isMoss = IsMoss(propertyName);
+            bool isCreature = IsCreature(material.shader.name);
+
+            PositionSpecific positionFits = null;
+            foreach (PositionSpecific spec in colorPositions.positions)
+                if (spec.FitsMaterial(prefabName, rendererName, material.name))
+                {
+                    positionFits = spec;
+                    LogInfo($"Position specific prefab:{prefabName} renderer:{rendererName} material:{material.name} {spec.bounds.Join()}");
+                    break;
+                }
+
+            ColorSpecific colorSpecific = null;
+            foreach (ColorSpecific spec in colorReplacement.specific)
+                if (spec.FitsMaterial(prefabName, rendererName, material.name))
+                {
+                    colorSpecific = spec;
+                    LogInfo($"Color specific prefab:{prefabName} renderer:{rendererName} material:{material.name} {spec.colors.Join()}");
+                    break;
+                }
+
+            List<int> pixelsToChange = new List<int>();
+            for (int i = 0; i < pixels.Length; i++)
+                if (colorPositions.IsPixelToChange(pixels[i], i, textureVariants.properties, isGrass, isMoss, prefabName, rendererName, material, propertyName, positionFits, colorSpecific))
+                    pixelsToChange.Add(i);
+
+            if (pixelsToChange.Count == 0)
+                return false;
+
+            SeasonalColorVariants colorVariants = colorSettings.GetPrefabOverride(prefabName) ?? colorSettings.GetMaterialOverride(material.name);
+            if (colorVariants == null)
+            {
+                if (IsPine(material.name, prefabName))
+                    colorVariants = colorSettings.conifer;
+                else if (IsPiece(material))
+                    colorVariants = colorSettings.piece;
+                else if (isGrass || isPlant)
+                    colorVariants = colorSettings.grass;
+                else if (isMoss)
+                    colorVariants = colorSettings.moss;
+                else if (isCreature)
+                    colorVariants = colorSettings.creature;
+                else
+                    colorVariants = colorSettings.seasonal;
+            }
+
+            foreach (Season season in Enum.GetValues(typeof(Season)))
+            {
+                List<ColorVariant> colorVariant = new List<ColorVariant>();
+                for (int i = 0; i <= seasonColorVariants - 1; i++)
+                    colorVariant.Add(colorVariants.GetColorVariant(season, i));
+
+                GenerateTextureVariants(season, colorVariant.ToArray(), pixels, pixelsToChange.ToArray(), textureVariants.properties, textureVariants);
+            }
+
+            return textureVariants.Initialized();
+        }
+
+        private static Color[] GetTexturePixels(Texture texture, TextureProperties texProperties, out byte[] originalPNG)
+        {
+            RenderTexture tmp = RenderTexture.GetTemporary(
+                                    texture.width,
+                                    texture.height,
+                                    24, RenderTextureFormat.ARGB32);
+
+            tmp.autoGenerateMips = true;
+            tmp.useMipMap = true;
+            tmp.anisoLevel = texProperties.anisoLevel;
+            tmp.mipMapBias = texProperties.mipMapBias;
+            tmp.wrapMode = texProperties.wrapMode;
+            tmp.filterMode = texProperties.filterMode;
+
+            Graphics.Blit(texture, tmp);
+
+            RenderTexture previous = RenderTexture.active;
+            RenderTexture.active = tmp;
+
+            Texture2D textureCopy = new Texture2D(texture.width, texture.height, texProperties.format, texProperties.mipmapCount, false)
+            {
+                filterMode = texProperties.filterMode,
+                anisoLevel = texProperties.anisoLevel,
+                mipMapBias = texProperties.mipMapBias,
+                wrapMode = texProperties.wrapMode
+            };
+
+            textureCopy.ReadPixels(new Rect(0, 0, tmp.width, tmp.height), 0, 0, true);
+            textureCopy.Apply();
+
+            RenderTexture.active = previous;
+            RenderTexture.ReleaseTemporary(tmp);
+
+            Color[] pixels = textureCopy.GetPixels();
+            originalPNG = textureCopy.EncodeToPNG();
+
+            Object.Destroy(textureCopy);
+
+            return pixels;
+        }
+        
+        private static void GenerateTextureVariants(Season season, ColorVariant[] colorVariants, Color[] pixels, int[] pixelsToChange, TextureProperties texProperties, TextureVariants textureVariants)
+        {
+            List<Color[]> seasonColors = new List<Color[]>();
+            for (int i = 0; i < colorVariants.Length; i++)
+                seasonColors.Add(pixels.ToArray());
+
+            foreach (int i in pixelsToChange)
+                for (int j = 0; j < colorVariants.Length; j++)
+                    seasonColors[j][i] = colorVariants[j].MergeColors(pixels[i]);
+
+            for (int variant = 0; variant < colorVariants.Length; variant++)
+            {
+                Texture2D tex = new Texture2D(texProperties.width, texProperties.height, texProperties.format, texProperties.mipmapCount, false)
+                {
+                    filterMode = texProperties.filterMode,
+                    anisoLevel = texProperties.anisoLevel,
+                    mipMapBias = texProperties.mipMapBias,
+                    wrapMode = texProperties.wrapMode
+                };
+
+                tex.SetPixels(seasonColors[variant]);
+                tex.Apply();
+
+                textureVariants.AddVariant(season, variant, tex);
+            }
         }
 
         public static void InitSettings()
@@ -1630,10 +1755,24 @@ namespace Seasons
             fileInConfigFolder = Path.Combine(folder, colorsReplacementsFileName);
             if (File.Exists(fileInConfigFolder))
             {
-                LogInfo($"Loading color settings: {fileInConfigFolder}");
+                LogInfo($"Loading color replacements settings: {fileInConfigFolder}");
                 try
                 {
                     colorReplacement = JsonConvert.DeserializeObject<ColorReplacementSpecifications>(File.ReadAllText(fileInConfigFolder));
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error reading file ({fileInConfigFolder})! Error: {e.Message}");
+                }
+            }
+
+            fileInConfigFolder = Path.Combine(folder, colorsPositionsFileName);
+            if (File.Exists(fileInConfigFolder))
+            {
+                LogInfo($"Loading color positions settings: {fileInConfigFolder}");
+                try
+                {
+                    colorPositions = JsonConvert.DeserializeObject<ColorPositionsSettings>(File.ReadAllText(fileInConfigFolder));
                 }
                 catch (Exception e)
                 {
@@ -1655,11 +1794,14 @@ namespace Seasons
 
             LogInfo($"Saving default colors ranges");
             File.WriteAllText(Path.Combine(defaultsFolder, colorsReplacementsFileName), JsonConvert.SerializeObject(new ColorReplacementSpecifications(loadDefaults: true), Formatting.Indented));
+
+            LogInfo($"Saving default colors positions");
+            File.WriteAllText(Path.Combine(defaultsFolder, colorsPositionsFileName), JsonConvert.SerializeObject(new ColorPositionsSettings(loadDefaults: true), Formatting.Indented));
         }
 
         public static void FillWithGameData()
         {
-            LogInfo("Initializing settings");
+            LogInfo("Initializing cache settings");
             InitSettings();
 
             LogInfo("Caching clutters");
@@ -1754,7 +1896,7 @@ namespace Seasons
                         if (color == null || color == Color.clear || color == Color.white || color == Color.black)
                             continue;
 
-                        if (SeasonalTextureVariantsGenerator.GetColorVariants(prefabName, rendererName, material, propertyName, color, out Color[] colors, isPlant: isPlant))
+                        if (GetColorVariants(prefabName, rendererName, material, propertyName, color, out Color[] colors, isPlant: isPlant))
                             cachedRenderer.AddMaterialColors(material, propertyName, colors);
                     }
                 }
@@ -1765,7 +1907,7 @@ namespace Seasons
                         if (color == null || color == Color.clear || color == Color.white || color == Color.black)
                             continue;
 
-                        if (SeasonalTextureVariantsGenerator.GetColorVariants(prefabName, rendererName, material, propertyName, color, out Color[] colors, isPlant: isPlant))
+                        if (GetColorVariants(prefabName, rendererName, material, propertyName, color, out Color[] colors, isPlant: isPlant))
                             cachedRenderer.AddMaterialColors(material, propertyName, colors);
                     }
 
@@ -1782,7 +1924,7 @@ namespace Seasons
                         {
                             cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
                         }
-                        else if (SeasonalTextureVariantsGenerator.GetTextureVariants(prefabName, rendererName, material, propertyName, texture, out TextureVariants textureVariants, isPlant: isPlant))
+                        else if (GetTextureVariants(prefabName, rendererName, material, propertyName, texture, out TextureVariants textureVariants, isPlant: isPlant))
                         {
                             SeasonalTextureVariants.textures.Add(textureID, textureVariants);
                             cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
@@ -1802,7 +1944,7 @@ namespace Seasons
                         {
                             cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
                         }
-                        else if (SeasonalTextureVariantsGenerator.GetTextureVariants(prefabName, rendererName, material, propertyName, texture, out TextureVariants textureVariants, isPlant: isPlant))
+                        else if (GetTextureVariants(prefabName, rendererName, material, propertyName, texture, out TextureVariants textureVariants, isPlant: isPlant))
                         {
                             SeasonalTextureVariants.textures.Add(textureID, textureVariants);
                             cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
@@ -2039,12 +2181,14 @@ namespace Seasons
             else if (controller.particleSystemStartColors != null && controller.particleSystemStartColors.ContainsKey(transformPath))
                 return;
 
+            SeasonalColorVariants colorVariants = colorSettings.GetPrefabOverride(prefabName) ?? colorSettings.seasonal;
+
             List<string> colors = new List<string>();
             foreach (Season season in Enum.GetValues(typeof(Season)))
-                for (int i = 1; i <= seasonColorVariants; i++)
+                for (int i = 0; i <= seasonColorVariants - 1; i++)
                 {
-                    Color colorVariant = GetSeasonConfigColor(season, i);
-                    Color color = SeasonalTextureVariantsGenerator.MergeColors(ps.main.startColor.color, colorVariant, colorVariant.a, season == Season.Winter);
+                    ColorVariant colorVariant = colorVariants.GetColorVariant(season, i);
+                    Color color = colorVariant.MergeColors(ps.main.startColor.color);
                     colors.Add($"#{ColorUtility.ToHtmlStringRGBA(color)}");
                 }
 
