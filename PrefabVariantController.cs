@@ -287,10 +287,8 @@ namespace Seasons
                                         s_tempColors.Clear();
                                         foreach (string str in tex.Value)
                                         {
-                                            if (!ColorUtility.TryParseHtmlString(str, out Color color))
-                                                return;
-
-                                            s_tempColors.Add(color);
+                                            if (ColorUtility.TryParseHtmlString(str, out Color color))
+                                                s_tempColors.Add(color);
                                         }
                                         colorVariants.Add(tex.Key, s_tempColors.ToArray());
                                     }

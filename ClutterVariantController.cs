@@ -31,7 +31,10 @@ namespace Seasons
             {  "instanced_swamp_grass", 3 },
         };
 
+        private static readonly List<Color> s_tempColors = new List<Color>();
+
         private readonly Dictionary<Material, Dictionary<string, TextureVariants>> m_materialVariants = new Dictionary<Material, Dictionary<string, TextureVariants>>();
+        private readonly Dictionary<Material, Dictionary<string, Color[]>> m_colorVariants = new Dictionary<Material, Dictionary<string, Color[]>>();
 
         private readonly Dictionary<Material, int> m_materialVariantOffset = new Dictionary<Material, int>();
 
@@ -94,6 +97,23 @@ namespace Seasons
                         tv.Add(textureVariant.Key, SeasonalTextureVariants.textures[textureVariant.Value]);
                     }
 
+                    foreach (KeyValuePair<string, string[]> colorVariant in cachedMaterial.colorVariants)
+                    {
+                        if (!m_colorVariants.TryGetValue(renderer.m_material, out Dictionary<string, Color[]> colorIndex))
+                        {
+                            colorIndex = new Dictionary<string, Color[]>();
+                            m_colorVariants.Add(renderer.m_material, colorIndex);
+                        }
+
+                        s_tempColors.Clear();
+                        foreach (string str in colorVariant.Value)
+                        {
+                            if (ColorUtility.TryParseHtmlString(str, out Color color))
+                                s_tempColors.Add(color);
+                        }
+                        colorIndex.Add(colorVariant.Key, s_tempColors.ToArray());
+                    }
+
                     m_materialVariantOffset.Add(renderer.m_material, prefabOffsets.GetValueSafe(prefab.name));
                 }
             }
@@ -153,12 +173,16 @@ namespace Seasons
                         else
                         {
                             materialVariants.Key.SetTexture(texProp.Key, texture);
-                            if (materialVariants.Key.name == "grasscross_mistlands_short")
-                                materialVariants.Key.color = GetGrassConfigColor(seasonState.GetCurrentSeason(), pos);
-                            else
-                                materialVariants.Key.color = m_originalColors[materialVariants.Key];
+                            materialVariants.Key.color = m_originalColors[materialVariants.Key];
                         }
                     }
+                }
+
+            foreach (KeyValuePair<Material, Dictionary<string, Color[]>> colorVariants in m_colorVariants)
+                foreach (KeyValuePair<string, Color[]> colorProp in colorVariants.Value)
+                {
+                    int pos = (variant + m_materialVariantOffset.GetValueSafe(colorVariants.Key)) % seasonColorVariants;
+                    colorVariants.Key.SetColor(colorProp.Key, HideGrass(colorVariants.Key) ? Color.clear : colorProp.Value[(int)seasonState.GetCurrentSeason() * seasonsCount + pos]);
                 }
         }
 

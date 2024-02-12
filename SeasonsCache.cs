@@ -620,6 +620,9 @@ namespace Seasons
                     { "carrot_blast", new string[] { "_Color" }},
                     { "barley_sapling", new string[] { "_Color" }},
                     { "Bush01_raspberry", new string[] { "_Color" }},
+                    { "grasscross_mistlands_short", new string[] { "_Color" }},
+                    { "Bush02_en", new string[] { "_Color" }},
+                    { "shrub_heath", new string[] { "_Color" }},
                 };
 
                 materialTextures = new Dictionary<string, string[]>
@@ -632,6 +635,7 @@ namespace Seasons
                     { "beech_bark", new string[] { "_MossTex" }},
                     { "oak_bark", new string[] { "_MossTex" }},
                     { "yggdrasil_branch", new string[] { "_MossTex" }},
+                    { "Vines_Mat", new string[] { } },
                 };
 
                 shaderTextures = new Dictionary<string, string[]>
@@ -648,7 +652,7 @@ namespace Seasons
 
                 shaderIgnoreMaterial = new Dictionary<string, string[]>
                 {
-                    { "Custom/Vegetation", new string[] { "bark", "trunk", "_wood", "HildirFlowerGirland_", "HildirTentCloth_", "TraderTent_" } },
+                    { "Custom/Vegetation", new string[] { "bark", "trunk", "_wood", "HildirFlowerGirland_", "HildirTentCloth_", "TraderTent_", "VinesBranch_mat" } },
                 };
 
                 shaderOnlyMaterial = new Dictionary<string, string[]>
@@ -846,6 +850,36 @@ namespace Seasons
                 }
             }
 
+            [Serializable]
+            public class SeasonalColorOverride
+            {
+                public SeasonalColorVariants colors = new SeasonalColorVariants();
+            }
+
+            [Serializable]
+            public class PrefabOverrides : SeasonalColorOverride
+            {
+                public List<string> prefab = new List<string>();
+
+                public PrefabOverrides(List<string> prefab, SeasonalColorVariants colors)
+                {
+                    this.prefab = prefab;
+                    this.colors = colors;
+                }
+            }
+
+            [Serializable]
+            public class MaterialOverrides : SeasonalColorOverride
+            {
+                public List<string> material = new List<string>();
+                
+                public MaterialOverrides(List<string> material, SeasonalColorVariants colors)
+                {
+                    this.material = material;
+                    this.colors = colors;
+                }
+            }
+
             public SeasonalColorVariants seasonal = new SeasonalColorVariants();
             public SeasonalColorVariants grass = new SeasonalColorVariants();
             public SeasonalColorVariants moss = new SeasonalColorVariants();
@@ -853,8 +887,8 @@ namespace Seasons
             public SeasonalColorVariants piece = new SeasonalColorVariants();
             public SeasonalColorVariants conifer = new SeasonalColorVariants();
 
-            public Dictionary<List<string>, SeasonalColorVariants> prefabOverrides = new Dictionary<List<string>, SeasonalColorVariants>();
-            public Dictionary<List<string>, SeasonalColorVariants> materialOverrides = new Dictionary<List<string>, SeasonalColorVariants>();
+            public List<PrefabOverrides> prefabOverrides = new List<PrefabOverrides>();
+            public List<MaterialOverrides> materialOverrides = new List<MaterialOverrides>();
 
             public ColorsCacheSettings(bool loadDefaults = false)
             {
@@ -951,7 +985,7 @@ namespace Seasons
                 piece.Winter.Add(new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.4f, grayscale: true, restoreLuminance: false));
                 piece.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.4f, grayscale: true, restoreLuminance: false));
 
-                prefabOverrides.Add(new List<string>() { "lox" }, new SeasonalColorVariants() 
+                prefabOverrides.Add(new PrefabOverrides(new List<string>() { "lox" }, new SeasonalColorVariants() 
                 { 
                     Winter = new List<ColorVariant>() 
                     {
@@ -960,9 +994,9 @@ namespace Seasons
                         new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.5f, grayscale: true, restoreLuminance: false),
                         new ColorVariant(new Color(1f, 1f, 1f), 0.5f, grayscale: true, restoreLuminance: false)
                     } 
-                });
+                }));
 
-                prefabOverrides.Add(new List<string>() { "goblin" }, new SeasonalColorVariants()
+                prefabOverrides.Add(new PrefabOverrides(new List<string>() { "goblin" }, new SeasonalColorVariants()
                 {
                     Winter = new List<ColorVariant>()
                     {
@@ -971,9 +1005,9 @@ namespace Seasons
                         new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.35f, grayscale: true, restoreLuminance: false),
                         new ColorVariant(new Color(1f, 1f, 1f), 0.35f, grayscale: true, restoreLuminance: false)
                     }
-                });
+                }));
 
-                prefabOverrides.Add(new List<string>() { "YggdrasilBranch" }, new SeasonalColorVariants()
+                prefabOverrides.Add(new PrefabOverrides(new List<string>() { "YggdrasilBranch" }, new SeasonalColorVariants()
                 {
                     Spring = seasonal.Spring,
                     Summer = seasonal.Summer,
@@ -985,28 +1019,28 @@ namespace Seasons
                         new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.21f, grayscale: true, restoreLuminance: false),
                         new ColorVariant(new Color(1f, 1f, 1f), 0.21f, grayscale: true, restoreLuminance: false)
                     }
-                });
+                }));
 
-                materialOverrides.Add(new List<string>() { "Pine_tree_small_dead", "swamptree1_branch", "swamptree2_branch" }, new SeasonalColorVariants()
+                materialOverrides.Add(new MaterialOverrides(new List<string>() { "Pine_tree_small_dead", "swamptree1_branch", "swamptree2_branch" }, new SeasonalColorVariants()
                 {
                     Winter = seasonal.Winter
-                });
+                }));
 
-                materialOverrides.Add(new List<string>() { "Midsummerpole_mat" }, new SeasonalColorVariants()
+                materialOverrides.Add(new MaterialOverrides(new List<string>() { "Midsummerpole_mat" }, new SeasonalColorVariants()
                 {
                     Spring = seasonal.Spring,
                     Summer = seasonal.Summer,
                     Fall = seasonal.Fall,
                     Winter = seasonal.Winter
-                });
+                }));
 
-                materialOverrides.Add(new List<string>() { "yggdrasil_branch" }, new SeasonalColorVariants()
+                materialOverrides.Add(new MaterialOverrides(new List<string>() { "yggdrasil_branch" }, new SeasonalColorVariants()
                 {
                     Spring = grass.Spring,
                     Summer = grass.Summer,
                     Fall = grass.Fall,
                     Winter = grass.Winter
-                });
+                }));
                 
             }
 
@@ -1017,8 +1051,8 @@ namespace Seasons
             {
                 if (_prefabs.Count == 0 && prefabOverrides.Count != 0)
                     foreach (var prefabOverride in prefabOverrides)
-                        foreach (var prefab in prefabOverride.Key)
-                            _prefabs.Add(prefab, prefabOverride.Value);
+                        foreach (var prefab in prefabOverride.prefab)
+                            _prefabs.Add(prefab, prefabOverride.colors);
 
                 return _prefabs.GetValueSafe(name);
             }
@@ -1027,8 +1061,8 @@ namespace Seasons
             {
                 if (_materials.Count == 0 && materialOverrides.Count != 0)
                     foreach (var materialOverride in materialOverrides)
-                        foreach (var mat in materialOverride.Key)
-                            _materials.Add(mat, materialOverride.Value);
+                        foreach (var mat in materialOverride.material)
+                            _materials.Add(mat, materialOverride.colors);
 
                 return _materials.GetValueSafe(name);
             }
@@ -1090,18 +1124,18 @@ namespace Seasons
             [Serializable]
             public class ColorSpecific
             {
-                public List<MaterialFits> materials = new List<MaterialFits>();
+                public List<MaterialFits> material = new List<MaterialFits>();
                 public List<ColorFits> colors = new List<ColorFits>();
 
-                public ColorSpecific(List<MaterialFits> materials, List<ColorFits> colors)
+                public ColorSpecific(List<MaterialFits> material, List<ColorFits> colors)
                 {
-                    this.materials = materials;
+                    this.material = material;
                     this.colors = colors;
                 }
 
                 public bool FitsMaterial(string prefabName, string rendererName, string materialName)
                 {
-                    return MaterialFits.FitsMaterial(materials, prefabName, rendererName, materialName);
+                    return MaterialFits.FitsMaterial(material, prefabName, rendererName, materialName);
                 }
 
                 public bool FitsColor(HSLColor color)
@@ -1249,6 +1283,29 @@ namespace Seasons
                     }
                 ));
 
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(material: "Pine_tree_small_dead", only: true),
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(),
+                    }
+                ));
+
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "shrub_2_heath", only: true),
+                        new MaterialFits(material: "shrub_heath", only: true),
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(),
+                    }
+                ));
+
             }
 
             public bool ReplaceColor(Color color, bool isGrass, bool isMoss, string prefabName = null, string rendererName = null, string materialName = null)
@@ -1368,18 +1425,18 @@ namespace Seasons
             [Serializable]
             public class PositionSpecific
             {
-                public List<MaterialFits> materials = new List<MaterialFits>();
+                public List<MaterialFits> material = new List<MaterialFits>();
                 public List<PositionFits> bounds = new List<PositionFits>();
                
-                public PositionSpecific(List<MaterialFits> materials, List<PositionFits> bounds)
+                public PositionSpecific(List<MaterialFits> material, List<PositionFits> bounds)
                 {
-                    this.materials = materials;
+                    this.material = material;
                     this.bounds = bounds;
                 }
 
                 public bool FitsMaterial(string prefabName, string rendererName, string materialName)
                 {
-                    return MaterialFits.FitsMaterial(materials, prefabName, rendererName, materialName);
+                    return MaterialFits.FitsMaterial(material, prefabName, rendererName, materialName);
                 }
 
                 public bool FitsPosition(int textureWidth, int textureHeight, int pos)
@@ -1510,6 +1567,19 @@ namespace Seasons
                         new PositionFits(0, 0, 0, 0),
                     }
                 ));
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "shrub_2_heath", only: true),
+                        new MaterialFits(material: "shrub_heath", only: true),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(14, 0, 14, 0),
+                    }
+                ));
+
             }
 
             public bool IsPixelToChange(Color color, int pos, TextureProperties properties, bool isGrass, bool isMoss, string prefabName, Material material, string propertyName, PositionSpecific positionSpec, ColorSpecific colorSpec)

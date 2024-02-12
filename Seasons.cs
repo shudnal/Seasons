@@ -78,46 +78,6 @@ namespace Seasons
         public static ConfigEntry<StationHover> hoverPlant;
         public static ConfigEntry<bool> seasonalMinimapBorderColor;
 
-        public static ConfigEntry<Color> vegetationSpringColor1;
-        public static ConfigEntry<Color> vegetationSpringColor2;
-        public static ConfigEntry<Color> vegetationSpringColor3;
-        public static ConfigEntry<Color> vegetationSpringColor4;
-
-        public static ConfigEntry<Color> vegetationSummerColor1;
-        public static ConfigEntry<Color> vegetationSummerColor2;
-        public static ConfigEntry<Color> vegetationSummerColor3;
-        public static ConfigEntry<Color> vegetationSummerColor4;
-
-        public static ConfigEntry<Color> vegetationFallColor1;
-        public static ConfigEntry<Color> vegetationFallColor2;
-        public static ConfigEntry<Color> vegetationFallColor3;
-        public static ConfigEntry<Color> vegetationFallColor4;
-
-        public static ConfigEntry<Color> vegetationWinterColor1;
-        public static ConfigEntry<Color> vegetationWinterColor2;
-        public static ConfigEntry<Color> vegetationWinterColor3;
-        public static ConfigEntry<Color> vegetationWinterColor4;
-
-        public static ConfigEntry<Color> grassSpringColor1;
-        public static ConfigEntry<Color> grassSpringColor2;
-        public static ConfigEntry<Color> grassSpringColor3;
-        public static ConfigEntry<Color> grassSpringColor4;
-
-        public static ConfigEntry<Color> grassSummerColor1;
-        public static ConfigEntry<Color> grassSummerColor2;
-        public static ConfigEntry<Color> grassSummerColor3;
-        public static ConfigEntry<Color> grassSummerColor4;
-
-        public static ConfigEntry<Color> grassFallColor1;
-        public static ConfigEntry<Color> grassFallColor2;
-        public static ConfigEntry<Color> grassFallColor3;
-        public static ConfigEntry<Color> grassFallColor4;
-
-        public static ConfigEntry<Color> grassWinterColor1;
-        public static ConfigEntry<Color> grassWinterColor2;
-        public static ConfigEntry<Color> grassWinterColor3;
-        public static ConfigEntry<Color> grassWinterColor4;
-
         public static ConfigEntry<string> localizationSeasonNameSpring;
         public static ConfigEntry<string> localizationSeasonNameSummer;
         public static ConfigEntry<string> localizationSeasonNameFall;
@@ -348,46 +308,6 @@ namespace Seasons
             amountOfIceFloesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             placeShipAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateShipsPositions();
 
-            vegetationSpringColor1 = config("Seasons - Color - Main - Spring", "Color 1", defaultValue: new Color(0.27f, 0.80f, 0.27f, 0.75f), "Color 1");
-            vegetationSpringColor2 = config("Seasons - Color - Main - Spring", "Color 2", defaultValue: new Color(0.69f, 0.84f, 0.15f, 0.75f), "Color 2");
-            vegetationSpringColor3 = config("Seasons - Color - Main - Spring", "Color 3", defaultValue: new Color(0.43f, 0.56f, 0.11f, 0.75f), "Color 3");
-            vegetationSpringColor4 = config("Seasons - Color - Main - Spring", "Color 4", defaultValue: new Color(0.0f, 1.0f, 0f, 0.0f), "Color 4");
-
-            vegetationSummerColor1 = config("Seasons - Color - Main - Summer", "Color 1", defaultValue: new Color(0.5f, 0.7f, 0.2f, 0.5f), "Color 1");
-            vegetationSummerColor2 = config("Seasons - Color - Main - Summer", "Color 2", defaultValue: new Color(0.7f, 0.7f, 0.2f, 0.5f), "Color 2");
-            vegetationSummerColor3 = config("Seasons - Color - Main - Summer", "Color 3", defaultValue: new Color(0.5f, 0.5f, 0f, 0.5f), "Color 3");
-            vegetationSummerColor4 = config("Seasons - Color - Main - Summer", "Color 4", defaultValue: new Color(0.7f, 0.7f, 0f, 0.2f), "Color 4");
-
-            vegetationFallColor1 = config("Seasons - Color - Main - Fall", "Color 1", defaultValue: new Color(0.8f, 0.5f, 0f, 0.75f), "Color 1");
-            vegetationFallColor2 = config("Seasons - Color - Main - Fall", "Color 2", defaultValue: new Color(0.8f, 0.3f, 0f, 0.75f), "Color 2");
-            vegetationFallColor3 = config("Seasons - Color - Main - Fall", "Color 3", defaultValue: new Color(0.8f, 0.2f, 0f, 0.75f), "Color 3");
-            vegetationFallColor4 = config("Seasons - Color - Main - Fall", "Color 4", defaultValue: new Color(0.9f, 0.5f, 0f, 0.0f), "Color 4");
-
-            vegetationWinterColor1 = config("Seasons - Color - Main - Winter", "Color 1", defaultValue: new Color(1f, 0.98f, 0.98f, 0.65f), "Color 1");
-            vegetationWinterColor2 = config("Seasons - Color - Main - Winter", "Color 2", defaultValue: new Color(1f, 1f, 1f, 0.6f), "Color 2");
-            vegetationWinterColor3 = config("Seasons - Color - Main - Winter", "Color 3", defaultValue: new Color(0.98f, 0.98f, 1f, 0.65f), "Color 3");
-            vegetationWinterColor4 = config("Seasons - Color - Main - Winter", "Color 4", defaultValue: new Color(1f, 1f, 1f, 0.65f), "Color 4");
-
-            grassSpringColor1 = config("Seasons - Color - Grass - Spring", "Color 1", defaultValue: new Color(0.27f, 0.80f, 0.27f, 0.75f), "Color 1");
-            grassSpringColor2 = config("Seasons - Color - Grass - Spring", "Color 2", defaultValue: new Color(0.69f, 0.84f, 0.15f, 0.75f), "Color 2");
-            grassSpringColor3 = config("Seasons - Color - Grass - Spring", "Color 3", defaultValue: new Color(0.43f, 0.56f, 0.11f, 0.75f), "Color 3");
-            grassSpringColor4 = config("Seasons - Color - Grass - Spring", "Color 4", defaultValue: new Color(0.0f, 1.0f, 0f, 0.0f), "Color 4");
-
-            grassSummerColor1 = config("Seasons - Color - Grass - Summer", "Color 1", defaultValue: new Color(0.5f, 0.7f, 0.2f, 0.5f), "Color 1");
-            grassSummerColor2 = config("Seasons - Color - Grass - Summer", "Color 2", defaultValue: new Color(0.7f, 0.75f, 0.2f, 0.5f), "Color 2");
-            grassSummerColor3 = config("Seasons - Color - Grass - Summer", "Color 3", defaultValue: new Color(0.5f, 0.5f, 0f, 0.5f), "Color 3");
-            grassSummerColor4 = config("Seasons - Color - Grass - Summer", "Color 4", defaultValue: new Color(0.7f, 0.7f, 0f, 0.2f), "Color 4");
-
-            grassFallColor1 = config("Seasons - Color - Grass - Fall", "Color 1", defaultValue: new Color(0.8f, 0.6f, 0.2f, 0.5f), "Color 1");
-            grassFallColor2 = config("Seasons - Color - Grass - Fall", "Color 2", defaultValue: new Color(0.8f, 0.5f, 0f, 0.5f), "Color 2");
-            grassFallColor3 = config("Seasons - Color - Grass - Fall", "Color 3", defaultValue: new Color(0.8f, 0.3f, 0f, 0.5f), "Color 3");
-            grassFallColor4 = config("Seasons - Color - Grass - Fall", "Color 4", defaultValue: new Color(0.9f, 0.5f, 0f, 0.0f), "Color 4");
-
-            grassWinterColor1 = config("Seasons - Color - Grass - Winter", "Color 1", defaultValue: new Color(1f, 0.98f, 0.98f, 0.65f), "Color 1");
-            grassWinterColor2 = config("Seasons - Color - Grass - Winter", "Color 2", defaultValue: new Color(1f, 1f, 1f, 0.6f), "Color 2");
-            grassWinterColor3 = config("Seasons - Color - Grass - Winter", "Color 3", defaultValue: new Color(0.98f, 0.98f, 1f, 0.65f), "Color 3");
-            grassWinterColor4 = config("Seasons - Color - Grass - Winter", "Color 4", defaultValue: new Color(1f, 1f, 1f, 0.65f), "Color 4");
-
             enableSeasonalGlobalKeys = config("Seasons - Global keys", "Enable setting seasonal Global Keys", defaultValue: false, "Enables setting seasonal global key");
             seasonalGlobalKeyFall = config("Seasons - Global keys", "Fall", defaultValue: "Season_Fall", "Seasonal global key for automn");
             seasonalGlobalKeySpring = config("Seasons - Global keys", "Spring", defaultValue: "Season_Spring", "Seasonal global key for spring");
@@ -476,11 +396,6 @@ namespace Seasons
             return tex.LoadImage(data, true);
         }
 
-        private Color GetColorConfig(string fieldName)
-        {
-            return (GetType().GetField(fieldName).GetValue(this) as ConfigEntry<Color>).Value;
-        }
-
         private string GetStringConfig(string fieldName)
         {
             return (GetType().GetField(fieldName).GetValue(this) as ConfigEntry<string>).Value;
@@ -489,38 +404,6 @@ namespace Seasons
         private Sprite GetSpriteConfig(string fieldName)
         {
             return GetType().GetField(fieldName).GetValue(this) as Sprite;
-        }
-
-        public static Color GetSeasonConfigColor(Season season, int pos)
-        {
-            return instance.GetColorConfig($"vegetation{season}Color{Mathf.Clamp(pos, 1, 4)}");
-        }
-
-        public static Color GetGrassConfigColor(Season season, int pos)
-        {
-            return instance.GetColorConfig($"grass{season}Color{Mathf.Clamp(pos, 1, 4)}");
-        }
-
-        public static Color GetMossConfigColor(Season season, int pos)
-        {
-            Color grassColor = GetGrassConfigColor(season, (pos + 2) % seasonColorVariants + 1);
-            
-            if (season != Season.Winter)
-                grassColor.a /= 3;
-
-            return grassColor;
-        }
-
-        public static Color GetCreatureConfigColor(Season season, int pos)
-        {
-            Color creatureColor = GetSeasonConfigColor(season, pos);
-
-            if (season == Season.Winter)
-                creatureColor.a /= 2;
-            else
-                creatureColor.a /= 3;
-
-            return creatureColor;
         }
 
         public static string GetSeasonTooltip(Season season)
