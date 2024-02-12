@@ -232,7 +232,7 @@ namespace Seasons
 
         public void SaveToJSON()
         {
-            string folder = Path.Combine(configDirectory, cacheSubdirectory);
+            string folder = CacheDirectory();
 
             Directory.CreateDirectory(folder);
 
@@ -264,7 +264,7 @@ namespace Seasons
 
         public void LoadFromJSON()
         {
-            string folder = Path.Combine(configDirectory, cacheSubdirectory);
+            string folder = CacheDirectory();
 
             DirectoryInfo cacheDirectory = new DirectoryInfo(folder);
             if (!cacheDirectory.Exists)
@@ -308,7 +308,7 @@ namespace Seasons
 
         public void SaveToBinary()
         {
-            string folder = Path.Combine(configDirectory, cacheSubdirectory);
+            string folder = CacheDirectory();
 
             Directory.CreateDirectory(folder);
 
@@ -323,7 +323,7 @@ namespace Seasons
 
         public void LoadFromBinary()
         {
-            string folder = Path.Combine(configDirectory, cacheSubdirectory);
+            string folder = CacheDirectory();
 
             string filename = Path.Combine(folder, prefabCacheCommonFile);
             if (!File.Exists(filename))
@@ -353,6 +353,11 @@ namespace Seasons
         public static string SeasonFileName(Season season, int variant)
         {
             return $"{season}_{variant + 1}.png";
+        }
+
+        public static string CacheDirectory()
+        {
+            return Path.Combine(configDirectory, cacheSubdirectory);
         }
     }
 
@@ -443,13 +448,16 @@ namespace Seasons
         public static Dictionary<string, PrefabController> controllers = new Dictionary<string, PrefabController>();
         public static Dictionary<int, TextureVariants> textures = new Dictionary<int, TextureVariants>();
 
-        public static bool Initialize()
+        public static bool Initialize(bool force = false)
         {
-            if (Initialized())
+            if (!force && Initialized())
                 return true;
 
             controllers.Clear();
             textures.Clear();
+
+            if (force)
+                Directory.Delete(CachedData.CacheDirectory(), recursive: true);
 
             CachedData cachedData = new CachedData();
             if (cacheStorageFormat.Value == CacheFormat.Json)

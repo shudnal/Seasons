@@ -9,6 +9,8 @@ using System.Reflection;
 using System;
 using System.IO;
 using UnityEngine.Rendering;
+using static Terminal;
+using System.Diagnostics;
 
 namespace Seasons
 {
@@ -31,7 +33,8 @@ namespace Seasons
 
         public static ConfigEntry<CacheFormat> cacheStorageFormat;
         public static ConfigEntry<bool> logTime;
-        public static ConfigEntry<bool> logFloes; 
+        public static ConfigEntry<bool> logFloes;
+        public static ConfigEntry<bool> rebuildCache;
 
         public static ConfigEntry<bool> overrideSeason;
         public static ConfigEntry<Season> seasonOverrided;
@@ -332,8 +335,30 @@ namespace Seasons
             cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
             logTime = config("Test", "Log time", defaultValue: false, "Log time info on state update");
             logFloes = config("Test", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying");
+            rebuildCache = config("Test", "Rebuild cache", defaultValue: false, "Start cache rebuilding process");
+
+            rebuildCache.SettingChanged += (sender, args) => RebuildCache();
 
             configDirectory = Path.Combine(Paths.ConfigPath, pluginID);
+
+            new ConsoleCommand("resetseasonscache", "Rebuild Seasons texture cache", delegate (ConsoleEventArgs args)
+            {
+                if (!seasonState.IsActive)
+                {
+                    args.Context.AddString($"Start the game before building cache");
+                    return false;
+                }
+
+                Stopwatch stopwatch = new Stopwatch();
+                stopwatch.Start();
+
+                RebuildCache(fromConfig: false);
+
+                stopwatch.Stop();
+
+                args.Context.AddString($"Added {prefabControllers.Count} controllers, {texturesVariants.Count} textures in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
+                return true;
+            });
         }
 
         ConfigEntry<T> config<T>(string group, string name, T defaultValue, ConfigDescription description, bool synchronizedSetting = true)
@@ -515,6 +540,18 @@ namespace Seasons
             
             _cachedIgnoredPositions[position] = ignored;
             return ignored;
+        }
+    
+        public static void RebuildCache(bool fromConfig = true)
+        {
+            if (fromConfig && !rebuildCache.Value)
+                return;
+
+            rebuildCache.Value = false;
+            
+            if (seasonState.IsActive)
+                SeasonalTextureVariants.Initialize(force: true);
+
         }
     }
 }
