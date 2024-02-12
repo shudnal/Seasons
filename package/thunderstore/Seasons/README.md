@@ -38,30 +38,20 @@ On every launch the mod is generating "Default settings" folder at config folder
 This folder will henceforth be called "default settings folder".
 
 ## Texture recoloring
+The mods comes without built-in textures but generate ones on the first launch.
+You can change cache settings as you pleased if you don't like the defaults.
+
 The textures and rules for applying them to objects are stored at "Cache" folder in config folder.
-The seasonal colors for vegetation and grass can be set in bepinex config.
+By default cache is saved as nonhumanreadable binary file for further faster loads. It can also be saved at JSON and PNG files.
 
-The mods comes without built-in textures but generate ones on the first launch. 
-It means you can change season colors as you pleased if you don't like the defaults. 
+The rules for cache forming are stored at "Cache settings" folder in config folder.
+The list of the objects comes from prefab, clutter and locations list after ZoneSystem.Start. Due to procedural generation of objects textures if the game have custom assets loaded at that moment they will be tried to recolored the same way as the default game's assets.
 
-It also means you can't directly set external custom textures to objects you want. Yet you can replace generated textures with your own ones. That way the consistensy of game's look is your responsibility.
+You can replace generated textures with your own ones.
 
-If you have changed the seasonal colors in mod's config you should delete "Cache" folder from the config folder and restart the game completely to generate new textures on the next launch.
+The main idea of the mod is only to change vanilla colors without changing other parts of object appearance.
 
-Currently there is no customizable settings what object should be recolored because the game is not so consistent that way. Basically the idea is to get greenish colors in used materials and merge them with seasonal colors making color variants for every object. List of recolored objects:
-* all trees
-* all rocks and other ground objects like logs
-* terrain
-* building pieces: vines, roofs
-* creatures with green or brown colors: loxen, abominations, draugrs, greydwarves
-
-By default textures and cache settings are saved at nonhumanreadable binary file for further faster loads. They also can be saved at JSON and PNG files for you to make changes.
-
-The list of the objects comes from prefab, clutter and locations list after ZoneSystem.Start. Pls keep in mind if the game have custom assets loaded at that moment they will be tried to recolored the same way as the default game's assets. If you experience issues you can set cache format to JSON and delete unneeded assets from "cache.json" file.
-
-The main idea of the mod is only to change vanilla colors without changing other parts of object appearance. Due to procedural generation of objects textures I can fully support only the vanilla objects.
-
-Some texture generation setting could be exposed to setting but not at that moment. Maybe later maybe not.
+[Recoloring settings](https://valheim.thunderstore.io/package/shudnal/Seasons/wiki/1483-recoloring-settings/)
 
 ## Seasonal settings
 Basic seasonal settings are located in JSON files: Spring.json, Summer.json, Fall.json, Winter.json.

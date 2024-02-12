@@ -1,3 +1,11 @@
+# 1.1.0
+* Recoloring settings (you can now control the way mod generates textures)
+* rebuild cache console command ("resetseasonscache")
+* default recoloring refinements
+* setting seasonal key at day change
+* fix for control stats couldn't be disabled completely
+* fix for ice floes floating in the air
+
 # 1.0.13
 * you can climb on ice floe
 
@@ -11,14 +19,14 @@
 * proper recoloring freshly planted pickables and crops
 * seasonal changes properly ignores objects located in interior, Mountains, DeepNorth and Ashlands
 
+<details>
+<summary><b>Changelog History</b> (<i>click to expand</i>)</summary>
+
 # 1.0.11
 * hide grass in winter enabled by default (now you can set period in days)
 * day length in seconds config option
 * GammaOfNightLights better compatibility
 * minor frozen ship refinements
-
-<details>
-<summary><b>Changelog History</b> (<i>click to expand</i>)</summary>
 
 # 1.0.9
 * dedicated server ice floes fix

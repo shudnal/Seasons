@@ -356,7 +356,7 @@ namespace Seasons
 
                 stopwatch.Stop();
 
-                args.Context.AddString($"Added {prefabControllers.Count} controllers, {texturesVariants.Count} textures in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
+                args.Context.AddString($"Added {prefabControllers.Count} controllers, {texturesVariants.Count} textures in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds. Relog into the world to see effect.");
                 return true;
             });
         }
@@ -548,10 +548,9 @@ namespace Seasons
                 return;
 
             rebuildCache.Value = false;
-            
-            if (seasonState.IsActive)
-                SeasonalTextureVariants.Initialize(force: true);
 
+            if (seasonState.IsActive && SeasonalTextureVariants.Initialize(force: true))
+                LogInfo("Relog into the world to see effect");
         }
     }
 }
