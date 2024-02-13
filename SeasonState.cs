@@ -9,6 +9,7 @@ using System.Linq;
 using UnityEngine;
 using BepInEx;
 using System.Reflection;
+using ServerSync;
 
 namespace Seasons
 {
@@ -620,7 +621,9 @@ namespace Seasons
             m_day = dayInSeason;
             m_worldDay = worldDay;
 
+            ConfigSync.ProcessingServerUpdate = true;
             Seasons.currentDay.AssignLocalValue(m_day);
+            ConfigSync.ProcessingServerUpdate = false;
             Seasons.currentSeason.AssignLocalValue((int)m_season);
 
             return true;
@@ -724,6 +727,7 @@ namespace Seasons
             if (dayInSeason > m_day)
             {
                 m_day = dayInSeason;
+                ConfigSync.ProcessingServerUpdate = false;
                 Seasons.currentDay.AssignLocalValue(m_day);
             }
         }

@@ -13,6 +13,7 @@ using static Seasons.SeasonalTexturePrefabCache.ColorsCacheSettings;
 using static Seasons.SeasonalTexturePrefabCache.ColorReplacementSpecifications;
 using static Seasons.SeasonalTexturePrefabCache.ColorPositionsSettings;
 using System.Diagnostics;
+using BepInEx;
 
 namespace Seasons
 {
@@ -21,6 +22,9 @@ namespace Seasons
     {
         private static void Postfix(ZoneSystem __instance)
         {
+            SeasonalTexturePrefabCache.SetupConfigWatcher();
+            SeasonalTexturePrefabCache.SaveDefaults();
+
             if (!UseTextureControllers())
                 return;
 
@@ -456,7 +460,7 @@ namespace Seasons
             controllers.Clear();
             textures.Clear();
 
-            if (force)
+            if (force && Directory.Exists(CachedData.CacheDirectory()))
                 Directory.Delete(CachedData.CacheDirectory(), recursive: true);
 
             CachedData cachedData = new CachedData();
@@ -529,7 +533,6 @@ namespace Seasons
             foreach (KeyValuePair<int, TextureVariants> texture in textures)
                 texture.Value.ApplyTextures();
         }
-
     }
 
     public static class SeasonalTexturePrefabCache
@@ -1623,6 +1626,72 @@ namespace Seasons
         public static ColorReplacementSpecifications colorReplacement = new ColorReplacementSpecifications(loadDefaults: true);
         public static ColorPositionsSettings colorPositions = new ColorPositionsSettings(loadDefaults: true);
 
+        public static void SetupConfigWatcher()
+        {
+            string filter = $"*.json";
+
+            FileSystemWatcher fileSystemWatcher1 = new FileSystemWatcher(CacheSettingsDirectory(), filter);
+            fileSystemWatcher1.Changed += new FileSystemEventHandler(ReadConfigs);
+            fileSystemWatcher1.Created += new FileSystemEventHandler(ReadConfigs);
+            fileSystemWatcher1.Renamed += new RenamedEventHandler(ReadConfigs);
+            fileSystemWatcher1.Deleted += new FileSystemEventHandler(ReadConfigs);
+            fileSystemWatcher1.IncludeSubdirectories = false;
+            fileSystemWatcher1.SynchronizingObject = ThreadingHelper.SynchronizingObject;
+            fileSystemWatcher1.EnableRaisingEvents = true;
+
+            ReadConfigs();
+        }
+
+        private static void ReadConfigs(object sender = null, FileSystemEventArgs eargs = null)
+        {
+            foreach (FileInfo file in new DirectoryInfo(CacheSettingsDirectory()).GetFiles("*.json", SearchOption.TopDirectoryOnly))
+            {
+                if (file.Name == materialsSettingsFileName)
+                    try
+                    {
+                        customMaterialSettingsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
+                        LogInfo($"Custom materials settings loaded");
+                    }
+                    catch (Exception e)
+                    {
+                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
+                    }
+
+                if (file.Name == colorsSettingsFileName)
+                    try
+                    {
+                        customColorSettingsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
+                        LogInfo($"Custom color settings loaded");
+                    }
+                    catch (Exception e)
+                    {
+                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
+                    }
+
+                if (file.Name == colorsReplacementsFileName)
+                    try
+                    {
+                        customColorReplacementJSON.AssignLocalValue(File.ReadAllText(file.FullName));
+                        LogInfo($"Custom color replacements loaded");
+                    }
+                    catch (Exception e)
+                    {
+                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
+                    }
+
+                if (file.Name == colorsPositionsFileName)
+                    try
+                    {
+                        customColorPositionsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
+                        LogInfo($"Custom color positions loaded");
+                    }
+                    catch (Exception e)
+                    {
+                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
+                    }
+            };
+        }
+
         public static bool GetColorVariants(string prefabName, string rendererName, Material material, string propertyName, Color color, out Color[] colors, bool isPlant)
         {
             colors = null;
@@ -1796,73 +1865,72 @@ namespace Seasons
             }
         }
 
+        private static string CacheSettingsDirectory()
+        {
+            string directory = Path.Combine(configDirectory, settingsSubdirectory);
+            Directory.CreateDirectory(directory);
+
+            return directory;
+        }
+
         public static void InitSettings()
         {
-            string folder = Path.Combine(configDirectory, settingsSubdirectory);
-            Directory.CreateDirectory(folder);
-
-            SaveDefaults(folder);
-
-            string fileInConfigFolder = Path.Combine(folder, materialsSettingsFileName);
-            if (File.Exists(fileInConfigFolder))
+            if (!String.IsNullOrEmpty(customMaterialSettingsJSON.Value))
             {
-                LogInfo($"Loading materials settings: {fileInConfigFolder}");
                 try
                 {
-                    materialSettings = JsonConvert.DeserializeObject<MaterialCacheSettings>(File.ReadAllText(fileInConfigFolder));
+                    materialSettings = JsonConvert.DeserializeObject<MaterialCacheSettings>(customMaterialSettingsJSON.Value);
+                    LogInfo($"Custom materials settings applied");
                 }
                 catch (Exception e)
                 {
-                    LogWarning($"Error reading file ({fileInConfigFolder})! Error: {e.Message}");
+                    LogWarning($"Error parsing custom materials settings:\n{e}");
                 }
             }
 
-            fileInConfigFolder = Path.Combine(folder, colorsSettingsFileName);
-            if (File.Exists(fileInConfigFolder))
+            if (!String.IsNullOrEmpty(customColorSettingsJSON.Value))
             {
-                LogInfo($"Loading color settings: {fileInConfigFolder}");
                 try
                 {
-                    colorSettings = JsonConvert.DeserializeObject<ColorsCacheSettings>(File.ReadAllText(fileInConfigFolder));
+                    colorSettings = JsonConvert.DeserializeObject<ColorsCacheSettings>(customColorSettingsJSON.Value);
+                    LogInfo($"Custom color settings applied");
                 }
                 catch (Exception e)
                 {
-                    LogWarning($"Error reading file ({fileInConfigFolder})! Error: {e.Message}");
+                    LogWarning($"Error parsing custom color settings:\n{e}");
                 }
             }
 
-            fileInConfigFolder = Path.Combine(folder, colorsReplacementsFileName);
-            if (File.Exists(fileInConfigFolder))
+            if (!String.IsNullOrEmpty(customColorReplacementJSON.Value))
             {
-                LogInfo($"Loading color replacements settings: {fileInConfigFolder}");
                 try
                 {
-                    colorReplacement = JsonConvert.DeserializeObject<ColorReplacementSpecifications>(File.ReadAllText(fileInConfigFolder));
+                    colorReplacement = JsonConvert.DeserializeObject<ColorReplacementSpecifications>(customColorReplacementJSON.Value);
+                    LogInfo($"Custom color replacements applied");
                 }
                 catch (Exception e)
                 {
-                    LogWarning($"Error reading file ({fileInConfigFolder})! Error: {e.Message}");
+                    LogWarning($"Error parsing custom color replacements:\n{e}");
                 }
             }
 
-            fileInConfigFolder = Path.Combine(folder, colorsPositionsFileName);
-            if (File.Exists(fileInConfigFolder))
+            if (!String.IsNullOrEmpty(customColorPositionsJSON.Value))
             {
-                LogInfo($"Loading color positions settings: {fileInConfigFolder}");
                 try
                 {
-                    colorPositions = JsonConvert.DeserializeObject<ColorPositionsSettings>(File.ReadAllText(fileInConfigFolder));
+                    colorPositions = JsonConvert.DeserializeObject<ColorPositionsSettings>(customColorPositionsJSON.Value);
+                    LogInfo($"Custom color positions applied");
                 }
                 catch (Exception e)
                 {
-                    LogWarning($"Error reading file ({fileInConfigFolder})! Error: {e.Message}");
+                    LogWarning($"Error parsing custom color positions:\n{e}");
                 }
             }
         }
 
-        public static void SaveDefaults(string folder)
+        public static void SaveDefaults()
         {
-            string defaultsFolder = Path.Combine(folder, defaultsSubdirectory);
+            string defaultsFolder = Path.Combine(CacheSettingsDirectory(), defaultsSubdirectory);
             Directory.CreateDirectory(defaultsFolder);
 
             LogInfo($"Saving default materials settings");

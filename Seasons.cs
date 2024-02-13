@@ -21,7 +21,7 @@ namespace Seasons
     {
         const string pluginID = "shudnal.Seasons";
         const string pluginName = "Seasons";
-        const string pluginVersion = "1.1.0";
+        const string pluginVersion = "1.1.1";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -127,18 +127,23 @@ namespace Seasons
 
         public static Dictionary<string, PrefabController> prefabControllers = SeasonalTextureVariants.controllers;
         public static Dictionary<int, TextureVariants> texturesVariants = SeasonalTextureVariants.textures;
-       
-        public static readonly CustomSyncedValue<int> currentSeason = new CustomSyncedValue<int>(configSync, "Current season");
-        public static readonly CustomSyncedValue<int> currentDay = new CustomSyncedValue<int>(configSync, "Current day");
 
-        public static readonly CustomSyncedValue<Dictionary<int, string>> seasonsSettingsJSON = new CustomSyncedValue<Dictionary<int, string>>(configSync, "Seasons settings JSON", new Dictionary<int, string>());
-        public static readonly CustomSyncedValue<string> customEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom environments JSON", "");
-        public static readonly CustomSyncedValue<string> customBiomeEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom biome environments JSON", "");
-        public static readonly CustomSyncedValue<string> customEventsJSON = new CustomSyncedValue<string>(configSync, "Custom events JSON", "");
-        public static readonly CustomSyncedValue<string> customLightingsJSON = new CustomSyncedValue<string>(configSync, "Custom lightings JSON", "");
-        public static readonly CustomSyncedValue<string> customStatsJSON = new CustomSyncedValue<string>(configSync, "Custom stats JSON", "");
-        public static readonly CustomSyncedValue<string> customTraderItemsJSON = new CustomSyncedValue<string>(configSync, "Custom traders JSON", "");
-        public static readonly CustomSyncedValue<string> customWorldSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom world settings JSON", "");
+        public static readonly CustomSyncedValue<int> currentDay = new CustomSyncedValue<int>(configSync, "Current day", 1, Priority.First);
+        public static readonly CustomSyncedValue<int> currentSeason = new CustomSyncedValue<int>(configSync, "Current season", 1, Priority.VeryHigh);
+
+        public static readonly CustomSyncedValue<Dictionary<int, string>> seasonsSettingsJSON = new CustomSyncedValue<Dictionary<int, string>>(configSync, "Seasons settings JSON", new Dictionary<int, string>(), Priority.LowerThanNormal);
+        public static readonly CustomSyncedValue<string> customEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom environments JSON", "", Priority.Normal);
+        public static readonly CustomSyncedValue<string> customBiomeEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom biome environments JSON", "", Priority.Normal);
+        public static readonly CustomSyncedValue<string> customEventsJSON = new CustomSyncedValue<string>(configSync, "Custom events JSON", "", Priority.Normal);
+        public static readonly CustomSyncedValue<string> customLightingsJSON = new CustomSyncedValue<string>(configSync, "Custom lightings JSON", "", Priority.Normal);
+        public static readonly CustomSyncedValue<string> customStatsJSON = new CustomSyncedValue<string>(configSync, "Custom stats JSON", "", Priority.Normal);
+        public static readonly CustomSyncedValue<string> customTraderItemsJSON = new CustomSyncedValue<string>(configSync, "Custom traders JSON", "", Priority.Normal);
+        public static readonly CustomSyncedValue<string> customWorldSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom world settings JSON", "", Priority.Normal);
+
+        public static readonly CustomSyncedValue<string> customMaterialSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom material settings JSON", "", Priority.Low);
+        public static readonly CustomSyncedValue<string> customColorSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom color settings JSON", "", Priority.Low);
+        public static readonly CustomSyncedValue<string> customColorReplacementJSON = new CustomSyncedValue<string>(configSync, "Custom color replacements JSON", "", Priority.Low);
+        public static readonly CustomSyncedValue<string> customColorPositionsJSON = new CustomSyncedValue<string>(configSync, "Custom color positions JSON", "", Priority.Low);
 
         public static readonly List<BiomeEnvSetup> biomesDefault = new List<BiomeEnvSetup>();
         public static readonly List<RandomEvent> eventsDefault = new List<RandomEvent>();
@@ -335,7 +340,7 @@ namespace Seasons
             cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
             logTime = config("Test", "Log time", defaultValue: false, "Log time info on state update");
             logFloes = config("Test", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying");
-            rebuildCache = config("Test", "Rebuild cache", defaultValue: false, "Start cache rebuilding process");
+            rebuildCache = config("Test", "Rebuild cache", defaultValue: false, "Start cache rebuilding process", false);
 
             rebuildCache.SettingChanged += (sender, args) => RebuildCache();
 
@@ -357,7 +362,7 @@ namespace Seasons
                 stopwatch.Stop();
 
                 args.Context.AddString($"Added {prefabControllers.Count} controllers, {texturesVariants.Count} textures in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds. Relog into the world to see effect.");
-                return true;
+                return true; 
             });
         }
 

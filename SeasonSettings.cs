@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Linq;
 using UnityEngine;
 using static Seasons.Seasons;
+using ServerSync;
 
 namespace Seasons
 {
@@ -1408,10 +1409,10 @@ namespace Seasons
             fileSystemWatcher1.SynchronizingObject = ThreadingHelper.SynchronizingObject;
             fileSystemWatcher1.EnableRaisingEvents = true;
 
-            ReadConfigs(null, null);
+            ReadConfigs();
         }
 
-        private static void ReadConfigs(object sender, FileSystemEventArgs eargs)
+        private static void ReadConfigs(object sender = null, FileSystemEventArgs eargs = null)
         {
             Dictionary<int, string> localConfig = new Dictionary<int, string>();
 
@@ -1438,7 +1439,6 @@ namespace Seasons
                     {
                         LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
                     }
-
 
                 if (file.Name == customBiomeEnvironmentsFileName)
                     try
@@ -1501,7 +1501,8 @@ namespace Seasons
                     }
 
             };
-
+            
+            ConfigSync.ProcessingServerUpdate = false;
             seasonsSettingsJSON.AssignLocalValue(localConfig);
         }
 
