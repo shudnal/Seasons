@@ -119,8 +119,6 @@ namespace Seasons
             }
 
             base.enabled = m_materialVariants.Any(variant => variant.Value.Count > 0);
-
-            UpdateColors();
         }
 
         private void OnEnable()
@@ -148,6 +146,13 @@ namespace Seasons
 
                     if (m_originalColors.ContainsKey(materialVariants.Key))
                         materialVariants.Key.color = m_originalColors[materialVariants.Key];
+                }
+
+            foreach (KeyValuePair<Material, Dictionary<string, Color[]>> colorVariants in m_colorVariants)
+                foreach (KeyValuePair<string, Color[]> colorProp in colorVariants.Value)
+                {
+                    if (m_originalColors.ContainsKey(colorVariants.Key))
+                        colorVariants.Key.SetColor(colorProp.Key, m_originalColors[colorVariants.Key]);
                 }
         }
 
@@ -181,6 +186,9 @@ namespace Seasons
             foreach (KeyValuePair<Material, Dictionary<string, Color[]>> colorVariants in m_colorVariants)
                 foreach (KeyValuePair<string, Color[]> colorProp in colorVariants.Value)
                 {
+                    if (!m_originalColors.ContainsKey(colorVariants.Key))
+                        m_originalColors.Add(colorVariants.Key, colorVariants.Key.color);
+
                     int pos = (variant + m_materialVariantOffset.GetValueSafe(colorVariants.Key)) % seasonColorVariants;
                     colorVariants.Key.SetColor(colorProp.Key, HideGrass(colorVariants.Key) ? Color.clear : colorProp.Value[(int)seasonState.GetCurrentSeason() * seasonsCount + pos]);
                 }
@@ -188,7 +196,7 @@ namespace Seasons
 
         private int GetCurrentMainVariant()
         {
-            double factor = GetVariantFactor(EnvMan.instance.GetCurrentDay());
+            double factor = GetVariantFactor(seasonState.GetCurrentWorldDay());
             if (factor < -0.5)
                 return 0;
             else if (factor < 0)
