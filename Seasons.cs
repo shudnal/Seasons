@@ -554,8 +554,12 @@ namespace Seasons
 
             rebuildCache.Value = false;
 
-            if (seasonState.IsActive && SeasonalTextureVariants.Initialize(force: true))
-                LogInfo("Relog into the world to see effect");
+            if (seasonState.IsActive)
+            {
+                Game.instance.SavePlayerProfile(setLogoutPoint: true);
+                if (SeasonalTextureVariants.Initialize(force: true))
+                    LogInfo("Relog into the world to see effect");
+            }
         }
     }
 }
