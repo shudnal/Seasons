@@ -14,6 +14,7 @@ using static Seasons.SeasonalTexturePrefabCache.ColorReplacementSpecifications;
 using static Seasons.SeasonalTexturePrefabCache.ColorPositionsSettings;
 using System.Diagnostics;
 using BepInEx;
+using System.Text;
 using System.Collections;
 using System.Threading;
 using ServerSync;
@@ -231,6 +232,12 @@ namespace Seasons
 
         public Dictionary<string, PrefabController> controllers = new Dictionary<string, PrefabController>();
         public Dictionary<int, TextureData> textures = new Dictionary<int, TextureData>();
+        public int revision = 0;
+
+        public CachedData(int revision)
+        {
+            this.revision = revision;
+        }
 
         public bool Initialized()
         {
@@ -357,15 +364,16 @@ namespace Seasons
             }
         }
 
+        public string CacheDirectory()
+        {
+            return Path.Combine(configDirectory, cacheSubdirectory, revision.ToString());
+        }
+
         public static string SeasonFileName(Season season, int variant)
         {
             return $"{season}_{variant + 1}.png";
         }
 
-        public static string CacheDirectory()
-        {
-            return Path.Combine(configDirectory, cacheSubdirectory);
-        }
     }
 
     public class TextureVariants
@@ -454,6 +462,7 @@ namespace Seasons
     {
         public Dictionary<string, PrefabController> controllers = new Dictionary<string, PrefabController>();
         public Dictionary<int, TextureVariants> textures = new Dictionary<int, TextureVariants>();
+        public int revision = 0;
 
         public bool Initialize(bool force = false)
         {
@@ -463,10 +472,11 @@ namespace Seasons
             controllers.Clear();
             textures.Clear();
 
-            if (force && Directory.Exists(CachedData.CacheDirectory()))
-                Directory.Delete(CachedData.CacheDirectory(), recursive: true);
+            CachedData cachedData = new CachedData(SeasonalTexturePrefabCache.GetRevision());
 
-            CachedData cachedData = new CachedData();
+            if (force && Directory.Exists(cachedData.CacheDirectory()))
+                Directory.Delete(cachedData.CacheDirectory(), recursive: true);
+
             if (cacheStorageFormat.Value == CacheFormat.Json)
                 cachedData.LoadFromJSON();
             else
@@ -489,7 +499,7 @@ namespace Seasons
                     textures.Add(texData.Key, texVariants);
                 }
 
-                LogInfo($"Loaded from cache controllers:{controllers.Count} textures:{textures.Count}");
+                LogInfo($"Loaded from cache revision:{cachedData.revision} controllers:{controllers.Count} textures:{textures.Count}");
             }
             else
             {
@@ -505,7 +515,11 @@ namespace Seasons
         {
             if (Initialized())
             {
-                CachedData cachedData = new CachedData();
+                CachedData cachedData = new CachedData(revision);
+
+                if (Directory.Exists(cachedData.CacheDirectory()))
+                    Directory.Delete(cachedData.CacheDirectory(), recursive: true);
+
                 cachedData.controllers.Copy(controllers);
 
                 cachedData.textures.Clear();
@@ -533,7 +547,7 @@ namespace Seasons
                 internalThread.Start();
                 while (internalThread.IsAlive == true)
                 {
-                    yield return null;
+                    yield return waitForFixedUpdate;
                 }
 
                 ApplyTexturesToGPU();
@@ -1334,6 +1348,30 @@ namespace Seasons
                     }
                 ));
 
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "instanced_meadows_grass", only: true),
+                        new MaterialFits(material: "grasscross_meadows", only: true),
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(2),
+                    }
+                ));
+
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "instanced_meadows_grass_short", only: true),
+                        new MaterialFits(material: "grasscross_meadows_short", only: true),
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(2),
+                    }
+                ));
+
             }
 
             public bool ReplaceColor(Color color, bool isGrass, bool isMoss, string prefabName = null, string rendererName = null, string materialName = null)
@@ -1608,6 +1646,30 @@ namespace Seasons
                     }
                 ));
 
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "instanced_meadows_grass", only: true),
+                        new MaterialFits(material: "grasscross_meadows", only: true),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 0, 0, 0),
+                    }
+                ));
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "instanced_meadows_grass_short", only: true),
+                        new MaterialFits(material: "grasscross_meadows_short", only: true),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 0, 0, 0),
+                    }
+                ));
+
             }
 
             public bool IsPixelToChange(Color color, int pos, TextureProperties properties, bool isGrass, bool isMoss, string prefabName, Material material, string propertyName, PositionSpecific positionSpec, ColorSpecific colorSpec)
@@ -1650,6 +1712,11 @@ namespace Seasons
             currentTextureVariants = texturesVariants;
         }
 
+        public static void OnCacheRevisionChange()
+        {
+            LogInfo($"Cache revision updated {cacheRevision.Value}");
+        }
+
         public static void SetupConfigWatcher()
         {
             string filter = $"*.json";
@@ -1660,64 +1727,76 @@ namespace Seasons
             fileSystemWatcher1.Renamed += new RenamedEventHandler(ReadConfigs);
             fileSystemWatcher1.Deleted += new FileSystemEventHandler(ReadConfigs);
             fileSystemWatcher1.IncludeSubdirectories = false;
-            //fileSystemWatcher1.SynchronizingObject = ThreadingHelper.SynchronizingObject;
+            fileSystemWatcher1.SynchronizingObject = ThreadingHelper.SynchronizingObject;
             fileSystemWatcher1.EnableRaisingEvents = true;
 
-            ReadConfigs();
+            foreach (FileInfo file in new DirectoryInfo(CacheSettingsDirectory()).GetFiles("*.json", SearchOption.TopDirectoryOnly))
+                ReadConfigFile(file.Name, file.FullName);
+
+            cacheRevision.AssignLocalValue(GetRevision());
         }
 
-        private static void ReadConfigs(object sender = null, FileSystemEventArgs eargs = null)
+        private static void ReadConfigs(object sender, FileSystemEventArgs eargs)
         {
-            foreach (FileInfo file in new DirectoryInfo(CacheSettingsDirectory()).GetFiles("*.json", SearchOption.TopDirectoryOnly))
+            ReadConfigFile(eargs.Name, eargs.FullPath);
+            if (eargs is RenamedEventArgs && GetSyncedValueToAssign((eargs as RenamedEventArgs).OldName, out CustomSyncedValue<string> syncedValue, out string logMessage))
             {
-                if (file.Name == materialsSettingsFileName)
-                    try
-                    {
-                        ConfigSync.ProcessingServerUpdate = false;
-                        customMaterialSettingsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
-                        LogInfo($"Custom materials settings loaded");
-                    }
-                    catch (Exception e)
-                    {
-                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
-                    }
+                syncedValue.AssignLocalValue("");
+                LogInfo(logMessage);
+            }
 
-                if (file.Name == colorsSettingsFileName)
-                    try
-                    {
-                        ConfigSync.ProcessingServerUpdate = false;
-                        customColorSettingsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
-                        LogInfo($"Custom color settings loaded");
-                    }
-                    catch (Exception e)
-                    {
-                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
-                    }
+            cacheRevision.AssignLocalValue(GetRevision());
+        }
 
-                if (file.Name == colorsReplacementsFileName)
-                    try
-                    {
-                        ConfigSync.ProcessingServerUpdate = false;
-                        customColorReplacementJSON.AssignLocalValue(File.ReadAllText(file.FullName));
-                        LogInfo($"Custom color replacements loaded");
-                    }
-                    catch (Exception e)
-                    {
-                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
-                    }
+        private static void ReadConfigFile(string filename, string fullname)
+        {
+            if (!GetSyncedValueToAssign(filename, out CustomSyncedValue<string> syncedValue, out string logMessage))
+                return;
 
-                if (file.Name == colorsPositionsFileName)
-                    try
-                    {
-                        ConfigSync.ProcessingServerUpdate = false;
-                        customColorPositionsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
-                        LogInfo($"Custom color positions loaded");
-                    }
-                    catch (Exception e)
-                    {
-                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
-                    }
-            };
+            try
+            {
+                ConfigSync.ProcessingServerUpdate = false;
+                syncedValue.AssignLocalValue(File.ReadAllText(fullname));
+            }
+            catch (Exception e)
+            {
+                LogWarning($"Error reading file ({fullname})! Error: {e.Message}");
+                syncedValue.AssignLocalValue("");
+                logMessage += " defaults";
+            }
+
+            LogInfo(logMessage);
+        }
+
+        private static bool GetSyncedValueToAssign(string filename, out CustomSyncedValue<string> customSyncedValue, out string logMessage)
+        {
+            if (filename == materialsSettingsFileName)
+            {
+                customSyncedValue = customMaterialSettingsJSON;
+                logMessage = "Custom materials settings loaded";
+            }
+            else if (filename == colorsSettingsFileName)
+            {
+                customSyncedValue = customColorSettingsJSON;
+                logMessage = "Custom color settings loaded";
+            }
+            else if (filename == colorsReplacementsFileName)
+            {
+                customSyncedValue = customColorReplacementJSON;
+                logMessage = "Custom color replacements loaded";
+            }
+            else if (filename == colorsPositionsFileName)
+            {
+                customSyncedValue = customColorPositionsJSON;
+                logMessage = "Custom color positions loaded";
+            }
+            else
+            {
+                customSyncedValue = null;
+                logMessage = "";
+            }
+            
+            return customSyncedValue != null;
         }
 
         public static bool GetColorVariants(string prefabName, string rendererName, Material material, string propertyName, Color color, out Color[] colors, bool isPlant)
@@ -1893,6 +1972,19 @@ namespace Seasons
             }
         }
 
+        public static int GetRevision()
+        {
+            InitSettings();
+
+            StringBuilder sb = new StringBuilder(4);
+            sb.Append(JsonConvert.SerializeObject(materialSettings));
+            sb.Append(JsonConvert.SerializeObject(colorSettings));
+            sb.Append(JsonConvert.SerializeObject(colorReplacement));
+            sb.Append(JsonConvert.SerializeObject(colorPositions));
+
+            return sb.ToString().GetStableHashCode();
+        }
+
         private static string CacheSettingsDirectory()
         {
             string directory = Path.Combine(configDirectory, settingsSubdirectory);
@@ -1901,7 +1993,7 @@ namespace Seasons
             return directory;
         }
 
-        private static void InitSettings()
+        public static void InitSettings()
         {
             if (!String.IsNullOrEmpty(customMaterialSettingsJSON.Value))
             {
@@ -1912,8 +2004,13 @@ namespace Seasons
                 }
                 catch (Exception e)
                 {
+                    materialSettings = new MaterialCacheSettings(loadDefaults: true);
                     LogWarning($"Error parsing custom materials settings:\n{e}");
                 }
+            }
+            else
+            {
+                materialSettings = new MaterialCacheSettings(loadDefaults: true);
             }
 
             if (!String.IsNullOrEmpty(customColorSettingsJSON.Value))
@@ -1925,8 +2022,13 @@ namespace Seasons
                 }
                 catch (Exception e)
                 {
+                    colorSettings = new ColorsCacheSettings(loadDefaults: true);
                     LogWarning($"Error parsing custom color settings:\n{e}");
                 }
+            }
+            else
+            {
+                colorSettings = new ColorsCacheSettings(loadDefaults: true);
             }
 
             if (!String.IsNullOrEmpty(customColorReplacementJSON.Value))
@@ -1938,8 +2040,13 @@ namespace Seasons
                 }
                 catch (Exception e)
                 {
+                    colorReplacement = new ColorReplacementSpecifications(loadDefaults: true);  
                     LogWarning($"Error parsing custom color replacements:\n{e}");
                 }
+            }
+            else
+            {
+                colorReplacement = new ColorReplacementSpecifications(loadDefaults: true);
             }
 
             if (!String.IsNullOrEmpty(customColorPositionsJSON.Value))
@@ -1951,8 +2058,13 @@ namespace Seasons
                 }
                 catch (Exception e)
                 {
+                    colorPositions = new ColorPositionsSettings(loadDefaults: true);
                     LogWarning($"Error parsing custom color positions:\n{e}");
                 }
+            }
+            else
+            {
+                colorPositions = new ColorPositionsSettings(loadDefaults: true);
             }
         }
 
@@ -1979,7 +2091,8 @@ namespace Seasons
             Stopwatch stopwatch = Stopwatch.StartNew();
 
             LogInfo("Initializing cache settings");
-            InitSettings();
+            currentTextureVariants.revision = GetRevision();
+            LogInfo($"Cache settings revision {currentTextureVariants.revision}");
 
             LogInfo("Caching clutters");
             yield return AddClutters();
@@ -1995,7 +2108,7 @@ namespace Seasons
 
             stopwatch.Stop();
 
-            LogInfo($"Created {currentTextureVariants.controllers.Count} controllers, {currentTextureVariants.textures.Count} textures in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
+            LogInfo($"Created cache revision {currentTextureVariants.revision} with {currentTextureVariants.controllers.Count} controllers, {currentTextureVariants.textures.Count} textures in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds.");
         }
 
         private static IEnumerator AddYggdrasilBranch()
@@ -2051,7 +2164,7 @@ namespace Seasons
 
                 CacheMaterials(new Material[1] { renderer.m_material }, clutter.m_prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
 
-                yield return null;
+                yield return waitForFixedUpdate;
             }
         }
 

@@ -12,6 +12,7 @@ using UnityEngine.Rendering;
 using static Terminal;
 using System.Diagnostics;
 using System.Collections;
+using System.Threading;
 
 namespace Seasons
 {
@@ -147,6 +148,7 @@ namespace Seasons
         public static readonly CustomSyncedValue<string> customColorSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom color settings JSON", "", Priority.Low);
         public static readonly CustomSyncedValue<string> customColorReplacementJSON = new CustomSyncedValue<string>(configSync, "Custom color replacements JSON", "", Priority.Low);
         public static readonly CustomSyncedValue<string> customColorPositionsJSON = new CustomSyncedValue<string>(configSync, "Custom color positions JSON", "", Priority.Low);
+        public static readonly CustomSyncedValue<int> cacheRevision = new CustomSyncedValue<int>(configSync, "Cache revision", 0, Priority.VeryLow);
 
         public static readonly List<BiomeEnvSetup> biomesDefault = new List<BiomeEnvSetup>();
         public static readonly List<RandomEvent> eventsDefault = new List<RandomEvent>();
@@ -207,6 +209,7 @@ namespace Seasons
             currentSeason.ValueChanged += new Action(SeasonState.OnSeasonChange);
             currentDay.ValueChanged += new Action(SeasonState.OnDayChange);
             seasonsSettingsJSON.ValueChanged += new Action(SeasonSettings.UpdateSeasonSettings);
+            cacheRevision.ValueChanged += new Action(SeasonalTexturePrefabCache.OnCacheRevisionChange); 
 
             Game.isModded = true;
 
@@ -565,6 +568,8 @@ namespace Seasons
             PrefabVariantController.instance.RevertPrefabsState();
             ClutterVariantController.instance.RevertColors();
 
+            yield return waitForFixedUpdate;
+
             yield return SeasonalTexturePrefabCache.FillWithGameData();
 
             if (newTexturesVariants.Initialized())
@@ -573,11 +578,19 @@ namespace Seasons
 
                 texturesVariants.controllers.Clear();
                 texturesVariants.textures.Clear();
-                texturesVariants.controllers.Copy(newTexturesVariants.controllers);
-                texturesVariants.textures.Copy(newTexturesVariants.textures);
+                texturesVariants.revision = newTexturesVariants.revision;
 
-                if (Directory.Exists(CachedData.CacheDirectory()))
-                    Directory.Delete(CachedData.CacheDirectory(), recursive: true);
+                var internalThread = new Thread(() =>
+                {
+                    texturesVariants.controllers.Copy(newTexturesVariants.controllers);
+                    texturesVariants.textures.Copy(newTexturesVariants.textures);
+                });
+
+                internalThread.Start();
+                while (internalThread.IsAlive == true)
+                {
+                    yield return waitForFixedUpdate;
+                }
 
                 yield return texturesVariants.SaveCacheOnDisk();
 
@@ -589,7 +602,7 @@ namespace Seasons
                 LogInfo($"Colors reinitialized in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
             }
 
-            yield return null;
+            yield return waitForFixedUpdate;
 
             SeasonalTexturePrefabCache.SetCurrentTextureVariants(texturesVariants);
 
