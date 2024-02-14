@@ -11,6 +11,7 @@ using System.IO;
 using UnityEngine.Rendering;
 using static Terminal;
 using System.Diagnostics;
+using System.Collections;
 
 namespace Seasons
 {
@@ -125,8 +126,10 @@ namespace Seasons
         public static string configDirectory;
         public static bool haveGammaOfNightLights;
 
-        public static Dictionary<string, PrefabController> prefabControllers = SeasonalTextureVariants.controllers;
-        public static Dictionary<int, TextureVariants> texturesVariants = SeasonalTextureVariants.textures;
+        /*public static Dictionary<string, PrefabController> prefabControllers = SeasonalTextureVariants.controllers;
+        public static Dictionary<int, TextureVariants> texturesVariants = SeasonalTextureVariants.textures;*/
+
+        public static SeasonalTextureVariants texturesVariants = new SeasonalTextureVariants();
 
         public static readonly CustomSyncedValue<int> currentDay = new CustomSyncedValue<int>(configSync, "Current day", 1, Priority.First);
         public static readonly CustomSyncedValue<int> currentSeason = new CustomSyncedValue<int>(configSync, "Current season", 1, Priority.VeryHigh);
@@ -342,7 +345,7 @@ namespace Seasons
             logFloes = config("Test", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying");
             rebuildCache = config("Test", "Rebuild cache", defaultValue: false, "Start cache rebuilding process", false);
 
-            rebuildCache.SettingChanged += (sender, args) => RebuildCache();
+            rebuildCache.SettingChanged += (sender, args) => StartCacheRebuild();
 
             configDirectory = Path.Combine(Paths.ConfigPath, pluginID);
 
@@ -350,19 +353,14 @@ namespace Seasons
             {
                 if (!seasonState.IsActive)
                 {
-                    args.Context.AddString($"Start the game before building cache");
+                    args.Context.AddString($"Start the game before rebuilding cache");
                     return false;
                 }
 
-                Stopwatch stopwatch = new Stopwatch();
-                stopwatch.Start();
+                StartCacheRebuild(fromConfig: false);
 
-                RebuildCache(fromConfig: false);
-
-                stopwatch.Stop();
-
-                args.Context.AddString($"Added {prefabControllers.Count} controllers, {texturesVariants.Count} textures in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds. Relog into the world to see effect.");
-                return true; 
+                args.Context.AddString($"Texture cache rebuilding process started");
+                return true;
             });
         }
 
@@ -547,7 +545,7 @@ namespace Seasons
             return ignored;
         }
     
-        public static void RebuildCache(bool fromConfig = true)
+        public static void StartCacheRebuild(bool fromConfig = true)
         {
             if (fromConfig && !rebuildCache.Value)
                 return;
@@ -555,11 +553,69 @@ namespace Seasons
             rebuildCache.Value = false;
 
             if (seasonState.IsActive)
+                instance.StartCoroutine(instance.RebuildCache());
+        }
+
+        public IEnumerator RebuildCache()
+        {
+            SeasonalTextureVariants newTexturesVariants = new SeasonalTextureVariants();
+
+            SeasonalTexturePrefabCache.SetCurrentTextureVariants(newTexturesVariants);
+
+            PrefabVariantController.instance.RevertPrefabsState();
+            ClutterVariantController.instance.RevertColors();
+
+            yield return SeasonalTexturePrefabCache.FillWithGameData();
+
+            if (newTexturesVariants.Initialized())
             {
-                Game.instance.SavePlayerProfile(setLogoutPoint: true);
-                if (SeasonalTextureVariants.Initialize(force: true))
-                    LogInfo("Relog into the world to see effect");
+                Stopwatch stopwatch = Stopwatch.StartNew();
+
+                texturesVariants.controllers.Clear();
+                texturesVariants.textures.Clear();
+                texturesVariants.controllers.Copy(newTexturesVariants.controllers);
+                texturesVariants.textures.Copy(newTexturesVariants.textures);
+
+                if (Directory.Exists(CachedData.CacheDirectory()))
+                    Directory.Delete(CachedData.CacheDirectory(), recursive: true);
+
+                yield return texturesVariants.SaveCacheOnDisk();
+
+                SeasonalTexturePrefabCache.SetCurrentTextureVariants(texturesVariants);
+
+                ClutterVariantController.Reinitialize();
+                PrefabVariantController.ReinitializePrefabVariants();
+
+                LogInfo($"Colors reinitialized in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
+            }
+
+            yield return null;
+
+            SeasonalTexturePrefabCache.SetCurrentTextureVariants(texturesVariants);
+
+            PrefabVariantController.UpdatePrefabColors();
+            ClutterVariantController.instance.UpdateColors();
+        }
+
+        public static void StartCoroutineSync(IEnumerator routine)
+        {
+            while (routine.MoveNext())
+            {
+                if (routine.Current != null)
+                {
+                    IEnumerator func;
+                    try
+                    {
+                        func = (IEnumerator)routine.Current;
+                    }
+                    catch (InvalidCastException)
+                    {
+                        continue;
+                    }
+                    StartCoroutineSync(func);
+                }
             }
         }
+
     }
 }

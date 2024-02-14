@@ -153,7 +153,7 @@ namespace Seasons
             m_instance = null;
         }
 
-        public void Init(ZoneSystem instance)
+        public void Initialize(ZoneSystem instance)
         {
             Transform waterPlane = EnvMan.instance.transform.Find("WaterPlane");
             if (waterPlane != null)
@@ -264,7 +264,8 @@ namespace Seasons
 
             if (s_freezeStatus == 0f || revertState)
             {
-                waterVolume.m_waterSurface?.SetPropertyBlock(null);
+                if (waterVolume.m_waterSurface != null && waterVolume.m_waterSurface.HasPropertyBlock())
+                    waterVolume.m_waterSurface.SetPropertyBlock(null);
 
                 waterVolume.m_surfaceOffset = waterState.m_surfaceOffset;
                 waterVolume.m_useGlobalWind = true;

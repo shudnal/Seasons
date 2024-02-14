@@ -53,7 +53,7 @@ namespace Seasons
         {
             foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c.m_prefab != null))
             {
-                if (!SeasonalTextureVariants.controllers.TryGetValue(Utils.GetPrefabName(clutter.m_prefab), out PrefabController controller))
+                if (!texturesVariants.controllers.TryGetValue(Utils.GetPrefabName(clutter.m_prefab), out PrefabController controller))
                     continue;
                
                 GameObject prefab = clutter.m_prefab;
@@ -85,7 +85,7 @@ namespace Seasons
 
                     foreach (KeyValuePair<string, int> textureVariant in cachedMaterial.textureProperties)
                     {
-                        if (!SeasonalTextureVariants.textures.ContainsKey(textureVariant.Value))
+                        if (!texturesVariants.textures.ContainsKey(textureVariant.Value))
                             continue;
 
                         if (!m_materialVariants.TryGetValue(renderer.m_material, out Dictionary<string, TextureVariants> tv))
@@ -94,7 +94,7 @@ namespace Seasons
                             m_materialVariants.Add(renderer.m_material, tv);
                         }
 
-                        tv.Add(textureVariant.Key, SeasonalTextureVariants.textures[textureVariant.Value]);
+                        tv.Add(textureVariant.Key, texturesVariants.textures[textureVariant.Value]);
                     }
 
                     foreach (KeyValuePair<string, string[]> colorVariant in cachedMaterial.colorVariants)
@@ -119,6 +119,8 @@ namespace Seasons
             }
 
             base.enabled = m_materialVariants.Any(variant => variant.Value.Count > 0);
+            
+            UpdateColors();
         }
 
         private void OnEnable()
@@ -128,15 +130,15 @@ namespace Seasons
 
         private void OnDisable()
         {
-            RevertTextures();
+            RevertColors();
         }
         
         private void OnDestroy()
         {
-            RevertTextures();
+            RevertColors();
         }
 
-        public void RevertTextures()
+        public void RevertColors()
         {
             foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
                 foreach (KeyValuePair<string, TextureVariants> texProp in materialVariants.Value)
@@ -178,7 +180,8 @@ namespace Seasons
                         else
                         {
                             materialVariants.Key.SetTexture(texProp.Key, texture);
-                            materialVariants.Key.color = m_originalColors[materialVariants.Key];
+                            if (materialVariants.Key.color == Color.clear)
+                                materialVariants.Key.color = m_originalColors[materialVariants.Key];
                         }
                     }
                 }
@@ -229,13 +232,25 @@ namespace Seasons
             return firstDay <= currentDay && currentDay <= lastDay;
         }
 
-        public static void Init()
+        public static void Initialize()
         {
             if (!UseTextureControllers())
                 return;
 
             ClutterSystem.instance.transform.gameObject.AddComponent<ClutterVariantController>();
         }
-    
+
+        public static void Reinitialize()
+        {
+            if (instance != null)
+                Destroy(instance);
+
+            m_instance = null;
+
+            LogInfo("Reinitializing clutter colors");
+
+            Initialize();
+        }
+
     }
 }

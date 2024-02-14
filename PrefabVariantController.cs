@@ -5,6 +5,7 @@ using System.Linq;
 using UnityEngine;
 using static Seasons.PrefabController;
 using static Seasons.PrefabVariantController;
+using static Seasons.SeasonalTexturePrefabCache.ColorsCacheSettings;
 using static Seasons.Seasons;
 
 namespace Seasons
@@ -16,6 +17,7 @@ namespace Seasons
             private ZNetView m_nview;
             private WearNTear m_wnt;
             private GameObject m_gameObject;
+            private MeshRenderer m_renderer;
 
             public string m_prefabName;
             private double m_springFactor;
@@ -29,7 +31,7 @@ namespace Seasons
             private readonly Dictionary<Renderer, Dictionary<int, Dictionary<string, Color[]>>> m_colorVariants = new Dictionary<Renderer, Dictionary<int, Dictionary<string, Color[]>>>();
             private readonly Dictionary<ParticleSystem, Color[]> m_startColors = new Dictionary<ParticleSystem, Color[]>();
 
-            public bool Init(PrefabController controller, GameObject gameObject, string prefabName = null, ZNetView netView = null, WearNTear wnt = null, MeshRenderer meshRenderer = null)
+            public bool Initialize(PrefabController controller, GameObject gameObject, string prefabName = null, ZNetView netView = null, WearNTear wnt = null, MeshRenderer meshRenderer = null)
             {
                 m_gameObject = gameObject;
                 m_wnt = wnt;
@@ -40,10 +42,11 @@ namespace Seasons
                     return false;
 
                 m_prefabName = String.IsNullOrEmpty(prefabName) ? GetPrefabName(m_gameObject) : prefabName;
+                m_renderer = meshRenderer;
 
-                if (meshRenderer != null)
+                if (m_renderer != null)
                 {
-                    AddMaterialVariants(meshRenderer, controller.cachedRenderer);
+                    AddMaterialVariants(m_renderer, controller.cachedRenderer);
                 }
                 else
                 {
@@ -113,15 +116,29 @@ namespace Seasons
                 return true;
             }
 
+            public bool Reinitialize(PrefabController controller)
+            {
+                if (m_gameObject == null)
+                    return false;
+
+                m_materialVariants.Clear();
+                m_colorVariants.Clear();
+                m_startColors.Clear();
+                
+                return Initialize(controller, m_gameObject, m_prefabName, m_nview, m_wnt, m_renderer);
+            }
+
             public void RevertState()
             {
                 foreach (KeyValuePair<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>> materialVariants in m_materialVariants)
                     foreach (KeyValuePair<int, Dictionary<string, TextureVariants>> materialIndex in materialVariants.Value)
-                        materialVariants.Key.SetPropertyBlock(null, materialIndex.Key);
+                        if (materialVariants.Key != null && materialVariants.Key.HasPropertyBlock() && materialVariants.Key.sharedMaterials.Length >= materialIndex.Key)
+                            materialVariants.Key.SetPropertyBlock(null, materialIndex.Key);
 
                 foreach (KeyValuePair<Renderer, Dictionary<int, Dictionary<string, Color[]>>> colorVariants in m_colorVariants)
                     foreach (KeyValuePair<int, Dictionary<string, Color[]>> colorIndex in colorVariants.Value)
-                        colorVariants.Key.SetPropertyBlock(null, colorIndex.Key);
+                        if (colorVariants.Key != null && colorVariants.Key.HasPropertyBlock() && colorVariants.Key.sharedMaterials.Length >= colorIndex.Key)
+                            colorVariants.Key.SetPropertyBlock(null, colorIndex.Key);
             }
 
             public void CheckCoveredStatus()
@@ -261,7 +278,7 @@ namespace Seasons
 
                                 foreach (KeyValuePair<string, int> tex in cachedRendererMaterial.Value.textureProperties)
                                     if (!texVariants.ContainsKey(tex.Key))
-                                        texVariants.Add(tex.Key, SeasonalTextureVariants.textures[tex.Value]);
+                                        texVariants.Add(tex.Key, texturesVariants.textures[tex.Value]);
                             }
                         }
 
@@ -408,14 +425,19 @@ namespace Seasons
         {
             m_pieceControllers.Clear();
 
+            RevertPrefabsState();
+            m_prefabVariants.Clear();
+
+            m_instance = null;
+        }
+
+        public void RevertPrefabsState()
+        {
             foreach (KeyValuePair<GameObject, PrefabVariant> item in m_prefabVariants)
             {
                 if (item.Key != null)
                     item.Value.RevertState();
             }
-            m_prefabVariants.Clear();
-
-            m_instance = null;
         }
 
         public void AddControllerTo(GameObject gameObject, bool checkLocation = true, ZNetView netView = null, WearNTear wnt = null, string prefabName = null, MeshRenderer meshRenderer = null)
@@ -430,7 +452,7 @@ namespace Seasons
             if (prefabName == "YggdrasilRoot" && !controlYggdrasil.Value)
                 return;
 
-            if (!SeasonalTextureVariants.controllers.TryGetValue(prefabName, out PrefabController controller))
+            if (!texturesVariants.controllers.TryGetValue(prefabName, out PrefabController controller))
                 return;
 
             if (checkLocation && IsIgnoredPosition(gameObject.transform.position))
@@ -440,7 +462,7 @@ namespace Seasons
                 return;
 
             PrefabVariant prefabVariant = new PrefabVariant();
-            if (!prefabVariant.Init(controller, gameObject, prefabName, netView, wnt, meshRenderer))
+            if (!prefabVariant.Initialize(controller, gameObject, prefabName, netView, wnt, meshRenderer))
                 return;
 
             prefabVariant.AddToPrefabList();
@@ -482,6 +504,7 @@ namespace Seasons
             if (!m_prefabVariants.TryGetValue(gameObject, out PrefabVariant prefabVariant))
                 return;
 
+            prefabVariant.RevertState();
             prefabVariant.RemoveFromPrefabList();
         }
 
@@ -541,6 +564,35 @@ namespace Seasons
 
                 instance.AddControllerTo(yggdrasilBranch.gameObject, checkLocation: false);
             }
+        }
+
+        public static void ReinitializePrefabVariants()
+        {
+            LogInfo("Reinitializing prefabs colors");
+
+            List<PrefabVariant> listToRemove = new List<PrefabVariant>();
+            foreach (PrefabVariant prefabVariant in instance.m_prefabVariants.Values)
+            {
+                if (!texturesVariants.controllers.TryGetValue(prefabVariant.m_prefabName, out PrefabController controller))
+                {
+                    listToRemove.Add(prefabVariant);
+                    continue;
+                }
+
+                if (!prefabVariant.Reinitialize(controller))
+                {
+                    listToRemove.Add(prefabVariant);
+                    continue;
+                }
+            }
+
+            foreach (PrefabVariant prefabVariant in listToRemove)
+            {
+                prefabVariant.RevertState();
+                prefabVariant.RemoveFromPrefabList();
+            }
+
+            UpdatePrefabColors();
         }
 
         public static string GetPrefabName(GameObject go)
