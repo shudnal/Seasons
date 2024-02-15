@@ -448,6 +448,9 @@ namespace Seasons
             if (gameObject == null)
                 return;
 
+            if (m_prefabVariants.ContainsKey(gameObject))
+                return;
+
             prefabName ??= GetPrefabName(gameObject);
             if (prefabName == "YggdrasilRoot" && !controlYggdrasil.Value)
                 return;
@@ -456,9 +459,6 @@ namespace Seasons
                 return;
 
             if (checkLocation && IsIgnoredPosition(gameObject.transform.position))
-                return;
-
-            if (m_prefabVariants.ContainsKey(gameObject))
                 return;
 
             PrefabVariant prefabVariant = new PrefabVariant();
@@ -590,6 +590,14 @@ namespace Seasons
             {
                 prefabVariant.RevertState();
                 prefabVariant.RemoveFromPrefabList();
+            }
+
+            foreach (KeyValuePair<ZDO, ZNetView> netInstance in ZNetScene.instance.m_instances)
+            {
+                if (!(bool)netInstance.Value)
+                    continue;
+
+                instance.AddControllerTo(netInstance.Value.gameObject);
             }
 
             UpdatePrefabColors();

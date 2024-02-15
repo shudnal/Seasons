@@ -36,7 +36,8 @@ namespace Seasons
         public static ConfigEntry<CacheFormat> cacheStorageFormat;
         public static ConfigEntry<bool> logTime;
         public static ConfigEntry<bool> logFloes;
-        public static ConfigEntry<bool> rebuildCache;
+        public static ConfigEntry<bool> startCacheRebuild;
+        public static ConfigEntry<bool> rebuildCacheOnRevisionChange;
 
         public static ConfigEntry<bool> overrideSeason;
         public static ConfigEntry<Season> seasonOverrided;
@@ -125,10 +126,8 @@ namespace Seasons
         public static Texture2D Minimap_Winter_ForestTex = new Texture2D(512, 512, TextureFormat.RGBA32, false);
 
         public static string configDirectory;
+        public static string cacheDirectory;
         public static bool haveGammaOfNightLights;
-
-        /*public static Dictionary<string, PrefabController> prefabControllers = SeasonalTextureVariants.controllers;
-        public static Dictionary<int, TextureVariants> texturesVariants = SeasonalTextureVariants.textures;*/
 
         public static SeasonalTextureVariants texturesVariants = new SeasonalTextureVariants();
 
@@ -343,14 +342,17 @@ namespace Seasons
             localizationSeasonTooltipFall = config("Seasons - Localization", "Season status effect tooltip - Fall has come", defaultValue: "Fall has come", "Message to be shown on the buff tooltip and Raven menu.");
             localizationSeasonTooltipWinter = config("Seasons - Localization", "Season status effect tooltip - Winter has come", defaultValue: "Winter has come", "Message to be shown on the buff tooltip and Raven menu.");
 
-            cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
-            logTime = config("Test", "Log time", defaultValue: false, "Log time info on state update");
-            logFloes = config("Test", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying");
-            rebuildCache = config("Test", "Rebuild cache", defaultValue: false, "Start cache rebuilding process", false);
+            cacheStorageFormat = config("Debug and cache", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
+            logTime = config("Debug and cache", "Log time", defaultValue: false, "Log time info on state update");
+            logFloes = config("Debug and cache", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying");
+            startCacheRebuild = config("Debug and cache", "Start cache rebuilding", defaultValue: false, "Start cache rebuilding process", false);
+            rebuildCacheOnRevisionChange = config("Debug and cache", "Rebuild cache automatically on revision change", defaultValue: false, "Rebuild cache automatically on revision change");
 
-            rebuildCache.SettingChanged += (sender, args) => StartCacheRebuild();
+            startCacheRebuild.SettingChanged += (sender, args) => StartCacheRebuild();
+            rebuildCacheOnRevisionChange.SettingChanged += (sender, args) => SeasonalTexturePrefabCache.OnCacheRevisionChange();
 
             configDirectory = Path.Combine(Paths.ConfigPath, pluginID);
+            cacheDirectory = Path.Combine(Paths.CachePath, pluginID);
 
             new ConsoleCommand("resetseasonscache", "Rebuild Seasons texture cache", delegate (ConsoleEventArgs args)
             {
@@ -550,64 +552,13 @@ namespace Seasons
     
         public static void StartCacheRebuild(bool fromConfig = true)
         {
-            if (fromConfig && !rebuildCache.Value)
+            if (fromConfig && !startCacheRebuild.Value)
                 return;
 
-            rebuildCache.Value = false;
+            startCacheRebuild.Value = false;
 
             if (seasonState.IsActive)
-                instance.StartCoroutine(instance.RebuildCache());
-        }
-
-        public IEnumerator RebuildCache()
-        {
-            SeasonalTextureVariants newTexturesVariants = new SeasonalTextureVariants();
-
-            SeasonalTexturePrefabCache.SetCurrentTextureVariants(newTexturesVariants);
-
-            PrefabVariantController.instance.RevertPrefabsState();
-            ClutterVariantController.instance.RevertColors();
-
-            yield return waitForFixedUpdate;
-
-            yield return SeasonalTexturePrefabCache.FillWithGameData();
-
-            if (newTexturesVariants.Initialized())
-            {
-                Stopwatch stopwatch = Stopwatch.StartNew();
-
-                texturesVariants.controllers.Clear();
-                texturesVariants.textures.Clear();
-                texturesVariants.revision = newTexturesVariants.revision;
-
-                var internalThread = new Thread(() =>
-                {
-                    texturesVariants.controllers.Copy(newTexturesVariants.controllers);
-                    texturesVariants.textures.Copy(newTexturesVariants.textures);
-                });
-
-                internalThread.Start();
-                while (internalThread.IsAlive == true)
-                {
-                    yield return waitForFixedUpdate;
-                }
-
-                yield return texturesVariants.SaveCacheOnDisk();
-
-                SeasonalTexturePrefabCache.SetCurrentTextureVariants(texturesVariants);
-
-                ClutterVariantController.Reinitialize();
-                PrefabVariantController.ReinitializePrefabVariants();
-
-                LogInfo($"Colors reinitialized in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
-            }
-
-            yield return waitForFixedUpdate;
-
-            SeasonalTexturePrefabCache.SetCurrentTextureVariants(texturesVariants);
-
-            PrefabVariantController.UpdatePrefabColors();
-            ClutterVariantController.instance.UpdateColors();
+                instance.StartCoroutine(texturesVariants.RebuildCache());
         }
 
         public static void StartCoroutineSync(IEnumerator routine)

@@ -244,7 +244,29 @@ namespace Seasons
             return controllers.Count > 0 && textures.Count > 0;
         }
 
-        public void SaveToJSON()
+        public void SaveOnDisk()
+        {
+            if (Initialized())
+                if (cacheStorageFormat.Value == CacheFormat.Binary)
+                    SaveToBinary();
+                else if (cacheStorageFormat.Value == CacheFormat.Json)
+                    SaveToJSON();
+                else
+                {
+                    SaveToJSON();
+                    SaveToBinary();
+                }
+        }
+
+        public void LoadFromDisk()
+        {
+            if (cacheStorageFormat.Value == CacheFormat.Json)
+                LoadFromJSON();
+            else
+                LoadFromBinary();
+        }
+
+        private void SaveToJSON()
         {
             string folder = CacheDirectory();
 
@@ -276,7 +298,7 @@ namespace Seasons
             LogInfo($"Saved {textures.Count} textures at {directory}");
         }
 
-        public void LoadFromJSON()
+        private void LoadFromJSON()
         {
             string folder = CacheDirectory();
 
@@ -320,22 +342,23 @@ namespace Seasons
             }
         }
 
-        public void SaveToBinary()
+        private void SaveToBinary()
         {
             string folder = CacheDirectory();
 
             Directory.CreateDirectory(folder);
 
-            using (FileStream fs = new FileStream(Path.Combine(folder, prefabCacheCommonFile), FileMode.OpenOrCreate))
+            using (FileStream fs = new FileStream(Path.Combine(folder, prefabCacheCommonFile), FileMode.Create))
             {
                 BinaryFormatter bf = new BinaryFormatter();
                 bf.Serialize(fs, this);
+                fs.Dispose();
             }
 
             LogInfo($"Saved cache file {Path.Combine(folder, prefabCacheCommonFile)}");
         }
 
-        public void LoadFromBinary()
+        private void LoadFromBinary()
         {
             string folder = CacheDirectory();
 
@@ -348,15 +371,17 @@ namespace Seasons
 
             try
             {
-                FileStream fs = new FileStream(filename, FileMode.Open);
-                BinaryFormatter bf = new BinaryFormatter();
-                CachedData cd = (CachedData)bf.Deserialize(fs);
+                using (FileStream fs = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read))
+                {
+                    BinaryFormatter bf = new BinaryFormatter();
+                    CachedData cd = (CachedData)bf.Deserialize(fs);
+                    fs.Dispose();
 
-                controllers.Copy(cd.controllers);
-                textures.Copy(cd.textures);
+                    controllers.Copy(cd.controllers);
+                    textures.Copy(cd.textures);
 
-                fs.Close();
-                cd = null;
+                    cd = null;
+                }
             }
             catch (Exception ex)
             {
@@ -366,7 +391,7 @@ namespace Seasons
 
         public string CacheDirectory()
         {
-            return Path.Combine(configDirectory, cacheSubdirectory, revision.ToString());
+            return Path.Combine(cacheDirectory, revision.ToString());
         }
 
         public static string SeasonFileName(Season season, int variant)
@@ -472,15 +497,13 @@ namespace Seasons
             controllers.Clear();
             textures.Clear();
 
-            CachedData cachedData = new CachedData(SeasonalTexturePrefabCache.GetRevision());
+            revision = SeasonalTexturePrefabCache.GetRevision();
+            CachedData cachedData = new CachedData(revision);
 
             if (force && Directory.Exists(cachedData.CacheDirectory()))
                 Directory.Delete(cachedData.CacheDirectory(), recursive: true);
 
-            if (cacheStorageFormat.Value == CacheFormat.Json)
-                cachedData.LoadFromJSON();
-            else
-                cachedData.LoadFromBinary();
+            cachedData.LoadFromDisk();
 
             if (cachedData.Initialized())
             {
@@ -499,7 +522,7 @@ namespace Seasons
                     textures.Add(texData.Key, texVariants);
                 }
 
-                LogInfo($"Loaded from cache revision:{cachedData.revision} controllers:{controllers.Count} textures:{textures.Count}");
+                LogInfo($"Loaded from cache revision:{revision} controllers:{controllers.Count} textures:{textures.Count}");
             }
             else
             {
@@ -517,11 +540,6 @@ namespace Seasons
             {
                 CachedData cachedData = new CachedData(revision);
 
-                if (Directory.Exists(cachedData.CacheDirectory()))
-                    Directory.Delete(cachedData.CacheDirectory(), recursive: true);
-
-                cachedData.controllers.Copy(controllers);
-
                 cachedData.textures.Clear();
                 foreach (KeyValuePair<int, TextureVariants> texVariants in textures)
                 {
@@ -532,16 +550,12 @@ namespace Seasons
 
                 var internalThread = new Thread(() =>
                 {
-                    if (cachedData.Initialized())
-                        if (cacheStorageFormat.Value == CacheFormat.Binary)
-                            cachedData.SaveToBinary();
-                        else if (cacheStorageFormat.Value == CacheFormat.Json)
-                            cachedData.SaveToJSON();
-                        else
-                        {
-                            cachedData.SaveToJSON();
-                            cachedData.SaveToBinary();
-                        }
+                    cachedData.controllers.Copy(controllers);
+
+                    if (Directory.Exists(cachedData.CacheDirectory()))
+                        Directory.Delete(cachedData.CacheDirectory(), recursive: true);
+
+                    cachedData.SaveOnDisk();
                 });
 
                 internalThread.Start();
@@ -563,6 +577,123 @@ namespace Seasons
         {
             foreach (KeyValuePair<int, TextureVariants> texture in textures)
                 texture.Value.ApplyTextures();
+        }
+
+        public IEnumerator ReloadCache()
+        {
+            Stopwatch stopwatch = Stopwatch.StartNew();
+
+            CachedData cachedData = new CachedData(SeasonalTexturePrefabCache.GetRevision());
+
+            var internalThread = new Thread(() =>
+            {
+                cachedData.LoadFromDisk();
+            });
+
+            internalThread.Start();
+            while (internalThread.IsAlive == true)
+            {
+                yield return waitForFixedUpdate;
+            }
+
+            if (cachedData.Initialized())
+            {
+                revision = cachedData.revision;
+
+                foreach (KeyValuePair<int, CachedData.TextureData> texData in cachedData.textures)
+                {
+                    if (textures.ContainsKey(texData.Key))
+                        continue;
+
+                    TextureVariants texVariants = new TextureVariants(texData.Value);
+
+                    if (!texVariants.Initialized())
+                        continue;
+
+                    textures.Add(texData.Key, texVariants);
+                }
+
+                internalThread = new Thread(() =>
+                {
+                    controllers.Copy(cachedData.controllers);
+
+                });
+
+                internalThread.Start();
+                while (internalThread.IsAlive == true)
+                {
+                    yield return waitForFixedUpdate;
+                }
+
+                LogInfo($"Loaded from cache revision:{revision} controllers:{controllers.Count} textures:{textures.Count} in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
+
+                stopwatch.Restart();
+
+                ClutterVariantController.Reinitialize();
+                PrefabVariantController.ReinitializePrefabVariants();
+
+                yield return waitForFixedUpdate;
+
+                PrefabVariantController.UpdatePrefabColors();
+                ClutterVariantController.instance.UpdateColors();
+
+                LogInfo($"Colors reinitialized in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
+            }
+            else
+            {
+                yield return RebuildCache();
+            }
+        }
+
+        public IEnumerator RebuildCache()
+        {
+            SeasonalTextureVariants newTexturesVariants = new SeasonalTextureVariants();
+
+            SeasonalTexturePrefabCache.SetCurrentTextureVariants(newTexturesVariants);
+
+            PrefabVariantController.instance.RevertPrefabsState();
+            ClutterVariantController.instance.RevertColors();
+
+            yield return waitForFixedUpdate;
+
+            yield return SeasonalTexturePrefabCache.FillWithGameData();
+
+            if (newTexturesVariants.Initialized())
+            {
+                Stopwatch stopwatch = Stopwatch.StartNew();
+
+                controllers.Clear();
+                textures.Clear();
+                revision = newTexturesVariants.revision;
+
+                var internalThread = new Thread(() =>
+                {
+                    controllers.Copy(newTexturesVariants.controllers);
+                    textures.Copy(newTexturesVariants.textures);
+                });
+
+                internalThread.Start();
+                while (internalThread.IsAlive == true)
+                {
+                    yield return waitForFixedUpdate;
+                }
+
+                yield return SaveCacheOnDisk();
+
+                SeasonalTexturePrefabCache.SetCurrentTextureVariants(this);
+
+                ClutterVariantController.Reinitialize();
+                PrefabVariantController.ReinitializePrefabVariants();
+
+                LogInfo($"Colors reinitialized in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
+            }
+
+            yield return waitForFixedUpdate;
+
+            SeasonalTexturePrefabCache.SetCurrentTextureVariants(this);
+
+            PrefabVariantController.UpdatePrefabColors();
+            ClutterVariantController.instance.UpdateColors();
         }
     }
 
@@ -1715,6 +1846,10 @@ namespace Seasons
         public static void OnCacheRevisionChange()
         {
             LogInfo($"Cache revision updated {cacheRevision.Value}");
+            if (cacheRevision.Value != texturesVariants.revision)
+            {
+                instance.StartCoroutine(texturesVariants.ReloadCache());
+            }
         }
 
         public static void SetupConfigWatcher()
