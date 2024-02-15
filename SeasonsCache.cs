@@ -232,9 +232,9 @@ namespace Seasons
 
         public Dictionary<string, PrefabController> controllers = new Dictionary<string, PrefabController>();
         public Dictionary<int, TextureData> textures = new Dictionary<int, TextureData>();
-        public int revision = 0;
+        public uint revision = 0;
 
-        public CachedData(int revision)
+        public CachedData(uint revision)
         {
             this.revision = revision;
         }
@@ -487,7 +487,7 @@ namespace Seasons
     {
         public Dictionary<string, PrefabController> controllers = new Dictionary<string, PrefabController>();
         public Dictionary<int, TextureVariants> textures = new Dictionary<int, TextureVariants>();
-        public int revision = 0;
+        public uint revision = 0;
 
         public bool Initialize(bool force = false)
         {
@@ -833,7 +833,7 @@ namespace Seasons
                     { "Custom/Piece", new string[] { "straw", "RoofShingles", "beehive", "Midsummerpole_mat", "Pine_tree_xmas" } },
                     { "Custom/Creature", new string[] { "HildirsLox", "lox", "lox_calf",
                     "Draugr_Archer_mat", "Draugr_mat", "Draugr_elite_mat", "Abomination_mat",
-                    "greyling", "greydwarf", "greydwarf_elite", "greydwarf_shaman" } },
+                    "greyling", "greydwarf", "greydwarf_elite", "greydwarf_shaman", "neck" } },
                     { "Standard", new string[] { "beech_particle", "birch_particle", "branch_particle", "branch_dead_particle", "oak_particle", "shoot_leaf_particle" }},
                     { "Particles/Standard Surface2", new string[] { "shrub2_leafparticle", "shrub2_leafparticle_heath" }},
                 };
@@ -1353,6 +1353,7 @@ namespace Seasons
                         new ColorFits(43, 51, s2: 0.45f, l2: 0.45f),
                     }
                 ));
+
                 specific.Add(new ColorSpecific(
                     new List<MaterialFits>()
                     {
@@ -1364,6 +1365,7 @@ namespace Seasons
                         new ColorFits(38, 62, s2: 0.55f, l1: 0.18f),
                     }
                 ));
+
                 specific.Add(new ColorSpecific(
                     new List<MaterialFits>()
                     {
@@ -1375,6 +1377,7 @@ namespace Seasons
                         new ColorFits(55, 91, s1: 0.19f, l2: 0.40f),
                     }
                 ));
+
                 specific.Add(new ColorSpecific(
                     new List<MaterialFits>()
                     {
@@ -1386,6 +1389,7 @@ namespace Seasons
                         new ColorFits(55, 91, s1: 0.19f, l2: 0.50f),
                     }
                 ));
+
                 specific.Add(new ColorSpecific(
                     new List<MaterialFits>()
                     {
@@ -1397,6 +1401,7 @@ namespace Seasons
                         new ColorFits(51, 91, s1: 0.18f, l2: 0.50f),
                     }
                 ));
+
                 specific.Add(new ColorSpecific(
                     new List<MaterialFits>()
                     {
@@ -1500,6 +1505,19 @@ namespace Seasons
                     new List<ColorFits>()
                     {
                         new ColorFits(2),
+                    }
+                ));
+
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(material: "neck", only:true),
+                        new MaterialFits(prefab: "Neck", only:true),
+                        new MaterialFits(renderer: "Lillies", only:true)
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(),
                     }
                 ));
 
@@ -1801,6 +1819,20 @@ namespace Seasons
                     }
                 ));
 
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(material: "neck", only:true),
+                        new MaterialFits(prefab: "Neck", only:true),
+                        new MaterialFits(renderer: "Lillies", only:true)
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(24, 40, 38, 54),
+                        new PositionFits(50, 0, 52, 0),
+                    }
+                ));
+
             }
 
             public bool IsPixelToChange(Color color, int pos, TextureProperties properties, bool isGrass, bool isMoss, string prefabName, Material material, string propertyName, PositionSpecific positionSpec, ColorSpecific colorSpec)
@@ -1846,7 +1878,7 @@ namespace Seasons
         public static void OnCacheRevisionChange()
         {
             LogInfo($"Cache revision updated {cacheRevision.Value}");
-            if (cacheRevision.Value != texturesVariants.revision)
+            if (texturesVariants.revision != 0 && cacheRevision.Value != texturesVariants.revision)
             {
                 instance.StartCoroutine(texturesVariants.ReloadCache());
             }
@@ -2107,7 +2139,7 @@ namespace Seasons
             }
         }
 
-        public static int GetRevision()
+        public static uint GetRevision()
         {
             InitSettings();
 
@@ -2117,7 +2149,13 @@ namespace Seasons
             sb.Append(JsonConvert.SerializeObject(colorReplacement));
             sb.Append(JsonConvert.SerializeObject(colorPositions));
 
-            return sb.ToString().GetStableHashCode();
+            //int hash = 
+
+            return (uint) sb.ToString().GetStableHashCode();
+            //                (uint.MaxValue) >> (0x20u - Convert.ToUInt32(hash));
+
+            //UInt32.MaxValue - Convert.ToUInt32();
+
         }
 
         private static string CacheSettingsDirectory()
