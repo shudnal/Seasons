@@ -2149,7 +2149,7 @@ namespace Seasons
             sb.Append(JsonConvert.SerializeObject(colorReplacement));
             sb.Append(JsonConvert.SerializeObject(colorPositions));
 
-            return (uint) sb.ToString().GetStableHashCode();
+            return (uint)sb.ToString().GetStableHashCode();
         }
 
         private static string CacheSettingsDirectory()
