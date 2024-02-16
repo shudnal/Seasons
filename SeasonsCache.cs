@@ -832,8 +832,8 @@ namespace Seasons
                 {
                     { "Custom/Piece", new string[] { "straw", "RoofShingles", "beehive", "Midsummerpole_mat", "Pine_tree_xmas" } },
                     { "Custom/Creature", new string[] { "HildirsLox", "lox", "lox_calf",
-                    "Draugr_Archer_mat", "Draugr_mat", "Draugr_elite_mat", "Abomination_mat",
-                    "greyling", "greydwarf", "greydwarf_elite", "greydwarf_shaman", "neck" } },
+                                                        "Draugr_Archer_mat", "Draugr_mat", "Draugr_elite_mat", "Abomination_mat",
+                                                        "greyling", "greydwarf", "greydwarf_elite", "greydwarf_shaman", "neck" } },
                     { "Standard", new string[] { "beech_particle", "birch_particle", "branch_particle", "branch_dead_particle", "oak_particle", "shoot_leaf_particle" }},
                     { "Particles/Standard Surface2", new string[] { "shrub2_leafparticle", "shrub2_leafparticle_heath" }},
                 };
