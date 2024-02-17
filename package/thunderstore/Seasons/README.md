@@ -38,11 +38,12 @@ On every launch the mod is generating "Default settings" folder at config folder
 This folder will henceforth be called "default settings folder".
 
 ## Texture recoloring
-The mods comes without built-in textures but generate ones on the first launch.
+The mods comes without built-in textures and generate them on the first launch.
 You can change cache settings as you pleased if you don't like the defaults.
+Cache settings will be synced from the server on log in.
 
-The textures and rules for applying them to objects are stored at "Cache" folder in config folder.
-By default cache is saved as nonhumanreadable binary file for further faster loads. It can also be saved at JSON and PNG files.
+The textures and rules for applying them to objects are stored at \BepInEx\cache\shudnal.Seasons folder.
+By default cache is saved as nonhumanreadable binary file for further faster loads. It can also be saved as JSON and PNG files.
 
 The rules for cache forming are stored at "Cache settings" folder in config folder.
 The list of the objects comes from prefab, clutter and locations list after ZoneSystem.Start. Due to procedural generation of objects textures if the game have custom assets loaded at that moment they will be tried to recolored the same way as the default game's assets.

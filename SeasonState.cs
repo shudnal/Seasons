@@ -699,7 +699,7 @@ namespace Seasons
             {
                 PrefabVariantController.UpdatePrefabColors();
                 ZoneSystemVariantController.UpdateTerrainColors();
-                ClutterVariantController.instance.UpdateColors();
+                ClutterVariantController.instance?.UpdateColors();
 
                 UpdateTorchesFireWarmth();
 

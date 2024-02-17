@@ -46,6 +46,18 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.OnDestroy))]
+    public static class ZoneSystem_OnDestroy_SeasonsCache
+    {
+        private static void Postfix(ZoneSystem __instance)
+        {
+            if (!UseTextureControllers())
+                return;
+
+            texturesVariants = new SeasonalTextureVariants();
+        }
+    }
+
     [Serializable]
     public class TextureProperties
     {
@@ -526,6 +538,8 @@ namespace Seasons
             }
             else
             {
+                SeasonalTexturePrefabCache.SetCurrentTextureVariants(this);
+
                 StartCoroutineSync(SeasonalTexturePrefabCache.FillWithGameData());
 
                 StartCoroutineSync(SaveCacheOnDisk());
@@ -835,7 +849,7 @@ namespace Seasons
                                                         "Draugr_Archer_mat", "Draugr_mat", "Draugr_elite_mat", "Abomination_mat",
                                                         "greyling", "greydwarf", "greydwarf_elite", "greydwarf_shaman", "neck" } },
                     { "Standard", new string[] { "beech_particle", "birch_particle", "branch_particle", "branch_dead_particle", "oak_particle", "shoot_leaf_particle" }},
-                    { "Particles/Standard Surface2", new string[] { "shrub2_leafparticle", "shrub2_leafparticle_heath" }},
+                    { "Particles/Standard Surface2", new string[] { "shrub2_leafparticle", "shrub2_leafparticle_heath", "leaf_en" }},
                 };
 
                 shadersTypes = new Dictionary<string, string[]>
@@ -1059,6 +1073,7 @@ namespace Seasons
             public SeasonalColorVariants creature = new SeasonalColorVariants();
             public SeasonalColorVariants piece = new SeasonalColorVariants();
             public SeasonalColorVariants conifer = new SeasonalColorVariants();
+            public SeasonalColorVariants bush = new SeasonalColorVariants();
 
             public List<PrefabOverrides> prefabOverrides = new List<PrefabOverrides>();
             public List<MaterialOverrides> materialOverrides = new List<MaterialOverrides>();
@@ -1080,8 +1095,8 @@ namespace Seasons
 
                 seasonal.Fall.Add(new ColorVariant(new Color(0.8f, 0.5f, 0f), 0.75f));
                 seasonal.Fall.Add(new ColorVariant(new Color(0.8f, 0.3f, 0f), 0.75f));
-                seasonal.Fall.Add(new ColorVariant(new Color(0.8f, 0.2f, 0f), 0.75f));
-                seasonal.Fall.Add(new ColorVariant());
+                seasonal.Fall.Add(new ColorVariant(new Color(0.8f, 0.2f, 0f), 0.70f));
+                seasonal.Fall.Add(new ColorVariant(new Color(0.7f, 0.7f, 0f), 0.2f));
 
                 seasonal.Winter.Add(new ColorVariant(new Color(1f, 0.98f, 0.98f), 0.65f, grayscale: true, restoreLuminance: false));
                 seasonal.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.6f, grayscale: true, restoreLuminance: false));
@@ -1100,8 +1115,8 @@ namespace Seasons
 
                 grass.Fall.Add(new ColorVariant(new Color(0.8f, 0.6f, 0.2f), 0.5f));
                 grass.Fall.Add(new ColorVariant(new Color(0.8f, 0.5f, 0f), 0.5f));
-                grass.Fall.Add(new ColorVariant(new Color(0.8f, 0.3f, 0f), 0.5f));
-                grass.Fall.Add(new ColorVariant());
+                grass.Fall.Add(new ColorVariant(new Color(0.8f, 0.3f, 0f), 0.4f));
+                grass.Fall.Add(new ColorVariant(new Color(0.7f, 0.7f, 0f), 0.4f));
 
                 grass.Winter.Add(new ColorVariant(new Color(1f, 0.98f, 0.98f), 0.65f, grayscale: true, restoreLuminance: false));
                 grass.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.6f, grayscale: true, restoreLuminance: false));
@@ -1119,7 +1134,7 @@ namespace Seasons
                 moss.Summer.Add(new ColorVariant(new Color(0.7f, 0.75f, 0.2f), 0.2f));
 
                 moss.Fall.Add(new ColorVariant(new Color(0.8f, 0.3f, 0f), 0.2f));
-                moss.Fall.Add(new ColorVariant());
+                moss.Fall.Add(new ColorVariant(new Color(0.7f, 0.7f, 0f), 0.1f));
                 moss.Fall.Add(new ColorVariant(new Color(0.8f, 0.6f, 0.2f), 0.2f));
                 moss.Fall.Add(new ColorVariant(new Color(0.8f, 0.5f, 0f), 0.2f));
 
@@ -1138,16 +1153,36 @@ namespace Seasons
                 conifer.Summer.Add(new ColorVariant(new Color(0.5f, 0.5f, 0f), 0.25f));
                 conifer.Summer.Add(new ColorVariant(new Color(0.7f, 0.7f, 0f), 0.1f));
 
-                conifer.Fall.Add(new ColorVariant(new Color(0.8f, 0.5f, 0f), 0.35f));
-                conifer.Fall.Add(new ColorVariant(new Color(0.8f, 0.3f, 0f), 0.35f));
-                conifer.Fall.Add(new ColorVariant(new Color(0.8f, 0.2f, 0f), 0.35f));
-                conifer.Fall.Add(new ColorVariant());
+                conifer.Fall.Add(new ColorVariant(new Color(0.8f, 0.5f, 0f), 0.25f));
+                conifer.Fall.Add(new ColorVariant(new Color(0.8f, 0.3f, 0f), 0.20f));
+                conifer.Fall.Add(new ColorVariant(new Color(0.8f, 0.2f, 0f), 0.15f));
+                conifer.Fall.Add(new ColorVariant(new Color(0.7f, 0.7f, 0f), 0.1f));
 
                 conifer.Winter.Add(new ColorVariant(new Color(1f, 0.98f, 0.98f), 0.45f, grayscale: true, restoreLuminance: false));
                 conifer.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.4f, grayscale: true, restoreLuminance: false));
                 conifer.Winter.Add(new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.45f, grayscale: true, restoreLuminance: false));
                 conifer.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.45f, grayscale: true, restoreLuminance: false));
-                
+
+                bush.Spring.Add(new ColorVariant(new Color(0.27f, 0.80f, 0.27f), 0.6f));
+                bush.Spring.Add(new ColorVariant(new Color(0.69f, 0.84f, 0.15f), 0.6f));
+                bush.Spring.Add(new ColorVariant(new Color(0.43f, 0.56f, 0.11f), 0.6f));
+                bush.Spring.Add(new ColorVariant());
+
+                bush.Summer.Add(new ColorVariant(new Color(0.5f, 0.7f, 0.2f), 0.5f));
+                bush.Summer.Add(new ColorVariant(new Color(0.7f, 0.7f, 0.2f), 0.5f));
+                bush.Summer.Add(new ColorVariant(new Color(0.5f, 0.5f, 0f), 0.5f));
+                bush.Summer.Add(new ColorVariant(new Color(0.7f, 0.7f, 0f), 0.2f));
+
+                bush.Fall.Add(new ColorVariant(new Color(0.8f, 0.5f, 0f), 0.5f));
+                bush.Fall.Add(new ColorVariant(new Color(0.8f, 0.3f, 0f), 0.5f));
+                bush.Fall.Add(new ColorVariant(new Color(0.8f, 0.2f, 0f), 0.4f));
+                bush.Fall.Add(new ColorVariant(new Color(0.7f, 0.7f, 0f), 0.2f));
+
+                bush.Winter.Add(new ColorVariant(new Color(1f, 0.98f, 0.98f), 0.65f, grayscale: true, restoreLuminance: false));
+                bush.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.6f, grayscale: true, restoreLuminance: false));
+                bush.Winter.Add(new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.65f, grayscale: true, restoreLuminance: false));
+                bush.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.65f, grayscale: true, restoreLuminance: false));
+
                 creature.Winter.Add(new ColorVariant(new Color(1f, 0.98f, 0.98f), 0.25f, grayscale: true, restoreLuminance: false));
                 creature.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.2f, grayscale: true, restoreLuminance: false));
                 creature.Winter.Add(new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.25f, grayscale: true, restoreLuminance: false));
@@ -1264,6 +1299,13 @@ namespace Seasons
             {
                 return materialName.IndexOf("pine", StringComparison.OrdinalIgnoreCase) >= 0 || prefab.IndexOf("pine", StringComparison.OrdinalIgnoreCase) >= 0;
             }
+
+            public static bool IsBush(string materialName, string prefab)
+            {
+                return materialName.IndexOf("bush", StringComparison.OrdinalIgnoreCase) >= 0 || prefab.IndexOf("bush", StringComparison.OrdinalIgnoreCase) >= 0
+                    || materialName.IndexOf("shrub", StringComparison.OrdinalIgnoreCase) >= 0 || prefab.IndexOf("shrub", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+            
         }
 
         [Serializable]
@@ -1514,6 +1556,17 @@ namespace Seasons
                         new MaterialFits(material: "neck", only:true),
                         new MaterialFits(prefab: "Neck", only:true),
                         new MaterialFits(renderer: "Lillies", only:true)
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(),
+                    }
+                ));
+
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(material: "leafparticle", partial: true, only:true),
                     },
                     new List<ColorFits>()
                     {
@@ -1878,10 +1931,8 @@ namespace Seasons
         public static void OnCacheRevisionChange()
         {
             LogInfo($"Cache revision updated {cacheRevision.Value}");
-            if (texturesVariants.revision != 0 && cacheRevision.Value != texturesVariants.revision)
-            {
+            if (!configSync.InitialSyncDone && !configSync.IsSourceOfTruth && texturesVariants.revision != 0 && cacheRevision.Value != texturesVariants.revision)
                 instance.StartCoroutine(texturesVariants.ReloadCache());
-            }
         }
 
         public static void SetupConfigWatcher()
@@ -1990,6 +2041,8 @@ namespace Seasons
                     colorVariants = colorSettings.moss;
                 else if (isCreature)
                     colorVariants = colorSettings.creature;
+                else if (IsBush(material.name, prefabName))
+                    colorVariants = colorSettings.bush;
                 else
                     colorVariants = colorSettings.seasonal;
             }
@@ -2055,6 +2108,8 @@ namespace Seasons
                     colorVariants = colorSettings.moss;
                 else if (isCreature)
                     colorVariants = colorSettings.creature;
+                else if (IsBush(material.name, prefabName))
+                    colorVariants = colorSettings.bush;
                 else
                     colorVariants = colorSettings.seasonal;
             }

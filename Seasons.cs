@@ -10,9 +10,7 @@ using System;
 using System.IO;
 using UnityEngine.Rendering;
 using static Terminal;
-using System.Diagnostics;
 using System.Collections;
-using System.Threading;
 
 namespace Seasons
 {
@@ -36,8 +34,6 @@ namespace Seasons
         public static ConfigEntry<CacheFormat> cacheStorageFormat;
         public static ConfigEntry<bool> logTime;
         public static ConfigEntry<bool> logFloes;
-        public static ConfigEntry<bool> startCacheRebuild;
-        public static ConfigEntry<bool> rebuildCacheOnRevisionChange;
 
         public static ConfigEntry<bool> overrideSeason;
         public static ConfigEntry<Season> seasonOverrided;
@@ -342,14 +338,9 @@ namespace Seasons
             localizationSeasonTooltipFall = config("Seasons - Localization", "Season status effect tooltip - Fall has come", defaultValue: "Fall has come", "Message to be shown on the buff tooltip and Raven menu.");
             localizationSeasonTooltipWinter = config("Seasons - Localization", "Season status effect tooltip - Winter has come", defaultValue: "Winter has come", "Message to be shown on the buff tooltip and Raven menu.");
 
-            cacheStorageFormat = config("Debug and cache", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
-            logTime = config("Debug and cache", "Log time", defaultValue: false, "Log time info on state update");
-            logFloes = config("Debug and cache", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying");
-            startCacheRebuild = config("Debug and cache", "Start cache rebuilding", defaultValue: false, "Start cache rebuilding process", false);
-            rebuildCacheOnRevisionChange = config("Debug and cache", "Rebuild cache automatically on revision change", defaultValue: false, "Rebuild cache automatically on revision change");
-
-            startCacheRebuild.SettingChanged += (sender, args) => StartCacheRebuild();
-            rebuildCacheOnRevisionChange.SettingChanged += (sender, args) => SeasonalTexturePrefabCache.OnCacheRevisionChange();
+            cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
+            logTime = config("Test", "Log time", defaultValue: false, "Log time info on state update");
+            logFloes = config("Test", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying");
 
             configDirectory = Path.Combine(Paths.ConfigPath, pluginID);
             cacheDirectory = Path.Combine(Paths.CachePath, pluginID);
@@ -362,7 +353,7 @@ namespace Seasons
                     return false;
                 }
 
-                StartCacheRebuild(fromConfig: false);
+                StartCacheRebuild();
 
                 args.Context.AddString($"Texture cache rebuilding process started");
                 return true;
@@ -550,13 +541,8 @@ namespace Seasons
             return ignored;
         }
     
-        public static void StartCacheRebuild(bool fromConfig = true)
+        public static void StartCacheRebuild()
         {
-            if (fromConfig && !startCacheRebuild.Value)
-                return;
-
-            startCacheRebuild.Value = false;
-
             if (seasonState.IsActive)
                 instance.StartCoroutine(texturesVariants.RebuildCache());
         }

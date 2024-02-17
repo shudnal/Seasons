@@ -322,7 +322,7 @@ namespace Seasons
 
         public static bool LocalPlayerIsOnFrozenOcean() => IsWaterSurfaceFrozen()
                                         && Player.m_localPlayer != null
-                                        && Player.m_localPlayer.GetCurrentBiome() == Heightmap.Biome.Ocean;
+                                        && Player.m_localPlayer.GetCurrentBiome() == Biome.Ocean;
 
         public static IEnumerator UpdateWaterObjects()
         {
@@ -336,7 +336,7 @@ namespace Seasons
                     else if (waterInteractable is Character)
                         CheckIfCharacterAboveSurface(waterInteractable as Character);
 
-                ZoneSystemVariantController.instance.waterVolumesCheckFloes.Add(waterVolume);
+                instance.waterVolumesCheckFloes.Add(waterVolume);
             }
 
             yield return waitForFixedUpdate;

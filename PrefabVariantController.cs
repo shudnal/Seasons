@@ -523,6 +523,9 @@ namespace Seasons
         
         public static void UpdatePrefabColors()
         {
+            if (instance == null)
+                return;
+
             s_tempObjects.Clear();
             foreach (KeyValuePair<GameObject, PrefabVariant> controller in instance.m_prefabVariants)
                 if (controller.Key == null)

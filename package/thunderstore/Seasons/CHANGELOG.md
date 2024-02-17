@@ -1,3 +1,11 @@
+# 1.1.1
+* Cache settings force synced from server to clients
+* Cache moved to \BepInEx\cache
+* Cache rebuild caused by console command will be done in background (but in main thread which cause noticeable lag, that's ok)
+* Cache settings extended with bushes colors category
+* Cache will be stored by revisions (which depends on cache settings)
+* Default recoloring refinements
+
 # 1.1.0
 * Recoloring settings (you can now control the way mod generates textures)
 * rebuild cache console command ("resetseasonscache")
@@ -5,6 +13,9 @@
 * setting seasonal key at day change
 * fix for control stats couldn't be disabled completely
 * fix for ice floes floating in the air
+
+<details>
+<summary><b>Changelog History</b> (<i>click to expand</i>)</summary>
 
 # 1.0.13
 * you can climb on ice floe
@@ -19,8 +30,6 @@
 * proper recoloring freshly planted pickables and crops
 * seasonal changes properly ignores objects located in interior, Mountains, DeepNorth and Ashlands
 
-<details>
-<summary><b>Changelog History</b> (<i>click to expand</i>)</summary>
 
 # 1.0.11
 * hide grass in winter enabled by default (now you can set period in days)
