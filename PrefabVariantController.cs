@@ -5,7 +5,6 @@ using System.Linq;
 using UnityEngine;
 using static Seasons.PrefabController;
 using static Seasons.PrefabVariantController;
-using static Seasons.SeasonalTexturePrefabCache.ColorsCacheSettings;
 using static Seasons.Seasons;
 
 namespace Seasons
@@ -38,7 +37,7 @@ namespace Seasons
 
                 m_nview = netView ?? (m_wnt == null ? m_gameObject.GetComponent<ZNetView>() : m_wnt.m_nview);
 
-                if (m_nview != null && !m_nview.IsValid())
+                if (m_nview != null && (!m_nview.IsValid() || m_nview.m_ghost))
                     return false;
 
                 m_prefabName = String.IsNullOrEmpty(prefabName) ? GetPrefabName(m_gameObject) : prefabName;
@@ -674,16 +673,6 @@ namespace Seasons
         private static void Postfix(GameObject __result)
         {
             PrefabVariantController.instance?.AddControllerTo(__result);
-        }
-    }
-
-    [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.PlaceVegetation))]
-    public static class ZoneSystem_PlaceVegetation_AddPrefabVariantController
-    {
-        private static void Postfix(List<GameObject> spawnedObjects)
-        {
-            foreach (GameObject obj in spawnedObjects)
-                PrefabVariantController.instance?.AddControllerTo(obj);
         }
     }
 

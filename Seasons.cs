@@ -21,7 +21,7 @@ namespace Seasons
     {
         const string pluginID = "shudnal.Seasons";
         const string pluginName = "Seasons";
-        const string pluginVersion = "1.1.1";
+        const string pluginVersion = "1.1.2";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -62,6 +62,7 @@ namespace Seasons
         public static ConfigEntry<string> hideGrassListInWinter;
         public static ConfigEntry<int> cropsDiesAfterSetDayInWinter;
         public static ConfigEntry<string> cropsToSurviveInWinter;
+        public static ConfigEntry<string> cropsToControlGrowth;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -71,6 +72,7 @@ namespace Seasons
         public static ConfigEntry<bool> enableNightMusicOnFrozenOcean;
         public static ConfigEntry<float> frozenOceanSlipperiness;
         public static ConfigEntry<bool> placeShipAboveFrozenOcean;
+        public static ConfigEntry<Vector2> iceFloesScale;
 
         public static ConfigEntry<bool> showFadeOnSeasonChange;
         public static ConfigEntry<float> fadeOnSeasonChangeDuration;
@@ -272,12 +274,14 @@ namespace Seasons
             hideGrassListInWinter = config("Season", "Hide grass in set list in winter", defaultValue: "grasscross_meadows, grasscross_forest_brown, grasscross_forest, grasscross_swamp, grasscross_heath, grasscross_meadows_short, grasscross_heath_flower, grasscross_mistlands_short", "Hide set grass in winter");
             cropsDiesAfterSetDayInWinter = config("Season", "Crops will die after set day in winter", defaultValue: 3, "Crops and pickables will perish after set day in winter");
             cropsToSurviveInWinter = config("Season", "Crops will survive in winter", defaultValue: "Pickable_Carrot, Pickable_Barley, Pickable_Barley_Wild, Pickable_Flax, Pickable_Flax_Wild, Pickable_Thistle, Pickable_Mushroom_Magecap", "Crops and pickables from the list will not perish after set day in winter");
+            cropsToControlGrowth = config("Season", "Crops to control growth", defaultValue: "Pickable_Barley, Pickable_Barley_Wild, Pickable_Dandelion, Pickable_Flax, Pickable_Flax_Wild, Pickable_SeedCarrot, Pickable_SeedOnion, Pickable_SeedTurnip, Pickable_Thistle, Pickable_Turnip", "Crops and pickables from the list will be controlled by growth multiplier in addition to consumable crops");
 
             seasonalStatsOutdoorsOnly.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
             hideGrassInWinter.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateColors();
             hideGrassInWinterDays.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateColors();
             hideGrassListInWinter.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateColors();
             cropsToSurviveInWinter.SettingChanged += (sender, args) => FillPickablesListToControlGrowth();
+            cropsToControlGrowth.SettingChanged += (sender, args) => FillPickablesListToControlGrowth();
 
             showCurrentSeasonBuff = config("Season - Buff", "Show current season buff", defaultValue: true, "Show current season buff.");
             seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
@@ -306,6 +310,7 @@ namespace Seasons
             enableIceFloes = config("Season - Winter ocean", "Enable ice floes in winter", defaultValue: true, "Enable ice floes in winter");
             iceFloesInWinterDays = config("Season - Winter ocean", "Fill the water with ice floes at given days from to", defaultValue: new Vector2(4f, 10f), "Ice floes will be spawned in the first set day of winter and will be removed after second set day");
             amountOfIceFloesInWinterDays = config("Season - Winter ocean", "Amount of ice floes in one zone", defaultValue: new Vector2(10f, 20f), "Game will take random value between set numbers and will try to spawn that amount of ice floes in one zone (square 64x64)");
+            iceFloesScale = config("Season - Winter ocean", "Scale of ice floes", defaultValue: new Vector2(0.75f, 2f), "Size of spawned ice floe random to XYZ axes");
             enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
             frozenOceanSlipperiness = config("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1f, "Slipperiness factor of the frozen ocean surface");
             placeShipAboveFrozenOcean = config("Season - Winter ocean", "Place ship above frozen ocean surface", defaultValue: false, "Place ship above frozen ocean surface to move them without destroying");
@@ -344,7 +349,10 @@ namespace Seasons
 
             configDirectory = Path.Combine(Paths.ConfigPath, pluginID);
             cacheDirectory = Path.Combine(Paths.CachePath, pluginID);
+        }
 
+        public void TerminalCommandsInit()
+        {
             new ConsoleCommand("resetseasonscache", "Rebuild Seasons texture cache", delegate (ConsoleEventArgs args)
             {
                 if (!seasonState.IsActive)
@@ -463,20 +471,7 @@ namespace Seasons
 
         public static void FillPickablesListToControlGrowth()
         {
-            _PlantsToControlGrowth = new HashSet<string>
-            {
-                "Pickable_Barley",
-                "Pickable_Barley_Wild",
-                "Pickable_Dandelion",
-                "Pickable_Flax",
-                "Pickable_Flax_Wild",
-                "Pickable_SeedCarrot",
-                "Pickable_SeedOnion",
-                "Pickable_SeedTurnip",
-                "Pickable_Thistle",
-                "Pickable_Turnip",
-            };
-
+            _PlantsToControlGrowth = new HashSet<string>(cropsToControlGrowth.Value.Split(',').Select(p => p.Trim().ToLower()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList());
             _PlantsToSurviveWinter = new HashSet<string>(cropsToSurviveInWinter.Value.Split(',').Select(p => p.Trim().ToLower()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList());
 
             foreach (GameObject prefab in ZNetScene.instance.m_prefabs)

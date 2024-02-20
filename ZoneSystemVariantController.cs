@@ -167,9 +167,10 @@ namespace Seasons
 
             s_iceFloe ??= ZoneSystem.instance.m_vegetation.Find(veg => veg.m_prefab?.name == _iceFloeName).Clone();
             s_iceFloe.m_biome = Biome.Ocean;
-            s_iceFloe.m_randTilt = 1f;
             if (!s_iceFloe.m_prefab.TryGetComponent<IceFloeClimb>(out _))
                 s_iceFloe.m_prefab.AddComponent<IceFloeClimb>();
+
+            s_iceFloe.m_prefab.GetComponent<ZNetView>().m_syncInitialScale = true;
         }
 
         private static void UpdateTerrainColor(Heightmap heightmap)
@@ -499,7 +500,8 @@ namespace Seasons
                 if (mode == SpawnMode.Ghost)
                 {
                     foreach (GameObject tempSpawnedObject in instance.m_tempSpawnedObjects)
-                        UnityEngine.Object.Destroy(tempSpawnedObject);
+                        Destroy(tempSpawnedObject);
+                    
                     instance.m_tempSpawnedObjects.Clear();
                 }
             }
@@ -519,9 +521,9 @@ namespace Seasons
             for (int i = 0; i < spawnCount; i++)
             {
                 Vector3 p = new Vector3(UnityEngine.Random.Range(zoneCenterPos.x - num, zoneCenterPos.x + num), 0f, UnityEngine.Random.Range(zoneCenterPos.z - num, zoneCenterPos.z + num));
-                float y = UnityEngine.Random.Range(0, 360);
-                float x = UnityEngine.Random.Range(0f - item.m_randTilt, item.m_randTilt);
-                float z = UnityEngine.Random.Range(0f - item.m_randTilt, item.m_randTilt);
+                if (ZoneSystem.instance.InsideClearArea(clearAreas, p))
+                    continue;
+
                 if (item.m_blockCheck && ZoneSystem.instance.IsBlocked(p))
                     continue;
 
@@ -540,22 +542,19 @@ namespace Seasons
                         continue;
                 }
 
-                if (ZoneSystem.instance.InsideClearArea(clearAreas, p))
-                    continue;
-
                 if (item.m_snapToWater)
                     p.y = ZoneSystem.instance.m_waterLevel - _winterWaterSurfaceOffset;
 
                 if (mode == SpawnMode.Ghost)
                     ZNetView.StartGhostInit();
 
-                GameObject gameObject = UnityEngine.Object.Instantiate(item.m_prefab, p, Quaternion.Euler(x, y, z));
+                GameObject gameObject = Instantiate(item.m_prefab, p, Quaternion.Euler(0, UnityEngine.Random.Range(0, 360), 0));
                         
                 ZNetView component = gameObject.GetComponent<ZNetView>();
 
-                float scaleX = UnityEngine.Random.Range(0.75f, 1.5f);
-                float scaleY = UnityEngine.Random.Range(0.5f, 1.5f);
-                float scaleZ = UnityEngine.Random.Range(0.75f, 1.25f);
+                float scaleX = UnityEngine.Random.Range(iceFloesScale.Value.x, iceFloesScale.Value.y);
+                float scaleY = UnityEngine.Random.Range(iceFloesScale.Value.x, iceFloesScale.Value.y);
+                float scaleZ = UnityEngine.Random.Range(iceFloesScale.Value.x, iceFloesScale.Value.y);
 
                 float radius = 5f;
 

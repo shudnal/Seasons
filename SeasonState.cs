@@ -1087,7 +1087,7 @@ namespace Seasons
             if (biome == Heightmap.Biome.Mountain || biome == Heightmap.Biome.DeepNorth)
                 return;
 
-            if (hit.GetTotalDamage() >= __instance.GetHealth() + 0.1f)
+            if (__instance.GetHealth() <= 2)
                 hit.ApplyModifier(0f);
         }
     }

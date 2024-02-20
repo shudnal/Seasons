@@ -1,3 +1,8 @@
+# 1.1.2
+* plants to control growth configurable list
+* configurable ice floes scale
+* freezing death with exactly 1 hp fix
+
 # 1.1.1
 * Cache settings force synced from server to clients
 * Cache moved to \BepInEx\cache
