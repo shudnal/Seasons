@@ -349,6 +349,8 @@ namespace Seasons
 
             configDirectory = Path.Combine(Paths.ConfigPath, pluginID);
             cacheDirectory = Path.Combine(Paths.CachePath, pluginID);
+
+            TerminalCommandsInit();
         }
 
         public void TerminalCommandsInit()

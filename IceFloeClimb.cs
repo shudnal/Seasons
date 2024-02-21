@@ -43,7 +43,7 @@ namespace Seasons
             if (base.transform.position.y - human.transform.position.y < 0.5f)
                 return false;
 
-            float distance = Vector3.Distance(human.transform.position, base.transform.position);
+            float distance = Vector3.Distance(human.transform.position, base.transform.position) / Mathf.Max(base.transform.localScale.x, base.transform.localScale.z);
 
             return m_radius < distance && distance < m_radius + m_useDistance;
         }
