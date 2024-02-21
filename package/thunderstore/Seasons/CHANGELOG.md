@@ -1,3 +1,7 @@
+# 1.1.3
+* Ice floes climb fix for large scale floes
+* Resetseasonscache command returned
+
 # 1.1.2
 * plants to control growth configurable list
 * configurable ice floes scale
