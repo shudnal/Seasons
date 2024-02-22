@@ -49,7 +49,7 @@ namespace Seasons
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.OnDestroy))]
     public static class ZoneSystem_OnDestroy_SeasonsCache
     {
-        private static void Postfix(ZoneSystem __instance)
+        private static void Postfix()
         {
             if (!UseTextureControllers())
                 return;
@@ -93,6 +93,11 @@ namespace Seasons
             public Dictionary<string, int> textureProperties = new Dictionary<string, int>();
             public Dictionary<string, string[]> colorVariants = new Dictionary<string, string[]>();
 
+            public CachedMaterial()
+            {
+
+            }
+
             public CachedMaterial(string materialName, string shader, string propertyName, int textureID)
             {
                 name = materialName;
@@ -129,6 +134,11 @@ namespace Seasons
             public string name = string.Empty;
             public string type = string.Empty;
             public Dictionary<string, CachedMaterial> materials = new Dictionary<string, CachedMaterial>();
+
+            public CachedRenderer() 
+            {
+
+            }
 
             public CachedRenderer(string rendererName, string rendererType)
             {
@@ -216,8 +226,8 @@ namespace Seasons
             {
                 FileInfo[] propertiesFile = texDirectory.GetFiles(texturePropertiesFileName);
                 if (propertiesFile.Length > 0)
-                    JsonUtility.FromJsonOverwrite(File.ReadAllText(propertiesFile[0].FullName), properties);
-
+                    properties = JsonUtility.FromJson<TextureProperties>(File.ReadAllText(propertiesFile[0].FullName));
+                
                 foreach (Season season in Enum.GetValues(typeof(Season)))
                 {
                     variants.Add(season, new Dictionary<int, byte[]>());
@@ -934,7 +944,8 @@ namespace Seasons
                     "SunkenKit_int_towerwall_LOD",
                     "marker01",
                     "marker02",
-                    "TheHive"
+                    "TheHive",
+                    "StoneVillage2",
                 };
 
                 ignorePrefabPartialName = new List<string>()
@@ -952,6 +963,7 @@ namespace Seasons
                     "Mistlands_Excavation",
                     "Mistlands_Giant",
                     "Mistlands_Harbour",
+                    "Mistlands_Mine",
                     "dvergrtown_",
                     "OLD_wood_roof",
                     "AbandonedLogCabin",

@@ -82,11 +82,7 @@ namespace Seasons
         public void UpdateState(bool timeForSeasonToChange = false, bool forceSeasonChange = false)
         {
             if (!ZNet.instance.IsServer())
-            {
-                m_season = (Season)Seasons.currentSeason.Value;
-                m_day = Seasons.currentDay.Value;
                 return;
-            }
 
             int worldDay = GetCurrentWorldDay();
             int dayInSeason = GetDayInSeason(worldDay);
@@ -101,10 +97,11 @@ namespace Seasons
                             || Game.instance.m_sleeping;
 
             if (logTime.Value)
-                LogInfo($"Current: {m_season} {m_day} {m_worldDay} New: {newSeason} {dayInSeason} {worldDay} Time: {EnvMan.instance.GetDayFraction(),-6:F4} TotalSeconds: {GetTotalSeconds(), -10:F2} TimeToChange:{timeForSeasonToChange, -5} SleepCheck:{sleepCheck,-5} Force:{forceSeasonChange, -5} ToPast:{timeForSeasonToChange && !forceSeasonChange && !sleepCheck && m_isUsingIngameDays && changeSeasonOnlyAfterSleep.Value && GetCurrentDay() == GetDaysInSeason() && dayInSeason != GetCurrentDay(), -5}");
+                LogInfo($"Current: {m_season, -6} {m_day} {m_worldDay} New: {newSeason, -6} {dayInSeason} {worldDay} Time: {EnvMan.instance.GetDayFraction(),-6:F4} TotalSeconds: {GetTotalSeconds(), -10:F2} TimeToChange:{timeForSeasonToChange, -5} SleepCheck:{sleepCheck,-5} Force:{forceSeasonChange, -5} ToPast:{timeForSeasonToChange && !forceSeasonChange && !sleepCheck && m_isUsingIngameDays && changeSeasonOnlyAfterSleep.Value && GetCurrentDay() == GetDaysInSeason() && dayInSeason != GetCurrentDay(), -5}");
 
+            Season setSeason = m_season;
             if (overrideSeason.Value)
-                m_season = seasonOverrided.Value;
+                setSeason = seasonOverrided.Value;
             else if (newSeason != GetCurrentSeason() && (timeForSeasonToChange || forceSeasonChange))
             {
                 if (timeForSeasonToChange && !forceSeasonChange && !sleepCheck && m_isUsingIngameDays && changeSeasonOnlyAfterSleep.Value && GetCurrentDay() == GetDaysInSeason() && dayInSeason != GetCurrentDay())
@@ -120,10 +117,10 @@ namespace Seasons
                     newSeason = GetSeason(worldDay);
                 }
 
-                m_season = newSeason;
+                setSeason = newSeason;
             }
 
-            if (!CheckIfSeasonChanged(currentSeason, dayInSeason, worldDay))
+            if (!CheckIfSeasonChanged(currentSeason, setSeason, dayInSeason, worldDay))
                 CheckIfDayChanged(dayInSeason, worldDay);
         }
 
@@ -613,18 +610,14 @@ namespace Seasons
             return currentDay > lastDay ? Mathf.Clamp01((float)(daysInSeason - currentDay) / Math.Max(daysInSeason - lastDay, 1)) : Mathf.Clamp01((float)currentDay / Math.Max(firstDay, 1));
         }
 
-        private bool CheckIfSeasonChanged(int currentSeason, int dayInSeason, int worldDay)
+        private bool CheckIfSeasonChanged(int currentSeason, Season setSeason, int dayInSeason, int worldDay)
         {
-            if (currentSeason == (int)m_season)
+            if (currentSeason == (int)setSeason)
                 return false;
 
-            m_day = dayInSeason;
             m_worldDay = worldDay;
 
-            ConfigSync.ProcessingServerUpdate = true;
-            Seasons.currentDay.AssignLocalValue(m_day);
-            ConfigSync.ProcessingServerUpdate = false;
-            Seasons.currentSeason.AssignLocalValue((int)m_season);
+            UpdateCurrentSeasonDay(setSeason, dayInSeason);
 
             return true;
         }
@@ -725,11 +718,7 @@ namespace Seasons
             m_worldDay = worldDay;
 
             if (dayInSeason > m_day)
-            {
-                m_day = dayInSeason;
-                ConfigSync.ProcessingServerUpdate = false;
-                Seasons.currentDay.AssignLocalValue(m_day);
-            }
+                UpdateCurrentSeasonDay(m_season, dayInSeason);
         }
 
         private int GetYearLengthInDays()
@@ -851,32 +840,49 @@ namespace Seasons
             }
         }
 
+        public void UpdateCurrentSeasonDay(Season season, int day)
+        {
+            ConfigSync.ProcessingServerUpdate = false;
+            currentSeasonDay.AssignLocalValue((int)season * 10000 + day);
+        }
+
         public static void CheckSeasonChange()
         {
             if (seasonState.IsActive)
                 seasonState.UpdateState(forceSeasonChange: true);
         }
 
-        public static void OnSeasonChange()
+        public static void OnSeasonDayChange()
         {
-            seasonState.m_season = (Season)currentSeason.Value;
-            seasonState.m_day = currentDay.Value;
+            Tuple<Season, int> seasonDay = GetSyncedCurrentSeasonDay();
+
+            bool dayChanged = seasonState.m_day != seasonDay.Item2;
+            bool seasonChanged = seasonState.m_season != seasonDay.Item1;
+
+            seasonState.m_season = seasonDay.Item1;
+            seasonState.m_day = seasonDay.Item2;
 
             LogInfo($"Season: {seasonState.m_season}, day: {seasonState.m_day}");
 
-            seasonState.StartSeasonChange();
+            if (seasonChanged)
+                seasonState.StartSeasonChange();
+            else if (dayChanged)
+                OnDayChange();
         }
 
         public static void OnDayChange()
         {
-            seasonState.m_day = currentDay.Value;
-            LogInfo($"Day: {seasonState.m_day}");
             if (UseTextureControllers())
             {
-                ClutterVariantController.instance.UpdateColors();
+                ClutterVariantController.instance.StartCoroutine(ClutterVariantController.instance.UpdateColorsDay());
             }
             ZoneSystemVariantController.UpdateWaterState();
             seasonState.UpdateGlobalKeys();
+        }
+
+        public static Tuple<Season, int> GetSyncedCurrentSeasonDay()
+        {
+            return Tuple.Create((Season)((currentSeasonDay.Value / 10000) % 4), currentSeasonDay.Value % 10000);
         }
     }
 
@@ -1097,14 +1103,11 @@ namespace Seasons
     {
         private static void Postfix(Pickable __instance, ZNetView ___m_nview, bool ___m_picked)
         {
-            if (!___m_nview.IsValid() || !___m_nview.IsOwner() || !ControlPlantGrowth(__instance.gameObject))
-                return;
-
-            if (IsIgnoredPosition(__instance.transform.position))
+            if (!___m_nview.IsValid() || !___m_nview.IsOwner() || !ControlPlantGrowth(__instance.gameObject) || IsIgnoredPosition(__instance.transform.position))
                 return;
 
             if (!___m_picked && seasonState.GetPlantsGrowthMultiplier() == 0f && seasonState.GetCurrentSeason() == Season.Winter && seasonState.GetCurrentDay() >= cropsDiesAfterSetDayInWinter.Value && !PlantWillSurviveWinter(__instance.gameObject))
-                __instance.SetPicked(true);
+                __instance.StartCoroutine(PickableSetPicked(__instance));
         }
     }
 

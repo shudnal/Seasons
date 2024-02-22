@@ -178,6 +178,8 @@ namespace Seasons
             if (heightmap.m_renderMesh == null)
                 return;
 
+            Heightmap_GetBiomeColor_TerrainColor.overrideColor = true;
+
             int num = heightmap.m_width + 1;
             Vector3 vector = heightmap.transform.position + new Vector3((float)((double)heightmap.m_width * (double)heightmap.m_scale * -0.5), 0f, (float)((double)heightmap.m_width * (double)heightmap.m_scale * -0.5));
             s_tempColors.Clear();
@@ -200,6 +202,8 @@ namespace Seasons
                     }
                 }
             }
+
+            Heightmap_GetBiomeColor_TerrainColor.overrideColor = false;
 
             heightmap.m_renderMesh.SetColors(s_tempColors);
         }
@@ -392,6 +396,9 @@ namespace Seasons
 
         public static void CheckIfFishAboveSurface(Fish fish)
         {
+            if (fish == null || fish.m_nview == null || !fish.m_nview.IsValid())
+                return;
+
             if (fish.m_nview.HasOwner() && !fish.m_nview.IsOwner())
                 return;
 
@@ -405,6 +412,9 @@ namespace Seasons
 
         public static void CheckIfCharacterAboveSurface(Character character)
         {
+            if (character == null || character.m_nview == null || !character.m_nview.IsValid())
+                return;
+
             if (!character.m_nview.IsOwner())
                 return;
 
@@ -439,19 +449,19 @@ namespace Seasons
                 return;
 
             int floes = 0;
-            foreach (KeyValuePair<ZDOID, ZDO> zdo in ZDOMan.instance.m_objectsByID)
+            foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values)
             {
-                if (zdo.Value.GetPrefab() != _iceFloePrefab)
+                if (zdo.GetPrefab() != _iceFloePrefab)
                     continue;
 
-                Vector3 position = zdo.Value.GetPosition();
+                Vector3 position = zdo.GetPosition();
 
                 float num = WorldGenerator.instance.WorldAngle(position.x, position.z) * 100.0f;
 
                 if (new Vector2(position.x, position.z + 4000.0f).magnitude > 12000.0f + num)
                     continue;
 
-                RemoveObject(zdo.Value, true);
+                RemoveObject(zdo, true);
                 floes++;
             }
             
@@ -549,7 +559,10 @@ namespace Seasons
                     ZNetView.StartGhostInit();
 
                 GameObject gameObject = Instantiate(item.m_prefab, p, Quaternion.Euler(0, UnityEngine.Random.Range(0, 360), 0));
-                        
+
+                if (mode == SpawnMode.Ghost)
+                    ZNetView.FinishGhostInit();
+
                 ZNetView component = gameObject.GetComponent<ZNetView>();
 
                 float scaleX = UnityEngine.Random.Range(iceFloesScale.Value.x, iceFloesScale.Value.y);
@@ -568,10 +581,7 @@ namespace Seasons
                 }
 
                 if (mode == SpawnMode.Ghost)
-                {
                     spawnedObjects.Add(gameObject);
-                    ZNetView.FinishGhostInit();
-                }
 
                 clearAreas.Add(new ClearArea(p, radius));
             }
@@ -812,25 +822,14 @@ namespace Seasons
     [HarmonyPatch(typeof(Heightmap), nameof(Heightmap.GetBiomeColor), new[] { typeof(Biome) })]
     public static class Heightmap_GetBiomeColor_TerrainColor
     {
-        private static bool callBaseMethod = false;
-
-        private static Color32 GetBaseBiomeColor(Biome biome)
-        {
-            callBaseMethod = true;
-            Color32 color = GetBiomeColor(biome);
-            callBaseMethod = false;
-            return color;
-        }
+        public static bool overrideColor = false;
 
         [HarmonyPriority(Priority.First)]
         private static void Prefix(ref Biome biome, ref Biome __state)
         {
-            if (callBaseMethod)
-                return;
-
             __state = Biome.None;
 
-            if (!seasonState.IsActive)
+            if (!overrideColor || !seasonState.IsActive || !UseTextureControllers())
                 return;
 
             if (seasonalBiomeColorOverride.TryGetValue(biome, out Dictionary<Season, Biome> overrideBiome) && overrideBiome.TryGetValue(seasonState.GetCurrentSeason(), out Biome overridedBiome))
@@ -843,13 +842,26 @@ namespace Seasons
         [HarmonyPriority(Priority.First)]
         private static void Postfix(ref Biome biome, Biome __state)
         {
-            if (callBaseMethod)
-                return;
-
             if (__state == Biome.None)
                 return;
 
             biome = __state;
+        }
+    }
+
+    [HarmonyPatch(typeof(Heightmap), nameof(Heightmap.RebuildRenderMesh))]
+    public static class Heightmap_RebuildRenderMesh_TerrainColor
+    {
+        [HarmonyPriority(Priority.First)]
+        private static void Prefix()
+        {
+            Heightmap_GetBiomeColor_TerrainColor.overrideColor = seasonState.IsActive && UseTextureControllers();
+        }
+
+        [HarmonyPriority(Priority.First)]
+        private static void Postfix()
+        {
+            Heightmap_GetBiomeColor_TerrainColor.overrideColor = false;
         }
     }
 
@@ -870,7 +882,7 @@ namespace Seasons
 
             if (waterStates.ContainsKey(__instance))
                 return;
-
+            
             waterStates.Add(__instance, new WaterState(__instance));
             ZoneSystemVariantController.instance.waterVolumesCheckFloes.Add(__instance);
         }

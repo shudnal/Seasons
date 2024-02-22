@@ -1,3 +1,7 @@
+# 1.1.4
+* Expand World Data compatibility
+* minor refinements here and there
+
 # 1.1.3
 * Ice floes climb fix for large scale floes
 * Resetseasonscache command returned

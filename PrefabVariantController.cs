@@ -33,7 +33,7 @@ namespace Seasons
             public bool Initialize(PrefabController controller, GameObject gameObject, string prefabName = null, ZNetView netView = null, WearNTear wnt = null, MeshRenderer meshRenderer = null)
             {
                 m_gameObject = gameObject;
-                m_wnt = wnt;
+                m_wnt = wnt ?? m_gameObject.GetComponent<WearNTear>();
 
                 m_nview = netView ?? (m_wnt == null ? m_gameObject.GetComponent<ZNetView>() : m_wnt.m_nview);
 
@@ -467,14 +467,6 @@ namespace Seasons
             prefabVariant.AddToPrefabList();
         }
 
-        public void AddControllerTo(Humanoid humanoid)
-        {
-            if (humanoid.InInterior())
-                return;
-
-            AddControllerTo(humanoid.gameObject, checkLocation: false, humanoid.m_nview);
-        }
-
         public void AddControllerTo(Humanoid humanoid, Ragdoll ragdoll)
         {
             if (humanoid.InInterior())
@@ -594,12 +586,12 @@ namespace Seasons
                 prefabVariant.RemoveFromPrefabList();
             }
 
-            foreach (KeyValuePair<ZDO, ZNetView> netInstance in ZNetScene.instance.m_instances)
+            foreach (ZNetView nview in ZNetScene.instance.m_instances.Values)
             {
-                if (!(bool)netInstance.Value)
+                if (!(bool)nview)
                     continue;
 
-                instance.AddControllerTo(netInstance.Value.gameObject);
+                instance.AddControllerTo(nview.gameObject);
             }
 
             UpdatePrefabColors();
@@ -626,12 +618,22 @@ namespace Seasons
         }
     }
 
-    [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.CreateObject))]
-    public static class ZNetScene_CreateObject_AddPrefabVariantController
+    [HarmonyPatch(typeof(ZNetView), nameof(ZNetView.Awake))]
+    public static class ZNetView_Awake_AddPrefabVariantController
     {
-        private static void Postfix(GameObject __result)
+        private static void Postfix(ZNetView __instance)
         {
-            PrefabVariantController.instance?.AddControllerTo(__result);
+            if (__instance != null && !__instance.m_ghost && __instance.IsValid())
+                PrefabVariantController.instance?.AddControllerTo(__instance.gameObject, checkLocation: true, __instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(ZNetView), nameof(ZNetView.OnDestroy))]
+    public static class ZNetView_OnDestroy_RemovePrefabVariantController
+    {
+        private static void Prefix(ZNetView __instance)
+        {
+            PrefabVariantController.instance?.RemoveController(__instance.gameObject);
         }
     }
 
@@ -661,9 +663,9 @@ namespace Seasons
     {
         private static void Prefix(Dictionary<ZDO, ZNetView> ___m_instances)
         {
-            foreach (KeyValuePair<ZDO, ZNetView> instance in ___m_instances)
-                if ((bool)instance.Value)
-                    PrefabVariantController.instance?.RemoveController(instance.Value.gameObject);
+            foreach (ZNetView nview in ___m_instances.Values)
+                if ((bool)nview)
+                    PrefabVariantController.instance?.RemoveController(nview.gameObject);
         }
     }
 
@@ -688,6 +690,15 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.Awake))]
+    public static class WearNTear_Start_AddPrefabVariantController
+    {
+        private static void Postfix(WearNTear __instance)
+        {
+            PrefabVariantController.instance?.AddControllerTo(__instance);
+        }
+    }
+
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.SetHealthVisual))]
     public static class WearNTear_SetHealthVisual_UpdateCoverStatus
     {
@@ -698,66 +709,12 @@ namespace Seasons
         }
     }
 
-    [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.Start))]
-    public static class WearNTear_Start_AddPrefabVariantController
-    {
-        private static void Postfix(WearNTear __instance)
-        {
-            PrefabVariantController.instance?.AddControllerTo(__instance);
-        }
-    }
-
-    [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.OnDestroy))]
-    public static class WearNTear_OnDestroy_RemovePrefabVariantController
-    {
-        private static void Prefix(WearNTear __instance)
-        {
-            PrefabVariantController.instance?.RemoveController(__instance.gameObject);
-        }
-    }
-
-    [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.Start))]
-    public static class Humanoid_Start_AddPrefabVariantController
-    {
-        private static void Postfix(Humanoid __instance)
-        {
-            PrefabVariantController.instance?.AddControllerTo(__instance);
-        }
-    }
-
-    [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.OnDestroy))]
-    public static class Humanoid_OnDestroy_RemovePrefabVariantController
-    {
-        private static void Prefix(Humanoid __instance)
-        {
-            PrefabVariantController.instance?.RemoveController(__instance.gameObject);
-        }
-    }
-
     [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.OnRagdollCreated))]
     public static class Humanoid_OnRagdollCreated_AddPrefabVariantController
     {
         private static void Postfix(Humanoid __instance, Ragdoll ragdoll)
         {
             PrefabVariantController.instance?.AddControllerTo(__instance, ragdoll);
-        }
-    }
-
-    [HarmonyPatch(typeof(Plant), nameof(Plant.Awake))]
-    public static class Plant_Awake_AddPrefabVariantController
-    {
-        private static void Postfix(Plant __instance)
-        {
-            PrefabVariantController.instance?.AddControllerTo(__instance.gameObject, checkLocation:true, __instance.m_nview);
-        }
-    }
-
-    [HarmonyPatch(typeof(Pickable), nameof(Pickable.Awake))]
-    public static class Pickable_Awake_AddPrefabVariantController
-    {
-        private static void Postfix(Pickable __instance)
-        {
-            PrefabVariantController.instance?.AddControllerTo(__instance.gameObject, checkLocation: true, __instance.m_nview);
         }
     }
 

@@ -21,7 +21,7 @@ namespace Seasons
     {
         const string pluginID = "shudnal.Seasons";
         const string pluginName = "Seasons";
-        const string pluginVersion = "1.1.3";
+        const string pluginVersion = "1.1.4";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -129,8 +129,7 @@ namespace Seasons
 
         public static SeasonalTextureVariants texturesVariants = new SeasonalTextureVariants();
 
-        public static readonly CustomSyncedValue<int> currentDay = new CustomSyncedValue<int>(configSync, "Current day", 1, Priority.First);
-        public static readonly CustomSyncedValue<int> currentSeason = new CustomSyncedValue<int>(configSync, "Current season", 1, Priority.VeryHigh);
+        public static readonly CustomSyncedValue<int> currentSeasonDay = new CustomSyncedValue<int>(configSync, "Current season and day", 1, Priority.First);
 
         public static readonly CustomSyncedValue<Dictionary<int, string>> seasonsSettingsJSON = new CustomSyncedValue<Dictionary<int, string>>(configSync, "Seasons settings JSON", new Dictionary<int, string>(), Priority.LowerThanNormal);
         public static readonly CustomSyncedValue<string> customEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom environments JSON", "", Priority.Normal);
@@ -203,8 +202,7 @@ namespace Seasons
             ConfigInit();
             _ = configSync.AddLockingConfigEntry(configLocked);
 
-            currentSeason.ValueChanged += new Action(SeasonState.OnSeasonChange);
-            currentDay.ValueChanged += new Action(SeasonState.OnDayChange);
+            currentSeasonDay.ValueChanged += new Action(SeasonState.OnSeasonDayChange);
             seasonsSettingsJSON.ValueChanged += new Action(SeasonSettings.UpdateSeasonSettings);
             cacheRevision.ValueChanged += new Action(SeasonalTexturePrefabCache.OnCacheRevisionChange); 
 
@@ -562,6 +560,13 @@ namespace Seasons
                     StartCoroutineSync(func);
                 }
             }
+        }
+
+        public static IEnumerator PickableSetPicked(Pickable pickable)
+        {
+            yield return waitForFixedUpdate;
+
+            pickable.SetPicked(true);
         }
 
     }

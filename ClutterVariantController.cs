@@ -1,6 +1,7 @@
 ﻿using BepInEx.Logging;
 using HarmonyLib;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -197,6 +198,13 @@ namespace Seasons
                 }
         }
 
+        public IEnumerator UpdateColorsDay()
+        {
+            yield return new WaitForSeconds(fadeOnSeasonChangeDuration.Value);
+
+            UpdateColors();
+        }
+
         private int GetCurrentMainVariant()
         {
             double factor = GetVariantFactor(seasonState.GetCurrentWorldDay());
@@ -216,6 +224,7 @@ namespace Seasons
             double seedFactor = Math.Log10(Math.Abs(seed));
             return (Math.Sin(Math.Sign(seed) * seedFactor * day) + Math.Sin(Math.Sqrt(seedFactor) * Math.E * day) + Math.Sin(Math.PI * day)) / 2;
         }
+
         private bool HideGrass(Material material)
         {
             if (!hideGrassInWinter.Value || !m_hideMaterialByName.Contains(material.name.ToLower()))
