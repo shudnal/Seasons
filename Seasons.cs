@@ -21,7 +21,7 @@ namespace Seasons
     {
         const string pluginID = "shudnal.Seasons";
         const string pluginName = "Seasons";
-        const string pluginVersion = "1.1.4";
+        const string pluginVersion = "1.1.5";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -152,8 +152,8 @@ namespace Seasons
 
         public static WaitForFixedUpdate waitForFixedUpdate = new WaitForFixedUpdate();
 
-        private static HashSet<string> _PlantsToControlGrowth;
-        private static HashSet<string> _PlantsToSurviveWinter;
+        private static HashSet<string> _PlantsToControlGrowth = new HashSet<string>();
+        private static HashSet<string> _PlantsToSurviveWinter = new HashSet<string>();
         private static readonly Dictionary<Vector3, bool> _cachedIgnoredPositions = new Dictionary<Vector3, bool>();
 
         public enum Season

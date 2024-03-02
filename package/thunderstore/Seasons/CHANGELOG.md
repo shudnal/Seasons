@@ -1,3 +1,6 @@
+# 1.1.5
+* minor fix for pickable spawn on dedicated server
+
 # 1.1.4
 * Expand World Data compatibility
 * minor refinements here and there
