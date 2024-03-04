@@ -38,7 +38,7 @@ namespace Seasons
                 PrefabVariantController.AddControllerToPrefabs();
                 ClutterVariantController.Initialize();
                 __instance.gameObject.AddComponent<ZoneSystemVariantController>().Initialize(__instance);
-                FillPickablesListToControlGrowth();
+                FillListsToControl();
                 InvalidatePositionsCache();
             }
             else

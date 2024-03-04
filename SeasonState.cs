@@ -1495,7 +1495,7 @@ namespace Seasons
     {
         public static void ApplyWoodMultiplier(DropTable m_dropWhenDestroyed)
         {
-            if (!m_dropWhenDestroyed.m_drops.Any(dd => dd.m_item.name == "Wood" || dd.m_item.name != "FineWood" || dd.m_item.name != "RoundLog" || dd.m_item.name != "ElderBark" || dd.m_item.name != "YggdrasilWood"))
+            if (!m_dropWhenDestroyed.m_drops.Any(dd => ControlWoodDrop(dd.m_item)))
                 return;
 
             m_dropWhenDestroyed.m_dropMax = Mathf.CeilToInt(m_dropWhenDestroyed.m_dropMax * seasonState.GetWoodFromTreesMultiplier());
@@ -1537,14 +1537,13 @@ namespace Seasons
     }
 
     [HarmonyPatch(typeof(CharacterDrop), nameof(CharacterDrop.GenerateDropList))]
-    public static class CharacterDrop_GenerateDropList_TreeWoodDrop
+    public static class CharacterDrop_GenerateDropList_MeatDrop
     {
         public static void ApplyMeatMultiplier(List<CharacterDrop.Drop> m_drops)
         {
             foreach (CharacterDrop.Drop drop in m_drops)
             {
-                if (drop.m_prefab.name != "RawMeat" && drop.m_prefab.name != "DeerMeat" && drop.m_prefab.name != "NeckTail" && drop.m_prefab.name != "WolfMeat" &&
-                    drop.m_prefab.name != "LoxMeat" && drop.m_prefab.name != "ChickenMeat" && drop.m_prefab.name != "HareMeat" && drop.m_prefab.name != "SerpentMeat")
+                if (drop.m_prefab == null || !ControlMeatDrop(drop.m_prefab))
                     continue;
 
                 drop.m_amountMax = Mathf.CeilToInt(drop.m_amountMax * seasonState.GetMeatFromAnimalsMultiplier());

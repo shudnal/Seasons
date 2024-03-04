@@ -21,7 +21,7 @@ namespace Seasons
     {
         const string pluginID = "shudnal.Seasons";
         const string pluginName = "Seasons";
-        const string pluginVersion = "1.1.5";
+        const string pluginVersion = "1.1.6";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -63,6 +63,8 @@ namespace Seasons
         public static ConfigEntry<int> cropsDiesAfterSetDayInWinter;
         public static ConfigEntry<string> cropsToSurviveInWinter;
         public static ConfigEntry<string> cropsToControlGrowth;
+        public static ConfigEntry<string> woodListToControlDrop;
+        public static ConfigEntry<string> meatListToControlDrop;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -154,6 +156,9 @@ namespace Seasons
 
         private static HashSet<string> _PlantsToControlGrowth = new HashSet<string>();
         private static HashSet<string> _PlantsToSurviveWinter = new HashSet<string>();
+        private static HashSet<string> _WoodToControlDrop = new HashSet<string>();
+        private static HashSet<string> _MeatToControlDrop = new HashSet<string>();
+
         private static readonly Dictionary<Vector3, bool> _cachedIgnoredPositions = new Dictionary<Vector3, bool>();
 
         public enum Season
@@ -273,13 +278,17 @@ namespace Seasons
             cropsDiesAfterSetDayInWinter = config("Season", "Crops will die after set day in winter", defaultValue: 3, "Crops and pickables will perish after set day in winter");
             cropsToSurviveInWinter = config("Season", "Crops will survive in winter", defaultValue: "Pickable_Carrot, Pickable_Barley, Pickable_Barley_Wild, Pickable_Flax, Pickable_Flax_Wild, Pickable_Thistle, Pickable_Mushroom_Magecap", "Crops and pickables from the list will not perish after set day in winter");
             cropsToControlGrowth = config("Season", "Crops to control growth", defaultValue: "Pickable_Barley, Pickable_Barley_Wild, Pickable_Dandelion, Pickable_Flax, Pickable_Flax_Wild, Pickable_SeedCarrot, Pickable_SeedOnion, Pickable_SeedTurnip, Pickable_Thistle, Pickable_Turnip", "Crops and pickables from the list will be controlled by growth multiplier in addition to consumable crops");
+            woodListToControlDrop = config("Season", "Wood to control drop", defaultValue: "Wood, FineWood, RoundLog, ElderBark, YggdrasilWood", "Wood item names to control drop from trees");
+            meatListToControlDrop = config("Season", "Meat to control drop", defaultValue: "RawMeat, DeerMeat, NeckTail, WolfMeat, LoxMeat, ChickenMeat, HareMeat, SerpentMeat", "Meat item names to control drop from characters");
 
             seasonalStatsOutdoorsOnly.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
             hideGrassInWinter.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateColors();
             hideGrassInWinterDays.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateColors();
             hideGrassListInWinter.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateColors();
-            cropsToSurviveInWinter.SettingChanged += (sender, args) => FillPickablesListToControlGrowth();
-            cropsToControlGrowth.SettingChanged += (sender, args) => FillPickablesListToControlGrowth();
+            cropsToSurviveInWinter.SettingChanged += (sender, args) => FillListsToControl();
+            cropsToControlGrowth.SettingChanged += (sender, args) => FillListsToControl();
+            woodListToControlDrop.SettingChanged += (sender, args) => FillListsToControl();
+            meatListToControlDrop.SettingChanged += (sender, args) => FillListsToControl();
 
             showCurrentSeasonBuff = config("Season - Buff", "Show current season buff", defaultValue: true, "Show current season buff.");
             seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
@@ -469,10 +478,13 @@ namespace Seasons
             return SystemInfo.graphicsDeviceType != GraphicsDeviceType.Null;
         }
 
-        public static void FillPickablesListToControlGrowth()
+        public static void FillListsToControl()
         {
             _PlantsToControlGrowth = new HashSet<string>(cropsToControlGrowth.Value.Split(',').Select(p => p.Trim().ToLower()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList());
             _PlantsToSurviveWinter = new HashSet<string>(cropsToSurviveInWinter.Value.Split(',').Select(p => p.Trim().ToLower()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList());
+
+            _WoodToControlDrop = new HashSet<string>(woodListToControlDrop.Value.Split(',').Select(p => p.Trim().ToLower()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList());
+            _MeatToControlDrop = new HashSet<string>(meatListToControlDrop.Value.Split(',').Select(p => p.Trim().ToLower()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList());
 
             foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
             {
@@ -502,6 +514,16 @@ namespace Seasons
         public static bool PlantWillSurviveWinter(GameObject gameObject)
         {
             return _PlantsToSurviveWinter.Contains(PrefabVariantController.GetPrefabName(gameObject).ToLower());
+        }
+
+        public static bool ControlWoodDrop(GameObject gameObject)
+        {
+            return _WoodToControlDrop.Contains(PrefabVariantController.GetPrefabName(gameObject).ToLower());
+        }
+
+        public static bool ControlMeatDrop(GameObject gameObject)
+        {
+            return _MeatToControlDrop.Contains(PrefabVariantController.GetPrefabName(gameObject).ToLower());
         }
 
         public static void InvalidatePositionsCache()

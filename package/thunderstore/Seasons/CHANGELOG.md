@@ -1,3 +1,7 @@
+# 1.1.6
+* fix for wood and meat drop
+* added configurable wood and meat list to control drop
+
 # 1.1.5
 * minor fix for pickable spawn on dedicated server
 

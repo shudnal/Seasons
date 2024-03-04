@@ -91,9 +91,7 @@ namespace Seasons
             m_mapWinterTexture = new Color32[m_minimap.m_textureSize * m_minimap.m_textureSize];
 
             while (WorldGenerator.instance == null)
-            {
                 yield return new WaitForSeconds(1f);
-            }
 
             var internalThread = new Thread(() =>
             {
