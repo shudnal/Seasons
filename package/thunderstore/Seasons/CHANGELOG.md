@@ -1,3 +1,7 @@
+# 1.1.7
+* default colors adjustment
+* default support for roof pieces from MissingPieces, FineWoodBuildPieces, Balrond ElvenRoof, Balrond Shipyard, OdinArchitect, MoreGates
+
 # 1.1.6
 * fix for wood and meat drop
 * added configurable wood and meat list to control drop

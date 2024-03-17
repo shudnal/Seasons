@@ -820,6 +820,10 @@ namespace Seasons
                     { "grasscross_mistlands_short", new string[] { "_Color" }},
                     { "Bush02_en", new string[] { "_Color" }},
                     { "shrub_heath", new string[] { "_Color" }},
+                    { "bfp_straw_roof", new string[] { "_Color" }},
+                    { "bfp_straw_roof_alpha", new string[] { "_Color" }},
+                    { "bfp_straw_roof_corner_alpha", new string[] { "_Color" }},
+                    { "bcp_clay", new string[] { "_Color" }},
                 };
 
                 materialTextures = new Dictionary<string, string[]>
@@ -854,7 +858,7 @@ namespace Seasons
 
                 shaderOnlyMaterial = new Dictionary<string, string[]>
                 {
-                    { "Custom/Piece", new string[] { "straw", "RoofShingles", "beehive", "Midsummerpole_mat", "Pine_tree_xmas" } },
+                    { "Custom/Piece", new string[] { "straw", "RoofShingles", "beehive", "Midsummerpole_mat", "Pine_tree_xmas", "ReworkedValheim", "shipyardNewCloth", "M_Cloth_01", "bcp_clay" } },
                     { "Custom/Creature", new string[] { "HildirsLox", "lox", "lox_calf",
                                                         "Draugr_Archer_mat", "Draugr_mat", "Draugr_elite_mat", "Abomination_mat",
                                                         "greyling", "greydwarf", "greydwarf_elite", "greydwarf_shaman", "neck" } },
@@ -920,6 +924,12 @@ namespace Seasons
                     "wood_roof",
                     "copper_roof",
                     "goblin_roof",
+                    "roof_wood_",
+                    "roof_darkwood_",
+                    "elvenwood_roof",
+                    "BFP_FineWoodRoof",
+                    "cloth_roof",
+                    "BFP_ClayRoof"
                 };
 
                 ignorePrefab = new List<string>()
@@ -1115,9 +1125,9 @@ namespace Seasons
                 seasonal.Winter.Add(new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.65f, grayscale: true, restoreLuminance: false));
                 seasonal.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.65f, grayscale: true, restoreLuminance: false));
 
-                grass.Spring.Add(new ColorVariant(new Color(0.27f, 0.80f, 0.27f), 0.75f));
+                grass.Spring.Add(new ColorVariant(new Color(0.45f, 0.80f, 0.27f), 0.75f));
                 grass.Spring.Add(new ColorVariant(new Color(0.69f, 0.84f, 0.15f), 0.75f));
-                grass.Spring.Add(new ColorVariant(new Color(0.43f, 0.56f, 0.11f), 0.75f));
+                grass.Spring.Add(new ColorVariant(new Color(0.51f, 0.65f, 0.13f), 0.75f));
                 grass.Spring.Add(new ColorVariant());
 
                 grass.Summer.Add(new ColorVariant(new Color(0.5f, 0.7f, 0.2f), 0.5f));
@@ -1586,6 +1596,80 @@ namespace Seasons
                     }
                 ));
 
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "roof_wood_", partial: true, only: true),
+                        new MaterialFits(material: "straw", partial: true, only: true),
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(),
+                    }
+                ));
+
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "roof_darkwood_", partial: true, only: true),
+                        new MaterialFits(material: "RoofShingles", partial: true, only: true),
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(),
+                    }
+                ));
+
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "elvenwood_roof", partial: true, only: true),
+                        new MaterialFits(material: "straw", partial: true, only: false),
+                        new MaterialFits(material: "ReworkedValheim", partial: true, only: false),
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(),
+                    }
+                ));
+
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "BFP_FineWoodRoof", partial: true, only: true),
+                        new MaterialFits(material: "straw", partial: true, only: true),
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(),
+                    }
+                ));
+
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "cloth_roof", partial: true, only: true),
+                        new MaterialFits(material: "shipyardNewCloth", partial: true, only: false),
+                        new MaterialFits(material: "M_Cloth_01", partial: true, only: false),
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(),
+                    }
+                ));
+
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "BFP_ClayRoof", partial: true, only: true),
+                        new MaterialFits(material: "bcp_clay", partial: true, only: true),
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(),
+                    }
+                ));
+
             }
 
             public bool ReplaceColor(Color color, bool isGrass, bool isMoss, string prefabName = null, string rendererName = null, string materialName = null)
@@ -1895,6 +1979,80 @@ namespace Seasons
                     {
                         new PositionFits(24, 40, 38, 54),
                         new PositionFits(50, 0, 52, 0),
+                    }
+                ));
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "roof_wood_", partial: true, only: true),
+                        new MaterialFits(material: "straw", partial: true, only: true),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 0, 0, 0),
+                    }
+                ));
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "roof_darkwood_", partial: true, only: true),
+                        new MaterialFits(material: "RoofShingles", partial: true, only: true),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 0, 0, 0),
+                    }
+                ));
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "elvenwood_roof", partial: true, only: true),
+                        new MaterialFits(material: "straw", partial: true, only: false),
+                        new MaterialFits(material: "ReworkedValheim", partial: true, only: false),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 0, 0, 0),
+                    }
+                ));
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "BFP_FineWoodRoof", partial: true, only: true),
+                        new MaterialFits(material: "straw", partial: true, only: true),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 0, 0, 0),
+                    }
+                ));
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "cloth_roof", partial: true, only: true),
+                        new MaterialFits(material: "shipyardNewCloth", partial: true, only: false),
+                        new MaterialFits(material: "M_Cloth_01", partial: true, only: false),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 0, 0, 0),
+                    }
+                ));
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "BFP_ClayRoof", partial: true, only: true),
+                        new MaterialFits(material: "bcp_clay", partial: true, only: true),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 0, 0, 0),
                     }
                 ));
 
