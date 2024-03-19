@@ -922,12 +922,16 @@ namespace Seasons
     [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.RescaleDayFraction))]
     public static class EnvMan_RescaleDayFraction_DayNightLength
     {
+        [HarmonyPriority(Priority.First)]
         public static bool Prefix(float fraction, ref float __result)
         {
-            float dayStart = (seasonState.GetNightLength() / 2f) / 100f;
+            float dayStart = seasonState.DayStartFraction();
+            if (dayStart == EnvMan.c_MorningL)
+                return true;
+
             float nightStart = 1.0f - dayStart;
 
-            if (fraction >= dayStart && fraction <= nightStart)
+            if (dayStart <= fraction && fraction <= nightStart)
             {
                 float num = (fraction - dayStart) / (nightStart - dayStart);
                 fraction = 0.25f + num * 0.5f;
@@ -950,9 +954,10 @@ namespace Seasons
     [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.GetMorningStartSec))]
     public static class EnvMan_GetMorningStartSec_DayNightLength
     {
+        [HarmonyPriority(Priority.First)]
         public static bool Prefix(EnvMan __instance, int day, ref double __result)
         {
-            __result = (float)(day * __instance.m_dayLengthSec) + (float)(__instance.m_dayLengthSec * seasonState.DayStartFraction(seasonState.GetSeason(day)));
+            __result = (day * __instance.m_dayLengthSec) + (double)(__instance.m_dayLengthSec * seasonState.DayStartFraction(seasonState.GetSeason(day)));
             return false;
         }
     }
@@ -960,10 +965,15 @@ namespace Seasons
     [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.SkipToMorning))]
     public static class EnvMan_SkipToMorning_DayNightLength
     {
+        [HarmonyPriority(Priority.First)]
         public static bool Prefix(EnvMan __instance, ref bool ___m_skipTime, ref double ___m_skipToTime, ref double ___m_timeSkipSpeed)
         {
+            float dayStart = seasonState.DayStartFraction();
+            if (dayStart == EnvMan.c_MorningL)
+                return true;
+
             double timeSeconds = ZNet.instance.GetTimeSeconds();
-            double startOfMorning = timeSeconds - timeSeconds % __instance.m_dayLengthSec + __instance.m_dayLengthSec * seasonState.DayStartFraction();
+            double startOfMorning = timeSeconds - timeSeconds % __instance.m_dayLengthSec + __instance.m_dayLengthSec * dayStart;
             
             int day = __instance.GetDay(startOfMorning);
             double morningStartSec = __instance.GetMorningStartSec(day + 1);
@@ -971,9 +981,9 @@ namespace Seasons
             ___m_skipTime = true;
             ___m_skipToTime = morningStartSec;
 
-            double num = morningStartSec - timeSeconds;
-            ___m_timeSkipSpeed = num / 12.0;
-            ZLog.Log("Time " + timeSeconds + ", day:" + day + "    nextm:" + morningStartSec + "  skipspeed:" + ___m_timeSkipSpeed);
+            ___m_timeSkipSpeed = (morningStartSec - timeSeconds) / 12.0;
+
+            LogInfo($"Time: {timeSeconds,-10:F2} Day: {day} Next morning: {morningStartSec,-10:F2} Skipspeed: {___m_timeSkipSpeed,-5:F2}");
 
             return false;
         }
@@ -1769,23 +1779,25 @@ namespace Seasons
             return newColor.ToRGBA();
         }
 
-        public static void ChangeLightState(EnvSetup env)
+        private static void SaveLightState(EnvSetup env)
         {
             _lightState.m_ambColorNight = env.m_ambColorNight;
+            _lightState.m_sunColorNight = env.m_sunColorNight;
             _lightState.m_fogColorNight = env.m_fogColorNight;
             _lightState.m_fogColorSunNight = env.m_fogColorSunNight;
-            _lightState.m_sunColorNight = env.m_sunColorNight;
 
             _lightState.m_ambColorDay = env.m_ambColorDay;
-            _lightState.m_fogColorMorning = env.m_fogColorMorning;
-            _lightState.m_fogColorDay = env.m_fogColorDay;
-            _lightState.m_fogColorEvening = env.m_fogColorEvening;
-            _lightState.m_fogColorSunMorning = env.m_fogColorSunMorning;
-            _lightState.m_fogColorSunDay = env.m_fogColorSunDay;
-            _lightState.m_fogColorSunEvening = env.m_fogColorSunEvening;
-            _lightState.m_sunColorMorning = env.m_sunColorMorning;
             _lightState.m_sunColorDay = env.m_sunColorDay;
+            _lightState.m_fogColorDay = env.m_fogColorDay;
+            _lightState.m_fogColorSunDay = env.m_fogColorSunDay;
+
+            _lightState.m_sunColorMorning = env.m_sunColorMorning;
+            _lightState.m_fogColorMorning = env.m_fogColorMorning;
+            _lightState.m_fogColorSunMorning = env.m_fogColorSunMorning;
+
             _lightState.m_sunColorEvening = env.m_sunColorEvening;
+            _lightState.m_fogColorEvening = env.m_fogColorEvening;
+            _lightState.m_fogColorSunEvening = env.m_fogColorSunEvening;
 
             _lightState.m_lightIntensityDay = env.m_lightIntensityDay;
             _lightState.m_lightIntensityNight = env.m_lightIntensityNight;
@@ -1794,93 +1806,65 @@ namespace Seasons
             _lightState.m_fogDensityMorning = env.m_fogDensityMorning;
             _lightState.m_fogDensityDay = env.m_fogDensityDay;
             _lightState.m_fogDensityEvening = env.m_fogDensityEvening;
+        }
+
+        private static void ChangeEnvColor(EnvSetup env, SeasonLightings.SeasonLightingSettings lightingSettings, bool indoors = false)
+        {
+            env.m_ambColorNight = ChangeColorLuminance(env.m_ambColorNight, indoors ? lightingSettings.indoors.luminanceMultiplier : lightingSettings.night.luminanceMultiplier);
+            env.m_fogColorNight = ChangeColorLuminance(env.m_fogColorNight, indoors ? lightingSettings.indoors.luminanceMultiplier : lightingSettings.night.luminanceMultiplier);
+            env.m_fogColorSunNight = ChangeColorLuminance(env.m_fogColorSunNight, indoors ? lightingSettings.indoors.luminanceMultiplier : lightingSettings.night.luminanceMultiplier);
+            env.m_sunColorNight = ChangeColorLuminance(env.m_sunColorNight, indoors ? lightingSettings.indoors.luminanceMultiplier : lightingSettings.night.luminanceMultiplier);
+
+            env.m_fogColorMorning = ChangeColorLuminance(env.m_fogColorMorning, indoors ? lightingSettings.indoors.luminanceMultiplier : lightingSettings.morning.luminanceMultiplier);
+            env.m_fogColorSunMorning = ChangeColorLuminance(env.m_fogColorSunMorning, indoors ? lightingSettings.indoors.luminanceMultiplier : lightingSettings.morning.luminanceMultiplier);
+            env.m_sunColorMorning = ChangeColorLuminance(env.m_sunColorMorning, indoors ? lightingSettings.indoors.luminanceMultiplier : lightingSettings.morning.luminanceMultiplier);
+
+            env.m_ambColorDay = ChangeColorLuminance(env.m_ambColorDay, indoors ? lightingSettings.indoors.luminanceMultiplier : lightingSettings.day.luminanceMultiplier);
+            env.m_fogColorDay = ChangeColorLuminance(env.m_fogColorDay, indoors ? lightingSettings.indoors.luminanceMultiplier : lightingSettings.day.luminanceMultiplier);
+            env.m_fogColorSunDay = ChangeColorLuminance(env.m_fogColorSunDay, indoors ? lightingSettings.indoors.luminanceMultiplier : lightingSettings.day.luminanceMultiplier);
+            env.m_sunColorDay = ChangeColorLuminance(env.m_sunColorDay, indoors ? lightingSettings.indoors.luminanceMultiplier : lightingSettings.day.luminanceMultiplier);
+
+            env.m_fogColorEvening = ChangeColorLuminance(env.m_fogColorEvening, indoors ? lightingSettings.indoors.luminanceMultiplier : lightingSettings.evening.luminanceMultiplier);
+            env.m_fogColorSunEvening = ChangeColorLuminance(env.m_fogColorSunEvening, indoors ? lightingSettings.indoors.luminanceMultiplier : lightingSettings.evening.luminanceMultiplier);
+            env.m_sunColorEvening = ChangeColorLuminance(env.m_sunColorEvening, indoors ? lightingSettings.indoors.luminanceMultiplier : lightingSettings.evening.luminanceMultiplier);
+
+            env.m_fogDensityNight *= indoors ? lightingSettings.indoors.fogDensityMultiplier : lightingSettings.night.fogDensityMultiplier;
+            env.m_fogDensityMorning *= indoors ? lightingSettings.indoors.fogDensityMultiplier : lightingSettings.morning.fogDensityMultiplier;
+            env.m_fogDensityDay *= indoors ? lightingSettings.indoors.fogDensityMultiplier : lightingSettings.day.fogDensityMultiplier;
+            env.m_fogDensityEvening *= indoors ? lightingSettings.indoors.fogDensityMultiplier : lightingSettings.evening.fogDensityMultiplier;
+
+            env.m_lightIntensityDay *= lightingSettings.lightIntensityDayMultiplier;
+            env.m_lightIntensityNight *= lightingSettings.lightIntensityNightMultiplier;
+        }
+
+        public static void ChangeLightState(EnvSetup env)
+        {
+            SaveLightState(env);
 
             SeasonLightings.SeasonLightingSettings lightingSettings = SeasonState.seasonLightings.GetSeasonLighting(seasonState.GetCurrentSeason());
 
-            if (Player.m_localPlayer != null && Player.m_localPlayer.InInterior())
-            {
-                if (lightingSettings.indoors.luminanceMultiplier != 1.0f)
-                {
-                    env.m_fogColorMorning = ChangeColorLuminance(env.m_fogColorMorning, lightingSettings.indoors.luminanceMultiplier);
-                    env.m_fogColorDay = ChangeColorLuminance(env.m_fogColorDay, lightingSettings.indoors.luminanceMultiplier);
-                    env.m_fogColorEvening = ChangeColorLuminance(env.m_fogColorEvening, lightingSettings.indoors.luminanceMultiplier);
-                    env.m_fogColorSunMorning = ChangeColorLuminance(env.m_fogColorSunMorning, lightingSettings.indoors.luminanceMultiplier);
-                    env.m_fogColorSunDay = ChangeColorLuminance(env.m_fogColorSunDay, lightingSettings.indoors.luminanceMultiplier);
-                    env.m_fogColorSunEvening = ChangeColorLuminance(env.m_fogColorSunEvening, lightingSettings.indoors.luminanceMultiplier);
-                    env.m_sunColorMorning = ChangeColorLuminance(env.m_sunColorMorning, lightingSettings.indoors.luminanceMultiplier);
-                    env.m_sunColorDay = ChangeColorLuminance(env.m_sunColorDay, lightingSettings.indoors.luminanceMultiplier);
-                    env.m_sunColorEvening = ChangeColorLuminance(env.m_sunColorEvening, lightingSettings.indoors.luminanceMultiplier);
-                    env.m_ambColorNight = ChangeColorLuminance(env.m_ambColorNight, lightingSettings.indoors.luminanceMultiplier);
-                    env.m_fogColorNight = ChangeColorLuminance(env.m_fogColorNight, lightingSettings.indoors.luminanceMultiplier);
-                    env.m_fogColorSunNight = ChangeColorLuminance(env.m_fogColorSunNight, lightingSettings.indoors.luminanceMultiplier);
-                    env.m_sunColorNight = ChangeColorLuminance(env.m_sunColorNight, lightingSettings.indoors.luminanceMultiplier);
-
-                }
-
-                if (lightingSettings.indoors.fogDensityMultiplier != 1.0f)
-                {
-                    env.m_fogDensityNight *= lightingSettings.indoors.fogDensityMultiplier;
-                    env.m_fogDensityMorning *= lightingSettings.indoors.fogDensityMultiplier;
-                    env.m_fogDensityEvening *= lightingSettings.indoors.fogDensityMultiplier;
-                    env.m_fogDensityDay *= lightingSettings.indoors.fogDensityMultiplier;
-                }
-            }
-            else
-            {
-                env.m_ambColorNight = ChangeColorLuminance(env.m_ambColorNight, lightingSettings.night.luminanceMultiplier);
-                env.m_fogColorNight = ChangeColorLuminance(env.m_fogColorNight, lightingSettings.night.luminanceMultiplier);
-                env.m_fogColorSunNight = ChangeColorLuminance(env.m_fogColorSunNight, lightingSettings.night.luminanceMultiplier);
-                env.m_sunColorNight = ChangeColorLuminance(env.m_sunColorNight, lightingSettings.night.luminanceMultiplier);
-
-                env.m_fogDensityNight *= lightingSettings.night.fogDensityMultiplier;
-
-                env.m_fogColorMorning = ChangeColorLuminance(env.m_fogColorMorning, lightingSettings.morning.luminanceMultiplier);
-                env.m_fogColorSunMorning = ChangeColorLuminance(env.m_fogColorSunMorning, lightingSettings.morning.luminanceMultiplier);
-                env.m_sunColorMorning = ChangeColorLuminance(env.m_sunColorMorning, lightingSettings.morning.luminanceMultiplier);
-
-                env.m_fogDensityMorning *= lightingSettings.morning.fogDensityMultiplier;
-
-                env.m_fogColorDay = ChangeColorLuminance(env.m_fogColorDay, lightingSettings.day.luminanceMultiplier);
-                env.m_fogColorSunDay = ChangeColorLuminance(env.m_fogColorSunDay, lightingSettings.day.luminanceMultiplier);
-                env.m_sunColorDay = ChangeColorLuminance(env.m_sunColorDay, lightingSettings.day.luminanceMultiplier);
-
-                env.m_fogDensityDay *= lightingSettings.day.fogDensityMultiplier;
-
-                env.m_fogColorEvening = ChangeColorLuminance(env.m_fogColorEvening, lightingSettings.evening.luminanceMultiplier);
-                env.m_fogColorSunEvening = ChangeColorLuminance(env.m_fogColorSunEvening, lightingSettings.evening.luminanceMultiplier);
-                env.m_sunColorEvening = ChangeColorLuminance(env.m_sunColorEvening, lightingSettings.evening.luminanceMultiplier);
-
-                env.m_fogDensityEvening *= lightingSettings.evening.fogDensityMultiplier;
-            }
-
-            if (lightingSettings.lightIntensityDayMultiplier != 1.0f)
-            {
-                env.m_lightIntensityDay *= lightingSettings.lightIntensityDayMultiplier;
-            }
-
-            if (lightingSettings.lightIntensityNightMultiplier != 1.0f)
-            {
-                env.m_lightIntensityNight *= lightingSettings.lightIntensityNightMultiplier;
-            }
-
+            ChangeEnvColor(env, lightingSettings, indoors: Player.m_localPlayer != null && Player.m_localPlayer.InInterior());
         }
 
         public static void ResetLightState(EnvSetup env)
         {
             env.m_ambColorNight = _lightState.m_ambColorNight;
+            env.m_sunColorNight = _lightState.m_sunColorNight;
             env.m_fogColorNight = _lightState.m_fogColorNight;
             env.m_fogColorSunNight = _lightState.m_fogColorSunNight;
-            env.m_sunColorNight = _lightState.m_sunColorNight;
 
-            env.m_fogColorMorning = _lightState.m_fogColorMorning;
-            env.m_fogColorDay = _lightState.m_fogColorDay;
-            env.m_fogColorEvening = _lightState.m_fogColorEvening;
-            env.m_fogColorSunMorning = _lightState.m_fogColorSunMorning;
-            env.m_fogColorSunDay = _lightState.m_fogColorSunDay;
-            env.m_fogColorSunEvening = _lightState.m_fogColorSunEvening;
-            env.m_sunColorMorning = _lightState.m_sunColorMorning;
+            env.m_ambColorDay = _lightState.m_ambColorDay;
             env.m_sunColorDay = _lightState.m_sunColorDay;
+            env.m_fogColorDay = _lightState.m_fogColorDay;
+            env.m_fogColorSunDay = _lightState.m_fogColorSunDay;
+
+            env.m_sunColorMorning = _lightState.m_sunColorMorning;
+            env.m_fogColorMorning = _lightState.m_fogColorMorning;
+            env.m_fogColorSunMorning = _lightState.m_fogColorSunMorning;
+
             env.m_sunColorEvening = _lightState.m_sunColorEvening;
+            env.m_fogColorEvening = _lightState.m_fogColorEvening;
+            env.m_fogColorSunEvening = _lightState.m_fogColorSunEvening;
 
             env.m_fogDensityNight = _lightState.m_fogDensityNight;
             env.m_fogDensityMorning = _lightState.m_fogDensityMorning;

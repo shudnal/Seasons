@@ -1,3 +1,6 @@
+# 1.1.8
+* fix for day luminance control
+
 # 1.1.7
 * default colors adjustment
 * default support for roof pieces from MissingPieces, FineWoodBuildPieces, Balrond ElvenRoof, Balrond Shipyard, OdinArchitect, MoreGates
