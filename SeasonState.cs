@@ -555,7 +555,7 @@ namespace Seasons
 
         private SeasonSettings GetSeasonSettings(Season season)
         {
-            return seasonsSettings[season] ?? new SeasonSettings(season);
+            return seasonsSettings.ContainsKey(season) ? seasonsSettings[season] : new SeasonSettings(season);
         }
 
         public Season GetSeason(int day)
