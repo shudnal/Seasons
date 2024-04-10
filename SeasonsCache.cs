@@ -481,7 +481,7 @@ namespace Seasons
 
         public bool HaveOriginalTexture()
         {
-            return original != null;
+            return (bool)original;
         }
 
         public void ApplyTextures()

@@ -144,16 +144,22 @@ namespace Seasons
             foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
                 foreach (KeyValuePair<string, TextureVariants> texProp in materialVariants.Value)
                 {
+                    if (!materialVariants.Key)
+                        continue;
+
                     if (texProp.Value.HaveOriginalTexture())
                         materialVariants.Key.SetTexture(texProp.Key, texProp.Value.original);
 
                     if (m_originalColors.ContainsKey(materialVariants.Key))
-                        materialVariants.Key.color = m_originalColors[materialVariants.Key];
+                        materialVariants.Key.SetColor("_Color", m_originalColors[materialVariants.Key]);
                 }
 
             foreach (KeyValuePair<Material, Dictionary<string, Color[]>> colorVariants in m_colorVariants)
                 foreach (KeyValuePair<string, Color[]> colorProp in colorVariants.Value)
                 {
+                    if (!colorVariants.Key)
+                        continue;
+
                     if (m_originalColors.ContainsKey(colorVariants.Key))
                         colorVariants.Key.SetColor(colorProp.Key, m_originalColors[colorVariants.Key]);
                 }

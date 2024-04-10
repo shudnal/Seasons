@@ -1,3 +1,6 @@
+# 1.1.9
+* patch 0.217.46
+
 # 1.1.8
 * fix for day luminance control
 
