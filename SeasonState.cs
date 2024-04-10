@@ -874,7 +874,7 @@ namespace Seasons
         {
             if (UseTextureControllers())
             {
-                ClutterVariantController.instance.StartCoroutine(ClutterVariantController.instance.UpdateColorsDay());
+                ClutterVariantController.instance?.StartCoroutine(ClutterVariantController.instance.UpdateColorsDay());
             }
             ZoneSystemVariantController.UpdateWaterState();
             seasonState.UpdateGlobalKeys();

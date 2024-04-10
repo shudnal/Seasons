@@ -2517,7 +2517,7 @@ namespace Seasons
         {
             foreach (ZoneSystem.ZoneLocation loc in ZoneSystem.instance.m_locations)
             {
-                if (loc.m_prefab == null)
+                if (!loc.m_prefab.IsValid)
                     continue;
 
                 if (materialSettings.ignorePrefab.Contains(loc.m_prefabName))
@@ -2526,13 +2526,17 @@ namespace Seasons
                 if (materialSettings.ignorePrefabPartialName.Any(namepart => loc.m_prefabName.Contains(namepart)))
                     continue;
 
-                Transform root = loc.m_prefab.transform.Find("exterior") ?? loc.m_prefab.transform;
+                loc.m_prefab.Load();
+
+                Transform root = loc.m_prefab.Asset.transform.Find("exterior") ?? loc.m_prefab.Asset.transform;
 
                 foreach (MeshRenderer mrenderer in root.GetComponentsInChildren<MeshRenderer>())
                     CacheMaterials(mrenderer.sharedMaterials, loc.m_prefabName, mrenderer.name, mrenderer.GetType().Name, mrenderer.transform.GetPath());
 
                 foreach (SkinnedMeshRenderer smrenderer in root.GetComponentsInChildren<SkinnedMeshRenderer>())
                     CacheMaterials(smrenderer.sharedMaterials, loc.m_prefabName, smrenderer.name, smrenderer.GetType().Name, smrenderer.transform.GetPath());
+
+                loc.m_prefab.Release();
 
                 yield return null;
             }
