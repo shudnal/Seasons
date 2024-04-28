@@ -744,7 +744,7 @@ namespace Seasons
             if (torch.m_shared.m_itemType != ItemDrop.ItemData.ItemType.Torch)
                 return;
 
-            if (seasonState.GetTorchAsFiresource() && IsActive && (EnvMan.instance.IsWet() || EnvMan.instance.IsCold() || EnvMan.instance.IsFreezing()))
+            if (seasonState.GetTorchAsFiresource() && IsActive && (EnvMan.IsWet() || EnvMan.IsCold() || EnvMan.IsFreezing()))
                 torch.m_shared.m_durabilityDrain = seasonState.GetTorchDurabilityDrain();
             else
                 torch.m_shared.m_durabilityDrain = 0.0333f;
@@ -1152,7 +1152,37 @@ namespace Seasons
             if (__state == 0)
                 return;
 
-            ___m_respawnTimeMinutes = __state;
+            ___m_respawnTimeMinutes = __state; 
+        }
+    }
+
+    [HarmonyPatch(typeof(Vine), nameof(Vine.UpdateGrow))]
+    public static class Vine_UpdateGrow_VinesGrowthWinterStop
+    {
+        private static bool Prefix(Vine __instance, ref Tuple<float, float> __state)
+        {
+            if (IsIgnoredPosition(__instance.transform.position) || __instance.m_initialGrowItterations > 0 || __instance.IsDoneGrowing)
+                return true;
+
+            float multiplier = seasonState.GetPlantsGrowthMultiplier();
+            if (multiplier == 0f)
+                return false;
+
+            __state = Tuple.Create(__instance.m_growTime, __instance.m_growTimePerBranch);
+
+            __instance.m_growTime *= multiplier;
+            __instance.m_growTimePerBranch *= multiplier;
+
+            return true;
+        }
+
+        private static void Postfix(Vine __instance, Tuple<float, float> __state)
+        {
+            if (__state == null)
+                return;
+
+            __instance.m_growTime = __state.Item1;
+            __instance.m_growTimePerBranch = __state.Item2;
         }
     }
 
@@ -1949,7 +1979,7 @@ namespace Seasons
             if (player == null)
                 return;
 
-            __result = __result || player.IsSwimming() && seasonState.GetCurrentSeason() == Season.Winter && __instance.IsCold();
+            __result = __result || player.IsSwimming() && seasonState.GetCurrentSeason() == Season.Winter && EnvMan.IsCold();
         }
     }
 

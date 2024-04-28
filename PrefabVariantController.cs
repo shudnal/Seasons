@@ -678,7 +678,7 @@ namespace Seasons
         }
     }
 
-    [HarmonyPatch(typeof(MineRock5), nameof(MineRock5.Start))]
+    [HarmonyPatch(typeof(MineRock5), nameof(MineRock5.Awake))]
     public static class MineRock5_Start_AddPrefabVariantController
     {
         private static void Postfix(MineRock5 __instance, MeshRenderer ___m_meshRenderer)
@@ -723,7 +723,7 @@ namespace Seasons
     {
         private static void Postfix(Transform baseParent, GameObject[] __result)
         {
-            if (baseParent == null)
+            if (baseParent == null || __result == null)
                 return;
 
             foreach (GameObject obj in __result)

@@ -2,6 +2,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using static Heightmap;
 using static Seasons.Seasons;
@@ -210,7 +211,7 @@ namespace Seasons
 
         public static void UpdateTerrainColors()
         {
-            foreach (Heightmap instance in Heightmap.Instances)
+            foreach (Heightmap instance in Instances.Cast<Heightmap>())
                 UpdateTerrainColor(instance);
         }
 
@@ -346,7 +347,7 @@ namespace Seasons
 
             yield return waitForFixedUpdate;
 
-            foreach (Ship ship in Ship.Instances.ToArray())
+            foreach (Ship ship in Ship.Instances.Cast<Ship>())
                 yield return CheckIfShipBelowSurface(ship);
         }
 
@@ -357,7 +358,7 @@ namespace Seasons
 
         public static void UpdateShipsPositions()
         {
-            foreach (Ship ship in Ship.Instances)
+            foreach (Ship ship in Ship.Instances.Cast<Ship>())
                 if (ship.m_nview.IsOwner())
                     PlaceShip(ship);
         }
@@ -456,7 +457,7 @@ namespace Seasons
 
                 Vector3 position = zdo.GetPosition();
 
-                float num = WorldGenerator.instance.WorldAngle(position.x, position.z) * 100.0f;
+                float num = WorldGenerator.WorldAngle(position.x, position.z) * 100.0f;
 
                 if (new Vector2(position.x, position.z + 4000.0f).magnitude > 12000.0f + num)
                     continue;
@@ -1002,7 +1003,7 @@ namespace Seasons
             if (__result != null && __result.m_name == "home")
                 return;
 
-            if (!LocalPlayerIsOnFrozenOcean() || !EnvMan.instance.IsNight())
+            if (!LocalPlayerIsOnFrozenOcean() || !EnvMan.IsNight())
                 return;
 
             MusicMan.NamedMusic frozenOcean = __instance.FindMusic(frozenOceanMusic);

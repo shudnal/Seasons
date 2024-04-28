@@ -211,7 +211,7 @@ namespace Seasons
                     return;
 
                 originalPNG = textureVariants.originalPNG;
-                name = textureVariants.original.name;
+                name = textureVariants.originalName;
                 properties = textureVariants.properties;
 
                 foreach (KeyValuePair<Season, Dictionary<int, Texture2D>> texSeason in textureVariants.seasons)
@@ -426,6 +426,7 @@ namespace Seasons
     public class TextureVariants
     {
         public Texture2D original;
+        public string originalName;
         public byte[] originalPNG;
         public TextureProperties properties;
         public Dictionary<Season, Dictionary<int, Texture2D>> seasons = new Dictionary<Season, Dictionary<int, Texture2D>>();
@@ -472,6 +473,7 @@ namespace Seasons
         {
             original = texture as Texture2D;
             properties = new TextureProperties(texture as Texture2D);
+            originalName = original.name;
         }
 
         public bool Initialized()
@@ -824,6 +826,9 @@ namespace Seasons
                     { "bfp_straw_roof_alpha", new string[] { "_Color" }},
                     { "bfp_straw_roof_corner_alpha", new string[] { "_Color" }},
                     { "bcp_clay", new string[] { "_Color" }},
+                    { "Grausten_RoofSlab_mat", new string[] { "_Color" }},
+                    { "Vine_Sapling_ashlands_mat", new string[] { "_Color" }},
+                    { "Vines_ashlands_mat", new string[] { "_Color" }},
                 };
 
                 materialTextures = new Dictionary<string, string[]>
@@ -837,6 +842,9 @@ namespace Seasons
                     { "oak_bark", new string[] { "_MossTex" }},
                     { "yggdrasil_branch", new string[] { "_MossTex" }},
                     { "Vines_Mat", new string[] { } },
+                    { "Grausten_RoofSlab_mat", new string[] { } },
+                    { "Vine_Sapling_ashlands_mat", new string[] { }},
+                    { "Vines_ashlands_mat", new string[] { }},
                 };
 
                 shaderTextures = new Dictionary<string, string[]>
@@ -853,12 +861,12 @@ namespace Seasons
 
                 shaderIgnoreMaterial = new Dictionary<string, string[]>
                 {
-                    { "Custom/Vegetation", new string[] { "bark", "trunk", "_wood", "HildirFlowerGirland_", "HildirTentCloth_", "TraderTent_", "VinesBranch_mat" } },
+                    { "Custom/Vegetation", new string[] { "bark", "trunk", "_wood", "HildirFlowerGirland_", "HildirTentCloth_", "TraderTent_", "VinesBranch_mat", "VinesBranch_Ashlands_mat" } },
                 };
 
                 shaderOnlyMaterial = new Dictionary<string, string[]>
                 {
-                    { "Custom/Piece", new string[] { "straw", "RoofShingles", "beehive", "Midsummerpole_mat", "Pine_tree_xmas", "ReworkedValheim", "shipyardNewCloth", "M_Cloth_01", "bcp_clay" } },
+                    { "Custom/Piece", new string[] { "straw", "RoofShingles", "beehive", "Midsummerpole_mat", "Pine_tree_xmas", "ReworkedValheim", "shipyardNewCloth", "M_Cloth_01", "bcp_clay", "Grausten_RoofSlab_mat" } },
                     { "Custom/Creature", new string[] { "HildirsLox", "lox", "lox_calf",
                                                         "Draugr_Archer_mat", "Draugr_mat", "Draugr_elite_mat", "Abomination_mat",
                                                         "greyling", "greydwarf", "greydwarf_elite", "greydwarf_shaman", "neck" } },
@@ -916,7 +924,9 @@ namespace Seasons
                     "vines",
                     "piece_beehive",
                     "piece_maypole",
-                    "piece_xmastree"
+                    "piece_xmastree",
+                    "VineAsh",
+                    "VineAsh_sapling"
                 };
 
                 piecePrefabPartialName = new List<string>()
@@ -929,7 +939,9 @@ namespace Seasons
                     "elvenwood_roof",
                     "BFP_FineWoodRoof",
                     "cloth_roof",
-                    "BFP_ClayRoof"
+                    "BFP_ClayRoof",
+                    "piece_grausten_roof",
+                    "VineAsh"
                 };
 
                 ignorePrefab = new List<string>()
@@ -956,6 +968,10 @@ namespace Seasons
                     "marker02",
                     "TheHive",
                     "StoneVillage2",
+                    "VoltureNest",
+                    "CharredStone_Spawner",
+                    "SulfurArch",
+                    "FaderLocation",
                 };
 
                 ignorePrefabPartialName = new List<string>()
@@ -978,6 +994,14 @@ namespace Seasons
                     "OLD_wood_roof",
                     "AbandonedLogCabin",
                     "DrakeNest",
+                    "CharredRuins",
+                    "MorgenHole",
+                    "CharredTowerRuins",
+                    "CharredRuins",
+                    "CharredFortress",
+                    "PlaceofMystery",
+                    "DevWall",
+                    "blackmarble_creep_slope",
                 };
 
             }
@@ -1469,7 +1493,29 @@ namespace Seasons
                 specific.Add(new ColorSpecific(
                     new List<MaterialFits>()
                     {
-                        new MaterialFits(prefab: "Vines_Mat", only:true)
+                        new MaterialFits(material: "Vines_Mat", only:true)
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(),
+                    }
+                ));
+
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(material: "Vine_Sapling_ashlands_mat", only:true)
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(),
+                    }
+                ));
+
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(material: "Vines_ashlands_mat", only:true)
                     },
                     new List<ColorFits>()
                     {
@@ -1663,6 +1709,18 @@ namespace Seasons
                     {
                         new MaterialFits(prefab: "BFP_ClayRoof", partial: true, only: true),
                         new MaterialFits(material: "bcp_clay", partial: true, only: true),
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(),
+                    }
+                ));
+
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "piece_grausten_roof", partial: true, only: true),
+                        new MaterialFits(material: "Grausten_RoofSlab_mat", partial: true, only: true),
                     },
                     new List<ColorFits>()
                     {
@@ -2049,6 +2107,18 @@ namespace Seasons
                     {
                         new MaterialFits(prefab: "BFP_ClayRoof", partial: true, only: true),
                         new MaterialFits(material: "bcp_clay", partial: true, only: true),
+                    },
+                    new List<PositionFits>()
+                    {
+                        new PositionFits(0, 0, 0, 0),
+                    }
+                ));
+
+                positions.Add(new PositionSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "piece_grausten_roof", partial: true, only: true),
+                        new MaterialFits(material: "Grausten_RoofSlab_mat", partial: true, only: true),
                     },
                     new List<PositionFits>()
                     {
@@ -2760,11 +2830,7 @@ namespace Seasons
                 if (prefab.layer == 8)
                 {
                     LODGroup lodGroup = prefab.GetComponentInChildren<LODGroup>();
-                    if (lodGroup != null)
-                    {
-                        CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: true);
-                    }
-                    else
+                    if (lodGroup == null || !CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: true))
                     {
                         SkinnedMeshRenderer[] renderers = prefab.GetComponentsInChildren<SkinnedMeshRenderer>();
                         foreach (SkinnedMeshRenderer renderer in renderers)
@@ -2791,12 +2857,8 @@ namespace Seasons
                         if (wnt.m_wet != null && wnt.m_wet.TryGetComponent(out LODGroup wntLodGroupWet))
                             CachePrefabLODGroup(wntLodGroupWet, prefab.name, isLodInHierarchy: true);
                     }
-                    
-                    if (prefab.TryGetComponent(out LODGroup lodGroup) && lodGroup.lodCount > 1)
-                    {
-                        CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: false, isPlant:isPlant);
-                    }
-                    else
+
+                    if (!prefab.TryGetComponent(out LODGroup lodGroup) || lodGroup.lodCount < 2 || !CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: false, isPlant: isPlant))
                     {
                         foreach (MeshRenderer renderer in prefab.GetComponentsInChildren<MeshRenderer>())
                         {
@@ -2810,11 +2872,7 @@ namespace Seasons
                 else
                 {
                     LODGroup lodGroup = prefab.GetComponentInChildren<LODGroup>();
-                    if (lodGroup != null)
-                    {
-                        CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: true);
-                    }
-                    else
+                    if (lodGroup == null || !CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: true))
                     {
                         SkinnedMeshRenderer[] renderers = prefab.GetComponentsInChildren<SkinnedMeshRenderer>();
                         foreach (SkinnedMeshRenderer renderer in renderers)
@@ -2848,8 +2906,10 @@ namespace Seasons
             }
         }
 
-        private static void CachePrefabLODGroup(LODGroup lodGroup, string prefabName, bool isLodInHierarchy, bool isPlant = false)
+        private static bool CachePrefabLODGroup(LODGroup lodGroup, string prefabName, bool isLodInHierarchy, bool isPlant = false)
         {
+            bool result = false;
+
             LOD[] LODs = lodGroup.GetLODs();
             for (int lodLevel = 0; lodLevel < lodGroup.lodCount; lodLevel++)
             {
@@ -2865,8 +2925,11 @@ namespace Seasons
                         continue;
 
                     CacheMaterials(renderer.sharedMaterials, prefabName, renderer.name, renderer.GetType().Name, lodGroup.transform.GetPath(), lodLevel, isLodInHierarchy: isLodInHierarchy, isPlant: isPlant);
+                    result = true;
                 }
             }
+
+            return result;
         }
 
         private static void CacheParticleSystemStartColor(ParticleSystem ps, string prefabName)
