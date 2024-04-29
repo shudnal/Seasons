@@ -45,6 +45,7 @@ namespace Seasons
         public static ConfigEntry<bool> controlMinimap;
         public static ConfigEntry<bool> controlYggdrasil;
         public static ConfigEntry<bool> controlTraders;
+        public static ConfigEntry<bool> controlGrass;
 
         public static ConfigEntry<bool> showCurrentSeasonBuff;
         public static ConfigEntry<TimerFormat> seasonsTimerFormat;
@@ -57,9 +58,6 @@ namespace Seasons
         public static ConfigEntry<bool> freezingSwimmingInWinter;
         public static ConfigEntry<bool> seasonalStatsOutdoorsOnly;
         public static ConfigEntry<bool> changeSeasonOnlyAfterSleep;
-        public static ConfigEntry<bool> hideGrassInWinter;
-        public static ConfigEntry<Vector2> hideGrassInWinterDays;
-        public static ConfigEntry<string> hideGrassListInWinter;
         public static ConfigEntry<int> cropsDiesAfterSetDayInWinter;
         public static ConfigEntry<string> cropsToSurviveInWinter;
         public static ConfigEntry<string> cropsToControlGrowth;
@@ -75,6 +73,12 @@ namespace Seasons
         public static ConfigEntry<float> frozenOceanSlipperiness;
         public static ConfigEntry<bool> placeShipAboveFrozenOcean;
         public static ConfigEntry<Vector2> iceFloesScale;
+
+        public static ConfigEntry<float> grassDefaultPatchSize;
+        public static ConfigEntry<float> grassDefaultAmountScale;
+        public static ConfigEntry<string> grassToControlSize;
+        public static ConfigEntry<float> grassSizeDefaultScaleMin;
+        public static ConfigEntry<float> grassSizeDefaultScaleMax;
 
         public static ConfigEntry<bool> showFadeOnSeasonChange;
         public static ConfigEntry<float> fadeOnSeasonChangeDuration;
@@ -141,6 +145,7 @@ namespace Seasons
         public static readonly CustomSyncedValue<string> customStatsJSON = new CustomSyncedValue<string>(configSync, "Custom stats JSON", "", Priority.Normal);
         public static readonly CustomSyncedValue<string> customTraderItemsJSON = new CustomSyncedValue<string>(configSync, "Custom traders JSON", "", Priority.Normal);
         public static readonly CustomSyncedValue<string> customWorldSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom world settings JSON", "", Priority.Normal);
+        public static readonly CustomSyncedValue<string> customGrassSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom grass settings JSON", "", Priority.Normal);
 
         public static readonly CustomSyncedValue<string> customMaterialSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom material settings JSON", "", Priority.Low);
         public static readonly CustomSyncedValue<string> customColorSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom color settings JSON", "", Priority.Low);
@@ -264,6 +269,7 @@ namespace Seasons
             controlMinimap = config("Season - Control", "Control minimap", defaultValue: true, "Enables seasonal minimap colors");
             controlYggdrasil = config("Season - Control", "Control yggdrasil branch and roots", defaultValue: true, "Enables seasonal coloring of yggdrasil branch in the sky and roots on the ground");
             controlTraders = config("Season - Control", "Control trader seasonal items list", defaultValue: true, "Enables seasonal changes of trader additional item availability");
+            controlGrass = config("Season - Control", "Control grass", defaultValue: true, "Enables seasonal changes of grass thickness, size and sparseness");
 
             controlStats.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
 
@@ -272,9 +278,6 @@ namespace Seasons
             seasonalStatsOutdoorsOnly = config("Season", "Seasonal stats works only outdoors", defaultValue: true, "Make seasonal stats works only outdoors");
             freezingSwimmingInWinter = config("Season", "Get freezing when swimming in cold water in winter", defaultValue: true, "Swimming in cold water during winter will get you freezing debuff");
             changeSeasonOnlyAfterSleep = config("Season", "Change season only after sleep", defaultValue: false, "Season can be changed regular way only after sleep");
-            hideGrassInWinter = config("Season", "Hide grass in winter", defaultValue: true, "Hide grass in winter");
-            hideGrassInWinterDays = config("Season", "Hide grass in winter day from to", defaultValue: new Vector2(3f, 10f), "Hide grass in winter");
-            hideGrassListInWinter = config("Season", "Hide grass in set list in winter", defaultValue: "grasscross_meadows, grasscross_forest_brown, grasscross_forest, grasscross_swamp, grasscross_heath, grasscross_meadows_short, grasscross_heath_flower, grasscross_mistlands_short", "Hide set grass in winter");
             cropsDiesAfterSetDayInWinter = config("Season", "Crops will die after set day in winter", defaultValue: 3, "Crops and pickables will perish after set day in winter");
             cropsToSurviveInWinter = config("Season", "Crops will survive in winter", defaultValue: "Pickable_Carrot, Pickable_Barley, Pickable_Barley_Wild, Pickable_Flax, Pickable_Flax_Wild, Pickable_Thistle, Pickable_Mushroom_Magecap", "Crops and pickables from the list will not perish after set day in winter");
             cropsToControlGrowth = config("Season", "Crops to control growth", defaultValue: "Pickable_Barley, Pickable_Barley_Wild, Pickable_Dandelion, Pickable_Flax, Pickable_Flax_Wild, Pickable_SeedCarrot, Pickable_SeedOnion, Pickable_SeedTurnip, Pickable_Thistle, Pickable_Turnip", "Crops and pickables from the list will be controlled by growth multiplier in addition to consumable crops");
@@ -282,13 +285,24 @@ namespace Seasons
             meatListToControlDrop = config("Season", "Meat to control drop", defaultValue: "RawMeat, DeerMeat, NeckTail, WolfMeat, LoxMeat, ChickenMeat, HareMeat, SerpentMeat", "Meat item names to control drop from characters");
 
             seasonalStatsOutdoorsOnly.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
-            hideGrassInWinter.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateColors();
-            hideGrassInWinterDays.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateColors();
-            hideGrassListInWinter.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateColors();
             cropsToSurviveInWinter.SettingChanged += (sender, args) => FillListsToControl();
             cropsToControlGrowth.SettingChanged += (sender, args) => FillListsToControl();
             woodListToControlDrop.SettingChanged += (sender, args) => FillListsToControl();
             meatListToControlDrop.SettingChanged += (sender, args) => FillListsToControl();
+
+            grassDefaultPatchSize = config("Season - Grass", "Default patch size", defaultValue: 10f, "Default size of grass patch (sparseness or how wide a single grass \"node\" is across the ground)" +
+                                                                                                     "Increase to make grass more sparse and decrease to make grass more tight");
+            grassDefaultAmountScale = config("Season - Grass", "Default amount scale", defaultValue: 1.5f, "Default amount scale (grass density or how many grass patches created around you at once)");
+            grassToControlSize = config("Season - Grass", "List of grass prefabs to control size", defaultValue: "instanced_meadows_grass, instanced_forest_groundcover_brown, instanced_forest_groundcover, instanced_swamp_grass, instanced_heathgrass, grasscross_heath_green, instanced_meadows_grass_short, instanced_heathflowers, instanced_mistlands_grass_short", "Grass with set prefabs to be hidden in winter and to change size in other seasons");
+
+            grassSizeDefaultScaleMin = config("Season - Grass", "Default minimum size multiplier", defaultValue: 1f, "Default minimum size of grass will be multiplier by given number");
+            grassSizeDefaultScaleMax = config("Season - Grass", "Default maximum size multiplier", defaultValue: 1f, "Default maximum size of grass will be multiplier by given number");
+
+            grassDefaultPatchSize.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateGrass();
+            grassDefaultAmountScale.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateGrass();
+            grassToControlSize.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateGrass();
+            grassSizeDefaultScaleMin.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateGrass();
+            grassSizeDefaultScaleMax.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateGrass();
 
             showCurrentSeasonBuff = config("Season - Buff", "Show current season buff", defaultValue: true, "Show current season buff.");
             seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
@@ -480,11 +494,11 @@ namespace Seasons
 
         public static void FillListsToControl()
         {
-            _PlantsToControlGrowth = new HashSet<string>(cropsToControlGrowth.Value.Split(',').Select(p => p.Trim().ToLower()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList());
-            _PlantsToSurviveWinter = new HashSet<string>(cropsToSurviveInWinter.Value.Split(',').Select(p => p.Trim().ToLower()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList());
+            _PlantsToControlGrowth = ConfigToHashSet(cropsToControlGrowth.Value);
+            _PlantsToSurviveWinter = ConfigToHashSet(cropsToSurviveInWinter.Value);
 
-            _WoodToControlDrop = new HashSet<string>(woodListToControlDrop.Value.Split(',').Select(p => p.Trim().ToLower()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList());
-            _MeatToControlDrop = new HashSet<string>(meatListToControlDrop.Value.Split(',').Select(p => p.Trim().ToLower()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList());
+            _WoodToControlDrop = ConfigToHashSet(woodListToControlDrop.Value);
+            _MeatToControlDrop = ConfigToHashSet(meatListToControlDrop.Value);
 
             foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
             {
@@ -503,6 +517,11 @@ namespace Seasons
                     if (plant.m_grownPrefabs.Any(prefab => PlantWillSurviveWinter(prefab)))
                         _PlantsToSurviveWinter.Add(plant.gameObject.name.ToLower());
                 }
+            }
+
+            static HashSet<string> ConfigToHashSet(string configString)
+            {
+                return new HashSet<string>(configString.Split(',').Select(p => p.Trim().ToLower()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList());
             }
         }
 
@@ -542,17 +561,12 @@ namespace Seasons
             if (_cachedIgnoredPositions.TryGetValue(position, out bool ignored))
                 return ignored;
 
-            float baseHeight = WorldGenerator.instance.GetBaseHeight(position.x, position.z, menuTerrain: false);
+            if (_cachedIgnoredPositions.Count > 15000)
+                InvalidatePositionsCache();
 
-            if (baseHeight > WorldGenerator.mountainBaseHeightMin + 0.05f)
-            {
-                _cachedIgnoredPositions[position] = true;
-                return true;
-            }
-
-            Heightmap.Biome biome = WorldGenerator.instance.GetBiome(position);
-
-            ignored = biome == Heightmap.Biome.DeepNorth || biome == Heightmap.Biome.AshLands;
+            ignored = WorldGenerator.IsAshlands(position.x, position.z) || 
+                      WorldGenerator.IsDeepnorth(position.x, position.z) || 
+                      WorldGenerator.instance.GetBaseHeight(position.x, position.z, menuTerrain: false) > WorldGenerator.mountainBaseHeightMin + 0.05f;
             
             _cachedIgnoredPositions[position] = ignored;
             return ignored;

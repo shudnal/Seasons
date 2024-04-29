@@ -29,6 +29,7 @@ namespace Seasons
         public static SeasonStats seasonStats = new SeasonStats(loadDefaults: true);
         public static SeasonTraderItems seasonTraderItems = new SeasonTraderItems(loadDefaults: true);
         public static SeasonWorldSettings seasonWorldSettings = new SeasonWorldSettings();
+        public static SeasonGrassSettings seasonGrassSettings = new SeasonGrassSettings(loadDefaults: true);
 
         private static List<ItemDrop.ItemData> _itemDataList = new List<ItemDrop.ItemData>();
 
@@ -70,6 +71,7 @@ namespace Seasons
             SeasonSettings.SaveDefaultStats(folder);
             SeasonSettings.SaveDefaultTraderItems(folder);
             SeasonSettings.SaveDefaultWorldSettings(folder);
+            SeasonSettings.SaveDefaultGrassSettings(folder);
         }
 
         public bool IsActive => EnvMan.instance != null;
@@ -425,6 +427,25 @@ namespace Seasons
             }
 
             UpdateUsingOfIngameDays();
+        }
+
+        public void UpdateGrassSettings()
+        {
+            if (!IsActive)
+                return;
+
+            if (!String.IsNullOrEmpty(customGrassSettingsJSON.Value))
+            {
+                try
+                {
+                    seasonGrassSettings = JsonConvert.DeserializeObject<SeasonGrassSettings>(customGrassSettingsJSON.Value);
+                    LogInfo($"Custom grass settings updated");
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error parsing custom grass settings:\n{e}");
+                }
+            }
         }
 
         public void UpdateGlobalKeys()
@@ -874,7 +895,7 @@ namespace Seasons
         {
             if (UseTextureControllers())
             {
-                ClutterVariantController.instance?.StartCoroutine(ClutterVariantController.instance.UpdateColorsDay());
+                ClutterVariantController.instance?.StartCoroutine(ClutterVariantController.instance.UpdateDayState());
             }
             ZoneSystemVariantController.UpdateWaterState();
             seasonState.UpdateGlobalKeys();

@@ -347,7 +347,7 @@ namespace Seasons
 
             yield return waitForFixedUpdate;
 
-            foreach (Ship ship in Ship.Instances.Cast<Ship>())
+            foreach (Ship ship in Ship.Instances.ToArray().Cast<Ship>())
                 yield return CheckIfShipBelowSurface(ship);
         }
 
@@ -358,7 +358,7 @@ namespace Seasons
 
         public static void UpdateShipsPositions()
         {
-            foreach (Ship ship in Ship.Instances.Cast<Ship>())
+            foreach (Ship ship in Ship.Instances.ToArray().Cast<Ship>())
                 if (ship.m_nview.IsOwner())
                     PlaceShip(ship);
         }

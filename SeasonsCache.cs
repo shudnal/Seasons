@@ -972,6 +972,8 @@ namespace Seasons
                     "CharredStone_Spawner",
                     "SulfurArch",
                     "FaderLocation",
+                    "LeviathanLava",
+                    "FernFiddleHeadAshlands",
                 };
 
                 ignorePrefabPartialName = new List<string>()
@@ -1002,6 +1004,15 @@ namespace Seasons
                     "PlaceofMystery",
                     "DevWall",
                     "blackmarble_creep_slope",
+                    "lavarock_",
+                    "lavabomb_",
+                    "FlametalRockstand",
+                    "cliff_ashlands",
+                    "AshlandsTree",
+                    "AshlandsBush",
+                    "AshlandsBranch",
+                    "Ashlands_rock",
+                    "instanced_ashlands_grass",
                 };
 
             }
@@ -1273,6 +1284,14 @@ namespace Seasons
                         new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.21f, grayscale: true, restoreLuminance: false),
                         new ColorVariant(new Color(1f, 1f, 1f), 0.21f, grayscale: true, restoreLuminance: false)
                     }
+                }));
+
+                prefabOverrides.Add(new PrefabOverrides(new List<string>() { "grasscross_heath_green" }, new SeasonalColorVariants()
+                {
+                    Spring = grass.Summer.ToList(),
+                    Summer = grass.Spring.ToList(),
+                    Fall = grass.Summer.ToList(),
+                    Winter = grass.Winter.ToList(),
                 }));
 
                 materialOverrides.Add(new MaterialOverrides(new List<string>() { "Pine_tree_small_dead", "swamptree1_branch", "swamptree2_branch" }, new SeasonalColorVariants()
@@ -2619,16 +2638,17 @@ namespace Seasons
                 if (clutter.m_prefab == null)
                     continue;
 
-                if (!clutter.m_prefab.TryGetComponent(out InstanceRenderer renderer))
-                    continue;
-
                 if (materialSettings.ignorePrefab.Contains(clutter.m_prefab.name))
                     continue;
 
                 if (materialSettings.ignorePrefabPartialName.Any(namepart => clutter.m_prefab.name.Contains(namepart)))
                     continue;
 
-                CacheMaterials(new Material[1] { renderer.m_material }, clutter.m_prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
+                if (clutter.m_prefab.TryGetComponent(out InstanceRenderer renderer))
+                    CacheMaterials(new Material[1] { renderer.m_material }, clutter.m_prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
+                else
+                    foreach (MeshRenderer mrenderer in clutter.m_prefab.GetComponentsInChildren<MeshRenderer>())
+                        CacheMaterials(mrenderer.sharedMaterials, clutter.m_prefab.name, mrenderer.name, mrenderer.GetType().Name, mrenderer.transform.GetPath());
 
                 yield return waitForFixedUpdate;
             }
