@@ -9,7 +9,6 @@ using System.Linq;
 using UnityEngine;
 using static Seasons.Seasons;
 using ServerSync;
-using static Seasons.SeasonStats;
 
 namespace Seasons
 {
@@ -33,6 +32,7 @@ namespace Seasons
         public float livestockProcreationMultiplier;
         public bool overheatIn2WarmClothes;
         public float meatFromAnimalsMultiplier;
+        public float treesRegrowthChance;
 
         public SeasonSettingsFile(SeasonSettings settings)
         {
@@ -53,6 +53,7 @@ namespace Seasons
             livestockProcreationMultiplier = settings.m_livestockProcreationMultiplier;
             overheatIn2WarmClothes = settings.m_overheatIn2WarmClothes;
             meatFromAnimalsMultiplier = settings.m_meatFromAnimalsMultiplier;
+            treesRegrowthChance = settings.m_treesRegrowthChance;
         }
 
         public SeasonSettingsFile()
@@ -1393,30 +1394,33 @@ namespace Seasons
 
         public SeasonGrass GetGrassSettings(int day)
         {
-            List<SeasonGrass> seasonDays = GetSeasonGrass(seasonState.GetCurrentSeason());
-            for (int i = 0; i < seasonDays.Count; i++)
+            if (seasonState.GetCurrentWorldDay() > seasonState.GetDaysInSeason(Season.Spring))
             {
-                SeasonGrass seasonGrass = seasonDays[i];
-                if (day == seasonGrass.m_day || day <= seasonGrass.m_day && i == 0 || day >= seasonGrass.m_day && i == seasonDays.Count - 1)
-                    return seasonGrass;
-
-                if (seasonGrass.m_day < day)
-                    continue;
-
-                // Duplicate days == bad data, fallback
-                if (seasonDays[i].m_day == seasonDays[i - 1].m_day)
-                    break;
-
-                float target = (float)(day - seasonDays[i - 1].m_day) / (seasonDays[i].m_day - seasonDays[i - 1].m_day);
-
-                return new SeasonGrass()
+                List<SeasonGrass> seasonDays = GetSeasonGrass(seasonState.GetCurrentSeason());
+                for (int i = 0; i < seasonDays.Count; i++)
                 {
-                    m_day = day,
-                    m_grassPatchSize = Mathf.Lerp(seasonDays[i - 1].m_grassPatchSize, seasonDays[i].m_grassPatchSize, target),
-                    m_amountScale = Mathf.Lerp(seasonDays[i - 1].m_amountScale, seasonDays[i].m_amountScale, target),
-                    m_scaleMin = Mathf.Lerp(seasonDays[i - 1].m_scaleMin, seasonDays[i].m_scaleMin, target),
-                    m_scaleMax = Mathf.Lerp(seasonDays[i - 1].m_scaleMax, seasonDays[i].m_scaleMax, target),
-                };
+                    SeasonGrass seasonGrass = seasonDays[i];
+                    if (day == seasonGrass.m_day || day <= seasonGrass.m_day && i == 0 || day >= seasonGrass.m_day && i == seasonDays.Count - 1)
+                        return seasonGrass;
+
+                    if (seasonGrass.m_day < day)
+                        continue;
+
+                    // Duplicate days == bad data, fallback
+                    if (seasonDays[i].m_day == seasonDays[i - 1].m_day)
+                        break;
+
+                    float target = (float)(day - seasonDays[i - 1].m_day) / (seasonDays[i].m_day - seasonDays[i - 1].m_day);
+
+                    return new SeasonGrass()
+                    {
+                        m_day = day,
+                        m_grassPatchSize = Mathf.Lerp(seasonDays[i - 1].m_grassPatchSize, seasonDays[i].m_grassPatchSize, target),
+                        m_amountScale = Mathf.Lerp(seasonDays[i - 1].m_amountScale, seasonDays[i].m_amountScale, target),
+                        m_scaleMin = Mathf.Lerp(seasonDays[i - 1].m_scaleMin, seasonDays[i].m_scaleMin, target),
+                        m_scaleMax = Mathf.Lerp(seasonDays[i - 1].m_scaleMax, seasonDays[i].m_scaleMax, target),
+                    };
+                }
             }
 
             return new SeasonGrass()
@@ -1474,6 +1478,7 @@ namespace Seasons
         public float m_livestockProcreationMultiplier = 1.0f;
         public bool m_overheatIn2WarmClothes = false;
         public float m_meatFromAnimalsMultiplier = 1.0f;
+        public float m_treesRegrowthChance = 0.0f;
 
         public SeasonSettings(Season season)
         {
@@ -1516,6 +1521,7 @@ namespace Seasons
                         m_restedBuffDurationMultiplier = 1.25f;
                         m_livestockProcreationMultiplier = 1.5f;
                         m_meatFromAnimalsMultiplier = 0.5f;
+                        m_treesRegrowthChance = 0.9f;
                         break;
                     }
                 case Season.Summer:
@@ -1533,6 +1539,7 @@ namespace Seasons
                         m_livestockProcreationMultiplier = 1.25f;
                         m_overheatIn2WarmClothes = true;
                         m_meatFromAnimalsMultiplier = 0.75f;
+                        m_treesRegrowthChance = 0.75f;
                         break;
                     }
                 case Season.Fall:
@@ -1547,6 +1554,7 @@ namespace Seasons
                         m_restedBuffDurationMultiplier = 0.85f;
                         m_livestockProcreationMultiplier = 0.75f;
                         m_meatFromAnimalsMultiplier = 1.25f;
+                        m_treesRegrowthChance = 0.25f;
                         break;
                     }
                 case Season.Winter:
@@ -1565,6 +1573,7 @@ namespace Seasons
                         m_restedBuffDurationMultiplier = 0.75f;
                         m_livestockProcreationMultiplier = 0.5f;
                         m_meatFromAnimalsMultiplier = 1.5f;
+                        m_treesRegrowthChance = 0f;
                         break;
                     }
             }

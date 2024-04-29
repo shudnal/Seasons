@@ -166,6 +166,9 @@ namespace Seasons
 
         private static readonly Dictionary<Vector3, bool> _cachedIgnoredPositions = new Dictionary<Vector3, bool>();
 
+        private static readonly Dictionary<string, GameObject> _treeRegrowthPrefabs = new Dictionary<string, GameObject>();
+        public static int _treeRegrowthHaveGrowSpace = "Seasons_HaveGrowSpace".GetStableHashCode();
+
         public enum Season
         {
             Spring = 0,
@@ -500,13 +503,23 @@ namespace Seasons
             _WoodToControlDrop = ConfigToHashSet(woodListToControlDrop.Value);
             _MeatToControlDrop = ConfigToHashSet(meatListToControlDrop.Value);
 
+            _treeRegrowthPrefabs.Clear();
+
+            Dictionary<GameObject, GameObject> stubs = new Dictionary<GameObject, GameObject>();
+
+            // At first fill all grown state pickables and stubs prefabs
             foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
             {
                 if (prefab.TryGetComponent(out Pickable pickable) && pickable.m_itemPrefab != null && 
                     pickable.m_itemPrefab.TryGetComponent(out ItemDrop itemDrop) && itemDrop.m_itemData.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Consumable)
                     _PlantsToControlGrowth.Add(pickable.gameObject.name);
+
+                if (prefab.TryGetComponent(out TreeBase tree) && tree.m_stubPrefab != null &&
+                    tree.m_stubPrefab.TryGetComponent(out Destructible destructible) && destructible.GetDestructibleType() == DestructibleType.Tree)
+                    stubs.Add(prefab, tree.m_stubPrefab);
             }
 
+            // Add Plant that will later have Pickable in grown state and a stub of grown prefab
             foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
             {
                 if (prefab.TryGetComponent(out Plant plant) && plant.m_grownPrefabs != null)
@@ -516,6 +529,13 @@ namespace Seasons
 
                     if (plant.m_grownPrefabs.Any(prefab => PlantWillSurviveWinter(prefab)))
                         _PlantsToSurviveWinter.Add(plant.gameObject.name.ToLower());
+
+                    foreach (GameObject grown in plant.m_grownPrefabs.Where(grown => stubs.ContainsKey(grown)))
+                    {
+                        string stubName = stubs[grown].name;
+                        if (!_treeRegrowthPrefabs.ContainsKey(stubName))
+                            _treeRegrowthPrefabs.Add(stubName, prefab);
+                    }
                 }
             }
 
@@ -543,6 +563,11 @@ namespace Seasons
         public static bool ControlMeatDrop(GameObject gameObject)
         {
             return _MeatToControlDrop.Contains(PrefabVariantController.GetPrefabName(gameObject).ToLower());
+        }
+
+        public static GameObject TreeToRegrowth(GameObject gameObject)
+        {
+            return _treeRegrowthPrefabs.GetValueSafe(PrefabVariantController.GetPrefabName(gameObject));
         }
 
         public static void InvalidatePositionsCache()
@@ -605,5 +630,32 @@ namespace Seasons
             pickable.SetPicked(true);
         }
 
+        public static IEnumerator ReplantTree(GameObject prefab, Vector3 position, Quaternion rotation, float scale)
+        {
+            yield return new WaitForSeconds(5f);
+
+            if (ZoneSystem.instance.IsBlocked(position))
+                yield break;
+
+            if ((bool)EffectArea.IsPointInsideArea(position, EffectArea.Type.PlayerBase))
+                yield break;
+
+            GameObject result = Instantiate(prefab, position, rotation);
+
+            yield return waitForFixedUpdate;
+
+            if (result != null && result.TryGetComponent(out ZNetView m_nview) && m_nview.IsValid())
+            {
+                m_nview.GetZDO().Set(_treeRegrowthHaveGrowSpace, true);
+
+                if (scale != 0f && result.TryGetComponent(out Plant plant))
+                {
+                    plant.m_minScale = scale;
+                    plant.m_maxScale = scale;
+                }
+            }
+
+            LogInfo($"Replanted {prefab}");
+        }
     }
 }

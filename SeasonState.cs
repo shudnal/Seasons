@@ -574,6 +574,11 @@ namespace Seasons
             return settings.m_overheatIn2WarmClothes;
         }
 
+        public float GetTreesReqrowthChance()
+        {
+            return settings.m_treesRegrowthChance;
+        }
+
         private SeasonSettings GetSeasonSettings(Season season)
         {
             return seasonsSettings.ContainsKey(season) ? seasonsSettings[season] : new SeasonSettings(season);
@@ -1576,6 +1581,50 @@ namespace Seasons
                 return;
 
             ApplyWoodMultiplier(___m_dropWhenDestroyed);
+        }
+    }
+
+    [HarmonyPatch(typeof(Destructible), nameof(Destructible.Destroy))]
+    public static class Destructible_Destroy_TreeRegrowth
+    {
+        private static void Prefix(Destructible __instance, ZNetView ___m_nview)
+        {
+            if (UnityEngine.Random.Range(0.0f, 1.0f) > seasonState.GetTreesReqrowthChance())
+                return;
+
+            if (___m_nview == null || !___m_nview.IsValid() || !___m_nview.IsOwner())
+                return;
+
+            if (__instance.GetDestructibleType() != DestructibleType.Tree)
+                return;
+
+            if (TreeToRegrowth(__instance.gameObject) == null)
+                return;
+
+            if (IsIgnoredPosition(__instance.transform.position))
+                return;
+
+            if ((bool)EffectArea.IsPointInsideArea(__instance.transform.position, EffectArea.Type.PlayerBase))
+                return;
+
+            GameObject plant = TreeToRegrowth(__instance.gameObject);
+
+            float scale = ___m_nview.GetZDO().GetFloat(ZDOVars.s_scaleScalarHash);
+
+            instance.StartCoroutine(ReplantTree(plant, __instance.transform.position, __instance.transform.rotation, scale));
+        }
+    }
+
+    [HarmonyPatch(typeof(Plant), nameof(Plant.HaveGrowSpace))]
+    public static class Plant_HaveGrowSpace_TreeRegrowth
+    {
+        private static bool Prefix(Plant __instance, ZNetView ___m_nview, ref bool __result)
+        {
+            if (___m_nview == null || !___m_nview.IsValid() || !___m_nview.IsOwner())
+                return true;
+
+            __result = __result || ___m_nview.GetZDO().GetBool(_treeRegrowthHaveGrowSpace, false);
+            return !__result;
         }
     }
 
