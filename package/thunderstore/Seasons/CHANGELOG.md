@@ -1,5 +1,7 @@
 # 1.1.10
 * Ashlands
+* grass control extended to distinct JSON file
+* tree regrowth chance
 
 # 1.1.9
 * patch 0.217.46

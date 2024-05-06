@@ -872,13 +872,7 @@ namespace Seasons
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(WaterVolume __instance)
         {
-            if (!UseTextureControllers())
-                return;
-
-            if (!seasonState.IsActive)
-                return;
-
-            if (!__instance.m_useGlobalWind)
+            if (!UseTextureControllers() || !seasonState.IsActive || !__instance.m_useGlobalWind || ZoneSystemVariantController.instance == null)
                 return;
 
             if (waterStates.ContainsKey(__instance))
@@ -1316,4 +1310,60 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.GetGroundHeight), new Type[] { typeof(Vector3) })]
+    public static class ZoneSystem_GetGroundHeight_CheckForIceSurface
+    {
+        public static bool checkForIceSurface = false;
+        public static int s_terrainRayMask = 0;
+
+        private static bool Prefix(Vector3 p, ref float __result)
+        {
+            if (!checkForIceSurface)
+                return true;
+
+            checkForIceSurface = false;
+
+            if (s_terrainRayMask == 0)
+                s_terrainRayMask = LayerMask.GetMask("terrain", "Default");
+
+            __result = p.y;
+
+            Vector3 origin = p;
+            origin.y = 6000f;
+            int num = Physics.RaycastNonAlloc(origin, Vector3.down, ZoneSystemVariantController.instance.rayHits, 10000f, s_terrainRayMask);
+
+            float height = 0;
+            for (int i = 0; i < num; i++)
+            {
+                RaycastHit raycastHit = ZoneSystemVariantController.instance.rayHits[i];
+                if (raycastHit.collider.gameObject.layer == 0 && raycastHit.collider.name == _iceSurfaceName)
+                    height = Mathf.Max(raycastHit.point.y, height);
+                else if (raycastHit.collider.gameObject.layer == 11)
+                    height = Mathf.Max(raycastHit.point.y, height);
+            }
+
+            if (height > 0)
+                __result = height;
+
+            return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(TombStone), nameof(TombStone.PositionCheck))]
+    public static class TombStone_PositionCheck_FrozenSurfaceCheck
+    {
+        private static void Prefix()
+        {
+            if (!UseTextureControllers())
+                return;
+
+            if (!seasonState.IsActive)
+                return;
+
+            if (!IsWaterSurfaceFrozen())
+                return;
+
+            ZoneSystem_GetGroundHeight_CheckForIceSurface.checkForIceSurface = true;
+        }
+    }
 }

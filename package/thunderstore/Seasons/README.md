@@ -81,7 +81,8 @@ It means you may left only changed values at custom file to make it more meaning
 * restedBuffDurationMultiplier (float) - multiplier of rested buff duration
 * livestockProcreationMultiplier (float) - complex multiplier of creatures breeding speed (affects pregnancy chance, speed, distance to partner, distance to other creatures)
 * overheatIn2WarmClothes (bool) - if you wear two armor pieces that have ResistantVSFrost modifiers you will have Warm status effect reducing stamina and eitr regen by 20% (change your cape to less warm one if you need)
-* m_meatFromAnimalsMultiplier (float) - multiplier of the maximum count of possible meet drops from boars, deers and other living creatures except bugs
+* meatFromAnimalsMultiplier (float) - multiplier of the maximum count of possible meet drops from boars, deers and other living creatures except bugs
+* treesRegrowthChance (float) - chance to left sapling when destroying tree stumps. If tree has no sapling it won't be regrown. Supports all custom saplings if they configured right.
 
 ### Some explanations and ideas behind default settings
 * default season length of 10 days should take enough time both to struggle and make profit of season effects
@@ -293,6 +294,45 @@ The structure of the trader item reflects adapted ingame tradeable item descript
 * Haldor has some potentially unavailable items in winter
 * Haldor has some seeds in winter because he knows you will need some in spring
 
+## Grass control
+
+If you ever used grass tweaks mods you should be familiar with that settings.
+
+You can set default grass settings in "Season - Grass" section in general mod config.
+* Patch size (float) - size of terrain square populated with grass (sparseness or how wide a single grass "node" is across the ground). Increase to make grass more sparse and decrease to make grass more tight
+* Amount scale (float) - grass density or how many grass patches created around you at once
+* List of affected grass prefabs - string, comma separated - in case you have custom grass prefabs you should add it to that list
+
+Settings change will be applied on the fly to see effect immediately.
+
+File "Custom grass settings.json" contains distribution of grass settings between days and seasons.
+
+Grass settings depends on day and grass settings will be interpolated between two settings. 
+
+For example if scaleMax is set 1.1 in day 1 and 1.3 in day 5 it means intermediate values will be 
+* day 1 - 1.1
+* day 2 - 1.15
+* day 3 - 1.2
+* day 4 - 1.25
+* day 5 - 1.3
+
+The same logic works for other values. If value is not set it takes default value set in general settings.
+
+### Grass settings
+* m_day (int)
+* m_grassPatchSize (float)
+* m_amountScale (float)
+* m_scaleMin (float) - multiplier of minimum size of grass
+* m_scaleMax (float) - multiplier of maximum size of grass. If set to 0 the grass will be completely disabled.
+
+### Some explanations and ideas behind default settings
+* main goal was completely disabled grass in winter after set day. That should help greatly to performance in snow storms.
+* grass size will be gradually reduced to zero in winter to make it looks like more and more snow
+* grass will return in spring gradually
+* in spring grass size will be decreased a little in comparison to default grass state
+* in summer grass size will be increased but it will be a bit sparser to not hit performance
+* in fall grass size will be a bit increase and gradually decreased and made sparser on the last day
+
 ## General settings
 * minimap will be recolored using the seasonal colors setting
 * seasonal items will be enabled in the corresponding season
@@ -308,7 +348,6 @@ The structure of the trader item reflects adapted ingame tradeable item descript
 * ice floes will spawn in ocean in set period of days in winter
 * water will freeze in set period of days in winter
 * ships can be pushed out of water when the surface is frozen
-* you can hide certain grass materials in winter
 
 ## Custom world settings for realtime seasons calculations
 
