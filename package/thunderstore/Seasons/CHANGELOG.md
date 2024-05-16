@@ -1,6 +1,6 @@
 # 1.1.10
 * Ashlands
-* grass control extended to distinct JSON file
+* grass control extended and moved to distinct JSON file
 * tree regrowth chance
 
 # 1.1.9

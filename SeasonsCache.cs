@@ -1160,9 +1160,9 @@ namespace Seasons
                 seasonal.Winter.Add(new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.65f, grayscale: true, restoreLuminance: false));
                 seasonal.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.65f, grayscale: true, restoreLuminance: false));
 
-                grass.Spring.Add(new ColorVariant(new Color(0.45f, 0.80f, 0.27f), 0.75f));
-                grass.Spring.Add(new ColorVariant(new Color(0.69f, 0.84f, 0.15f), 0.75f));
-                grass.Spring.Add(new ColorVariant(new Color(0.51f, 0.65f, 0.13f), 0.75f));
+                grass.Spring.Add(new ColorVariant(new Color(0.45f, 0.80f, 0.27f), 0.6f));
+                grass.Spring.Add(new ColorVariant(new Color(0.69f, 0.84f, 0.15f), 0.6f));
+                grass.Spring.Add(new ColorVariant(new Color(0.51f, 0.65f, 0.13f), 0.6f));
                 grass.Spring.Add(new ColorVariant());
 
                 grass.Summer.Add(new ColorVariant(new Color(0.5f, 0.7f, 0.2f), 0.5f));
