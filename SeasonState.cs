@@ -1150,7 +1150,7 @@ namespace Seasons
     [HarmonyPatch(typeof(Pickable), nameof(Pickable.UpdateRespawn))]
     public static class Pickable_UpdateRespawn_PlantsGrowthMultiplier
     {
-        private static bool Prefix(Pickable __instance, ref int ___m_respawnTimeMinutes, ZNetView ___m_nview, bool ___m_picked, ref int __state)
+        private static bool Prefix(Pickable __instance, ref float ___m_respawnTimeMinutes, ZNetView ___m_nview, bool ___m_picked, ref float __state)
         {
             if (!___m_nview.IsValid() || !___m_nview.IsOwner() || !ControlPlantGrowth(__instance.gameObject))
                 return true;
@@ -1168,14 +1168,14 @@ namespace Seasons
                 return false;
 
             __state = ___m_respawnTimeMinutes;
-            ___m_respawnTimeMinutes = Mathf.CeilToInt(___m_respawnTimeMinutes / seasonState.GetPlantsGrowthMultiplier());
+            ___m_respawnTimeMinutes /= seasonState.GetPlantsGrowthMultiplier();
 
             return true;
         }
 
-        private static void Postfix(ref int ___m_respawnTimeMinutes, ref int __state)
+        private static void Postfix(ref float ___m_respawnTimeMinutes, ref float __state)
         {
-            if (__state == 0)
+            if (__state == 0f)
                 return;
 
             ___m_respawnTimeMinutes = __state; 
