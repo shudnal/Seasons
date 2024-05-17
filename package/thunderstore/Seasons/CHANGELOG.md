@@ -1,3 +1,7 @@
+# 1.1.11
+* Water state update on Ashlands enter/exit
+* Fish placed under the ice correctly
+
 # 1.1.10
 * Ashlands
 * grass control extended and moved to distinct JSON file

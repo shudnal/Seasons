@@ -625,6 +625,9 @@ namespace Seasons
             if (!enableFrozenWater.Value)
                 return 0f;
 
+            if (Player.m_localPlayer?.GetCurrentBiome() == Heightmap.Biome.AshLands)
+                return 0f;
+
             int currentDay = GetCurrentDay();
             int daysInSeason = GetDaysInSeason();
             int firstDay = Mathf.Clamp((int)waterFreezesInWinterDays.Value.x, 0, daysInSeason + 1);

@@ -403,8 +403,8 @@ namespace Seasons
             if (fish.m_nview.HasOwner() && !fish.m_nview.IsOwner())
                 return;
 
-            if (fish.transform.position.y > s_waterLevel - _winterWaterSurfaceOffset)
-                fish.transform.position = new Vector3(fish.transform.position.x, s_waterLevel - _winterWaterSurfaceOffset, fish.transform.position.z);
+            if (fish.transform.position.y >= s_waterLevel - _winterWaterSurfaceOffset - fish.m_height)
+                fish.transform.position = new Vector3(fish.transform.position.x, s_waterLevel - _winterWaterSurfaceOffset - fish.m_height, fish.transform.position.z);
 
             fish.m_body.velocity = Vector3.zero;
             fish.m_haveWaypoint = false;
@@ -1366,4 +1366,37 @@ namespace Seasons
             ZoneSystem_GetGroundHeight_CheckForIceSurface.checkForIceSurface = true;
         }
     }
+
+    [HarmonyPatch(typeof(Player), nameof(Player.UpdateBiome))]
+    public static class Player_UpdateBiome_AshlandsUnfrozenSurface
+    {
+        private static void Prefix(Player __instance, ref Biome __state)
+        {
+            __state = Biome.None;
+
+            if (!UseTextureControllers())
+                return;
+
+            if (__instance != Player.m_localPlayer)
+                return;
+
+            if (!seasonState.IsActive)
+                return;
+
+            if (seasonState.GetCurrentSeason() != Season.Winter)
+                return;
+
+            __state = __instance.GetCurrentBiome();
+        }
+
+        private static void Postfix(Player __instance, Biome __state)
+        {
+            if (__state == Biome.None)
+                return;
+
+            if (__state != __instance.GetCurrentBiome() && (__state == Biome.AshLands || __instance.GetCurrentBiome() == Biome.AshLands))
+                UpdateWaterState();
+        }
+    }
 }
+
