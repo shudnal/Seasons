@@ -44,9 +44,12 @@ namespace Seasons
 
         public static ClutterVariantController instance => m_instance;
         
-        private static Dictionary<Clutter, Tuple<float, float>> m_clutterDefaults = new Dictionary<Clutter, Tuple<float, float>>();
+        private static Dictionary<Clutter, Tuple<bool, float, float>> m_clutterDefaults = new Dictionary<Clutter, Tuple<bool, float, float>>();
 
         private static readonly List<Renderer> s_tempRenderers = new List<Renderer>();
+
+        private static float s_grassPatchSize;
+        private static float s_amountScale;
 
         private void Awake()
         {
@@ -55,10 +58,13 @@ namespace Seasons
 
         private void Start()
         {
+            s_grassPatchSize = ClutterSystem.instance.m_grassPatchSize;
+            s_amountScale = ClutterSystem.instance.m_amountScale;
+
             m_clutterDefaults.Clear();
             foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c.m_prefab != null))
             {
-                m_clutterDefaults.Add(clutter, Tuple.Create(clutter.m_scaleMin, clutter.m_scaleMax));
+                m_clutterDefaults.Add(clutter, Tuple.Create(clutter.m_enabled, clutter.m_scaleMin, clutter.m_scaleMax));
 
                 if (!texturesVariants.controllers.TryGetValue(Utils.GetPrefabName(clutter.m_prefab), out PrefabController controller))
                     continue;
@@ -327,7 +333,10 @@ namespace Seasons
         public void UpdateGrass()
         {
             if (!controlGrass.Value)
+            {
+                RevertGrass();
                 return;
+            }
 
             SeasonGrass seasonGrass = SeasonState.seasonGrassSettings.GetGrassSettings();
 
@@ -336,13 +345,13 @@ namespace Seasons
 
             foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c.m_prefab != null))
             {
-                if (!m_clutterDefaults.TryGetValue(clutter, out Tuple<float, float> defaultSize))
+                if (!m_clutterDefaults.TryGetValue(clutter, out Tuple<bool, float, float> defaultState))
                     continue;
 
-                clutter.m_scaleMin = defaultSize.Item1 * seasonGrass.m_scaleMin;
-                clutter.m_scaleMax = defaultSize.Item2 * seasonGrass.m_scaleMax;
+                clutter.m_scaleMin = defaultState.Item2 * seasonGrass.m_scaleMin;
+                clutter.m_scaleMax = defaultState.Item3 * seasonGrass.m_scaleMax;
 
-                clutter.m_enabled = clutter.m_scaleMax != 0f;
+                clutter.m_enabled = defaultState.Item1 && clutter.m_scaleMax != 0f;
             }
 
             ClutterSystem.instance.ClearAll();
@@ -350,21 +359,20 @@ namespace Seasons
 
         public void RevertGrass()
         {
-            if (!controlGrass.Value)
-                return;
-
-            ClutterSystem.instance.m_grassPatchSize = grassDefaultPatchSize.Value;
-            ClutterSystem.instance.m_amountScale = grassDefaultAmountScale.Value;
+            ClutterSystem.instance.m_grassPatchSize = s_grassPatchSize;
+            ClutterSystem.instance.m_amountScale = s_amountScale;
 
             foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c.m_prefab != null))
             {
                 clutter.m_enabled = true;
 
-                if (!m_clutterDefaults.TryGetValue(clutter, out Tuple<float, float> defaultSize))
+                if (!m_clutterDefaults.TryGetValue(clutter, out Tuple<bool, float, float> defaultState))
                     continue;
 
-                clutter.m_scaleMin = defaultSize.Item1 * grassSizeDefaultScaleMin.Value;
-                clutter.m_scaleMax = defaultSize.Item2 * grassSizeDefaultScaleMax.Value;
+                clutter.m_scaleMin = defaultState.Item2;
+                clutter.m_scaleMax = defaultState.Item3;
+                
+                clutter.m_enabled = defaultState.Item1;
             }
 
             ClutterSystem.instance.ClearAll();

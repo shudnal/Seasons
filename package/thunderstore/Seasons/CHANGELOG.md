@@ -1,6 +1,9 @@
+# 1.1.12
+* grass control will be applied immediately after config change
+
 # 1.1.11
-* Water state update on Ashlands enter/exit
-* Fish placed under the ice correctly
+* water state update on Ashlands enter/exit
+* fish placed under the ice correctly
 
 # 1.1.10
 * Ashlands

@@ -21,7 +21,7 @@ namespace Seasons
     {
         const string pluginID = "shudnal.Seasons";
         const string pluginName = "Seasons";
-        const string pluginVersion = "1.1.11";
+        const string pluginVersion = "1.1.12";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -275,6 +275,7 @@ namespace Seasons
             controlGrass = config("Season - Control", "Control grass", defaultValue: true, "Enables seasonal changes of grass thickness, size and sparseness");
 
             controlStats.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
+            controlGrass.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateGrass();
 
             enableSeasonalItems = config("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
             preventDeathFromFreezing = config("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
