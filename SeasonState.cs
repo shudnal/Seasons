@@ -275,7 +275,13 @@ namespace Seasons
             }
 
             foreach (SeasonEnvironment senv in seasonEnvironments)
+            {
+                EnvSetup env2 = EnvMan.instance.GetEnv(senv.m_name);
+                if (env2 != null)
+                    EnvMan.instance.m_environments.Remove(env2);
+
                 EnvMan.instance.AppendEnvironment(senv.ToEnvSetup());
+            }
         }
 
         public void UpdateBiomeEnvironments()
