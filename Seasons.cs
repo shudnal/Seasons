@@ -21,7 +21,7 @@ namespace Seasons
     {
         const string pluginID = "shudnal.Seasons";
         const string pluginName = "Seasons";
-        const string pluginVersion = "1.1.12";
+        const string pluginVersion = "1.1.13";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -34,6 +34,7 @@ namespace Seasons
         public static ConfigEntry<CacheFormat> cacheStorageFormat;
         public static ConfigEntry<bool> logTime;
         public static ConfigEntry<bool> logFloes;
+        public static ConfigEntry<bool> plainsSwampBorderFix;
 
         public static ConfigEntry<bool> overrideSeason;
         public static ConfigEntry<Season> seasonOverrided;
@@ -371,6 +372,9 @@ namespace Seasons
             cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
             logTime = config("Test", "Log time", defaultValue: false, "Log time info on state update");
             logFloes = config("Test", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying");
+            plainsSwampBorderFix = config("Test", "Plains Swamp border fix", defaultValue: true, "Fix clipping into ground on Plains - Swamp border");
+
+            plainsSwampBorderFix.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateTerrainColors();
 
             configDirectory = Path.Combine(Paths.ConfigPath, pluginID);
             cacheDirectory = Path.Combine(Paths.CachePath, pluginID);

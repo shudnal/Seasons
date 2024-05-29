@@ -4,10 +4,8 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using static Heightmap;
 using static Seasons.Seasons;
 using static Seasons.ZoneSystemVariantController;
-using static ZoneSystem;
 
 namespace Seasons
 {
@@ -62,13 +60,13 @@ namespace Seasons
         private static MeshRenderer s_waterPlane;
         private static WaterState s_waterPlaneState;
 
-        public static readonly Dictionary<Biome, Dictionary<Season, Biome>> seasonalBiomeColorOverride = new Dictionary<Biome, Dictionary<Season, Biome>>
+        public static readonly Dictionary<Heightmap.Biome, Dictionary<Season, Heightmap.Biome>> seasonalBiomeColorOverride = new Dictionary<Heightmap.Biome, Dictionary<Season, Heightmap.Biome>>
                 {
-                    { Biome.BlackForest, new Dictionary<Season, Biome>() { { Season.Fall, Biome.Swamp }, { Season.Winter, Biome.Mountain } } },
-                    { Biome.Meadows, new Dictionary<Season, Biome>() { { Season.Fall, Biome.Plains }, { Season.Winter, Biome.Mountain } } },
-                    { Biome.Plains, new Dictionary<Season, Biome>() { { Season.Spring, Biome.Meadows }, { Season.Winter, Biome.Mountain } } },
-                    { Biome.Mistlands, new Dictionary<Season, Biome>() { { Season.Winter, Biome.Mountain } } },
-                    { Biome.Swamp, new Dictionary<Season, Biome>() { { Season.Winter, Biome.Mountain } } },
+                    { Heightmap.Biome.BlackForest, new Dictionary<Season, Heightmap.Biome>() { { Season.Fall, Heightmap.Biome.Swamp }, { Season.Winter, Heightmap.Biome.Mountain } } },
+                    { Heightmap.Biome.Meadows, new Dictionary<Season, Heightmap.Biome>() { { Season.Fall, Heightmap.Biome.Plains }, { Season.Winter, Heightmap.Biome.Mountain } } },
+                    { Heightmap.Biome.Plains, new Dictionary<Season, Heightmap.Biome>() { { Season.Spring, Heightmap.Biome.Meadows }, { Season.Winter, Heightmap.Biome.Mountain } } },
+                    { Heightmap.Biome.Mistlands, new Dictionary<Season, Heightmap.Biome>() { { Season.Winter, Heightmap.Biome.Mountain } } },
+                    { Heightmap.Biome.Swamp, new Dictionary<Season, Heightmap.Biome>() { { Season.Winter, Heightmap.Biome.Mountain } } },
                 };
         
         public static readonly Dictionary<WaterVolume, WaterState> waterStates = new Dictionary<WaterVolume, WaterState>();
@@ -89,7 +87,7 @@ namespace Seasons
         public static int _iceFloePrefab = _iceFloeName.GetStableHashCode();
 
         public static GameObject s_iceSurface;
-        public static ZoneVegetation s_iceFloe;
+        public static ZoneSystem.ZoneVegetation s_iceFloe;
 
         private const float _FoamDepthFrozen = 10f;
         private const float _WaveVel = 0f;
@@ -108,8 +106,9 @@ namespace Seasons
 
         public readonly List<WaterVolume> waterVolumesCheckFloes = new List<WaterVolume>();
         private readonly List<WaterVolume> tempWaterVolumesList = new List<WaterVolume>();
-        private readonly List<ClearArea> m_tempClearAreas = new List<ClearArea>();
+        private readonly List<ZoneSystem.ClearArea> m_tempClearAreas = new List<ZoneSystem.ClearArea>();
         private readonly List<GameObject> m_tempSpawnedObjects = new List<GameObject>();
+        public static readonly List<Color32> s_tempColors = new List<Color32>();
 
         public static bool IsWaterSurfaceFrozen() => s_freezeStatus == 1f;
         
@@ -167,7 +166,7 @@ namespace Seasons
                 AddIceCollider(water);
 
             s_iceFloe ??= ZoneSystem.instance.m_vegetation.Find(veg => veg.m_prefab?.name == _iceFloeName).Clone();
-            s_iceFloe.m_biome = Biome.Ocean;
+            s_iceFloe.m_biome = Heightmap.Biome.Ocean;
             if (!s_iceFloe.m_prefab.TryGetComponent<IceFloeClimb>(out _))
                 s_iceFloe.m_prefab.AddComponent<IceFloeClimb>();
 
@@ -176,7 +175,7 @@ namespace Seasons
 
         private static void UpdateTerrainColor(Heightmap heightmap)
         {
-            if (heightmap.m_renderMesh == null)
+            if (heightmap?.m_renderMesh == null)
                 return;
 
             Heightmap_GetBiomeColor_TerrainColor.overrideColor = true;
@@ -194,8 +193,8 @@ namespace Seasons
                     {
                         float wx = vector.x + j * heightmap.m_scale;
                         float wy = vector.z + i * heightmap.m_scale;
-                        Biome biome = WorldGenerator.instance.GetBiome(wx, wy);
-                        s_tempColors.Add(GetBiomeColor(biome));
+                        Heightmap.Biome biome = WorldGenerator.instance.GetBiome(wx, wy);
+                        s_tempColors.Add(Heightmap.GetBiomeColor(biome));
                     }
                     else
                     {
@@ -211,7 +210,7 @@ namespace Seasons
 
         public static void UpdateTerrainColors()
         {
-            foreach (Heightmap instance in Instances.Cast<Heightmap>())
+            foreach (Heightmap instance in Heightmap.Instances.Cast<Heightmap>())
                 UpdateTerrainColor(instance);
         }
 
@@ -328,7 +327,7 @@ namespace Seasons
 
         public static bool LocalPlayerIsOnFrozenOcean() => IsWaterSurfaceFrozen()
                                         && Player.m_localPlayer != null
-                                        && Player.m_localPlayer.GetCurrentBiome() == Biome.Ocean;
+                                        && Player.m_localPlayer.GetCurrentBiome() == Heightmap.Biome.Ocean;
 
         public static IEnumerator UpdateWaterObjects()
         {
@@ -475,7 +474,7 @@ namespace Seasons
                 return true;
 
             Vector3 position = waterVolume.transform.position;
-            if (WorldGenerator.instance.GetBiome(position) != Biome.Ocean)
+            if (WorldGenerator.instance.GetBiome(position) != Heightmap.Biome.Ocean)
                 return true;
 
             Vector2i zoneID = ZoneSystem.instance.GetZone(position);
@@ -503,12 +502,12 @@ namespace Seasons
 
                 Vector3 zonePos = ZoneSystem.instance.GetZonePos(zoneID);
 
-                SpawnMode mode = ZNetScene.instance.IsAreaReady(position) ? SpawnMode.Full : SpawnMode.Ghost;
+                ZoneSystem.SpawnMode mode = ZNetScene.instance.IsAreaReady(position) ? ZoneSystem.SpawnMode.Full : ZoneSystem.SpawnMode.Ghost;
 
                 PlaceIceFloes(zoneID, zonePos, instance.m_tempClearAreas, mode, instance.m_tempSpawnedObjects);
                 LogFloeState($"{zoneID} {zonePos} Spawned {mode} floes:{instance.m_tempSpawnedObjects.Count}");
 
-                if (mode == SpawnMode.Ghost)
+                if (mode == ZoneSystem.SpawnMode.Ghost)
                 {
                     foreach (GameObject tempSpawnedObject in instance.m_tempSpawnedObjects)
                         Destroy(tempSpawnedObject);
@@ -520,12 +519,11 @@ namespace Seasons
             return true;
         }
 
-        public static void PlaceIceFloes(Vector2i zoneID, Vector3 zoneCenterPos, List<ClearArea> clearAreas, SpawnMode mode, List<GameObject> spawnedObjects)
+        public static void PlaceIceFloes(Vector2i zoneID, Vector3 zoneCenterPos, List<ZoneSystem.ClearArea> clearAreas, ZoneSystem.SpawnMode mode, List<GameObject> spawnedObjects)
         {
             UnityEngine.Random.State state = UnityEngine.Random.state;
             int seed = WorldGenerator.instance.GetSeed();
             float num = ZoneSystem.instance.m_zoneSize / 2f;
-            ZoneVegetation item = s_iceFloe;
 
             UnityEngine.Random.InitState(seed + zoneID.x * 4271 + zoneID.y * 9187 + _iceFloePrefab);
             int spawnCount = UnityEngine.Random.Range((int)amountOfIceFloesInWinterDays.Value.x, (int)amountOfIceFloesInWinterDays.Value.y + 1);
@@ -535,33 +533,33 @@ namespace Seasons
                 if (ZoneSystem.instance.InsideClearArea(clearAreas, p))
                     continue;
 
-                if (item.m_blockCheck && ZoneSystem.instance.IsBlocked(p))
+                if (s_iceFloe.m_blockCheck && ZoneSystem.instance.IsBlocked(p))
                     continue;
 
                 float num11 = p.y - ZoneSystem.instance.m_waterLevel;
-                if (num11 < item.m_minAltitude || num11 > item.m_maxAltitude)
+                if (num11 < s_iceFloe.m_minAltitude || num11 > s_iceFloe.m_maxAltitude)
                     continue;
 
                 ZoneSystem.instance.GetGroundData(ref p, out _, out var biome, out var biomeArea, out var hmap2);
-                if ((item.m_biome & biome) == 0 || (item.m_biomeArea & biomeArea) == 0)
+                if ((s_iceFloe.m_biome & biome) == 0 || (s_iceFloe.m_biomeArea & biomeArea) == 0)
                     continue;
 
-                if (item.m_minOceanDepth != item.m_maxOceanDepth)
+                if (s_iceFloe.m_minOceanDepth != s_iceFloe.m_maxOceanDepth)
                 {
                     float oceanDepth = hmap2.GetOceanDepth(p);
-                    if (oceanDepth < item.m_minOceanDepth || oceanDepth > item.m_maxOceanDepth)
+                    if (oceanDepth < s_iceFloe.m_minOceanDepth || oceanDepth > s_iceFloe.m_maxOceanDepth)
                         continue;
                 }
 
-                if (item.m_snapToWater)
+                if (s_iceFloe.m_snapToWater)
                     p.y = ZoneSystem.instance.m_waterLevel - _winterWaterSurfaceOffset;
 
-                if (mode == SpawnMode.Ghost)
+                if (mode == ZoneSystem.SpawnMode.Ghost)
                     ZNetView.StartGhostInit();
 
-                GameObject gameObject = Instantiate(item.m_prefab, p, Quaternion.Euler(0, UnityEngine.Random.Range(0, 360), 0));
+                GameObject gameObject = Instantiate(s_iceFloe.m_prefab, p, Quaternion.Euler(0, UnityEngine.Random.Range(0, 360), 0));
 
-                if (mode == SpawnMode.Ghost)
+                if (mode == ZoneSystem.SpawnMode.Ghost)
                     ZNetView.FinishGhostInit();
 
                 ZNetView component = gameObject.GetComponent<ZNetView>();
@@ -581,10 +579,10 @@ namespace Seasons
                     radius = Math.Max(radius, obj.bounds.size.magnitude / 2);
                 }
 
-                if (mode == SpawnMode.Ghost)
+                if (mode == ZoneSystem.SpawnMode.Ghost)
                     spawnedObjects.Add(gameObject);
 
-                clearAreas.Add(new ClearArea(p, radius));
+                clearAreas.Add(new ZoneSystem.ClearArea(p, radius));
             }
 
             UnityEngine.Random.state = state;
@@ -820,20 +818,20 @@ namespace Seasons
 
     }
 
-    [HarmonyPatch(typeof(Heightmap), nameof(Heightmap.GetBiomeColor), new[] { typeof(Biome) })]
+    [HarmonyPatch(typeof(Heightmap), nameof(Heightmap.GetBiomeColor), new[] { typeof(Heightmap.Biome) })]
     public static class Heightmap_GetBiomeColor_TerrainColor
     {
         public static bool overrideColor = false;
 
         [HarmonyPriority(Priority.First)]
-        private static void Prefix(ref Biome biome, ref Biome __state)
+        private static void Prefix(ref Heightmap.Biome biome, ref Heightmap.Biome __state)
         {
-            __state = Biome.None;
+            __state = Heightmap.Biome.None;
 
             if (!overrideColor || !seasonState.IsActive || !UseTextureControllers())
                 return;
 
-            if (seasonalBiomeColorOverride.TryGetValue(biome, out Dictionary<Season, Biome> overrideBiome) && overrideBiome.TryGetValue(seasonState.GetCurrentSeason(), out Biome overridedBiome))
+            if (seasonalBiomeColorOverride.TryGetValue(biome, out Dictionary<Season, Heightmap.Biome> overrideBiome) && overrideBiome.TryGetValue(seasonState.GetCurrentSeason(), out Heightmap.Biome overridedBiome))
             {
                 __state = biome;
                 biome = overridedBiome;
@@ -841,12 +839,33 @@ namespace Seasons
         }
 
         [HarmonyPriority(Priority.First)]
-        private static void Postfix(ref Biome biome, Biome __state)
+        private static void Postfix(ref Heightmap.Biome biome, Heightmap.Biome __state)
         {
-            if (__state == Biome.None)
+            if (!overrideColor || !seasonState.IsActive || !UseTextureControllers())
                 return;
 
             biome = __state;
+        }
+    }
+
+    [HarmonyPatch(typeof(Heightmap), nameof(Heightmap.GetBiomeColor), new[] { typeof(float), typeof(float) })]
+    public static class Heightmap_GetBiomeColor_PlainsMeadowsEdgeFix
+    {
+        [HarmonyPriority(Priority.First)]
+        private static void Postfix(Heightmap __instance, ref Color __result)
+        {
+            if (!plainsSwampBorderFix.Value)
+                return;
+
+            if (!Heightmap_GetBiomeColor_TerrainColor.overrideColor || !seasonState.IsActive || !UseTextureControllers())
+                return;
+
+            if (!__instance.IsBiomeEdge())
+                return;
+
+            // Swamp Meadows border
+            if (0f < __result.r && __result.r < 1f && 0f < __result.a && __result.a < 1f)
+                __result = new Color(__result.b, __result.g, __result.r, __result.a);
         }
     }
 
@@ -979,7 +998,7 @@ namespace Seasons
             if (!character.IsOnIce())
                 return true;
 
-            __result = Player.m_localPlayer.GetCurrentBiome() == Biome.Ocean ? FootStep.GroundMaterial.Default : FootStep.GroundMaterial.Snow;
+            __result = Player.m_localPlayer.GetCurrentBiome() == Heightmap.Biome.Ocean ? FootStep.GroundMaterial.Default : FootStep.GroundMaterial.Snow;
             return false;
         }
     }
@@ -1370,9 +1389,9 @@ namespace Seasons
     [HarmonyPatch(typeof(Player), nameof(Player.UpdateBiome))]
     public static class Player_UpdateBiome_AshlandsUnfrozenSurface
     {
-        private static void Prefix(Player __instance, ref Biome __state)
+        private static void Prefix(Player __instance, ref Heightmap.Biome __state)
         {
-            __state = Biome.None;
+            __state = Heightmap.Biome.None;
 
             if (!UseTextureControllers())
                 return;
@@ -1389,12 +1408,12 @@ namespace Seasons
             __state = __instance.GetCurrentBiome();
         }
 
-        private static void Postfix(Player __instance, Biome __state)
+        private static void Postfix(Player __instance, Heightmap.Biome __state)
         {
-            if (__state == Biome.None)
+            if (__state == Heightmap.Biome.None)
                 return;
 
-            if (__state != __instance.GetCurrentBiome() && (__state == Biome.AshLands || __instance.GetCurrentBiome() == Biome.AshLands))
+            if (__state != __instance.GetCurrentBiome() && (__state == Heightmap.Biome.AshLands || __instance.GetCurrentBiome() == Heightmap.Biome.AshLands))
                 UpdateWaterState();
         }
     }

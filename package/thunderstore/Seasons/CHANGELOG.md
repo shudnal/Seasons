@@ -1,3 +1,7 @@
+# 1.1.13
+* environment related console spam on season change fixed
+* Plains-Swamp border temporary fix (could be disabled)
+
 # 1.1.12
 * grass control will be applied immediately after config change
 
