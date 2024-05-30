@@ -385,6 +385,9 @@ namespace Seasons
                 return;
 
             ship.m_body.isKinematic = !placeShipAboveFrozenOcean.Value;
+            
+            if (ship.TryGetComponent(out ZSyncTransform zSyncTransform))
+                zSyncTransform.m_isKinematicBody = ship.m_body.isKinematic;
 
             if (placeShipAboveFrozenOcean.Value)
             {
