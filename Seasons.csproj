@@ -35,6 +35,7 @@
     <LangVersion>8.0</LangVersion>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="CustomPrefabs.cs" />
     <Compile Include="IceFloeClimb.cs" />
     <Compile Include="MinimapVariantController.cs" />
     <Compile Include="SeasonsCache.cs" />
@@ -136,17 +137,7 @@
     <EmbeddedResource Include="Assets\Textures\Bush01_heath_d\Fall_3.png" />
     <EmbeddedResource Include="Assets\Textures\Bush01_heath_d\Spring_2.png" />
     <EmbeddedResource Include="Assets\Textures\Bush01_heath_d\Spring_3.png" />
-    <EmbeddedResource Include="Assets\Textures\clutter_shrub\Spring_2.png" />
-    <EmbeddedResource Include="Assets\Textures\clutter_shrub\Spring_3.png" />
-    <EmbeddedResource Include="Assets\Textures\forest_groundcover\Spring_1.png" />
-    <EmbeddedResource Include="Assets\Textures\forest_groundcover\Spring_2.png" />
-    <EmbeddedResource Include="Assets\Textures\forest_groundcover\Spring_3.png" />
-    <EmbeddedResource Include="Assets\Textures\forest_groundcover_brown\Spring_1.png" />
-    <EmbeddedResource Include="Assets\Textures\forest_groundcover_brown\Spring_2.png" />
-    <EmbeddedResource Include="Assets\Textures\forest_groundcover_brown\Spring_3.png" />
-    <EmbeddedResource Include="Assets\Textures\forest_groundcover_brown\Spring_4.png" />
     <EmbeddedResource Include="Assets\Textures\grass_heath_redflower\Spring_1.png" />
-    <EmbeddedResource Include="Assets\Textures\grass_heath_redflower\Spring_2.png" />
     <EmbeddedResource Include="Assets\Textures\grass_heath_redflower\Spring_3.png" />
     <EmbeddedResource Include="Assets\Textures\oak_leaf\Fall_3.png" />
     <EmbeddedResource Include="Assets\Textures\oak_leaf\Spring_3.png" />
@@ -155,6 +146,9 @@
     <EmbeddedResource Include="Assets\Textures\ShootLeaf_d\Spring_3.png" />
     <EmbeddedResource Include="Assets\Textures\shrub_2\Fall_3.png" />
     <EmbeddedResource Include="Assets\Textures\shrub_3_heath\Fall_3.png" />
+    <EmbeddedResource Include="Assets\instanced_meadows_flowers.png" />
+    <EmbeddedResource Include="Assets\instanced_forest_groundcover_bloom.png" />
+    <EmbeddedResource Include="Assets\instanced_swamp_grass_bloom.png" />
     <Content Include="Libs\Newtonsoft.Json.dll" />
     <Content Include="Libs\ServerSync.dll" />
   </ItemGroup>

@@ -19,9 +19,9 @@ namespace Seasons
     [BepInDependency("shudnal.GammaOfNightLights", BepInDependency.DependencyFlags.SoftDependency)]
     public class Seasons : BaseUnityPlugin
     {
-        const string pluginID = "shudnal.Seasons";
-        const string pluginName = "Seasons";
-        const string pluginVersion = "1.1.13";
+        public const string pluginID = "shudnal.Seasons";
+        public const string pluginName = "Seasons";
+        public const string pluginVersion = "1.2.0";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -147,6 +147,7 @@ namespace Seasons
         public static readonly CustomSyncedValue<string> customTraderItemsJSON = new CustomSyncedValue<string>(configSync, "Custom traders JSON", "", Priority.Normal);
         public static readonly CustomSyncedValue<string> customWorldSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom world settings JSON", "", Priority.Normal);
         public static readonly CustomSyncedValue<string> customGrassSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom grass settings JSON", "", Priority.Normal);
+        public static readonly CustomSyncedValue<string> customClutterSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom clutter settings JSON", "", Priority.Normal); 
 
         public static readonly CustomSyncedValue<string> customMaterialSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom material settings JSON", "", Priority.Low);
         public static readonly CustomSyncedValue<string> customColorSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom color settings JSON", "", Priority.Low);
@@ -164,6 +165,7 @@ namespace Seasons
         private static HashSet<string> _PlantsToSurviveWinter = new HashSet<string>();
         private static HashSet<string> _WoodToControlDrop = new HashSet<string>();
         private static HashSet<string> _MeatToControlDrop = new HashSet<string>();
+        private static HashSet<string> _GrassToControlSize = new HashSet<string>();
 
         private static readonly Dictionary<Vector3, bool> _cachedIgnoredPositions = new Dictionary<Vector3, bool>();
 
@@ -431,14 +433,14 @@ namespace Seasons
             Minimap_Winter_ForestTex.filterMode = FilterMode.Bilinear;
         }
 
-        private void LoadIcon(string filename, ref Sprite icon)
+        internal static void LoadIcon(string filename, ref Sprite icon)
         {
             Texture2D tex = new Texture2D(2, 2);
             if (LoadTexture(filename, ref tex))
                 icon = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), Vector2.zero);
         }
 
-        private bool LoadTexture(string filename, ref Texture2D tex)
+        internal static bool LoadTexture(string filename, ref Texture2D tex)
         {
             string fileInConfigFolder = Path.Combine(configDirectory, filename);
             if (File.Exists(fileInConfigFolder))
@@ -455,6 +457,8 @@ namespace Seasons
 
             byte[] data = new byte[resourceStream.Length];
             resourceStream.Read(data, 0, data.Length);
+
+            tex.name = Path.GetFileNameWithoutExtension(filename);
 
             return tex.LoadImage(data, true);
         }
@@ -507,6 +511,11 @@ namespace Seasons
 
             _WoodToControlDrop = ConfigToHashSet(woodListToControlDrop.Value);
             _MeatToControlDrop = ConfigToHashSet(meatListToControlDrop.Value);
+
+            _GrassToControlSize = ConfigToHashSet(grassToControlSize.Value);
+            _GrassToControlSize.Add(ClutterVariantController.c_meadowsFlowersPrefabName);
+            _GrassToControlSize.Add(ClutterVariantController.c_forestBloomPrefabName);
+            _GrassToControlSize.Add(ClutterVariantController.c_swampGrassBloomName);
 
             _treeRegrowthPrefabs.Clear();
 
@@ -573,6 +582,11 @@ namespace Seasons
         public static GameObject TreeToRegrowth(GameObject gameObject)
         {
             return _treeRegrowthPrefabs.GetValueSafe(PrefabVariantController.GetPrefabName(gameObject));
+        }
+
+        public static bool ControlGrassSize(GameObject gameObject)
+        {
+            return _GrassToControlSize.Contains(PrefabVariantController.GetPrefabName(gameObject).ToLower());
         }
 
         public static void InvalidatePositionsCache()

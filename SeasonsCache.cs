@@ -32,6 +32,8 @@ namespace Seasons
             if (!UseTextureControllers())
                 return;
 
+            ClutterVariantController.AddSeasonalClutter();
+
             if (texturesVariants.Initialize())
             {
                 __instance.gameObject.AddComponent<PrefabVariantController>();
@@ -296,7 +298,11 @@ namespace Seasons
 
             string filename = Path.Combine(folder, prefabCacheFileName);
 
-            File.WriteAllText(filename, JsonConvert.SerializeObject(controllers, Formatting.Indented));
+            File.WriteAllText(filename, JsonConvert.SerializeObject(controllers, Formatting.Indented, new JsonSerializerSettings()
+            {
+                NullValueHandling = NullValueHandling.Ignore,
+                DefaultValueHandling = DefaultValueHandling.Ignore,
+            }));
 
             string directory = Path.Combine(folder, texturesDirectory);
 
@@ -1160,9 +1166,9 @@ namespace Seasons
                 seasonal.Winter.Add(new ColorVariant(new Color(0.98f, 0.98f, 1f), 0.65f, grayscale: true, restoreLuminance: false));
                 seasonal.Winter.Add(new ColorVariant(new Color(1f, 1f, 1f), 0.65f, grayscale: true, restoreLuminance: false));
 
-                grass.Spring.Add(new ColorVariant(new Color(0.45f, 0.80f, 0.27f), 0.6f));
-                grass.Spring.Add(new ColorVariant(new Color(0.69f, 0.84f, 0.15f), 0.6f));
-                grass.Spring.Add(new ColorVariant(new Color(0.51f, 0.65f, 0.13f), 0.6f));
+                grass.Spring.Add(new ColorVariant(new Color(0.45f, 0.80f, 0.27f), 0.5f));
+                grass.Spring.Add(new ColorVariant(new Color(0.69f, 0.84f, 0.15f), 0.45f));
+                grass.Spring.Add(new ColorVariant(new Color(0.51f, 0.65f, 0.13f), 0.5f));
                 grass.Spring.Add(new ColorVariant());
 
                 grass.Summer.Add(new ColorVariant(new Color(0.5f, 0.7f, 0.2f), 0.5f));
@@ -1640,6 +1646,18 @@ namespace Seasons
                 specific.Add(new ColorSpecific(
                     new List<MaterialFits>()
                     {
+                        new MaterialFits(prefab: "instanced_mistlands_grass_short", only: true),
+                        new MaterialFits(material: "grasscross_mistlands_short", only: true),
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(2),
+                    }
+                ));
+
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
                         new MaterialFits(material: "neck", only:true),
                         new MaterialFits(prefab: "Neck", only:true),
                         new MaterialFits(renderer: "Lillies", only:true)
@@ -2005,7 +2023,7 @@ namespace Seasons
                     },
                     new List<PositionFits>()
                     {
-                        new PositionFits(0, 0, 0, 0),
+                        new PositionFits(),
                     }
                 ));
 
@@ -2029,7 +2047,7 @@ namespace Seasons
                     },
                     new List<PositionFits>()
                     {
-                        new PositionFits(0, 0, 0, 0),
+                        new PositionFits(),
                     }
                 ));
 
@@ -2041,7 +2059,7 @@ namespace Seasons
                     },
                     new List<PositionFits>()
                     {
-                        new PositionFits(0, 0, 0, 0),
+                        new PositionFits(),
                     }
                 ));
 
@@ -2067,7 +2085,7 @@ namespace Seasons
                     },
                     new List<PositionFits>()
                     {
-                        new PositionFits(0, 0, 0, 0),
+                        new PositionFits(),
                     }
                 ));
 
@@ -2079,7 +2097,7 @@ namespace Seasons
                     },
                     new List<PositionFits>()
                     {
-                        new PositionFits(0, 0, 0, 0),
+                        new PositionFits(),
                     }
                 ));
 
@@ -2092,7 +2110,7 @@ namespace Seasons
                     },
                     new List<PositionFits>()
                     {
-                        new PositionFits(0, 0, 0, 0),
+                        new PositionFits(),
                     }
                 ));
 
@@ -2104,7 +2122,7 @@ namespace Seasons
                     },
                     new List<PositionFits>()
                     {
-                        new PositionFits(0, 0, 0, 0),
+                        new PositionFits(),
                     }
                 ));
 
@@ -2117,7 +2135,7 @@ namespace Seasons
                     },
                     new List<PositionFits>()
                     {
-                        new PositionFits(0, 0, 0, 0),
+                        new PositionFits(),
                     }
                 ));
 
@@ -2129,7 +2147,7 @@ namespace Seasons
                     },
                     new List<PositionFits>()
                     {
-                        new PositionFits(0, 0, 0, 0),
+                        new PositionFits(),
                     }
                 ));
 
@@ -2141,19 +2159,16 @@ namespace Seasons
                     },
                     new List<PositionFits>()
                     {
-                        new PositionFits(0, 0, 0, 0),
+                        new PositionFits(),
                     }
                 ));
 
             }
 
-            public bool IsPixelToChange(Color color, int pos, TextureProperties properties, bool isGrass, bool isMoss, string prefabName, Material material, string propertyName, PositionSpecific positionSpec, ColorSpecific colorSpec)
+            public bool IsPixelToChange(Color color, int pos, TextureProperties properties, bool isGrass, bool isMoss, Material material, PositionSpecific positionSpec, ColorSpecific colorSpec)
             {
                 if (color.a == 0f)
                     return false;
-
-                if (isGrass && !prefabName.StartsWith("Pickable_Flax") && prefabName != "sapling_flax" && prefabName != "instanced_heathflowers" && prefabName != "instanced_shrub" && prefabName != "instanced_vass")
-                    return !((prefabName == "instanced_meadows_grass" && propertyName == "_MainTex") || (prefabName == "instanced_meadows_grass_short" && propertyName == "_MainTex") || (prefabName == "instanced_mistlands_grass_short" && propertyName == "_MainTex"));
 
                 if (positionSpec != null && !positionSpec.FitsPosition(properties.width, properties.height, pos))
                     return false;
@@ -2348,7 +2363,7 @@ namespace Seasons
 
             List<int> pixelsToChange = new List<int>();
             for (int i = 0; i < pixels.Length; i++)
-                if (colorPositions.IsPixelToChange(pixels[i], i, textureVariants.properties, isGrass, isMoss, prefabName, material, propertyName, positionFits, colorSpecific))
+                if (colorPositions.IsPixelToChange(pixels[i], i, textureVariants.properties, isGrass, isMoss, material, positionFits, colorSpecific))
                     pixelsToChange.Add(i);
 
             if (pixelsToChange.Count == 0)
@@ -2462,6 +2477,7 @@ namespace Seasons
             sb.Append(JsonConvert.SerializeObject(colorSettings));
             sb.Append(JsonConvert.SerializeObject(colorReplacement));
             sb.Append(JsonConvert.SerializeObject(colorPositions));
+            sb.Append(pluginVersion);
 
             return (uint)sb.ToString().GetStableHashCode();
         }

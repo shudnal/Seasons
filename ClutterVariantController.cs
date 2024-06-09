@@ -24,12 +24,14 @@ namespace Seasons
             {  "instanced_forest_groundcover", 1 },
             {  "instanced_ormbunke", 2 },
             {  "instanced_forest_groundcover_brown", 3 },
+            {  c_forestBloomPrefabName, 4 },
             {  "instanced_heathgrass", 1 },
             {  "instanced_heathflowers", 2 },
             {  "grasscross_heath_green", 3 },
             {  "instanced_mistlands_grass_short", 0 },
             {  "instanced_mistlands_rockplant", 2 },
             {  "instanced_swamp_ormbunke", 1 },
+            {  c_swampGrassBloomPrefabName, 2 },
             {  "instanced_swamp_grass", 3 },
         };
 
@@ -44,12 +46,29 @@ namespace Seasons
 
         public static ClutterVariantController instance => m_instance;
         
-        private static Dictionary<Clutter, Tuple<bool, float, float>> m_clutterDefaults = new Dictionary<Clutter, Tuple<bool, float, float>>();
+        private readonly Dictionary<Clutter, Tuple<bool, float, float>> m_clutterDefaults = new Dictionary<Clutter, Tuple<bool, float, float>>();
 
         private static readonly List<Renderer> s_tempRenderers = new List<Renderer>();
 
         private static float s_grassPatchSize;
         private static float s_amountScale;
+
+        public const string c_meadowsFlowersName = "meadows flowers";
+        public const string c_meadowsFlowersPrefabName = "instanced_meadows_flowers";
+
+        public const string c_forestBloomName = "forest groundcover bloom";
+        public const string c_forestBloomPrefabName = "instanced_forest_groundcover_bloom";
+
+        public const string c_swampGrassBloomName = "swampgrass bloom";
+        public const string c_swampGrassBloomPrefabName = "instanced_swamp_grass_bloom";
+
+        private static GameObject s_meadowsFlowers;
+        private static GameObject s_forestBloom;
+        private static GameObject s_swampBloom;
+
+        public static Texture2D s_instanced_meadows_flowers = new Texture2D(64, 128, TextureFormat.RGBA32, false);
+        public static Texture2D s_instanced_forest_groundcover_bloom = new Texture2D(32, 32, TextureFormat.RGBA32, false);
+        public static Texture2D s_instanced_swampgrass_bloom = new Texture2D(64, 64, TextureFormat.RGBA32, false);
 
         private void Awake()
         {
@@ -101,6 +120,21 @@ namespace Seasons
             base.enabled = m_materialVariants.Any(variant => variant.Value.Count > 0);
             
             UpdateColors();
+        }
+
+        private void OnEnable()
+        {
+            UpdateColors();
+        }
+
+        private void OnDisable()
+        {
+            RevertColors();
+        }
+        
+        private void OnDestroy()
+        {
+            RevertColors();
         }
 
         private void AddCachedInstanceRenderer(GameObject prefab, string path, CachedRenderer cachedRenderer)
@@ -253,21 +287,6 @@ namespace Seasons
             }
         }
 
-        private void OnEnable()
-        {
-            UpdateColors();
-        }
-
-        private void OnDisable()
-        {
-            RevertColors();
-        }
-        
-        private void OnDestroy()
-        {
-            RevertColors();
-        }
-
         public void RevertColors()
         {
             foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
@@ -294,6 +313,8 @@ namespace Seasons
                 }
 
             RevertGrass();
+
+            RevertSeasonalClutter();
         }
 
         public void UpdateColors()
@@ -311,7 +332,11 @@ namespace Seasons
                         if (!m_originalColors.ContainsKey(materialVariants.Key))
                             m_originalColors.Add(materialVariants.Key, materialVariants.Key.color);
 
-                        materialVariants.Key.SetTexture(texProp.Key, texture);
+                        if (texProp.Key == "_TerrainColorTex" && materialVariants.Value.ContainsKey("_MainTex"))
+                            materialVariants.Key.SetTexture(texProp.Key, null);
+                        else
+                            materialVariants.Key.SetTexture(texProp.Key, texture);
+
                         if (materialVariants.Key.color == Color.clear)
                             materialVariants.Key.color = m_originalColors[materialVariants.Key];
                     }
@@ -345,6 +370,9 @@ namespace Seasons
 
             foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c.m_prefab != null))
             {
+                if (!ControlGrassSize(clutter.m_prefab))
+                    continue;
+
                 if (!m_clutterDefaults.TryGetValue(clutter, out Tuple<bool, float, float> defaultState))
                     continue;
 
@@ -353,6 +381,8 @@ namespace Seasons
 
                 clutter.m_enabled = defaultState.Item1 && clutter.m_scaleMax != 0f;
             }
+
+            UpdateSeasonalClutter();
 
             ClutterSystem.instance.ClearAll();
         }
@@ -364,7 +394,10 @@ namespace Seasons
 
             foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c.m_prefab != null))
             {
-                clutter.m_enabled = true;
+                if (!ControlGrassSize(clutter.m_prefab))
+                    continue;
+
+                //clutter.m_enabled = true;
 
                 if (!m_clutterDefaults.TryGetValue(clutter, out Tuple<bool, float, float> defaultState))
                     continue;
@@ -375,7 +408,27 @@ namespace Seasons
                 clutter.m_enabled = defaultState.Item1;
             }
 
+            UpdateSeasonalClutter();
+
             ClutterSystem.instance.ClearAll();
+        }
+
+        public void UpdateSeasonalClutter()
+        {
+            Dictionary<string, bool> seasonalClutter = SeasonState.seasonClutterSettings.GetSeasonalState();
+            foreach (Clutter clutter in ClutterSystem.instance.m_clutter)
+            {
+                if (!seasonalClutter.TryGetValue(clutter.m_name, out bool m_enabled))
+                    continue;
+
+                clutter.m_enabled = m_enabled;
+            }
+        }
+
+        public void RevertSeasonalClutter()
+        {
+            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => SeasonState.seasonClutterSettings.GetSeasonalState().ContainsKey(c.m_name)))
+                clutter.m_enabled = false;
         }
 
         public IEnumerator UpdateDayState()
@@ -401,8 +454,117 @@ namespace Seasons
         private double GetVariantFactor(int day)
         {
             int seed = ZNet.m_world != null ? ZNet.m_world.m_seed : WorldGenerator.instance != null ? WorldGenerator.instance.GetSeed() : 0;
+            
+            if (seed == 0)
+                seed = 1;
+
             double seedFactor = Math.Log10(Math.Abs(seed));
             return (Math.Sin(Math.Sign(seed) * seedFactor * day) + Math.Sin(Math.Sqrt(seedFactor) * Math.E * day) + Math.Sin(Math.PI * day)) / 2;
+        }
+
+        internal static void AddSeasonalClutter()
+        {
+            AddMeadowsFlowers();
+
+            AddForestBloom();
+
+            AddSwampgrassBloom();
+        }
+
+        internal static void AddMeadowsFlowers()
+        {
+            if (ClutterSystem.instance.m_clutter.Any(clutter => clutter.m_name == c_meadowsFlowersName))
+                return;
+
+            Clutter clutter = ClutterSystem.instance.m_clutter.Find(clutter => clutter.m_name == "heath flowers");
+            if (clutter == null)
+                return;
+
+            Clutter flowers = JsonUtility.FromJson<Clutter>(JsonUtility.ToJson(clutter));
+            flowers.m_name = c_meadowsFlowersName;
+            flowers.m_biome = Heightmap.Biome.Meadows;
+            flowers.m_enabled = false;
+
+            if (!s_meadowsFlowers)
+            {
+                s_meadowsFlowers = CustomPrefabs.InitPrefabClone(flowers.m_prefab, c_meadowsFlowersPrefabName);
+                LoadTexture("instanced_meadows_flowers.png", ref s_instanced_meadows_flowers);
+
+                InstanceRenderer renderer = s_meadowsFlowers.GetComponent<InstanceRenderer>();
+                renderer.m_material = new Material(renderer.m_material);
+                renderer.m_material.name = c_meadowsFlowersPrefabName;
+                renderer.m_material.SetTexture("_MainTex", s_instanced_meadows_flowers);
+            }
+            
+            flowers.m_prefab = s_meadowsFlowers;
+            flowers.m_amount = 100;
+            flowers.m_maxTilt = 25;
+
+            ClutterSystem.instance.m_clutter.Add(flowers);
+        }
+        
+        internal static void AddForestBloom()
+        {
+            if (ClutterSystem.instance.m_clutter.Any(clutter => clutter.m_name == c_forestBloomName))
+                return;
+
+            Clutter clutter = ClutterSystem.instance.m_clutter.Find(clutter => clutter.m_name == "forest groundcover");
+            if (clutter == null)
+                return;
+
+            Clutter bloom = JsonUtility.FromJson<Clutter>(JsonUtility.ToJson(clutter));
+            bloom.m_name = c_forestBloomName;
+            bloom.m_biome = Heightmap.Biome.BlackForest;
+            bloom.m_enabled = false;
+
+            if (!s_forestBloom)
+            {
+                s_forestBloom = CustomPrefabs.InitPrefabClone(bloom.m_prefab, c_forestBloomPrefabName);
+                LoadTexture("instanced_forest_groundcover_bloom.png", ref s_instanced_forest_groundcover_bloom);
+
+                InstanceRenderer renderer = s_forestBloom.GetComponent<InstanceRenderer>();
+                renderer.m_material = new Material(renderer.m_material);
+                renderer.m_material.name = c_forestBloomPrefabName;
+                renderer.m_material.SetTexture("_MainTex", s_instanced_forest_groundcover_bloom);
+            }
+
+            bloom.m_prefab = s_forestBloom;
+            bloom.m_fractalTresholdMin = 0;
+            bloom.m_fractalTresholdMax = 0.5f;
+
+            ClutterSystem.instance.m_clutter.Add(bloom);
+        }
+
+        internal static void AddSwampgrassBloom()
+        {
+            if (ClutterSystem.instance.m_clutter.Any(clutter => clutter.m_name == c_swampGrassBloomName))
+                return;
+
+            Clutter clutter = ClutterSystem.instance.m_clutter.Find(clutter => clutter.m_name == "swampgrass");
+            if (clutter == null)
+                return;
+
+            Clutter bloom = JsonUtility.FromJson<Clutter>(JsonUtility.ToJson(clutter));
+            bloom.m_name = c_swampGrassBloomName;
+            bloom.m_biome = Heightmap.Biome.Swamp;
+            bloom.m_enabled = false;
+
+            if (!s_swampBloom)
+            {
+                s_swampBloom = CustomPrefabs.InitPrefabClone(bloom.m_prefab, c_swampGrassBloomPrefabName);
+                LoadTexture("instanced_swamp_grass_bloom.png", ref s_instanced_swampgrass_bloom);
+
+                InstanceRenderer renderer = s_swampBloom.GetComponent<InstanceRenderer>();
+                renderer.m_material = new Material(renderer.m_material);
+                renderer.m_material.name = c_swampGrassBloomPrefabName;
+                renderer.m_material.SetTexture("_MainTex", s_instanced_swampgrass_bloom);
+            }
+
+            bloom.m_prefab = s_swampBloom;
+            bloom.m_fractalTresholdMin = 0;
+            bloom.m_fractalTresholdMax = 0.5f;
+
+            ClutterSystem.instance.m_clutter.Add(bloom);
         }
 
         public static void Initialize()

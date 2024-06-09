@@ -30,6 +30,7 @@ namespace Seasons
         public static SeasonTraderItems seasonTraderItems = new SeasonTraderItems(loadDefaults: true);
         public static SeasonWorldSettings seasonWorldSettings = new SeasonWorldSettings();
         public static SeasonGrassSettings seasonGrassSettings = new SeasonGrassSettings(loadDefaults: true);
+        public static SeasonClutterSettings seasonClutterSettings = new SeasonClutterSettings(loadDefaults: true); 
 
         private static List<ItemDrop.ItemData> _itemDataList = new List<ItemDrop.ItemData>();
 
@@ -72,6 +73,7 @@ namespace Seasons
             SeasonSettings.SaveDefaultTraderItems(folder);
             SeasonSettings.SaveDefaultWorldSettings(folder);
             SeasonSettings.SaveDefaultGrassSettings(folder);
+            SeasonSettings.SaveDefaultClutterSettings(folder);
         }
 
         public bool IsActive => EnvMan.instance != null;
@@ -450,6 +452,25 @@ namespace Seasons
                 catch (Exception e)
                 {
                     LogWarning($"Error parsing custom grass settings:\n{e}");
+                }
+            }
+        }
+
+        public void UpdateClutterSettings()
+        {
+            if (!IsActive)
+                return;
+
+            if (!String.IsNullOrEmpty(customClutterSettingsJSON.Value))
+            {
+                try
+                {
+                    seasonClutterSettings = JsonConvert.DeserializeObject<SeasonClutterSettings>(customClutterSettingsJSON.Value);
+                    LogInfo($"Custom clutter settings updated");
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error parsing custom clutter settings:\n{e}");
                 }
             }
         }

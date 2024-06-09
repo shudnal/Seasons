@@ -1394,6 +1394,7 @@ namespace Seasons
 
         public SeasonGrass GetGrassSettings(int day)
         {
+            // Grass controlled only after first spring
             if (seasonState.GetCurrentWorldDay() > seasonState.GetDaysInSeason(Season.Spring))
             {
                 List<SeasonGrass> seasonDays = GetSeasonGrass(seasonState.GetCurrentSeason());
@@ -1446,6 +1447,72 @@ namespace Seasons
         }
     }
 
+    [Serializable]
+    public class SeasonClutterSettings
+    {
+        [Serializable]
+        public class SeasonalClutter
+        {
+            public string clutterName;
+            public bool spring;
+            public bool summer;
+            public bool fall;
+            public bool winter;
+
+            public bool GetSeasonState(Season season)
+            {
+                return season switch
+                {
+                    Season.Spring => spring,
+                    Season.Summer => summer,
+                    Season.Fall => fall,
+                    Season.Winter => winter,
+                    _ => false
+                };
+            }
+        }
+
+        public List<SeasonalClutter> seasonalClutters = new List<SeasonalClutter>();
+
+        public SeasonClutterSettings(bool loadDefaults = false)
+        {
+            if (!loadDefaults)
+                return;
+
+            seasonalClutters.Add(new SeasonalClutter()
+            {
+                clutterName = ClutterVariantController.c_meadowsFlowersName, 
+                spring = true
+            });
+
+            seasonalClutters.Add(new SeasonalClutter()
+            {
+                clutterName = ClutterVariantController.c_forestBloomName,
+                spring = true
+            });
+
+            seasonalClutters.Add(new SeasonalClutter()
+            {
+                clutterName = ClutterVariantController.c_swampGrassBloomName,
+                spring = true
+            });
+        }
+
+        public Dictionary<string, bool> GetSeasonalState()
+        {
+            return GetSeasonalState(seasonState.GetCurrentSeason());
+        }
+
+        public Dictionary<string, bool> GetSeasonalState(Season season)
+        {
+            Dictionary<string, bool> result = new Dictionary<string, bool>();
+            foreach (SeasonalClutter clutter in seasonalClutters)
+                result.Add(clutter.clutterName, clutter.GetSeasonState(season));
+
+            return result;
+        }
+    }
+
     public class SeasonSettings
     {
         public const string defaultsSubdirectory = "Default settings";
@@ -1457,6 +1524,7 @@ namespace Seasons
         public const string customTraderItemsFileName = "Custom trader items.json";
         public const string customWorldSettingsFileName = "Custom world settings.json";
         public const string customGrassSettingsFileName = "Custom grass settings.json";
+        public const string customClutterSettingsFileName = "Custom clutter settings.json";
         public const int nightLentghDefault = 30;
         public const string itemDropNameTorch = "$item_torch";
         public const string itemNameTorch = "Torch";
@@ -1706,8 +1774,17 @@ namespace Seasons
                     {
                         LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
                     }
-                
 
+                if (file.Name == customClutterSettingsFileName)
+                    try
+                    {
+                        customClutterSettingsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
+                    }
+                    catch (Exception e)
+                    {
+                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
+                    }
+                
             };
             
             ConfigSync.ProcessingServerUpdate = false;
@@ -1725,6 +1802,7 @@ namespace Seasons
             seasonState.UpdateTraderItems();
             seasonState.UpdateWorldSettings();
             seasonState.UpdateGrassSettings();
+            seasonState.UpdateClutterSettings();
 
             SeasonState.CheckSeasonChange();
         }
@@ -1806,6 +1884,12 @@ namespace Seasons
             File.WriteAllText(Path.Combine(folder, customGrassSettingsFileName), JsonConvert.SerializeObject(new SeasonGrassSettings(loadDefaults: true), Formatting.Indented));
         }
 
+        public static void SaveDefaultClutterSettings(string folder)
+        {
+            LogInfo($"Saving default custom clutter settings");
+            File.WriteAllText(Path.Combine(folder, customClutterSettingsFileName), JsonConvert.SerializeObject(new SeasonClutterSettings(loadDefaults: true), Formatting.Indented));
+        }
+        
     }
 
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Start))]
