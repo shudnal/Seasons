@@ -167,8 +167,16 @@ namespace Seasons
                         foreach (KeyValuePair<string, TextureVariants> texVar in materialIndex.Value)
                             if (texVar.Value.seasons.TryGetValue(seasonState.GetCurrentSeason(), out Dictionary<int, Texture2D> variants) && variants.TryGetValue(variant, out Texture2D texture))
                             {
+                                if (!texVar.Value.HaveOriginalTexture())
+                                    texVar.Value.SetOriginalTexture(materialVariants.Key.sharedMaterials[materialIndex.Key].GetTexture(texVar.Key));
+
                                 materialVariants.Key.GetPropertyBlock(s_matBlock, materialIndex.Key);
-                                s_matBlock.SetTexture(texVar.Key, texture);
+
+                                if (CustomTextures.HaveCustomTexture(texVar.Value.originalName, seasonState.GetCurrentSeason(), variant, texVar.Value.properties, out Texture2D customTexture))
+                                    s_matBlock.SetTexture(texVar.Key, customTexture);
+                                else
+                                    s_matBlock.SetTexture(texVar.Key, texture);
+
                                 materialVariants.Key.SetPropertyBlock(s_matBlock, materialIndex.Key);
                             }
 

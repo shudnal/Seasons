@@ -36,6 +36,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="CustomPrefabs.cs" />
+    <Compile Include="CustomTextures.cs" />
     <Compile Include="IceFloeClimb.cs" />
     <Compile Include="MinimapVariantController.cs" />
     <Compile Include="SeasonsCache.cs" />

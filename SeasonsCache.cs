@@ -28,6 +28,7 @@ namespace Seasons
         {
             SeasonalTexturePrefabCache.SetupConfigWatcher();
             SeasonalTexturePrefabCache.SaveDefaults();
+            CustomTextures.SaveDefaults();
 
             if (!UseTextureControllers())
                 return;
@@ -42,6 +43,7 @@ namespace Seasons
                 __instance.gameObject.AddComponent<ZoneSystemVariantController>().Initialize(__instance);
                 FillListsToControl();
                 InvalidatePositionsCache();
+                CustomTextures.UpdateTextures();
             }
             else
                 LogInfo("Missing textures variants");
@@ -82,6 +84,17 @@ namespace Seasons
         public float mipMapBias = 0;
         public int width = 2;
         public int height = 2;
+
+        public Texture2D CreateTexture()
+        {
+            return new Texture2D(width, height, format, mipmapCount, false)
+            {
+                filterMode = filterMode,
+                anisoLevel = anisoLevel,
+                mipMapBias = mipMapBias,
+                wrapMode = wrapMode
+            };
+        }
     }
 
     [Serializable]
@@ -454,13 +467,7 @@ namespace Seasons
                     if (!variants.TryGetValue(variant, out byte[] data))
                         continue;
 
-                    Texture2D tex = new Texture2D(properties.width, properties.height, properties.format, properties.mipmapCount, false)
-                    {
-                        filterMode = properties.filterMode,
-                        anisoLevel = properties.anisoLevel,
-                        mipMapBias = properties.mipMapBias,
-                        wrapMode = properties.wrapMode
-                    };
+                    Texture2D tex = properties.CreateTexture();
 
                     if (tex.LoadImage(data, true))
                         AddVariant(season, variant, tex);
@@ -2419,14 +2426,7 @@ namespace Seasons
             RenderTexture previous = RenderTexture.active;
             RenderTexture.active = tmp;
 
-            Texture2D textureCopy = new Texture2D(texture.width, texture.height, texProperties.format, texProperties.mipmapCount, false)
-            {
-                filterMode = texProperties.filterMode,
-                anisoLevel = texProperties.anisoLevel,
-                mipMapBias = texProperties.mipMapBias,
-                wrapMode = texProperties.wrapMode
-            };
-
+            Texture2D textureCopy = texProperties.CreateTexture();
             textureCopy.ReadPixels(new Rect(0, 0, tmp.width, tmp.height), 0, 0, true);
             textureCopy.Apply();
 
@@ -2453,13 +2453,7 @@ namespace Seasons
 
             for (int variant = 0; variant < colorVariants.Length; variant++)
             {
-                Texture2D tex = new Texture2D(texProperties.width, texProperties.height, texProperties.format, texProperties.mipmapCount, false)
-                {
-                    filterMode = texProperties.filterMode,
-                    anisoLevel = texProperties.anisoLevel,
-                    mipMapBias = texProperties.mipMapBias,
-                    wrapMode = texProperties.wrapMode
-                };
+                Texture2D tex = texProperties.CreateTexture();
 
                 tex.SetPixels(seasonColors[variant]);
                 tex.Apply();

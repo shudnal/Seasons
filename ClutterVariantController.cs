@@ -335,7 +335,12 @@ namespace Seasons
                         if (texProp.Key == "_TerrainColorTex" && materialVariants.Value.ContainsKey("_MainTex"))
                             materialVariants.Key.SetTexture(texProp.Key, null);
                         else
-                            materialVariants.Key.SetTexture(texProp.Key, texture);
+                        {
+                            if (CustomTextures.HaveCustomTexture(texProp.Value.originalName, seasonState.GetCurrentSeason(), variant, texProp.Value.properties, out Texture2D customTexture))
+                                materialVariants.Key.SetTexture(texProp.Key, customTexture);
+                            else
+                                materialVariants.Key.SetTexture(texProp.Key, texture);
+                        }
 
                         if (materialVariants.Key.color == Color.clear)
                             materialVariants.Key.color = m_originalColors[materialVariants.Key];
