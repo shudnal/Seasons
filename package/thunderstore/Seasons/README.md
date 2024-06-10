@@ -333,6 +333,83 @@ The same logic works for other values. If value is not set it takes default valu
 * in summer grass size will be increased but it will be a bit sparser to not hit performance
 * in fall grass size will be a bit increase and gradually decreased and made sparser on the last day
 
+## Seasonal clutter
+
+There is 3 new clutter prefabs:
+* Meadows flowers (red and blue)
+* Black forest flowers (pink)
+* Swamp flowers (white)
+
+By default that prefabs are only enabled in Spring adding some heavily needed flavor.
+
+File "Custom clutter settings.json" contains seasonal clutter distribution settings between seasons.
+
+You can add your own clutter using other mods and control its seasonal state through that file.
+
+### Seasonal clutter settings
+* clutterName - string - clutter name as it set in ClutterSystem.m_clutter
+* spring - bool - should it be enabled in spring
+* summer - bool - should it be enabled in summer
+* fall - bool - should it be enabled in fall
+* winter - bool - should it be enabled in winter
+
+## Custom textures
+
+Custom textures could be placed in **\BepInEx\config\shudnal.Seasons\Custom textures** folder.
+
+Mod comes with some predefined default textures. It will be placed in **\BepInEx\config\shudnal.Seasons\Custom textures\Defaults** folder. Default textures will be overwritten after mod version change.
+
+If you want to make changes to default textures then copy needed folder into **\BepInEx\config\shudnal.Seasons\Custom textures**.
+
+Folders inside of **\BepInEx\config\shudnal.Seasons\Custom textures** folder should be named as texture name. If different objects use the same texture it will be replaced for all of them.
+
+To find what texture name is you should set general config option "Test - Cache format" to "SaveBothLoadBinary" and rebuild the cache (by running console command or just deleting old one in **\BepInEx\cache\shudnal.Seasons**).
+
+After that new cache folder will form with files **cache.json** and **cache.bin** and **textures** folder. Cache.json consists of all objects and their materials and color that will be replaced. 
+
+In that file you can find prefab and texture number which corresponds with folder in "texture\" directory. 
+
+In that texture directory you can find file with name ending on ".orig.png". That is the name of texture you want to replace.
+
+Texture numbers could be generated differently on every cache build.
+
+Files inside of texture folder corresponds with season and variant. Naming convention is Season_Number.png. Your textures should be named accordingly.
+
+### Example
+
+You want to replace winter texture of Beech.
+
+Find your current cache revision folder. It's located in **\BepInEx\cache\shudnal.Seasons** folder and named as cache revision number.
+To get your current cache revision number you can enable logging and look for it in log file. Or simply delete every other folder and rebuild cache. 
+
+Most recent folder will be your current cache folder. In that example it's 2054891382. Go inside.
+
+Open **cache.json** file and look for beech prefab name. You can find its name on [Jotunn's prefab list](https://valheim-modding.github.io/Jotunn/data/prefabs/prefab-list.html) or using [RuntimeUnityEditor](https://github.com/ManlyMarco/RuntimeUnityEditor).
+
+In that case there are three beech prefabs in **cache.json**.
+* Beech_Sapling - small plantable version of beech
+* Beech_small1 - small variant
+* Beech_small2 - small variant
+* Beech1 - actual big meadows tree and our current target to change texture
+
+Beech_Sapling, Beech_small1 and Beech_small2 shares the same texture with number *112892* (your number might be different).
+
+Beech1 have material **beech_leaf** and its **_MainTex** (main texture) with number *171264*.
+There are also bark material and _MossTex. It should be ignored.
+
+So we take number *171264* and go into **\BepInEx\cache\shudnal.Seasons\2054891382\textures\171264** folder.
+There are set of seasonal files, **properties.json** file and **beech_leaf.orig.png** file. Last file is original texture used in vanilla game. Original texture file name convention is *{Texture name}.orig.png* so our texture name will be **beech_leaf**.
+
+Now we create new folder in **\BepInEx\config\shudnal.Seasons\Custom textures** and name it **beech_leaf**.
+
+For that example we take file Winter_1.png from **\BepInEx\cache\shudnal.Seasons\2054891382\textures\171264** folder to **\BepInEx\config\shudnal.Seasons\Custom textures\beech_leaf**.
+
+You can now edit that file as you wish. It will be loaded as Winter variant number 1 for Beech1 prefab in game.
+
+Any changes done to that file will be applied on the fly.
+
+Only textures appeared in **cache.json** file could be replaced.
+
 ## General settings
 * minimap will be recolored using the seasonal colors setting
 * seasonal items will be enabled in the corresponding season

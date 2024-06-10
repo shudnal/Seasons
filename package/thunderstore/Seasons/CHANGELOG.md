@@ -1,3 +1,8 @@
+# 1.2.0
+* new seasonal clutters (flowers for spring)
+* seasonal clutter control
+* custom textures support
+
 # 1.1.13
 * environment related console spam on season change fixed
 * Plains-Swamp border temporary fix (could be disabled)
@@ -13,6 +18,9 @@
 * Ashlands
 * grass control extended and moved to distinct JSON file
 * tree regrowth chance
+
+<details>
+<summary><b>Changelog History</b> (<i>click to expand</i>)</summary>
 
 # 1.1.9
 * patch 0.217.46
@@ -59,9 +67,6 @@
 * setting seasonal key at day change
 * fix for control stats couldn't be disabled completely
 * fix for ice floes floating in the air
-
-<details>
-<summary><b>Changelog History</b> (<i>click to expand</i>)</summary>
 
 # 1.0.13
 * you can climb on ice floe
