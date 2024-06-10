@@ -47,6 +47,7 @@ namespace Seasons
         public static ConfigEntry<bool> controlYggdrasil;
         public static ConfigEntry<bool> controlTraders;
         public static ConfigEntry<bool> controlGrass;
+        public static ConfigEntry<bool> customTextures;
 
         public static ConfigEntry<bool> showCurrentSeasonBuff;
         public static ConfigEntry<TimerFormat> seasonsTimerFormat;
@@ -276,9 +277,11 @@ namespace Seasons
             controlYggdrasil = config("Season - Control", "Control yggdrasil branch and roots", defaultValue: true, "Enables seasonal coloring of yggdrasil branch in the sky and roots on the ground");
             controlTraders = config("Season - Control", "Control trader seasonal items list", defaultValue: true, "Enables seasonal changes of trader additional item availability");
             controlGrass = config("Season - Control", "Control grass", defaultValue: true, "Enables seasonal changes of grass thickness, size and sparseness");
+            customTextures = config("Season - Control", "Custom textures", defaultValue: true, "Enables custom textures");
 
             controlStats.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
             controlGrass.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateGrass();
+            customTextures.SettingChanged += (sender, args) => CustomTextures.UpdateTexturesOnChange();
 
             enableSeasonalItems = config("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
             preventDeathFromFreezing = config("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");

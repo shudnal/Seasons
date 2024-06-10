@@ -1,4 +1,5 @@
-﻿using System;
+﻿using BepInEx;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -18,6 +19,30 @@ namespace Seasons
         public static readonly Dictionary<string, Dictionary<Season, Dictionary<int, Texture2D>>> textures = new Dictionary<string, Dictionary<Season, Dictionary<int, Texture2D>>>();
         public static Dictionary<string, Tuple<Season, int>> seasonVariantsFileNames;
 
+        public static void SetupConfigWatcher()
+        {
+            string filter = $"*.png";
+
+            FileSystemWatcher fileSystemWatcher = new FileSystemWatcher(GetSubdirectory(), filter);
+            fileSystemWatcher.Changed += new FileSystemEventHandler(UpdateTexturesOnChange);
+            fileSystemWatcher.Created += new FileSystemEventHandler(UpdateTexturesOnChange);
+            fileSystemWatcher.Renamed += new RenamedEventHandler(UpdateTexturesOnChange);
+            fileSystemWatcher.Deleted += new FileSystemEventHandler(UpdateTexturesOnChange);
+            fileSystemWatcher.IncludeSubdirectories = true;
+            fileSystemWatcher.SynchronizingObject = ThreadingHelper.SynchronizingObject;
+            fileSystemWatcher.EnableRaisingEvents = true;
+
+            UpdateTexturesOnChange();
+        }
+
+        public static void UpdateTexturesOnChange(object sender = null, FileSystemEventArgs eargs = null)
+        {
+            UpdateTextures();
+
+            PrefabVariantController.UpdatePrefabColors();
+            ClutterVariantController.instance?.UpdateColors();
+        }
+
         public static void UpdateTextures()
         {
             foreach (var tex in textures)
@@ -27,9 +52,15 @@ namespace Seasons
 
             textures.Clear();
 
+            if (!customTextures.Value)
+                return;
+
             LoadCustomTextures(GetDefaultsSubdirectory());
 
             LoadCustomTextures(GetSubdirectory());
+
+            if (textures.Count > 0)
+                LogInfo($"Loaded {textures.Count} custom textures.");
         }
 
         public static bool HaveCustomTexture(string textureName, Season season, int variant, TextureProperties properties, out Texture2D texture)

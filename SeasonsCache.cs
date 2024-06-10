@@ -44,6 +44,7 @@ namespace Seasons
                 FillListsToControl();
                 InvalidatePositionsCache();
                 CustomTextures.UpdateTextures();
+                CustomTextures.SetupConfigWatcher();
             }
             else
                 LogInfo("Missing textures variants");
@@ -1301,10 +1302,18 @@ namespace Seasons
 
                 prefabOverrides.Add(new PrefabOverrides(new List<string>() { "grasscross_heath_green" }, new SeasonalColorVariants()
                 {
-                    Spring = grass.Summer.ToList(),
-                    Summer = grass.Spring.ToList(),
-                    Fall = grass.Summer.ToList(),
-                    Winter = grass.Winter.ToList(),
+                    Spring = grass.Summer,
+                    Summer = grass.Spring,
+                    Fall = grass.Summer,
+                    Winter = grass.Winter,
+                }));
+
+                prefabOverrides.Add(new PrefabOverrides(new List<string>() { "instanced_heathgrass" }, new SeasonalColorVariants()
+                {
+                    Spring = grass.Spring.Select(variant => JsonUtility.FromJson<ColorVariant>(JsonUtility.ToJson(variant))).Select(variant => { if (!variant.useColor) variant = grass.Spring[0]; variant.targetProportion += 0.2f; return variant; }).ToList(),
+                    Summer = grass.Summer,
+                    Fall = grass.Fall,
+                    Winter = grass.Winter,
                 }));
 
                 materialOverrides.Add(new MaterialOverrides(new List<string>() { "Pine_tree_small_dead", "swamptree1_branch", "swamptree2_branch" }, new SeasonalColorVariants()
