@@ -1132,9 +1132,9 @@ namespace Seasons
                 return;
 
             Season season = seasonState.GetCurrentSeason();
-            __result = __result || __instance.name == "Halloween" && season == Season.Fall
-                                || __instance.name == "Midsummer" && season == Season.Summer
-                                || __instance.name == "Yule" && season == Season.Winter;
+            __result = __instance.name == "Halloween" && season == Season.Fall
+                    || __instance.name == "Midsummer" && season == Season.Summer
+                    || __instance.name == "Yule" && season == Season.Winter;
         }
     }
 
