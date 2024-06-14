@@ -21,7 +21,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.2.0";
+        public const string pluginVersion = "1.2.1";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -148,7 +148,8 @@ namespace Seasons
         public static readonly CustomSyncedValue<string> customTraderItemsJSON = new CustomSyncedValue<string>(configSync, "Custom traders JSON", "", Priority.Normal);
         public static readonly CustomSyncedValue<string> customWorldSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom world settings JSON", "", Priority.Normal);
         public static readonly CustomSyncedValue<string> customGrassSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom grass settings JSON", "", Priority.Normal);
-        public static readonly CustomSyncedValue<string> customClutterSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom clutter settings JSON", "", Priority.Normal); 
+        public static readonly CustomSyncedValue<string> customClutterSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom clutter settings JSON", "", Priority.Normal);
+        public static readonly CustomSyncedValue<string> customBiomeSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom biome settings JSON", "", Priority.Normal);
 
         public static readonly CustomSyncedValue<string> customMaterialSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom material settings JSON", "", Priority.Low);
         public static readonly CustomSyncedValue<string> customColorSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom color settings JSON", "", Priority.Low);

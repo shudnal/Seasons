@@ -30,7 +30,8 @@ namespace Seasons
         public static SeasonTraderItems seasonTraderItems = new SeasonTraderItems(loadDefaults: true);
         public static SeasonWorldSettings seasonWorldSettings = new SeasonWorldSettings();
         public static SeasonGrassSettings seasonGrassSettings = new SeasonGrassSettings(loadDefaults: true);
-        public static SeasonClutterSettings seasonClutterSettings = new SeasonClutterSettings(loadDefaults: true); 
+        public static SeasonClutterSettings seasonClutterSettings = new SeasonClutterSettings(loadDefaults: true);
+        public static SeasonBiomeSettings seasonBiomeSettings = new SeasonBiomeSettings(loadDefaults: true);
 
         private static List<ItemDrop.ItemData> _itemDataList = new List<ItemDrop.ItemData>();
 
@@ -74,6 +75,7 @@ namespace Seasons
             SeasonSettings.SaveDefaultWorldSettings(folder);
             SeasonSettings.SaveDefaultGrassSettings(folder);
             SeasonSettings.SaveDefaultClutterSettings(folder);
+            SeasonSettings.SaveDefaultBiomesSettings(folder);
         }
 
         public bool IsActive => EnvMan.instance != null;
@@ -471,6 +473,25 @@ namespace Seasons
                 catch (Exception e)
                 {
                     LogWarning($"Error parsing custom clutter settings:\n{e}");
+                }
+            }
+        }
+
+        public void UpdateBiomeSettings()
+        {
+            if (!IsActive)
+                return;
+
+            if (!String.IsNullOrEmpty(customBiomeSettingsJSON.Value))
+            {
+                try
+                {
+                    seasonBiomeSettings = JsonConvert.DeserializeObject<SeasonBiomeSettings>(customBiomeSettingsJSON.Value);
+                    LogInfo($"Custom biomes settings updated");
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error parsing custom biomes settings:\n{e}");
                 }
             }
         }

@@ -60,14 +60,14 @@ namespace Seasons
         private static MeshRenderer s_waterPlane;
         private static WaterState s_waterPlaneState;
 
-        public static readonly Dictionary<Heightmap.Biome, Dictionary<Season, Heightmap.Biome>> seasonalBiomeColorOverride = new Dictionary<Heightmap.Biome, Dictionary<Season, Heightmap.Biome>>
+        /*public static readonly Dictionary<Heightmap.Biome, Dictionary<Season, Heightmap.Biome>> seasonalBiomeColorOverride = new Dictionary<Heightmap.Biome, Dictionary<Season, Heightmap.Biome>>
                 {
                     { Heightmap.Biome.BlackForest, new Dictionary<Season, Heightmap.Biome>() { { Season.Fall, Heightmap.Biome.Swamp }, { Season.Winter, Heightmap.Biome.Mountain } } },
                     { Heightmap.Biome.Meadows, new Dictionary<Season, Heightmap.Biome>() { { Season.Fall, Heightmap.Biome.Plains }, { Season.Winter, Heightmap.Biome.Mountain } } },
                     { Heightmap.Biome.Plains, new Dictionary<Season, Heightmap.Biome>() { { Season.Spring, Heightmap.Biome.Meadows }, { Season.Winter, Heightmap.Biome.Mountain } } },
                     { Heightmap.Biome.Mistlands, new Dictionary<Season, Heightmap.Biome>() { { Season.Winter, Heightmap.Biome.Mountain } } },
                     { Heightmap.Biome.Swamp, new Dictionary<Season, Heightmap.Biome>() { { Season.Winter, Heightmap.Biome.Mountain } } },
-                };
+                };*/
         
         public static readonly Dictionary<WaterVolume, WaterState> waterStates = new Dictionary<WaterVolume, WaterState>();
         
@@ -834,7 +834,7 @@ namespace Seasons
             if (!overrideColor || !seasonState.IsActive || !UseTextureControllers())
                 return;
 
-            if (seasonalBiomeColorOverride.TryGetValue(biome, out Dictionary<Season, Heightmap.Biome> overrideBiome) && overrideBiome.TryGetValue(seasonState.GetCurrentSeason(), out Heightmap.Biome overridedBiome))
+            if (SeasonState.seasonBiomeSettings.SeasonalBiomeColorOverride.TryGetValue(biome, out Dictionary<Season, Heightmap.Biome> overrideBiome) && overrideBiome.TryGetValue(seasonState.GetCurrentSeason(), out Heightmap.Biome overridedBiome))
             {
                 __state = biome;
                 biome = overridedBiome;

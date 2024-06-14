@@ -1,6 +1,5 @@
 ﻿using HarmonyLib;
 using System.Collections;
-using System.Collections.Generic;
 using System.Threading;
 using UnityEngine;
 using static Seasons.Seasons;
@@ -17,7 +16,6 @@ namespace Seasons
         private Color32[] m_mapWinterTexture;
         private Texture2D m_forestTex;
 
-        private static readonly Dictionary<Color, Color> winterColors = new Dictionary<Color, Color>();
         public static MinimapVariantController instance => m_instance;
 
         private void Awake()
@@ -101,7 +99,7 @@ namespace Seasons
                         float wx = (j - num) * m_minimap.m_pixelSize + num2;
                         float wy = (i - num) * m_minimap.m_pixelSize + num2;
                         Heightmap.Biome biome = WorldGenerator.instance.GetBiome(wx, wy);
-                        m_mapWinterTexture[i * m_minimap.m_textureSize + j] = GetPixelColor(biome);
+                        m_mapWinterTexture[i * m_minimap.m_textureSize + j] = GetWinterPixelColor(biome);
                     }
             });
 
@@ -117,32 +115,12 @@ namespace Seasons
             UpdateColors();
         }
 
-        public Color GetPixelColor(Heightmap.Biome biome)
+        public Color GetWinterPixelColor(Heightmap.Biome biome)
         {
-            return biome switch
-            {
-                Heightmap.Biome.Meadows => GetWinterColor(m_minimap.m_meadowsColor),
-                Heightmap.Biome.AshLands => m_minimap.m_ashlandsColor,
-                Heightmap.Biome.BlackForest => GetWinterColor(m_minimap.m_blackforestColor),
-                Heightmap.Biome.DeepNorth => m_minimap.m_deepnorthColor,
-                Heightmap.Biome.Plains => GetWinterColor(m_minimap.m_heathColor),
-                Heightmap.Biome.Swamp => GetWinterColor(m_minimap.m_swampColor),
-                Heightmap.Biome.Mountain => m_minimap.m_mountainColor,
-                Heightmap.Biome.Mistlands => GetWinterColor(m_minimap.m_mistlandsColor),
-                Heightmap.Biome.Ocean => Color.white,
-                _ => Color.white,
-            };
-        }
+            if (SeasonState.seasonBiomeSettings.SeasonalWinterMapColors.TryGetValue(biome, out Color color))
+                return color;
 
-        public static Color GetWinterColor(Color color)
-        {
-            if (!winterColors.ContainsKey(color))
-            {
-                Color newColor = new Color(0.98f, 0.98f, 1f, color.a);
-                winterColors[color] = new HSLColor(Color.Lerp(color, newColor, 0.6f)).ToRGBA();
-            }
-
-            return winterColors[color];
+            return Minimap.instance ? Minimap.instance.GetPixelColor(biome) : Color.white;
         }
     }
 

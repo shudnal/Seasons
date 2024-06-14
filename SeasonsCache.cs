@@ -43,7 +43,6 @@ namespace Seasons
                 __instance.gameObject.AddComponent<ZoneSystemVariantController>().Initialize(__instance);
                 FillListsToControl();
                 InvalidatePositionsCache();
-                CustomTextures.UpdateTextures();
                 CustomTextures.SetupConfigWatcher();
             }
             else
@@ -2471,6 +2470,9 @@ namespace Seasons
             }
         }
 
+        // Used to force global cache rebuild after mod changes
+        const string globalRevision = "1.2.0";
+
         public static uint GetRevision()
         {
             InitSettings();
@@ -2480,7 +2482,7 @@ namespace Seasons
             sb.Append(JsonConvert.SerializeObject(colorSettings));
             sb.Append(JsonConvert.SerializeObject(colorReplacement));
             sb.Append(JsonConvert.SerializeObject(colorPositions));
-            sb.Append(pluginVersion);
+            sb.Append(globalRevision);
 
             return (uint)sb.ToString().GetStableHashCode();
         }
