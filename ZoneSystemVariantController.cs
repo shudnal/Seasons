@@ -59,15 +59,6 @@ namespace Seasons
 
         private static MeshRenderer s_waterPlane;
         private static WaterState s_waterPlaneState;
-
-        /*public static readonly Dictionary<Heightmap.Biome, Dictionary<Season, Heightmap.Biome>> seasonalBiomeColorOverride = new Dictionary<Heightmap.Biome, Dictionary<Season, Heightmap.Biome>>
-                {
-                    { Heightmap.Biome.BlackForest, new Dictionary<Season, Heightmap.Biome>() { { Season.Fall, Heightmap.Biome.Swamp }, { Season.Winter, Heightmap.Biome.Mountain } } },
-                    { Heightmap.Biome.Meadows, new Dictionary<Season, Heightmap.Biome>() { { Season.Fall, Heightmap.Biome.Plains }, { Season.Winter, Heightmap.Biome.Mountain } } },
-                    { Heightmap.Biome.Plains, new Dictionary<Season, Heightmap.Biome>() { { Season.Spring, Heightmap.Biome.Meadows }, { Season.Winter, Heightmap.Biome.Mountain } } },
-                    { Heightmap.Biome.Mistlands, new Dictionary<Season, Heightmap.Biome>() { { Season.Winter, Heightmap.Biome.Mountain } } },
-                    { Heightmap.Biome.Swamp, new Dictionary<Season, Heightmap.Biome>() { { Season.Winter, Heightmap.Biome.Mountain } } },
-                };*/
         
         public static readonly Dictionary<WaterVolume, WaterState> waterStates = new Dictionary<WaterVolume, WaterState>();
         
@@ -852,7 +843,7 @@ namespace Seasons
     }
 
     [HarmonyPatch(typeof(Heightmap), nameof(Heightmap.GetBiomeColor), new[] { typeof(float), typeof(float) })]
-    public static class Heightmap_GetBiomeColor_PlainsMeadowsEdgeFix
+    public static class Heightmap_GetBiomeColor_BiomesEdgeFix
     {
         [HarmonyPriority(Priority.First)]
         private static void Postfix(Heightmap __instance, ref Color __result)
@@ -866,9 +857,9 @@ namespace Seasons
             if (!__instance.IsBiomeEdge())
                 return;
 
-            // Swamp Meadows border
+            // Swamp-Plains and Swamp-Mistlands borders -> Blackforest
             if (0f < __result.r && __result.r < 1f && 0f < __result.a && __result.a < 1f)
-                __result = new Color(__result.b, __result.g, __result.r, __result.a);
+                __result = new Color(0, __result.g, __result.r, __result.a);
         }
     }
 
