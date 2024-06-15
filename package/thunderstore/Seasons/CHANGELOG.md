@@ -1,3 +1,8 @@
+# 1.2.1
+* custom biome settings (minimap winter colors and terrain seasonal ground colors)
+* seasonal items fix
+* Swamp-Mistlands border fix
+
 # 1.2.0
 * new seasonal clutters (flowers for spring)
 * seasonal clutter control

@@ -410,6 +410,34 @@ Any changes done to that file will be applied on the fly.
 
 Only textures appeared in **cache.json** file could be replaced.
 
+## Custom biome settings
+
+File "Custom biome settings.json" contains settings for biome terrain color seasonal override and winter colors for minimap.
+
+Changes made to terrain colors requires change of current season to get effect. You can simply override and change season in general config section "Season - Override".
+
+Changes made to winter minimap colors requires world restart.
+
+### Seasonal ground colors
+* biome - string -  biome name, case insensitive, custom biomes supported (you can set biome name if it added properly like in [Expand World Data](https://thunderstore.io/c/valheim/p/JereKuusela/Expand_World_Data/) or you can set biome numeric ID)
+* spring - string - biome terrain that should be used for that biome in Spring
+* summer - string - biome terrain that should be used for that biome in Summer
+* fall - string - biome terrain that should be used for that biome in Fall
+* winter - string - biome terrain that should be used for that biome in Winter
+
+### Winter colors
+
+Being set as pairs "Biome": "Color Hex Code".
+
+Vanilla winter colors made by interpolating original biome color to "#FAFAFF" preserving original alpha channel. #FAFAFF also called Ghost White and it's not just white color but has a bit snowy tint.
+
+### Some explanations and ideas behind default settings
+* Ashlands, Mountain and Deep north do not change its terrain.
+* All controlled biomes become mountain in Winter to get snow effect on the ground
+* Meadows have Plains color in Fall to get yellowish ground color
+* Black forest has Swamp color in Fall to get effect of wet dirt ground
+* Plains has Meadows color in Spring to get effect of blooming surroundings
+
 ## General settings
 * minimap will be recolored using the seasonal colors setting
 * seasonal items will be enabled in the corresponding season

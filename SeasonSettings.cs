@@ -1636,11 +1636,11 @@ namespace Seasons
                 winter = Heightmap.Biome.Mountain.ToString(),
             });
 
-            winterMapColors[Heightmap.Biome.Meadows.ToString()] = ColorUtility.ToHtmlStringRGBA(GetWinterColor(Minimap.instance ? Minimap.instance.m_meadowsColor : s_meadowsColor));
-            winterMapColors[Heightmap.Biome.BlackForest.ToString()] = ColorUtility.ToHtmlStringRGBA(GetWinterColor(Minimap.instance ? Minimap.instance.m_blackforestColor : s_blackforestColor));
-            winterMapColors[Heightmap.Biome.Plains.ToString()] = ColorUtility.ToHtmlStringRGBA(GetWinterColor(Minimap.instance ? Minimap.instance.m_heathColor : s_heathColor));
-            winterMapColors[Heightmap.Biome.Swamp.ToString()] = ColorUtility.ToHtmlStringRGBA(GetWinterColor(Minimap.instance ? Minimap.instance.m_swampColor : s_swampColor));
-            winterMapColors[Heightmap.Biome.Mistlands.ToString()] = ColorUtility.ToHtmlStringRGBA(GetWinterColor(Minimap.instance ? Minimap.instance.m_mistlandsColor : s_mistlandsColor));
+            winterMapColors[Heightmap.Biome.Meadows.ToString()] = ToHexRGBA(GetWinterColor(Minimap.instance ? Minimap.instance.m_meadowsColor : s_meadowsColor));
+            winterMapColors[Heightmap.Biome.BlackForest.ToString()] = ToHexRGBA(GetWinterColor(Minimap.instance ? Minimap.instance.m_blackforestColor : s_blackforestColor));
+            winterMapColors[Heightmap.Biome.Plains.ToString()] = ToHexRGBA(GetWinterColor(Minimap.instance ? Minimap.instance.m_heathColor : s_heathColor));
+            winterMapColors[Heightmap.Biome.Swamp.ToString()] = ToHexRGBA(GetWinterColor(Minimap.instance ? Minimap.instance.m_swampColor : s_swampColor));
+            winterMapColors[Heightmap.Biome.Mistlands.ToString()] = ToHexRGBA(GetWinterColor(Minimap.instance ? Minimap.instance.m_mistlandsColor : s_mistlandsColor));
         }
 
         private void ParseSeasonalGroundColors()
@@ -1681,6 +1681,11 @@ namespace Seasons
             }
 
             return s_winterColors[color];
+        }
+
+        private static string ToHexRGBA(Color color)
+        {
+            return $"#{ColorUtility.ToHtmlStringRGBA(color)}";
         }
     }
 
