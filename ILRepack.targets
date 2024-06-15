@@ -1,29 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-    <Target Name="ILRepacker" AfterTargets="Build">
-        <ItemGroup>
-            <InputAssemblies Include="$(TargetPath)" />
-            <InputAssemblies Include="$(OutputPath)ServerSync.dll" />
+	<Target Name="RepackThunderstore" AfterTargets="Build">
+		<ItemGroup>
+			<InputAssemblies Include="$(TargetPath)" />
+			<InputAssemblies Include="$(OutputPath)ServerSync.dll" />
+		</ItemGroup>
+		<ILRepack Parallel="true" DebugInfo="true" Internalize="true" InputAssemblies="@(InputAssemblies)" OutputFile="$(TargetDir)thunderstore\$(TargetFileName)" TargetKind="SameAsPrimaryAssembly" LibraryPath="$(OutputPath)" />
+	</Target>
+	<Target Name="CopyDLLThunderstore" AfterTargets="RepackThunderstore">
+		<Copy SourceFiles="$(TargetDir)\thunderstore\$(TargetFileName)" DestinationFolder="$(ProjectDir)package\thunderstore\$(SolutionName)\$(SolutionName)\" />
+		<Copy SourceFiles="$(OutputPath)Newtonsoft.Json.dll" DestinationFolder="$(ProjectDir)package\thunderstore\$(SolutionName)\$(SolutionName)\" />
+		<Message Text="Copied to thunderstore package folder." Importance="High" />
+	</Target>
+	<Target Name="RepackNexus" AfterTargets="CopyDLLThunderstore">
+		<ItemGroup>
 			<InputAssemblies Include="$(OutputPath)Newtonsoft.Json.dll" />
 		</ItemGroup>
-        <ILRepack Parallel="true" DebugInfo="true" Internalize="true" InputAssemblies="@(InputAssemblies)" OutputFile="$(TargetPath)" TargetKind="SameAsPrimaryAssembly" LibraryPath="$(OutputPath)" />
-    </Target>
-	<Target Name="CopyDLLPackage" AfterTargets="ILRepacker">
+		<ILRepack Parallel="true" DebugInfo="true" Internalize="true" InputAssemblies="@(InputAssemblies)" OutputFile="$(TargetPath)" TargetKind="SameAsPrimaryAssembly" LibraryPath="$(OutputPath)" />
+	</Target>
+	<Target Name="CopyDLLNexus" AfterTargets="RepackNexus">
 		<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ProjectDir)package\nexus\$(SolutionName)\" />
 		<Message Text="Copied to nexus package folder." Importance="High" />
 	</Target>
-	<Target Name="ZipOutputPath" AfterTargets="CopyDLLPackage">
+	<Target Name="ZipNexus" AfterTargets="CopyDLLNexus">
 		<ZipDirectory
 				SourceDirectory="$(ProjectDir)package\nexus\$(SolutionName)\"
 				DestinationFile="$(ProjectDir)package\nexus\$(SolutionName).zip"
 				Overwrite="true"/>
 	</Target>
-	<Target Name="CopyDLLR2" AfterTargets="ILRepacker">
-		<Copy SourceFiles="$(TargetPath)" DestinationFolder="C:\Users\Suden\AppData\Roaming\r2modmanPlus-local\Valheim\profiles\beta\BepInEx\plugins\shudnal-Seasons" />
-		<Message Text="Copied to r2 folder." Importance="High" />
+	<Target Name="ZipThunderstore" AfterTargets="CopyDLLThunderstore">
+		<ZipDirectory
+				SourceDirectory="$(ProjectDir)package\thunderstore\$(SolutionName)\"
+				DestinationFile="$(ProjectDir)package\thunderstore\$(SolutionName).zip"
+				Overwrite="true"/>
 	</Target>
-	<Target Name="CopyDLLPlugins" AfterTargets="ILRepacker">
-		<Copy SourceFiles="$(TargetPath)" DestinationFolder="F:\Steam\steamapps\common\Valheim\BepInEx\plugins\" />
-		<Message Text="Copied to plugins folder." Importance="High" />
+	<Target Name="CopyDLLPlugins" AfterTargets="CopyDLLThunderstore">
+		<Copy SourceFiles="$(TargetDir)\thunderstore\$(TargetFileName)" DestinationFolder="C:\Users\Suden\AppData\Roaming\r2modmanPlus-local\Valheim\profiles\beta\BepInEx\plugins\shudnal-$(SolutionName)\" />
+		<Copy SourceFiles="$(OutputPath)Newtonsoft.Json.dll" DestinationFolder="C:\Users\Suden\AppData\Roaming\r2modmanPlus-local\Valheim\profiles\beta\BepInEx\plugins\shudnal-$(SolutionName)\" />
+		<Message Text="Copied to r2 folder." Importance="High" />
 	</Target>
 </Project>
