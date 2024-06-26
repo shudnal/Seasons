@@ -1,3 +1,6 @@
+# 1.2.2
+* better compatibility with Expand World Data, Expand World Size and Structure Tweaks
+
 # 1.2.1
 * custom biome settings (minimap winter colors and terrain seasonal ground colors)
 * seasonal items fix

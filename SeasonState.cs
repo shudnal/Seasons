@@ -311,13 +311,16 @@ namespace Seasons
 
             SeasonBiomeEnvironment biomeEnv = seasonBiomeEnvironments.GetSeasonBiomeEnvironment(GetCurrentSeason());
 
+            if (biomesDefault.Count == 0)
+                biomesDefault.AddRange(EnvMan.instance.m_biomes.Select(biome => JsonUtility.ToJson(biome)));
+
             EnvMan.instance.m_biomes.Clear();
 
-            foreach (BiomeEnvSetup biomeEnvironmentDefault in biomesDefault)
+            foreach (string biomeEnvironmentDefault in biomesDefault)
             {
                 try
                 {
-                    BiomeEnvSetup biomeEnvironment = JsonUtility.FromJson<BiomeEnvSetup>(JsonUtility.ToJson(biomeEnvironmentDefault));
+                    BiomeEnvSetup biomeEnvironment = JsonUtility.FromJson<BiomeEnvSetup>(biomeEnvironmentDefault);
 
                     foreach (SeasonBiomeEnvironment.EnvironmentReplace replace in biomeEnv.replace)
                         biomeEnvironment.m_environments.DoIf(env => env.m_environment == replace.m_environment, env => env.m_environment = replace.replace_to);
@@ -333,7 +336,7 @@ namespace Seasons
                 }
                 catch (Exception e)
                 {
-                    LogWarning($"Error appending biome setup {biomeEnvironmentDefault.m_name}:\n{e}");
+                    LogWarning($"Error appending biome setup:\n{biomeEnvironmentDefault}\n{e}");
                 }
             }
 
@@ -2027,43 +2030,23 @@ namespace Seasons
         }
 
         [HarmonyPriority(Priority.Last)]
+        [HarmonyBefore(new string[1] { "shudnal.GammaOfNightLights" })]
         public static void Prefix(EnvSetup env)
         {
-            if (!controlLightings.Value || !UseTextureControllers() || haveGammaOfNightLights)
+            if (!controlLightings.Value || !UseTextureControllers())
                 return;
 
             ChangeLightState(env);
         }
 
         [HarmonyPriority(Priority.First)]
+        [HarmonyAfter(new string[1] { "shudnal.GammaOfNightLights" })]
         public static void Postfix(EnvSetup env)
         {
-            if (!controlLightings.Value || !UseTextureControllers() || haveGammaOfNightLights)
+            if (!controlLightings.Value || !UseTextureControllers())
                 return;
 
             ResetLightState(env);
-        }
-    }
-
-    [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.SetEnv))]
-    public static class EnvMan_SetEnv_LuminancePatchHaveGoNL
-    {
-        [HarmonyPriority(Priority.First)]
-        public static void Prefix(EnvSetup env)
-        {
-            if (!controlLightings.Value || !UseTextureControllers() || !haveGammaOfNightLights)
-                return;
-
-            EnvMan_SetEnv_LuminancePatch.ChangeLightState(env);
-        }
-
-        [HarmonyPriority(Priority.Last)]
-        public static void Postfix(EnvSetup env)
-        {
-            if (!controlLightings.Value || !UseTextureControllers() || !haveGammaOfNightLights)
-                return;
-
-            EnvMan_SetEnv_LuminancePatch.ResetLightState(env);
         }
     }
 

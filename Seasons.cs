@@ -21,7 +21,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.2.1";
+        public const string pluginVersion = "1.2.2";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -133,7 +133,6 @@ namespace Seasons
 
         public static string configDirectory;
         public static string cacheDirectory;
-        public static bool haveGammaOfNightLights;
 
         public static SeasonalTextureVariants texturesVariants = new SeasonalTextureVariants();
 
@@ -157,8 +156,7 @@ namespace Seasons
         public static readonly CustomSyncedValue<string> customColorPositionsJSON = new CustomSyncedValue<string>(configSync, "Custom color positions JSON", "", Priority.Low);
         public static readonly CustomSyncedValue<uint> cacheRevision = new CustomSyncedValue<uint>(configSync, "Cache revision", 0, Priority.VeryLow);
 
-        public static readonly List<BiomeEnvSetup> biomesDefault = new List<BiomeEnvSetup>();
-        public static readonly List<RandomEvent> eventsDefault = new List<RandomEvent>();
+        public static readonly List<string> biomesDefault = new List<string>();
         public static Color minimapBorderColor = Color.clear;
 
         public static WaitForFixedUpdate waitForFixedUpdate = new WaitForFixedUpdate();
@@ -229,8 +227,6 @@ namespace Seasons
             LoadIcons();
 
             seasonState = new SeasonState();
-
-            haveGammaOfNightLights = GetComponent("GammaOfNightLights") != null;
         }
 
         private void FixedUpdate()
@@ -533,7 +529,7 @@ namespace Seasons
                     _PlantsToControlGrowth.Add(pickable.gameObject.name);
 
                 if (prefab.TryGetComponent(out TreeBase tree) && tree.m_stubPrefab != null &&
-                    tree.m_stubPrefab.TryGetComponent(out Destructible destructible) && destructible.GetDestructibleType() == DestructibleType.Tree)
+                    tree.m_stubPrefab.TryGetComponent(out Destructible destructible) && IsTree(destructible))
                     stubs.Add(prefab, tree.m_stubPrefab);
             }
 
@@ -560,6 +556,18 @@ namespace Seasons
             static HashSet<string> ConfigToHashSet(string configString)
             {
                 return new HashSet<string>(configString.Split(',').Select(p => p.Trim().ToLower()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList());
+            }
+
+            static bool IsTree(Destructible destructible)
+            {
+                try
+                {
+                    return destructible.GetDestructibleType() == DestructibleType.Tree;
+                }
+                catch
+                {
+                    return destructible.m_destructibleType == DestructibleType.Tree;
+                }
             }
         }
 

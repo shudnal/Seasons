@@ -2012,11 +2012,8 @@ namespace Seasons
             LogInfo($"Saving default custom environments settings");
             File.WriteAllText(Path.Combine(folder, customEnvironmentsFileName), JsonConvert.SerializeObject(SeasonEnvironment.GetDefaultCustomEnvironments(), Formatting.Indented, jsonSerializerSettings));
 
-            if (biomesDefault.Count == 0)
-                biomesDefault.AddRange(EnvMan.instance.m_biomes.ToList());
-
             LogInfo($"Saving default biome environments settings");
-            File.WriteAllText(Path.Combine(folder, "Default biome environments.json"), JsonConvert.SerializeObject(biomesDefault, Formatting.Indented));
+            File.WriteAllText(Path.Combine(folder, "Default biome environments.json"), JsonConvert.SerializeObject(EnvMan.instance.m_biomes.ToList(), Formatting.Indented));
 
             LogInfo($"Saving default custom biome environments settings");
             File.WriteAllText(Path.Combine(folder, customBiomeEnvironmentsFileName), JsonConvert.SerializeObject(new SeasonBiomeEnvironments(loadDefaults: true), Formatting.Indented));
@@ -2024,11 +2021,8 @@ namespace Seasons
 
         public static void SaveDefaultEvents(string folder)
         {
-            if (eventsDefault.Count == 0)
-                eventsDefault.AddRange(RandEventSystem.instance.m_events.ToList());
-
             List<SeasonRandomEvents.SeasonRandomEvent> list = new List<SeasonRandomEvents.SeasonRandomEvent>();
-            eventsDefault.DoIf(randevent => randevent.m_random, randevent => list.Add(new SeasonRandomEvents.SeasonRandomEvent(randevent)));
+            RandEventSystem.instance.m_events.DoIf(randevent => randevent.m_random, randevent => list.Add(new SeasonRandomEvents.SeasonRandomEvent(randevent)));
 
             JsonSerializerSettings jsonSerializerSettings = new JsonSerializerSettings
             {
@@ -2092,6 +2086,7 @@ namespace Seasons
     public static class ZoneSystem_Start_SeasonSettingsConfigWatcher
     {
         [HarmonyPriority(Priority.Last)]
+        [HarmonyAfter(new string[1] { "expand_world_data" })]
         private static void Postfix()
         {
             seasonState = new SeasonState(initialize: true);

@@ -1,5 +1,6 @@
 ﻿using HarmonyLib;
 using System.Collections;
+using System.Diagnostics;
 using System.Threading;
 using UnityEngine;
 using static Seasons.Seasons;
@@ -87,9 +88,11 @@ namespace Seasons
             int num = m_minimap.m_textureSize / 2;
             float num2 = m_minimap.m_pixelSize / 2f;
             m_mapWinterTexture = new Color32[m_minimap.m_textureSize * m_minimap.m_textureSize];
+            m_mapTexture = new Color32[m_minimap.m_textureSize * m_minimap.m_textureSize];
 
-            while (WorldGenerator.instance == null)
-                yield return new WaitForSeconds(1f);
+            yield return new WaitUntil(() => WorldGenerator.instance != null);
+
+            Stopwatch stopwatch = Stopwatch.StartNew();
 
             var internalThread = new Thread(() =>
             {
@@ -100,22 +103,22 @@ namespace Seasons
                         float wy = (i - num) * m_minimap.m_pixelSize + num2;
                         Heightmap.Biome biome = WorldGenerator.instance.GetBiome(wx, wy);
                         m_mapWinterTexture[i * m_minimap.m_textureSize + j] = GetWinterPixelColor(biome);
+                        m_mapTexture[i * m_minimap.m_textureSize + j] = Minimap.instance.GetPixelColor(biome);
                     }
             });
 
             internalThread.Start();
-            while (internalThread.IsAlive == true)
-            {
-                yield return null;
-            }
 
-            m_mapTexture = m_minimap.m_mapTexture.GetPixels32();
+            yield return new WaitWhile(() => internalThread.IsAlive == true);
+
             m_initialized = true;
+
+            LogInfo($"Minimap variant controller initialized in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
 
             UpdateColors();
         }
 
-        public Color GetWinterPixelColor(Heightmap.Biome biome)
+        public static Color GetWinterPixelColor(Heightmap.Biome biome)
         {
             if (SeasonState.seasonBiomeSettings.SeasonalWinterMapColors.TryGetValue(biome, out Color color))
                 return color;
