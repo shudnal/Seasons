@@ -139,4 +139,16 @@ namespace Seasons
             __instance.transform.gameObject.AddComponent<MinimapVariantController>();
         }
     }
+
+    [HarmonyPatch(typeof(Minimap), nameof(Minimap.GenerateWorldMap))]
+    public static class Minimap_GenerateWorldMap_MinimapContollerInit
+    {
+        private static void Postfix()
+        {
+            if (!UseTextureControllers())
+                return;
+
+            MinimapVariantController.instance.UpdateColors();
+        }
+    }
 }

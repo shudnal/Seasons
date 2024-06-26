@@ -1,3 +1,6 @@
+# 1.2.3
+* map compatibility with Expand World Size
+
 # 1.2.2
 * better compatibility with Expand World Data, Expand World Size and Structure Tweaks
 

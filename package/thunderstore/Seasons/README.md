@@ -28,12 +28,14 @@ The mod have general settings done by usual config through bepinex.
 ### Custom settings
 Custom seasonal settings are done by creating/changing JSON files.
 
-The mod creates a directory "shudnal.Seasons" at bepinex/config folder. There is the storage of cache, default and custom settings. 
+The mod creates a directory "shudnal.Seasons" at bepinex/config folder. There is the storage of cache, default and custom settings.
 
 This folder will henceforth be called "config folder".
 
 ### Default settings
 On every launch the mod is generating "Default settings" folder at config folder. There is storage of files with mod's default values to be applied.
+
+Mod creates **\BepInEx\config\shudnal.Seasons\Default settings** directory on every world load. So you need to launch a world at least once after mod was installed.
 
 This folder will henceforth be called "default settings folder".
 
@@ -56,7 +58,7 @@ The main idea of the mod is only to change vanilla colors without changing other
 
 ## Seasonal settings
 Basic seasonal settings are located in JSON files: Spring.json, Summer.json, Fall.json, Winter.json.
-Files with default settings are located in "Default settings" folder.
+Files with default settings are located in "Default settings" folder. Mod creates **\BepInEx\config\shudnal.Seasons\Default settings** directory on every world load. So you need to launch a world at least once after mod was installed.
 
 To start making custom changes you should copy the corresponding file to config folder "shudnal.Seasons". When you change the file there should be "[Info   :   Seasons] Settings updated: Season_Name" line in the bepinex console and LogOutput.log file.
 

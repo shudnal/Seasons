@@ -16,12 +16,11 @@ namespace Seasons
 {
     [BepInPlugin(pluginID, pluginName, pluginVersion)]
     [BepInIncompatibility("RustyMods.Seasonality")]
-    [BepInDependency("shudnal.GammaOfNightLights", BepInDependency.DependencyFlags.SoftDependency)]
     public class Seasons : BaseUnityPlugin
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.2.2";
+        public const string pluginVersion = "1.2.3";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
