@@ -2262,8 +2262,7 @@ namespace Seasons
 
             try
             {
-                ConfigSync.ProcessingServerUpdate = false;
-                syncedValue.AssignLocalValue(File.ReadAllText(fullname));
+                syncedValue.AssignValueSafe(File.ReadAllText(fullname));
             }
             catch (Exception e)
             {

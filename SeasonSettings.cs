@@ -1974,8 +1974,7 @@ namespace Seasons
 
             };
             
-            ConfigSync.ProcessingServerUpdate = false;
-            seasonsSettingsJSON.AssignLocalValue(localConfig);
+            seasonsSettingsJSON.AssignValueSafe(localConfig);
         }
 
         public static void UpdateSeasonSettings()

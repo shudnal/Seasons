@@ -1,3 +1,7 @@
+# 1.2.4
+* more stable season state synchronization
+* full support for skiptime command in both directions
+
 # 1.2.3
 * map compatibility with Expand World Size
 

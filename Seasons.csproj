@@ -37,6 +37,7 @@
   <ItemGroup>
     <Compile Include="CustomPrefabs.cs" />
     <Compile Include="CustomTextures.cs" />
+    <Compile Include="CustomSyncedValuesSynchronizer.cs" />
     <Compile Include="IceFloeClimb.cs" />
     <Compile Include="MinimapVariantController.cs" />
     <Compile Include="SeasonsCache.cs" />
@@ -118,6 +119,10 @@
     <Reference Include="UnityEngine.UIModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\Assemblies\beta\UnityEngine.UIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\Assemblies\beta\mscorlib.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>

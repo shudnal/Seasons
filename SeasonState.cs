@@ -9,7 +9,6 @@ using System.Linq;
 using UnityEngine;
 using BepInEx;
 using System.Reflection;
-using ServerSync;
 
 namespace Seasons
 {
@@ -797,7 +796,7 @@ namespace Seasons
 
             m_worldDay = worldDay;
 
-            if (dayInSeason > m_day)
+            if (dayInSeason != m_day)
                 UpdateCurrentSeasonDay(m_season, dayInSeason);
         }
 
@@ -922,8 +921,7 @@ namespace Seasons
 
         public void UpdateCurrentSeasonDay(Season season, int day)
         {
-            ConfigSync.ProcessingServerUpdate = false;
-            currentSeasonDay.AssignLocalValue((int)season * 10000 + day);
+            currentSeasonDay.AssignValueSafe((int)season * 10000 + day);
         }
 
         public static void CheckSeasonChange()
@@ -2124,6 +2122,19 @@ namespace Seasons
         {
             if (!___m_sleeping && __state)
                 SeasonState.CheckSeasonChange();
+        }
+    }
+
+    [HarmonyPatch(typeof(Terminal), nameof(Terminal.TryRunCommand))]
+    public static class Terminal_TryRunCommand_ForceUpdateState
+    {
+        private static void Postfix(string text)
+        {
+            if (ZNet.instance.IsServer() && text.IndexOf("skiptime") > -1)
+            {
+                LogInfo("Force update season state after skiptime");
+                SeasonState.CheckSeasonChange();
+            }
         }
     }
 
