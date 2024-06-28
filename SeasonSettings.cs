@@ -1725,6 +1725,8 @@ namespace Seasons
         public float m_meatFromAnimalsMultiplier = 1.0f;
         public float m_treesRegrowthChance = 0.0f;
 
+        internal static FileSystemWatcher configWatcher;
+
         public SeasonSettings(Season season)
         {
             LoadDefaultSeasonSettings(season);
@@ -1824,12 +1826,12 @@ namespace Seasons
             }
         }
 
-        public static bool GetSeasonByFilename(string filename, out Season season)
+        public static bool TryGetSeasonByFilename(string filename, out Season season)
         {
             season = Season.Spring;
 
             foreach (Season season1 in Enum.GetValues(typeof(Season)))
-                if (filename.ToLower() == $"{season1}.json".ToLower())
+                if (filename.Equals($"{season1}.json", StringComparison.OrdinalIgnoreCase))
                 {
                     season = season1;
                     return true;
@@ -1838,160 +1840,162 @@ namespace Seasons
             return false;
         }
 
-        public static void SetupConfigWatcher()
+        public static void SetupConfigWatcher(bool enabled)
         {
-            string filter = $"*.json";
+            if (configWatcher == null)
+            {
+                configWatcher = new FileSystemWatcher(configDirectory, $"*.json");
+                configWatcher.Changed += new FileSystemEventHandler(ReadConfigs);
+                configWatcher.Created += new FileSystemEventHandler(ReadConfigs);
+                configWatcher.Renamed += new RenamedEventHandler(ReadConfigs);
+                configWatcher.Deleted += new FileSystemEventHandler(ReadConfigs);
+                configWatcher.IncludeSubdirectories = false;
+                configWatcher.SynchronizingObject = ThreadingHelper.SynchronizingObject;
+            }
 
-            FileSystemWatcher fileSystemWatcher1 = new FileSystemWatcher(configDirectory, filter);
-            fileSystemWatcher1.Changed += new FileSystemEventHandler(ReadConfigs);
-            fileSystemWatcher1.Created += new FileSystemEventHandler(ReadConfigs);
-            fileSystemWatcher1.Renamed += new RenamedEventHandler(ReadConfigs);
-            fileSystemWatcher1.Deleted += new FileSystemEventHandler(ReadConfigs);
-            fileSystemWatcher1.IncludeSubdirectories = false;
-            fileSystemWatcher1.SynchronizingObject = ThreadingHelper.SynchronizingObject;
-            fileSystemWatcher1.EnableRaisingEvents = true;
+            configWatcher.EnableRaisingEvents = enabled;
 
-            ReadConfigs();
+            if (enabled)
+                ReadInitialConfigs();
         }
 
-        private static void ReadConfigs(object sender = null, FileSystemEventArgs eargs = null)
+        private static void ReadInitialConfigs()
+        {
+            foreach (FileInfo file in new DirectoryInfo(configDirectory).GetFiles("*.json", SearchOption.TopDirectoryOnly))
+                ReadConfigFile(file.Name, file.FullName);
+
+            ReadSeasonsSettings();
+        }
+
+        private static void ReadSeasonsSettings()
         {
             Dictionary<int, string> localConfig = new Dictionary<int, string>();
 
             foreach (FileInfo file in new DirectoryInfo(configDirectory).GetFiles("*.json", SearchOption.TopDirectoryOnly))
-            {
-                if (GetSeasonByFilename(file.Name, out Season season))
+            if (TryGetSeasonByFilename(file.Name, out Season season))
+                try
                 {
-                    try
-                    {
-                        localConfig.Add((int)season, File.ReadAllText(file.FullName));
-                    }
-                    catch (Exception e)
-                    {
-                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
-                    }
-                };
+                    localConfig.Add((int)season, File.ReadAllText(file.FullName));
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
+                }
 
-                if (file.Name == customEnvironmentsFileName)
-                    try
-                    {
-                        customEnvironmentsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
-                    }
-                    catch (Exception e)
-                    {
-                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
-                    }
-
-                if (file.Name == customBiomeEnvironmentsFileName)
-                    try
-                    {
-                        customBiomeEnvironmentsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
-                    }
-                    catch (Exception e)
-                    {
-                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
-                    }
-
-                if (file.Name == customEventsFileName)
-                    try
-                    {
-                        customEventsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
-                    }
-                    catch (Exception e)
-                    {
-                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
-                    }
-
-                if (file.Name == customLightingsFileName)
-                    try
-                    {
-                        customLightingsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
-                    }
-                    catch (Exception e)
-                    {
-                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
-                    }
-
-                if (file.Name == customStatsFileName)
-                    try
-                    {
-                        customStatsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
-                    }
-                    catch (Exception e)
-                    {
-                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
-                    }
-
-                if (file.Name == customTraderItemsFileName)
-                    try
-                    {
-                        customTraderItemsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
-                    }
-                    catch (Exception e)
-                    {
-                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
-                    }
-
-                if (file.Name == customWorldSettingsFileName)
-                    try
-                    {
-                        customWorldSettingsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
-                    }
-                    catch (Exception e)
-                    {
-                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
-                    }
-
-                if (file.Name == customGrassSettingsFileName)
-                    try
-                    {
-                        customGrassSettingsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
-                    }
-                    catch (Exception e)
-                    {
-                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
-                    }
-
-                if (file.Name == customClutterSettingsFileName)
-                    try
-                    {
-                        customClutterSettingsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
-                    }
-                    catch (Exception e)
-                    {
-                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
-                    }
-
-                if (file.Name == customBiomesSettingsFileName)
-                    try
-                    {
-                        customBiomeSettingsJSON.AssignLocalValue(File.ReadAllText(file.FullName));
-                    }
-                    catch (Exception e)
-                    {
-                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
-                    }
-
-            };
-            
             seasonsSettingsJSON.AssignValueSafe(localConfig);
         }
 
-        public static void UpdateSeasonSettings()
+        private static void ReadConfigs(object sender, FileSystemEventArgs eargs)
         {
-            seasonState.UpdateSeasonSettings();
-            seasonState.UpdateSeasonEnvironments();
-            seasonState.UpdateBiomeEnvironments();
-            seasonState.UpdateRandomEvents();
-            seasonState.UpdateLightings();
-            seasonState.UpdateStats();
-            seasonState.UpdateTraderItems();
-            seasonState.UpdateWorldSettings();
-            seasonState.UpdateGrassSettings();
-            seasonState.UpdateClutterSettings();
-            seasonState.UpdateBiomeSettings();
+            ReadConfigFile(eargs.Name, eargs.FullPath);
+            if (eargs is RenamedEventArgs)
+            {
+                if (GetSyncedValueToAssign((eargs as RenamedEventArgs).OldName, out CustomSyncedValue<string> syncedValue, out string logMessage))
+                {
+                    syncedValue.AssignValueSafe("");
+                    LogInfo(logMessage + " defaults");
+                }
+                else if (TryGetSeasonByFilename(eargs.Name, out _))
+                {
+                    ReadSeasonsSettings();
+                }
+            }
+        }
 
-            SeasonState.CheckSeasonChange();
+        private static void ReadConfigFile(string filename, string fullname)
+        {
+            if (!GetSyncedValueToAssign(filename, out CustomSyncedValue<string> syncedValue, out string logMessage))
+            {
+                if (TryGetSeasonByFilename(filename, out _))
+                    ReadSeasonsSettings();
+                return;
+            }
+
+            string content;
+            try
+            {
+                content = File.ReadAllText(fullname);
+            }
+            catch (Exception e)
+            {
+                LogWarning($"Error reading file ({fullname})! Error: {e.Message}");
+                content = "";
+                logMessage += " defaults";
+            }
+
+            syncedValue.AssignValueSafe(content);
+
+            LogInfo(logMessage);
+        }
+
+        private static bool GetSyncedValueToAssign(string filename, out CustomSyncedValue<string> customSyncedValue, out string logMessage)
+        {
+            if (filename.Equals(customEnvironmentsFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                customSyncedValue = customEnvironmentsJSON;
+                logMessage = "Custom environments file loaded";
+            }
+
+            else if (filename.Equals(customBiomeEnvironmentsFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                customSyncedValue = customBiomeEnvironmentsJSON;
+                logMessage = "Custom biome environments file loaded";
+            }
+
+            else if (filename.Equals(customEventsFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                customSyncedValue = customEventsJSON;
+                logMessage = "Custom events file loaded";
+            }
+
+            else if (filename.Equals(customLightingsFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                customSyncedValue = customLightingsJSON;
+                logMessage = "Custom lightings file loaded";
+            }
+
+            else if (filename.Equals(customStatsFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                customSyncedValue = customStatsJSON;
+                logMessage = "Custom stats file loaded";
+            }
+
+            else if (filename.Equals(customTraderItemsFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                customSyncedValue = customTraderItemsJSON;
+                logMessage = "Custom trader items file loaded";
+            }
+
+            else if (filename.Equals(customWorldSettingsFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                customSyncedValue = customWorldSettingsJSON;
+                logMessage = "Custom world settings file loaded";
+            }
+
+            else if (filename.Equals(customGrassSettingsFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                customSyncedValue = customGrassSettingsJSON;
+                logMessage = "Custom grass settings file loaded";
+            }
+
+            else if (filename.Equals(customClutterSettingsFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                customSyncedValue = customClutterSettingsJSON;
+                logMessage = "Custom clutter settings file loaded";
+            }
+
+            else if (filename.Equals(customBiomesSettingsFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                customSyncedValue = customBiomeSettingsJSON;
+                logMessage = "Custom biomes settings file loaded";
+            }
+            else
+            {
+                customSyncedValue = null;
+                logMessage = "";
+            }
+
+            return customSyncedValue != null;
         }
 
         public static void SaveDefaultEnvironments(string folder)
@@ -2082,14 +2086,24 @@ namespace Seasons
     }
 
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Start))]
-    public static class ZoneSystem_Start_SeasonSettingsConfigWatcher
+    public static class ZoneSystem_Start_InitSeasonStateAndConfigWatcher
     {
         [HarmonyPriority(Priority.Last)]
         [HarmonyAfter(new string[1] { "expand_world_data" })]
         private static void Postfix()
         {
             seasonState = new SeasonState(initialize: true);
-            SeasonSettings.SetupConfigWatcher();
+            SeasonSettings.SetupConfigWatcher(enabled: true);
         }
     }
+
+    [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.OnDestroy))]
+    public static class ZoneSystem_OnDestroy_DisableConfigWatcher
+    {
+        private static void Postfix()
+        {
+            SeasonSettings.SetupConfigWatcher(enabled: false);
+        }
+    }
+    
 }

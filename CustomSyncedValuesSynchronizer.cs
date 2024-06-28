@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using ServerSync;
 using UnityEngine;
@@ -9,18 +10,29 @@ namespace Seasons
     {
         private static readonly Queue<IEnumerator> coroutines = new Queue<IEnumerator>();
         private static readonly WaitWhile waitForServerUpdate = new WaitWhile(() => ConfigSync.ProcessingServerUpdate);
-        private static readonly WaitForFixedUpdate waitForFixedUpdate = new WaitForFixedUpdate();
 
         public static void AssignValueSafe<T>(this CustomSyncedValue<T> syncedValue, T value)
         {
             AddToQueue(AssignAfterServerUpdate(syncedValue, value));
         }
 
+        public static void AssignValueSafe<T>(this CustomSyncedValue<T> syncedValue, Func<T> function)
+        {
+            AddToQueue(AssignAfterServerUpdate(syncedValue, function));
+        }
+
+        private static IEnumerator AssignAfterServerUpdate<T>(CustomSyncedValue<T> syncedValue, Func<T> function)
+        {
+            yield return AssignAfterServerUpdate(syncedValue, function());
+        }
+
         private static IEnumerator AssignAfterServerUpdate<T>(CustomSyncedValue<T> syncedValue, T value)
         {
+            if (syncedValue.Value.Equals(value))
+                yield break;
+
             yield return waitForServerUpdate;
             syncedValue.AssignLocalValue(value);
-            yield return waitForFixedUpdate;
         }
 
         private static void AddToQueue(IEnumerator coroutine)

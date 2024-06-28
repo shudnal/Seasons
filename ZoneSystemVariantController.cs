@@ -93,7 +93,7 @@ namespace Seasons
 
         private static ZoneSystemVariantController m_instance;
 
-        public static ZoneSystemVariantController instance => m_instance;
+        public static ZoneSystemVariantController Instance => m_instance;
 
         public readonly List<WaterVolume> waterVolumesCheckFloes = new List<WaterVolume>();
         private readonly List<WaterVolume> tempWaterVolumesList = new List<WaterVolume>();
@@ -105,7 +105,7 @@ namespace Seasons
         
         public static bool IsTimeForIceFloes() => enableIceFloes.Value && !IsWaterSurfaceFrozen() && seasonState.GetCurrentSeason() == Season.Winter && (int)iceFloesInWinterDays.Value.x <= seasonState.GetCurrentDay() && seasonState.GetCurrentDay() <= (int)iceFloesInWinterDays.Value.y;
 
-        public static float s_waterLevel => s_colliderHeight == 0f || !IsWaterSurfaceFrozen() ? ZoneSystem.instance.m_waterLevel : s_colliderHeight;
+        public static float WaterLevel => s_colliderHeight == 0f || !IsWaterSurfaceFrozen() ? ZoneSystem.instance.m_waterLevel : s_colliderHeight;
 
         private void Awake()
         {
@@ -239,7 +239,7 @@ namespace Seasons
 
         public static void UpdateWaterState()
         {
-            if (!seasonState.IsActive)
+            if (!SeasonState.IsActive)
                 return;
 
             s_freezeStatus = seasonState.GetWaterSurfaceFreezeStatus();
@@ -332,7 +332,7 @@ namespace Seasons
                     else if (waterInteractable is Character)
                         CheckIfCharacterAboveSurface(waterInteractable as Character);
 
-                instance.waterVolumesCheckFloes.Add(waterVolume);
+                Instance.waterVolumesCheckFloes.Add(waterVolume);
             }
 
             yield return waitForFixedUpdate;
@@ -372,7 +372,7 @@ namespace Seasons
             ship.m_body.WakeUp();
             ship.m_body.isKinematic = false;
 
-            if (ship.m_body.position.y > s_waterLevel + ship.m_waterLevelOffset || !IsWaterSurfaceFrozen())
+            if (ship.m_body.position.y > WaterLevel + ship.m_waterLevelOffset || !IsWaterSurfaceFrozen())
                 return;
 
             ship.m_body.isKinematic = !placeShipAboveFrozenOcean.Value;
@@ -383,7 +383,7 @@ namespace Seasons
             if (placeShipAboveFrozenOcean.Value)
             {
                 ship.m_body.rotation = Quaternion.identity;
-                ship.m_body.position = new Vector3(ship.m_body.position.x, s_waterLevel + ship.m_waterLevelOffset + 0.1f, ship.m_body.position.z);
+                ship.m_body.position = new Vector3(ship.m_body.position.x, WaterLevel + ship.m_waterLevelOffset + 0.1f, ship.m_body.position.z);
                 ship.m_body.velocity = Vector3.zero;
             }
         }
@@ -396,8 +396,8 @@ namespace Seasons
             if (fish.m_nview.HasOwner() && !fish.m_nview.IsOwner())
                 return;
 
-            if (fish.transform.position.y >= s_waterLevel - _winterWaterSurfaceOffset - fish.m_height)
-                fish.transform.position = new Vector3(fish.transform.position.x, s_waterLevel - _winterWaterSurfaceOffset - fish.m_height, fish.transform.position.z);
+            if (fish.transform.position.y >= WaterLevel - _winterWaterSurfaceOffset - fish.m_height)
+                fish.transform.position = new Vector3(fish.transform.position.x, WaterLevel - _winterWaterSurfaceOffset - fish.m_height, fish.transform.position.z);
 
             fish.m_body.velocity = Vector3.zero;
             fish.m_haveWaypoint = false;
@@ -414,23 +414,23 @@ namespace Seasons
 
             if (IsUnderwaterAI(character, out BaseAI ai))
             {
-                if (character.transform.position.y >= s_waterLevel)
+                if (character.transform.position.y >= WaterLevel)
                 {
                     m_tempHits.Clear();
                     Pathfinding.instance.FindGround(character.transform.position, testWater: true, m_tempHits, Pathfinding.instance.GetSettings(ai.m_pathAgentType));
 
-                    Vector3 hit = m_tempHits.Find(h => h.y < s_waterLevel);
+                    Vector3 hit = m_tempHits.Find(h => h.y < WaterLevel);
                     if (hit.y != 0)
                     {
                         character.m_body.velocity = Vector3.zero;
-                        character.transform.position = new Vector3(character.transform.position.x, Mathf.Max(s_waterLevel - _winterWaterSurfaceOffset, hit.y + 0.1f), character.transform.position.z);
+                        character.transform.position = new Vector3(character.transform.position.x, Mathf.Max(WaterLevel - _winterWaterSurfaceOffset, hit.y + 0.1f), character.transform.position.z);
                     }
                 }
             }
-            else if (character.transform.position.y <= s_waterLevel && !character.IsAttachedToShip())
+            else if (character.transform.position.y <= WaterLevel && !character.IsAttachedToShip())
             {
                 character.m_body.velocity = Vector3.zero;
-                character.transform.position = new Vector3(character.transform.position.x, s_waterLevel + 0.5f, character.transform.position.z);
+                character.transform.position = new Vector3(character.transform.position.x, WaterLevel + 0.5f, character.transform.position.z);
                 character.InvalidateCachedLiquidDepth();
                 character.m_maxAirAltitude = character.transform.position.y;
                 character.m_swimTimer = 0.6f;
@@ -491,22 +491,22 @@ namespace Seasons
             }
             else if (IsTimeForIceFloes() && m_tempZDOList.Count == 0)
             {
-                instance.m_tempClearAreas.Clear();
-                instance.m_tempSpawnedObjects.Clear();
+                Instance.m_tempClearAreas.Clear();
+                Instance.m_tempSpawnedObjects.Clear();
 
                 Vector3 zonePos = ZoneSystem.instance.GetZonePos(zoneID);
 
                 ZoneSystem.SpawnMode mode = ZNetScene.instance.IsAreaReady(position) ? ZoneSystem.SpawnMode.Full : ZoneSystem.SpawnMode.Ghost;
 
-                PlaceIceFloes(zoneID, zonePos, instance.m_tempClearAreas, mode, instance.m_tempSpawnedObjects);
-                LogFloeState($"{zoneID} {zonePos} Spawned {mode} floes:{instance.m_tempSpawnedObjects.Count}");
+                PlaceIceFloes(zoneID, zonePos, Instance.m_tempClearAreas, mode, Instance.m_tempSpawnedObjects);
+                LogFloeState($"{zoneID} {zonePos} Spawned {mode} floes:{Instance.m_tempSpawnedObjects.Count}");
 
                 if (mode == ZoneSystem.SpawnMode.Ghost)
                 {
-                    foreach (GameObject tempSpawnedObject in instance.m_tempSpawnedObjects)
+                    foreach (GameObject tempSpawnedObject in Instance.m_tempSpawnedObjects)
                         Destroy(tempSpawnedObject);
                     
-                    instance.m_tempSpawnedObjects.Clear();
+                    Instance.m_tempSpawnedObjects.Clear();
                 }
             }
 
@@ -822,7 +822,7 @@ namespace Seasons
         {
             __state = Heightmap.Biome.None;
 
-            if (!overrideColor || !seasonState.IsActive || !UseTextureControllers())
+            if (!overrideColor || !SeasonState.IsActive || !UseTextureControllers())
                 return;
 
             if (SeasonState.seasonBiomeSettings.SeasonalBiomeColorOverride.TryGetValue(biome, out Dictionary<Season, Heightmap.Biome> overrideBiome) && overrideBiome.TryGetValue(seasonState.GetCurrentSeason(), out Heightmap.Biome overridedBiome))
@@ -835,7 +835,7 @@ namespace Seasons
         [HarmonyPriority(Priority.First)]
         private static void Postfix(ref Heightmap.Biome biome, Heightmap.Biome __state)
         {
-            if (!overrideColor || !seasonState.IsActive || !UseTextureControllers())
+            if (!overrideColor || !SeasonState.IsActive || !UseTextureControllers())
                 return;
 
             biome = __state;
@@ -851,7 +851,7 @@ namespace Seasons
             if (!plainsSwampBorderFix.Value)
                 return;
 
-            if (!Heightmap_GetBiomeColor_TerrainColor.overrideColor || !seasonState.IsActive || !UseTextureControllers())
+            if (!Heightmap_GetBiomeColor_TerrainColor.overrideColor || !SeasonState.IsActive || !UseTextureControllers())
                 return;
 
             if (!__instance.IsBiomeEdge())
@@ -869,7 +869,7 @@ namespace Seasons
         [HarmonyPriority(Priority.First)]
         private static void Prefix()
         {
-            Heightmap_GetBiomeColor_TerrainColor.overrideColor = seasonState.IsActive && UseTextureControllers();
+            Heightmap_GetBiomeColor_TerrainColor.overrideColor = SeasonState.IsActive && UseTextureControllers();
         }
 
         [HarmonyPriority(Priority.First)]
@@ -885,14 +885,14 @@ namespace Seasons
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(WaterVolume __instance)
         {
-            if (!UseTextureControllers() || !seasonState.IsActive || !__instance.m_useGlobalWind || ZoneSystemVariantController.instance == null)
+            if (!UseTextureControllers() || !SeasonState.IsActive || !__instance.m_useGlobalWind || ZoneSystemVariantController.Instance == null)
                 return;
 
             if (waterStates.ContainsKey(__instance))
                 return;
             
             waterStates.Add(__instance, new WaterState(__instance));
-            ZoneSystemVariantController.instance.waterVolumesCheckFloes.Add(__instance);
+            ZoneSystemVariantController.Instance.waterVolumesCheckFloes.Add(__instance);
         }
     }
 
@@ -905,7 +905,7 @@ namespace Seasons
             if (!UseTextureControllers())
                 return;
 
-            if (!seasonState.IsActive)
+            if (!SeasonState.IsActive)
                 return;
 
             if (!waterStates.ContainsKey(__instance))
@@ -924,7 +924,7 @@ namespace Seasons
             if (!UseTextureControllers())
                 return;
 
-            if (!seasonState.IsActive)
+            if (!SeasonState.IsActive)
                 return;
 
             if (!waterStates.ContainsKey(__instance))
@@ -943,7 +943,7 @@ namespace Seasons
             if (!UseTextureControllers())
                 return;
 
-            if (!seasonState.IsActive)
+            if (!SeasonState.IsActive)
                 return;
 
             if (!waterStates.ContainsKey(__instance))
@@ -962,7 +962,7 @@ namespace Seasons
             if (!UseTextureControllers())
                 return;
 
-            if (!seasonState.IsActive)
+            if (!SeasonState.IsActive)
                 return;
 
             if (!IsWaterSurfaceFrozen())
@@ -1037,7 +1037,7 @@ namespace Seasons
     [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.SetEnv))]
     public static class EnvMan_SetEnv_FrozenOceanWindLoop
     {
-        public static Dictionary<string, AudioClip> usedAudioClips
+        public static Dictionary<string, AudioClip> UsedAudioClips
         {
             get
             {
@@ -1060,8 +1060,8 @@ namespace Seasons
                 return;
 
             __state = env.m_ambientLoop;
-            if (env.m_ambientLoop != usedAudioClips["Wind_BlowingLoop3"])
-                env.m_ambientLoop = usedAudioClips["Wind_ColdLoop3"];
+            if (env.m_ambientLoop != UsedAudioClips["Wind_BlowingLoop3"])
+                env.m_ambientLoop = UsedAudioClips["Wind_ColdLoop3"];
         }
 
         public static void Postfix(EnvSetup env, AudioClip __state)
@@ -1113,7 +1113,7 @@ namespace Seasons
                 return;
 
             if (___m_teleportTargetPos.y == 0)
-                ___m_teleportTargetPos = new Vector3(___m_teleportTargetPos.x, ___m_teleportTargetPos.y + s_waterLevel, ___m_teleportTargetPos.z);
+                ___m_teleportTargetPos = new Vector3(___m_teleportTargetPos.x, ___m_teleportTargetPos.y + WaterLevel, ___m_teleportTargetPos.z);
         }
     }
 
@@ -1221,7 +1221,7 @@ namespace Seasons
             if (!UseTextureControllers())
                 return true;
 
-            if (!seasonState.IsActive)
+            if (!SeasonState.IsActive)
                 return true;
 
             if (!IsWaterSurfaceFrozen())
@@ -1229,11 +1229,11 @@ namespace Seasons
 
             Vector3 origin = p;
             origin.y += 2000f;
-            int num = Physics.RaycastNonAlloc(origin, Vector3.down, ZoneSystemVariantController.instance.rayHits, 10000f, ___m_blockRayMask);
+            int num = Physics.RaycastNonAlloc(origin, Vector3.down, ZoneSystemVariantController.Instance.rayHits, 10000f, ___m_blockRayMask);
             __result = false;
             for (int i = 0; i < num; i++)
             {
-                if (ZoneSystemVariantController.instance.rayHits[i].collider.name == _iceSurfaceName)
+                if (ZoneSystemVariantController.Instance.rayHits[i].collider.name == _iceSurfaceName)
                     continue;
                 
                 __result = true;
@@ -1297,7 +1297,7 @@ namespace Seasons
             if (!UseTextureControllers())
                 return;
 
-            if (!seasonState.IsActive)
+            if (!SeasonState.IsActive)
                 return;
 
             if (!IsWaterSurfaceFrozen())
@@ -1313,7 +1313,7 @@ namespace Seasons
             if (!UseTextureControllers())
                 return;
 
-            if (!seasonState.IsActive)
+            if (!SeasonState.IsActive)
                 return;
 
             if (!IsWaterSurfaceFrozen())
@@ -1343,12 +1343,12 @@ namespace Seasons
 
             Vector3 origin = p;
             origin.y = 6000f;
-            int num = Physics.RaycastNonAlloc(origin, Vector3.down, ZoneSystemVariantController.instance.rayHits, 10000f, s_terrainRayMask);
+            int num = Physics.RaycastNonAlloc(origin, Vector3.down, ZoneSystemVariantController.Instance.rayHits, 10000f, s_terrainRayMask);
 
             float height = 0;
             for (int i = 0; i < num; i++)
             {
-                RaycastHit raycastHit = ZoneSystemVariantController.instance.rayHits[i];
+                RaycastHit raycastHit = ZoneSystemVariantController.Instance.rayHits[i];
                 if (raycastHit.collider.gameObject.layer == 0 && raycastHit.collider.name == _iceSurfaceName)
                     height = Mathf.Max(raycastHit.point.y, height);
                 else if (raycastHit.collider.gameObject.layer == 11)
@@ -1370,7 +1370,7 @@ namespace Seasons
             if (!UseTextureControllers())
                 return;
 
-            if (!seasonState.IsActive)
+            if (!SeasonState.IsActive)
                 return;
 
             if (!IsWaterSurfaceFrozen())
@@ -1393,7 +1393,7 @@ namespace Seasons
             if (__instance != Player.m_localPlayer)
                 return;
 
-            if (!seasonState.IsActive)
+            if (!SeasonState.IsActive)
                 return;
 
             if (seasonState.GetCurrentSeason() != Season.Winter)

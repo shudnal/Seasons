@@ -129,13 +129,7 @@ namespace Seasons
 
         public static void UpdateSeasonStatusEffectStats()
         {
-            if (ObjectDB.instance == null)
-                return;
-
-            if (Player.m_localPlayer == null)
-                return;
-
-            (Player.m_localPlayer.GetSEMan().GetStatusEffect(statusEffectSeasonHash) as SE_Season)?.Setup(Player.m_localPlayer);
+            (Player.m_localPlayer?.GetSEMan().GetStatusEffect(statusEffectSeasonHash) as SE_Season)?.Setup(Player.m_localPlayer);
         }
 
         private static string MessageNextSeason()
@@ -151,7 +145,7 @@ namespace Seasons
             TimeSpan span = TimeSpan.FromSeconds(secondsToEndOfSeason);
             if (hideSecondsInTimer.Value)
                 if (span.Hours > 0)
-                    return $"{(int)span.TotalHours}{new DateTime(span.Ticks).ToString(@"\h mm\m")}";
+                    return $"{(int)span.TotalHours}{new DateTime(span.Ticks):\\h mm\\m}";
                 else
                     return new DateTime(span.Ticks).ToString(@"mm\m ss\s");
             else

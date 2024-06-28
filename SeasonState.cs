@@ -32,7 +32,7 @@ namespace Seasons
         public static SeasonClutterSettings seasonClutterSettings = new SeasonClutterSettings(loadDefaults: true);
         public static SeasonBiomeSettings seasonBiomeSettings = new SeasonBiomeSettings(loadDefaults: true);
 
-        private static List<ItemDrop.ItemData> _itemDataList = new List<ItemDrop.ItemData>();
+        private static readonly List<ItemDrop.ItemData> _itemDataList = new List<ItemDrop.ItemData>();
 
         private SeasonSettings settings
         {
@@ -77,7 +77,7 @@ namespace Seasons
             SeasonSettings.SaveDefaultBiomesSettings(folder);
         }
 
-        public bool IsActive => EnvMan.instance != null;
+        public static bool IsActive => seasonState != null && EnvMan.instance != null;
 
         public int GetCurrentWorldDay()
         {
@@ -126,7 +126,7 @@ namespace Seasons
             }
 
             if (!CheckIfSeasonChanged(currentSeason, setSeason, dayInSeason, worldDay))
-                CheckIfDayChanged(dayInSeason, worldDay);
+                CheckIfDayChanged(dayInSeason, worldDay, forceSeasonChange);
         }
 
         private World GetCurrentWorld()
@@ -228,87 +228,9 @@ namespace Seasons
             return GetSeasonSettings(season).m_nightLength;
         }
 
-        public void UpdateSeasonSettings()
+        private void UpdateBiomesSetup()
         {
-            if (!IsActive)
-                return;
-
-            foreach (KeyValuePair<int, string> item in seasonsSettingsJSON.Value)
-            {
-                try
-                {
-                    if (!String.IsNullOrEmpty(item.Value))
-                    {
-                        seasonsSettings[(Season)item.Key] = new SeasonSettings((Season)item.Key, JsonConvert.DeserializeObject<SeasonSettingsFile>(item.Value));
-                        LogInfo($"Settings updated: {(Season)item.Key}");
-                    }
-                }
-                catch (Exception e)
-                {
-                    LogWarning($"Error parsing settings: {(Season)item.Key}\n{e}");
-                }
-            }
-
-            UpdateUsingOfIngameDays();
-
-            UpdateTorchesFireWarmth();
-        }
-
-        public void UpdateSeasonEnvironments()
-        {
-            if (!IsActive)
-                return;
-
-            if (!controlEnvironments.Value)
-                return;
-
-            SeasonEnvironment.ClearCachedObjects();
-
-            if (!String.IsNullOrEmpty(customEnvironmentsJSON.Value))
-            {
-                try
-                {
-                    seasonEnvironments = JsonConvert.DeserializeObject<List<SeasonEnvironment>>(customEnvironmentsJSON.Value);
-                    LogInfo($"Custom environments updated");
-                }
-                catch (Exception e)
-                {
-                    LogWarning($"Error parsing custom environments:\n{e}");
-                }
-            }
-
-            foreach (SeasonEnvironment senv in seasonEnvironments)
-            {
-                EnvSetup env2 = EnvMan.instance.GetEnv(senv.m_name);
-                if (env2 != null)
-                    EnvMan.instance.m_environments.Remove(env2);
-
-                EnvMan.instance.AppendEnvironment(senv.ToEnvSetup());
-            }
-        }
-
-        public void UpdateBiomeEnvironments()
-        {
-            if (!IsActive)
-                return;
-
-            if (!controlEnvironments.Value)
-                return;
-
-            if (!String.IsNullOrEmpty(customBiomeEnvironmentsJSON.Value))
-            {
-                try
-                {
-                    seasonBiomeEnvironments = JsonConvert.DeserializeObject<SeasonBiomeEnvironments>(customBiomeEnvironmentsJSON.Value);
-                    LogInfo($"Custom biome environments updated");
-                }
-                catch (Exception e)
-                {
-                    LogWarning($"Error parsing custom biome environments:\n{e}");
-                }
-            }
-
-            SeasonBiomeEnvironment biomeEnv = seasonBiomeEnvironments.GetSeasonBiomeEnvironment(GetCurrentSeason());
+            SeasonBiomeEnvironment biomeEnv = seasonBiomeEnvironments.GetSeasonBiomeEnvironment(seasonState.GetCurrentSeason());
 
             if (biomesDefault.Count == 0)
                 biomesDefault.AddRange(EnvMan.instance.m_biomes.Select(biome => JsonUtility.ToJson(biome)));
@@ -342,7 +264,110 @@ namespace Seasons
             EnvMan.instance.m_environmentPeriod--;
         }
 
-        public void UpdateRandomEvents()
+        public static void UpdateSeasonSettings()
+        {
+            if (!IsActive)
+                return;
+
+            seasonsSettings.Clear();
+            foreach (KeyValuePair<int, string> item in seasonsSettingsJSON.Value)
+            {
+                try
+                {
+                    if (!String.IsNullOrEmpty(item.Value))
+                    {
+                        seasonsSettings[(Season)item.Key] = new SeasonSettings((Season)item.Key, JsonConvert.DeserializeObject<SeasonSettingsFile>(item.Value));
+                        LogInfo($"Settings updated: {(Season)item.Key}");
+                    }
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error parsing settings: {(Season)item.Key}\n{e}");
+                }
+            }
+
+            seasonState.UpdateUsingOfIngameDays();
+
+            seasonState.UpdateTorchesFireWarmth();
+
+            CheckSeasonChange();
+        }
+
+        public static void UpdateSeasonEnvironments()
+        {
+            if (!IsActive)
+                return;
+
+            if (!controlEnvironments.Value)
+                return;
+
+            SeasonEnvironment.ClearCachedObjects();
+
+            foreach (SeasonEnvironment senv in seasonEnvironments)
+            {
+                EnvSetup env2 = EnvMan.instance.GetEnv(senv.m_name);
+                if (env2 != null)
+                    EnvMan.instance.m_environments.Remove(env2);
+            }
+
+            if (!String.IsNullOrEmpty(customEnvironmentsJSON.Value))
+            {
+                try
+                {
+                    seasonEnvironments = JsonConvert.DeserializeObject<List<SeasonEnvironment>>(customEnvironmentsJSON.Value);
+                    LogInfo($"Custom environments updated");
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error parsing custom environments:\n{e}");
+                }
+            }
+            else
+            {
+                seasonEnvironments = SeasonEnvironment.GetDefaultCustomEnvironments();
+                LogInfo($"Custom environments loaded defaults");
+            }
+
+            foreach (SeasonEnvironment senv in seasonEnvironments)
+            {
+                EnvSetup env2 = EnvMan.instance.GetEnv(senv.m_name);
+                if (env2 != null)
+                    EnvMan.instance.m_environments.Remove(env2);
+
+                EnvMan.instance.AppendEnvironment(senv.ToEnvSetup());
+            }
+        }
+
+        public static void UpdateBiomeEnvironments()
+        {
+            if (!IsActive)
+                return;
+
+            if (!controlEnvironments.Value)
+                return;
+
+            if (!String.IsNullOrEmpty(customBiomeEnvironmentsJSON.Value))
+            {
+                try
+                {
+                    seasonBiomeEnvironments = JsonConvert.DeserializeObject<SeasonBiomeEnvironments>(customBiomeEnvironmentsJSON.Value);
+                    LogInfo($"Custom biome environments updated");
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error parsing custom biome environments:\n{e}");
+                }
+            }
+            else
+            {
+                seasonBiomeEnvironments = new SeasonBiomeEnvironments(loadDefaults: true);
+                LogInfo($"Custom biome environments loaded defaults");
+            }
+            
+            seasonState.UpdateBiomesSetup();
+        }
+
+        public static void UpdateRandomEvents()
         {
             if (!IsActive)
                 return;
@@ -359,9 +384,14 @@ namespace Seasons
                     LogWarning($"Error parsing custom events:\n{e}");
                 }
             }
+            else
+            {
+                seasonRandomEvents = new SeasonRandomEvents(loadDefaults: true);
+                LogInfo($"Custom events loaded defaults");
+            }
         }
 
-        public void UpdateLightings()
+        public static void UpdateLightings()
         {
             if (!IsActive)
                 return;
@@ -378,9 +408,14 @@ namespace Seasons
                     LogWarning($"Error parsing custom lightings:\n{e}");
                 }
             }
+            else
+            {
+                seasonLightings = new SeasonLightings(loadDefaults: true);
+                LogInfo($"Custom lightings loaded defaults");
+            }
         }
 
-        public void UpdateStats()
+        public static void UpdateStats()
         {
             if (!IsActive)
                 return;
@@ -397,11 +432,16 @@ namespace Seasons
                     LogWarning($"Error parsing custom stats:\n{e}");
                 }
             }
+            else
+            {
+                seasonStats = new SeasonStats(loadDefaults: true);
+                LogInfo($"Custom stats loaded defaults");
+            }
 
             SE_Season.UpdateSeasonStatusEffectStats();
         }
 
-        public void UpdateTraderItems()
+        public static void UpdateTraderItems()
         {
             if (!IsActive)
                 return;
@@ -418,9 +458,14 @@ namespace Seasons
                     LogWarning($"Error parsing custom trader items:\n{e}");
                 }
             }
+            else
+            {
+                seasonTraderItems = new SeasonTraderItems(loadDefaults: true);
+                LogInfo($"Custom trader items loaded defaults");
+            }
         }
 
-        public void UpdateWorldSettings()
+        public static void UpdateWorldSettings()
         {
             if (!IsActive)
                 return;
@@ -437,11 +482,16 @@ namespace Seasons
                     LogWarning($"Error parsing world settings items:\n{e}");
                 }
             }
+            else
+            {
+                seasonWorldSettings = new SeasonWorldSettings();
+                LogInfo($"Custom world settings loaded defaults");
+            }
 
-            UpdateUsingOfIngameDays();
+            seasonState.UpdateUsingOfIngameDays();
         }
 
-        public void UpdateGrassSettings()
+        public static void UpdateGrassSettings()
         {
             if (!IsActive)
                 return;
@@ -458,9 +508,16 @@ namespace Seasons
                     LogWarning($"Error parsing custom grass settings:\n{e}");
                 }
             }
+            else
+            {
+                seasonGrassSettings = new SeasonGrassSettings(loadDefaults: true);
+                LogInfo($"Custom grass settings loaded defaults");
+            }
+
+            StartClutterUpdate();
         }
 
-        public void UpdateClutterSettings()
+        public static void UpdateClutterSettings()
         {
             if (!IsActive)
                 return;
@@ -477,9 +534,16 @@ namespace Seasons
                     LogWarning($"Error parsing custom clutter settings:\n{e}");
                 }
             }
+            else
+            {
+                seasonClutterSettings = new SeasonClutterSettings(loadDefaults: true);
+                LogInfo($"Custom clutter settings loaded defaults");
+            }
+
+            StartClutterUpdate();
         }
 
-        public void UpdateBiomeSettings()
+        public static void UpdateBiomeSettings()
         {
             if (!IsActive)
                 return;
@@ -496,6 +560,13 @@ namespace Seasons
                     LogWarning($"Error parsing custom biomes settings:\n{e}");
                 }
             }
+            else
+            {
+                seasonBiomeSettings = new SeasonBiomeSettings(loadDefaults: true);
+                LogInfo($"Custom biomes settings loaded defaults");
+            }
+
+            ZoneSystemVariantController.UpdateTerrainColors();
         }
 
         public void UpdateGlobalKeys()
@@ -704,7 +775,7 @@ namespace Seasons
         public void StartSeasonChange()
         {
             if (!showFadeOnSeasonChange.Value || Hud.instance == null || Hud.instance.m_loadingScreen.isActiveAndEnabled || Hud.instance.m_loadingScreen.alpha > 0)
-                SeasonChanged();
+                OnSeasonChange();
             else
                 Seasons.instance.StartCoroutine(seasonState.SeasonChangedFadeEffect());
         }
@@ -716,7 +787,7 @@ namespace Seasons
             Player player = Player.m_localPlayer;
             if (player == null || player.IsDead() || player.IsTeleporting() || Game.instance.IsShuttingDown() || player.IsSleeping())
             {
-                SeasonChanged();
+                OnSeasonChange();
                 m_seasonIsChanging = false;
                 yield break;
             }
@@ -732,7 +803,7 @@ namespace Seasons
             {
                 if (player == null || player.IsDead() || player.IsTeleporting() || Game.instance.IsShuttingDown() || player.IsSleeping())
                 {
-                    SeasonChanged();
+                    OnSeasonChange();
                     m_seasonIsChanging = false;
                     yield break;
                 }
@@ -742,7 +813,7 @@ namespace Seasons
                 yield return waitForFixedUpdate;
             }
 
-            SeasonChanged();
+            OnSeasonChange();
 
             while (Hud.instance.m_loadingScreen.alpha > 0f)
             {
@@ -761,9 +832,9 @@ namespace Seasons
             m_seasonIsChanging = false;
         }
 
-        private void SeasonChanged()
+        private void OnSeasonChange()
         {
-            UpdateBiomeEnvironments();
+            UpdateBiomesSetup();
             UpdateGlobalKeys();
             ZoneSystemVariantController.UpdateWaterState();
 
@@ -771,7 +842,7 @@ namespace Seasons
             {
                 PrefabVariantController.UpdatePrefabColors();
                 ZoneSystemVariantController.UpdateTerrainColors();
-                ClutterVariantController.instance?.UpdateColors();
+                ClutterVariantController.Instance?.UpdateColors();
 
                 UpdateTorchesFireWarmth();
 
@@ -789,14 +860,14 @@ namespace Seasons
             }
         }
 
-        private void CheckIfDayChanged(int dayInSeason, int worldDay)
+        private void CheckIfDayChanged(int dayInSeason, int worldDay, bool forceSeasonChange)
         {
             if (m_day == dayInSeason && m_worldDay == worldDay)
                 return;
 
             m_worldDay = worldDay;
 
-            if (dayInSeason != m_day)
+            if (dayInSeason > m_day || forceSeasonChange)
                 UpdateCurrentSeasonDay(m_season, dayInSeason);
         }
 
@@ -926,7 +997,7 @@ namespace Seasons
 
         public static void CheckSeasonChange()
         {
-            if (seasonState.IsActive)
+            if (IsActive)
                 seasonState.UpdateState(forceSeasonChange: true);
         }
 
@@ -948,14 +1019,19 @@ namespace Seasons
                 OnDayChange();
         }
 
-        public static void OnDayChange()
+        private static void OnDayChange()
+        {
+            StartClutterUpdate();
+            ZoneSystemVariantController.UpdateWaterState();
+            seasonState.UpdateGlobalKeys();
+        }
+
+        private static void StartClutterUpdate()
         {
             if (UseTextureControllers())
             {
-                ClutterVariantController.instance?.StartCoroutine(ClutterVariantController.instance.UpdateDayState());
+                ClutterVariantController.Instance?.StartCoroutine(ClutterVariantController.Instance.UpdateDayState());
             }
-            ZoneSystemVariantController.UpdateWaterState();
-            seasonState.UpdateGlobalKeys();
         }
 
         public static Tuple<Season, int> GetSyncedCurrentSeasonDay()
@@ -1363,7 +1439,7 @@ namespace Seasons
     {
         private static void Postfix()
         {
-            if (!seasonState.IsActive)
+            if (!SeasonState.IsActive)
                 return;
 
             seasonState.UpdateMinimapBorder();
@@ -1670,7 +1746,7 @@ namespace Seasons
     [HarmonyPatch(typeof(Plant), nameof(Plant.HaveGrowSpace))]
     public static class Plant_HaveGrowSpace_TreeRegrowth
     {
-        private static bool Prefix(Plant __instance, ZNetView ___m_nview, ref bool __result)
+        private static bool Prefix(ZNetView ___m_nview, ref bool __result)
         {
             if (___m_nview == null || !___m_nview.IsValid() || !___m_nview.IsOwner())
                 return true;
@@ -2072,7 +2148,7 @@ namespace Seasons
     [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.IsFreezing))]
     public static class EnvMan_IsFreezing_SwimmingInWinterIsFreezing
     {
-        private static void Postfix(EnvMan __instance, ref bool __result)
+        private static void Postfix(ref bool __result)
         {
             if (!freezingSwimmingInWinter.Value)
                 return;

@@ -40,7 +40,7 @@ namespace Seasons
             UpdateTextures();
 
             PrefabVariantController.UpdatePrefabColors();
-            ClutterVariantController.instance?.UpdateColors();
+            ClutterVariantController.Instance?.UpdateColors();
         }
 
         public static void UpdateTextures()

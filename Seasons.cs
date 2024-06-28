@@ -20,7 +20,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.2.4";
+        public const string pluginVersion = "1.2.5";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -137,7 +137,6 @@ namespace Seasons
 
         public static readonly CustomSyncedValue<int> currentSeasonDay = new CustomSyncedValue<int>(configSync, "Current season and day", 1, Priority.First);
 
-        public static readonly CustomSyncedValue<Dictionary<int, string>> seasonsSettingsJSON = new CustomSyncedValue<Dictionary<int, string>>(configSync, "Seasons settings JSON", new Dictionary<int, string>(), Priority.LowerThanNormal);
         public static readonly CustomSyncedValue<string> customEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom environments JSON", "", Priority.Normal);
         public static readonly CustomSyncedValue<string> customBiomeEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom biome environments JSON", "", Priority.Normal);
         public static readonly CustomSyncedValue<string> customEventsJSON = new CustomSyncedValue<string>(configSync, "Custom events JSON", "", Priority.Normal);
@@ -149,10 +148,13 @@ namespace Seasons
         public static readonly CustomSyncedValue<string> customClutterSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom clutter settings JSON", "", Priority.Normal);
         public static readonly CustomSyncedValue<string> customBiomeSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom biome settings JSON", "", Priority.Normal);
 
+        public static readonly CustomSyncedValue<Dictionary<int, string>> seasonsSettingsJSON = new CustomSyncedValue<Dictionary<int, string>>(configSync, "Seasons settings JSON", new Dictionary<int, string>(), Priority.LowerThanNormal);
+
         public static readonly CustomSyncedValue<string> customMaterialSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom material settings JSON", "", Priority.Low);
         public static readonly CustomSyncedValue<string> customColorSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom color settings JSON", "", Priority.Low);
         public static readonly CustomSyncedValue<string> customColorReplacementJSON = new CustomSyncedValue<string>(configSync, "Custom color replacements JSON", "", Priority.Low);
         public static readonly CustomSyncedValue<string> customColorPositionsJSON = new CustomSyncedValue<string>(configSync, "Custom color positions JSON", "", Priority.Low);
+
         public static readonly CustomSyncedValue<uint> cacheRevision = new CustomSyncedValue<uint>(configSync, "Cache revision", 0, Priority.VeryLow);
 
         public static readonly List<string> biomesDefault = new List<string>();
@@ -218,8 +220,20 @@ namespace Seasons
             _ = configSync.AddLockingConfigEntry(configLocked);
 
             currentSeasonDay.ValueChanged += new Action(SeasonState.OnSeasonDayChange);
-            seasonsSettingsJSON.ValueChanged += new Action(SeasonSettings.UpdateSeasonSettings);
-            cacheRevision.ValueChanged += new Action(SeasonalTexturePrefabCache.OnCacheRevisionChange); 
+
+            customBiomeSettingsJSON.ValueChanged += new Action(SeasonState.UpdateBiomeSettings);
+            customClutterSettingsJSON.ValueChanged += new Action(SeasonState.UpdateClutterSettings);
+            customGrassSettingsJSON.ValueChanged += new Action(SeasonState.UpdateGrassSettings);
+            customTraderItemsJSON.ValueChanged += new Action(SeasonState.UpdateTraderItems);
+            customStatsJSON.ValueChanged += new Action(SeasonState.UpdateStats);
+            customLightingsJSON.ValueChanged += new Action(SeasonState.UpdateLightings);
+            customEventsJSON.ValueChanged += new Action(SeasonState.UpdateRandomEvents);
+            customBiomeEnvironmentsJSON.ValueChanged += new Action(SeasonState.UpdateBiomeEnvironments);
+            customEnvironmentsJSON.ValueChanged += new Action(SeasonState.UpdateSeasonEnvironments);
+            customWorldSettingsJSON.ValueChanged += new Action(SeasonState.UpdateWorldSettings);
+            seasonsSettingsJSON.ValueChanged += new Action(SeasonState.UpdateSeasonSettings);
+
+            cacheRevision.ValueChanged += new Action(SeasonalTexturePrefabCache.OnCacheRevisionChange);
 
             Game.isModded = true;
 
@@ -276,7 +290,7 @@ namespace Seasons
             customTextures = config("Season - Control", "Custom textures", defaultValue: true, "Enables custom textures");
 
             controlStats.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
-            controlGrass.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateGrass();
+            controlGrass.SettingChanged += (sender, args) => ClutterVariantController.Instance.UpdateGrass();
             customTextures.SettingChanged += (sender, args) => CustomTextures.UpdateTexturesOnChange();
 
             enableSeasonalItems = config("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
@@ -304,11 +318,11 @@ namespace Seasons
             grassSizeDefaultScaleMin = config("Season - Grass", "Default minimum size multiplier", defaultValue: 1f, "Default minimum size of grass will be multiplier by given number");
             grassSizeDefaultScaleMax = config("Season - Grass", "Default maximum size multiplier", defaultValue: 1f, "Default maximum size of grass will be multiplier by given number");
 
-            grassDefaultPatchSize.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateGrass();
-            grassDefaultAmountScale.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateGrass();
-            grassToControlSize.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateGrass();
-            grassSizeDefaultScaleMin.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateGrass();
-            grassSizeDefaultScaleMax.SettingChanged += (sender, args) => ClutterVariantController.instance.UpdateGrass();
+            grassDefaultPatchSize.SettingChanged += (sender, args) => ClutterVariantController.Instance.UpdateGrass();
+            grassDefaultAmountScale.SettingChanged += (sender, args) => ClutterVariantController.Instance.UpdateGrass();
+            grassToControlSize.SettingChanged += (sender, args) => ClutterVariantController.Instance.UpdateGrass();
+            grassSizeDefaultScaleMin.SettingChanged += (sender, args) => ClutterVariantController.Instance.UpdateGrass();
+            grassSizeDefaultScaleMax.SettingChanged += (sender, args) => ClutterVariantController.Instance.UpdateGrass();
 
             showCurrentSeasonBuff = config("Season - Buff", "Show current season buff", defaultValue: true, "Show current season buff.");
             seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
@@ -387,7 +401,7 @@ namespace Seasons
         {
             new ConsoleCommand("resetseasonscache", "Rebuild Seasons texture cache", delegate (ConsoleEventArgs args)
             {
-                if (!seasonState.IsActive)
+                if (!SeasonState.IsActive)
                 {
                     args.Context.AddString($"Start the game before rebuilding cache");
                     return false;
@@ -629,7 +643,7 @@ namespace Seasons
     
         public static void StartCacheRebuild()
         {
-            if (seasonState.IsActive)
+            if (SeasonState.IsActive)
                 instance.StartCoroutine(texturesVariants.RebuildCache());
         }
 

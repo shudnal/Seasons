@@ -44,7 +44,7 @@ namespace Seasons
 
         private readonly Dictionary<Material, Color> m_originalColors = new Dictionary<Material, Color>();
 
-        public static ClutterVariantController instance => m_instance;
+        public static ClutterVariantController Instance => m_instance;
         
         private readonly Dictionary<Clutter, Tuple<bool, float, float>> m_clutterDefaults = new Dictionary<Clutter, Tuple<bool, float, float>>();
 
@@ -101,9 +101,9 @@ namespace Seasons
                         string path = cachedRenderer.Key;
                         if (path.Contains(prefab.name))
                         {
-                            path = cachedRenderer.Key.Substring(cachedRenderer.Key.IndexOf(prefab.name) + prefab.name.Length);
+                            path = cachedRenderer.Key[(cachedRenderer.Key.IndexOf(prefab.name) + prefab.name.Length)..];
                             if (path.StartsWith("/"))
-                                path = path.Substring(1);
+                                path = path[1..];
                         }
 
                         string[] transformPath = path.Split(new char[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
@@ -496,8 +496,10 @@ namespace Seasons
                 LoadTexture("instanced_meadows_flowers.png", ref s_instanced_meadows_flowers);
 
                 InstanceRenderer renderer = s_meadowsFlowers.GetComponent<InstanceRenderer>();
-                renderer.m_material = new Material(renderer.m_material);
-                renderer.m_material.name = c_meadowsFlowersPrefabName;
+                renderer.m_material = new Material(renderer.m_material)
+                {
+                    name = c_meadowsFlowersPrefabName
+                };
                 renderer.m_material.SetTexture("_MainTex", s_instanced_meadows_flowers);
             }
             
@@ -528,8 +530,10 @@ namespace Seasons
                 LoadTexture("instanced_forest_groundcover_bloom.png", ref s_instanced_forest_groundcover_bloom);
 
                 InstanceRenderer renderer = s_forestBloom.GetComponent<InstanceRenderer>();
-                renderer.m_material = new Material(renderer.m_material);
-                renderer.m_material.name = c_forestBloomPrefabName;
+                renderer.m_material = new Material(renderer.m_material)
+                {
+                    name = c_forestBloomPrefabName
+                };
                 renderer.m_material.SetTexture("_MainTex", s_instanced_forest_groundcover_bloom);
             }
 
@@ -560,8 +564,10 @@ namespace Seasons
                 LoadTexture("instanced_swamp_grass_bloom.png", ref s_instanced_swampgrass_bloom);
 
                 InstanceRenderer renderer = s_swampBloom.GetComponent<InstanceRenderer>();
-                renderer.m_material = new Material(renderer.m_material);
-                renderer.m_material.name = c_swampGrassBloomPrefabName;
+                renderer.m_material = new Material(renderer.m_material)
+                {
+                    name = c_swampGrassBloomPrefabName
+                };
                 renderer.m_material.SetTexture("_MainTex", s_instanced_swampgrass_bloom);
             }
 
@@ -582,8 +588,8 @@ namespace Seasons
 
         public static void Reinitialize()
         {
-            if (instance != null)
-                Destroy(instance);
+            if (Instance != null)
+                Destroy(Instance);
 
             m_instance = null;
 

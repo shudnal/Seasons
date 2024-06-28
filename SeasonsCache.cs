@@ -412,17 +412,15 @@ namespace Seasons
 
             try
             {
-                using (FileStream fs = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read))
-                {
-                    BinaryFormatter bf = new BinaryFormatter();
-                    CachedData cd = (CachedData)bf.Deserialize(fs);
-                    fs.Dispose();
+                using FileStream fs = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read);
+                BinaryFormatter bf = new BinaryFormatter();
+                CachedData cd = (CachedData)bf.Deserialize(fs);
+                fs.Dispose();
 
-                    controllers.Copy(cd.controllers);
-                    textures.Copy(cd.textures);
+                controllers.Copy(cd.controllers);
+                textures.Copy(cd.textures);
 
-                    cd = null;
-                }
+                cd = null;
             }
             catch (Exception ex)
             {
@@ -674,7 +672,7 @@ namespace Seasons
                 yield return waitForFixedUpdate;
 
                 PrefabVariantController.UpdatePrefabColors();
-                ClutterVariantController.instance.UpdateColors();
+                ClutterVariantController.Instance.UpdateColors();
 
                 LogInfo($"Colors reinitialized in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
             }
@@ -691,7 +689,7 @@ namespace Seasons
             SeasonalTexturePrefabCache.SetCurrentTextureVariants(newTexturesVariants);
 
             PrefabVariantController.instance.RevertPrefabsState();
-            ClutterVariantController.instance.RevertColors();
+            ClutterVariantController.Instance.RevertColors();
 
             yield return waitForFixedUpdate;
 
@@ -732,7 +730,7 @@ namespace Seasons
             SeasonalTexturePrefabCache.SetCurrentTextureVariants(this);
 
             PrefabVariantController.UpdatePrefabColors();
-            ClutterVariantController.instance.UpdateColors();
+            ClutterVariantController.Instance.UpdateColors();
         }
     }
 
@@ -750,15 +748,9 @@ namespace Seasons
                 this.end = end;
             }
 
-            public bool Fits(float value)
-            {
-                return (start == 0f || start <= value) && (end == 0f || value <= end);
-            }
-            public override string ToString()
-            {
-                return $"{start}-{end}";
-            }
+            public readonly bool Fits(float value) => (start == 0f || start <= value) && (end == 0f || value <= end);
 
+            public override readonly string ToString() => $"{start}-{end}";
         }
 
         [Serializable]
@@ -773,15 +765,9 @@ namespace Seasons
                 this.end = end;
             }
 
-            public bool Fits(int value)
-            {
-                return (start == 0 || start <= value) && (end == 0 || value <= end);
-            }
+            public readonly bool Fits(int value) => (start == 0 || start <= value) && (end == 0 || value <= end);
 
-            public override string ToString()
-            {
-                return $"{start}-{end}";
-            }
+            public override readonly string ToString() => $"{start}-{end}";
 
         }
 
@@ -1338,8 +1324,8 @@ namespace Seasons
                 
             }
 
-            private Dictionary<string, SeasonalColorVariants> _prefabs = new Dictionary<string, SeasonalColorVariants>();
-            private Dictionary<string, SeasonalColorVariants> _materials = new Dictionary<string, SeasonalColorVariants>();
+            private readonly Dictionary<string, SeasonalColorVariants> _prefabs = new Dictionary<string, SeasonalColorVariants>();
+            private readonly Dictionary<string, SeasonalColorVariants> _materials = new Dictionary<string, SeasonalColorVariants>();
 
             public SeasonalColorVariants GetPrefabOverride(string name)
             {
@@ -2240,7 +2226,7 @@ namespace Seasons
             foreach (FileInfo file in new DirectoryInfo(CacheSettingsDirectory()).GetFiles("*.json", SearchOption.TopDirectoryOnly))
                 ReadConfigFile(file.Name, file.FullName);
 
-            cacheRevision.AssignLocalValue(GetRevision());
+            cacheRevision.AssignValueSafe(GetRevision);
         }
 
         private static void ReadConfigs(object sender, FileSystemEventArgs eargs)
@@ -2248,11 +2234,11 @@ namespace Seasons
             ReadConfigFile(eargs.Name, eargs.FullPath);
             if (eargs is RenamedEventArgs && GetSyncedValueToAssign((eargs as RenamedEventArgs).OldName, out CustomSyncedValue<string> syncedValue, out string logMessage))
             {
-                syncedValue.AssignLocalValue("");
+                syncedValue.AssignValueSafe("");
                 LogInfo(logMessage);
             }
 
-            cacheRevision.AssignLocalValue(GetRevision());
+            cacheRevision.AssignValueSafe(GetRevision);
         }
 
         private static void ReadConfigFile(string filename, string fullname)
@@ -2260,38 +2246,41 @@ namespace Seasons
             if (!GetSyncedValueToAssign(filename, out CustomSyncedValue<string> syncedValue, out string logMessage))
                 return;
 
+            string content;
             try
             {
-                syncedValue.AssignValueSafe(File.ReadAllText(fullname));
+                content = File.ReadAllText(fullname);
             }
             catch (Exception e)
             {
                 LogWarning($"Error reading file ({fullname})! Error: {e.Message}");
-                syncedValue.AssignLocalValue("");
+                content = "";
                 logMessage += " defaults";
             }
+
+            syncedValue.AssignValueSafe(content);
 
             LogInfo(logMessage);
         }
 
         private static bool GetSyncedValueToAssign(string filename, out CustomSyncedValue<string> customSyncedValue, out string logMessage)
         {
-            if (filename == materialsSettingsFileName)
+            if (filename.Equals(materialsSettingsFileName, StringComparison.OrdinalIgnoreCase))
             {
                 customSyncedValue = customMaterialSettingsJSON;
                 logMessage = "Custom materials settings loaded";
             }
-            else if (filename == colorsSettingsFileName)
+            else if (filename.Equals(colorsSettingsFileName, StringComparison.OrdinalIgnoreCase))
             {
                 customSyncedValue = customColorSettingsJSON;
                 logMessage = "Custom color settings loaded";
             }
-            else if (filename == colorsReplacementsFileName)
+            else if (filename.Equals(colorsReplacementsFileName, StringComparison.OrdinalIgnoreCase))
             {
                 customSyncedValue = customColorReplacementJSON;
                 logMessage = "Custom color replacements loaded";
             }
-            else if (filename == colorsPositionsFileName)
+            else if (filename.Equals(colorsPositionsFileName, StringComparison.OrdinalIgnoreCase))
             {
                 customSyncedValue = customColorPositionsJSON;
                 logMessage = "Custom color positions loaded";
