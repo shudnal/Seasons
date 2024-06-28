@@ -1,5 +1,5 @@
 # 1.2.5
-* more stable and responsive change of files/values
+* more stable and responsive synchronization of files/values
 * fix for season change visual day 1 issue
 
 # 1.2.4
