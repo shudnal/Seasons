@@ -20,7 +20,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.2.6";
+        public const string pluginVersion = "1.2.7";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -64,6 +64,7 @@ namespace Seasons
         public static ConfigEntry<string> cropsToControlGrowth;
         public static ConfigEntry<string> woodListToControlDrop;
         public static ConfigEntry<string> meatListToControlDrop;
+        public static ConfigEntry<bool> shieldGeneratorProtection;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -304,6 +305,7 @@ namespace Seasons
             cropsToControlGrowth = config("Season", "Crops to control growth", defaultValue: "Pickable_Barley, Pickable_Barley_Wild, Pickable_Dandelion, Pickable_Flax, Pickable_Flax_Wild, Pickable_SeedCarrot, Pickable_SeedOnion, Pickable_SeedTurnip, Pickable_Thistle, Pickable_Turnip", "Crops and pickables from the list will be controlled by growth multiplier in addition to consumable crops");
             woodListToControlDrop = config("Season", "Wood to control drop", defaultValue: "Wood, FineWood, RoundLog, ElderBark, YggdrasilWood", "Wood item names to control drop from trees");
             meatListToControlDrop = config("Season", "Meat to control drop", defaultValue: "RawMeat, DeerMeat, NeckTail, WolfMeat, LoxMeat, ChickenMeat, HareMeat, SerpentMeat", "Meat item names to control drop from characters");
+            shieldGeneratorProtection = config("Season", "Shield generator protects from weather", defaultValue: true, "If enabled - objects inside shield generator dome will be protected from seasonal effects both positive and negative.");
 
             seasonalStatsOutdoorsOnly.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
             cropsToSurviveInWinter.SettingChanged += (sender, args) => FillListsToControl();
@@ -647,7 +649,7 @@ namespace Seasons
             if (IsIgnoredPosition(position))
                 return true;
 
-            return ShieldGenerator.IsInsideShieldCached(position, ref _instanceChangeIDShieldGeneratorCache);
+            return shieldGeneratorProtection.Value && ShieldGenerator.IsInsideShieldCached(position, ref _instanceChangeIDShieldGeneratorCache);
         }
 
         public static void StartCacheRebuild()

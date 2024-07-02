@@ -1,3 +1,6 @@
+# 1.2.7
+* shield generator as green house is disableable feature now
+
 # 1.2.6
 * season day sync fix
 * shield generator works as green house negating seasonal effects
