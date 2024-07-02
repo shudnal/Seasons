@@ -54,8 +54,6 @@ namespace Seasons
                 if (!seasonsSettings.ContainsKey(season))
                     seasonsSettings.Add(season, new SeasonSettings(season));
 
-            UpdateUsingOfIngameDays();
-
             string folder = Path.Combine(configDirectory, SeasonSettings.defaultsSubdirectory);
             Directory.CreateDirectory(folder);
 
@@ -75,6 +73,8 @@ namespace Seasons
             SeasonSettings.SaveDefaultGrassSettings(folder);
             SeasonSettings.SaveDefaultClutterSettings(folder);
             SeasonSettings.SaveDefaultBiomesSettings(folder);
+
+            UpdateUsingOfIngameDays();
         }
 
         public static bool IsActive => seasonState != null && EnvMan.instance != null;
@@ -990,9 +990,9 @@ namespace Seasons
             }
         }
 
-        public void UpdateCurrentSeasonDay(Season season, int day)
+        private void UpdateCurrentSeasonDay(Season season, int day)
         {
-            currentSeasonDay.AssignValueSafe((int)season * 10000 + day);
+            currentSeasonDay.AssignValueIfChanged((int)season * 10000 + day);
         }
 
         public static void CheckSeasonChange()
@@ -1001,8 +1001,16 @@ namespace Seasons
                 seasonState.UpdateState(forceSeasonChange: true);
         }
 
+        public static void ResetCurrentSeasonDay()
+        {
+            currentSeasonDay.AssignValueSafe(0);
+        }
+
         public static void OnSeasonDayChange()
         {
+            if (!IsActive)
+                return;
+
             Tuple<Season, int> seasonDay = GetSyncedCurrentSeasonDay();
 
             bool dayChanged = seasonState.m_day != seasonDay.Item2;
@@ -1265,12 +1273,31 @@ namespace Seasons
     [HarmonyPatch(typeof(Pickable), nameof(Pickable.Awake))]
     public static class Pickable_Awake_PlantsGrowthMultiplier
     {
-        private static void Postfix(Pickable __instance, ZNetView ___m_nview, bool ___m_picked)
+        public static bool ShouldBePicked(Pickable pickable)
         {
-            if (!___m_nview.IsValid() || !___m_nview.IsOwner() || !ControlPlantGrowth(__instance.gameObject) || IsIgnoredPosition(__instance.transform.position))
+            return !pickable.GetPicked() &&
+                    seasonState.GetPlantsGrowthMultiplier() == 0f &&
+                    seasonState.GetCurrentSeason() == Season.Winter &&
+                    seasonState.GetCurrentDay() >= cropsDiesAfterSetDayInWinter.Value
+                    && !PlantWillSurviveWinter(pickable.gameObject)
+                    && !IsProtectedPosition(pickable.transform.position);
+        }
+
+        public static bool IsIgnored(Pickable pickable)
+        {
+            return pickable.m_nview == null || 
+                  !pickable.m_nview.IsValid() || 
+                  !pickable.m_nview.IsOwner() || 
+                  !ControlPlantGrowth(pickable.gameObject) || 
+                  IsIgnoredPosition(pickable.transform.position);
+        }
+
+        private static void Postfix(Pickable __instance)
+        {
+            if (IsIgnored(__instance))
                 return;
 
-            if (!___m_picked && seasonState.GetPlantsGrowthMultiplier() == 0f && seasonState.GetCurrentSeason() == Season.Winter && seasonState.GetCurrentDay() >= cropsDiesAfterSetDayInWinter.Value && !PlantWillSurviveWinter(__instance.gameObject))
+            if (ShouldBePicked(__instance))
                 __instance.StartCoroutine(PickableSetPicked(__instance));
         }
     }
@@ -1278,19 +1305,19 @@ namespace Seasons
     [HarmonyPatch(typeof(Pickable), nameof(Pickable.UpdateRespawn))]
     public static class Pickable_UpdateRespawn_PlantsGrowthMultiplier
     {
-        private static bool Prefix(Pickable __instance, ref float ___m_respawnTimeMinutes, ZNetView ___m_nview, bool ___m_picked, ref float __state)
+        private static bool Prefix(Pickable __instance, ref float ___m_respawnTimeMinutes, ref float __state)
         {
-            if (!___m_nview.IsValid() || !___m_nview.IsOwner() || !ControlPlantGrowth(__instance.gameObject))
+            if (Pickable_Awake_PlantsGrowthMultiplier.IsIgnored(__instance))
                 return true;
 
-            if (IsIgnoredPosition(__instance.transform.position))
-                return true;
-
-            if (!___m_picked && seasonState.GetPlantsGrowthMultiplier() == 0f && seasonState.GetCurrentSeason() == Season.Winter && seasonState.GetCurrentDay() >= cropsDiesAfterSetDayInWinter.Value && !PlantWillSurviveWinter(__instance.gameObject))
+            if (Pickable_Awake_PlantsGrowthMultiplier.ShouldBePicked(__instance))
             {
                 __instance.SetPicked(true);
                 return false;
             }
+
+            if (IsProtectedPosition(__instance.transform.position))
+                return true;
 
             if (seasonState.GetPlantsGrowthMultiplier() == 0f)
                 return false;
@@ -1315,7 +1342,7 @@ namespace Seasons
     {
         private static bool Prefix(Vine __instance, ref Tuple<float, float> __state)
         {
-            if (IsIgnoredPosition(__instance.transform.position) || __instance.m_initialGrowItterations > 0 || __instance.IsDoneGrowing)
+            if (IsProtectedPosition(__instance.transform.position) || __instance.m_initialGrowItterations > 0 || __instance.IsDoneGrowing)
                 return true;
 
             float multiplier = seasonState.GetPlantsGrowthMultiplier();
@@ -1345,7 +1372,7 @@ namespace Seasons
     {
         private static void Postfix(Plant __instance, ref Plant.Status ___m_status)
         {
-            if (IsIgnoredPosition(__instance.transform.position))
+            if (IsProtectedPosition(__instance.transform.position))
                 return;
 
             if (___m_status == Plant.Status.Healthy && seasonState.GetPlantsGrowthMultiplier() == 0f && seasonState.GetCurrentSeason() == Season.Winter 
@@ -1359,7 +1386,7 @@ namespace Seasons
     {
         private static void Postfix(Plant __instance, ref double __result)
         {
-            if (IsIgnoredPosition(__instance.transform.position))
+            if (IsProtectedPosition(__instance.transform.position))
                 return;
 
             double timeSeconds = seasonState.GetTotalSeconds();
@@ -1387,6 +1414,11 @@ namespace Seasons
     {
         private static double GetGrowTime(Plant plant)
         {
+            double secondsLeft = plant.GetGrowTime() - plant.TimeSincePlanted();
+
+            if (IsProtectedPosition(plant.transform.position))
+                return secondsLeft;
+
             double timeSeconds = seasonState.GetTotalSeconds();
 
             Season season = seasonState.GetCurrentSeason();
@@ -1394,8 +1426,6 @@ namespace Seasons
 
             double secondsToGrow = 0d;
             double secondsToSeasonEnd = seasonState.GetEndOfCurrentSeason() - timeSeconds;
-            double secondsLeft = plant.GetGrowTime() - plant.TimeSincePlanted();
-
             do
             {
                 double timeInSeasonLeft = growthMultiplier == 0 ? secondsToSeasonEnd : Math.Min(secondsLeft / growthMultiplier, secondsToSeasonEnd);
@@ -1424,9 +1454,6 @@ namespace Seasons
             if (__instance.GetStatus() != Plant.Status.Healthy)
                 return;
 
-            if (IsIgnoredPosition(__instance.transform.position))
-                return;
-
             if (hoverPlant.Value == StationHover.Percentage)
                 __result += $"\n{__instance.TimeSincePlanted() / __instance.GetGrowTime():P0}";
             else if (hoverPlant.Value == StationHover.MinutesSeconds)
@@ -1451,7 +1478,7 @@ namespace Seasons
     {
         private static void Prefix(Beehive __instance, ref string __state)
         {
-            if (IsIgnoredPosition(__instance.transform.position))
+            if (IsProtectedPosition(__instance.transform.position))
                 return;
 
             __state = __instance.m_happyText;
@@ -1461,7 +1488,7 @@ namespace Seasons
 
         private static void Postfix(Beehive __instance, ref string __state)
         {
-            if (IsIgnoredPosition(__instance.transform.position))
+            if (IsProtectedPosition(__instance.transform.position))
                 return;
 
             __instance.m_happyText = __state;
@@ -1473,7 +1500,7 @@ namespace Seasons
     {
         private static void Postfix(Beehive __instance, ref float __result)
         {
-            if (IsIgnoredPosition(__instance.transform.position))
+            if (IsProtectedPosition(__instance.transform.position))
                 return;
 
             __result *= seasonState.GetBeehiveProductionMultiplier();
@@ -1485,6 +1512,10 @@ namespace Seasons
     {
         private static double GetNextProduct(Beehive beehive, float product, int count = 1)
         {
+            double secondsLeft = beehive.m_secPerUnit * count - product;
+            if (IsProtectedPosition(beehive.transform.position))
+                return secondsLeft;
+
             double timeSeconds = seasonState.GetTotalSeconds();
 
             Season season = seasonState.GetCurrentSeason();
@@ -1492,7 +1523,6 @@ namespace Seasons
 
             double secondsToProduct = 0d;
             double secondsToSeasonEnd = seasonState.GetEndOfCurrentSeason() - timeSeconds;
-            double secondsLeft = beehive.m_secPerUnit * count - product;
 
             do
             {
@@ -1517,9 +1547,6 @@ namespace Seasons
                 return;
 
             if (__result.IsNullOrWhiteSpace())
-                return;
-
-            if (IsIgnoredPosition(__instance.transform.position))
                 return;
 
             int honeyLevel = __instance.GetHoneyLevel();
@@ -1547,7 +1574,7 @@ namespace Seasons
     {
         private static void Postfix(Beehive __instance, ref GameObject ___m_beeEffect)
         {
-            if (IsIgnoredPosition(__instance.transform.position))
+            if (IsProtectedPosition(__instance.transform.position))
                 return;
 
             if (seasonState.GetBeehiveProductionMultiplier() == 0f)
@@ -1599,7 +1626,7 @@ namespace Seasons
     {
         private static void Postfix(Fireplace __instance, ref double __result)
         {
-            if (IsIgnoredPosition(__instance.transform.position))
+            if (IsProtectedPosition(__instance.transform.position))
                 return;
 
             __result *= (double)Math.Max(0f, seasonState.GetFireplaceDrainMultiplier());
@@ -1614,7 +1641,7 @@ namespace Seasons
             if (__instance.m_name != "$piece_bathtub")
                 return;
 
-            if (IsIgnoredPosition(__instance.transform.position))
+            if (IsProtectedPosition(__instance.transform.position))
                 return;
 
             __result *= (double)Math.Max(0f, seasonState.GetFireplaceDrainMultiplier());
@@ -1626,7 +1653,7 @@ namespace Seasons
     {
         private static void Prefix(CookingStation __instance, ref float dt, ref float __state)
         {
-            if (IsIgnoredPosition(__instance.transform.position))
+            if (IsProtectedPosition(__instance.transform.position))
                 return;
 
             __state = dt;
@@ -1635,7 +1662,7 @@ namespace Seasons
 
         private static void Postfix(CookingStation __instance, ref float dt, float __state)
         {
-            if (IsIgnoredPosition(__instance.transform.position))
+            if (IsProtectedPosition(__instance.transform.position))
                 return;
 
             dt = __state;
@@ -1647,7 +1674,7 @@ namespace Seasons
     {
         private static void Postfix(SapCollector __instance, ref float __result)
         {
-            if (IsIgnoredPosition(__instance.transform.position))
+            if (IsProtectedPosition(__instance.transform.position))
                 return;
 
             __result *= Math.Max(0f, seasonState.GetSapCollectingSpeedMultiplier());
@@ -1665,7 +1692,7 @@ namespace Seasons
             if (___m_nview == null || !___m_nview.IsValid())
                 return;
 
-            if (IsIgnoredPosition(__instance.transform.position))
+            if (IsProtectedPosition(__instance.transform.position))
                 return;
 
             __state = ___m_noRoofWear;
@@ -1705,7 +1732,7 @@ namespace Seasons
             if (___m_nview == null || !___m_nview.IsValid() || !___m_nview.IsOwner())
                 return;
 
-            if (IsIgnoredPosition(__instance.transform.position))
+            if (IsProtectedPosition(__instance.transform.position))
                 return;
 
             ApplyWoodMultiplier(___m_dropWhenDestroyed);
@@ -1729,7 +1756,7 @@ namespace Seasons
             if (TreeToRegrowth(__instance.gameObject) == null)
                 return;
 
-            if (IsIgnoredPosition(__instance.transform.position))
+            if (IsProtectedPosition(__instance.transform.position))
                 return;
 
             if ((bool)EffectArea.IsPointInsideArea(__instance.transform.position, EffectArea.Type.PlayerBase))
@@ -1767,7 +1794,7 @@ namespace Seasons
             if (!__instance.TryGetComponent(out Destructible destructible) || destructible.GetDestructibleType() != DestructibleType.Tree)
                 return;
 
-            if (IsIgnoredPosition(__instance.transform.position))
+            if (IsProtectedPosition(__instance.transform.position))
                 return;
 
             TreeLog_Destroy_TreeWoodDrop.ApplyWoodMultiplier(___m_dropWhenDestroyed);
@@ -1795,7 +1822,7 @@ namespace Seasons
             if (seasonState.GetMeatFromAnimalsMultiplier() == 1.0f)
                 return;
 
-            if (IsIgnoredPosition(__instance.transform.position))
+            if (IsProtectedPosition(__instance.transform.position))
                 return;
 
             ApplyMeatMultiplier(___m_drops);

@@ -13,22 +13,32 @@ namespace Seasons
 
         public static void AssignValueSafe<T>(this CustomSyncedValue<T> syncedValue, T value)
         {
-            AddToQueue(AssignAfterServerUpdate(syncedValue, value));
+            AddToQueue(AssignAfterServerUpdate(syncedValue, value, assignIfChanged: false));
         }
 
         public static void AssignValueSafe<T>(this CustomSyncedValue<T> syncedValue, Func<T> function)
         {
-            AddToQueue(AssignAfterServerUpdate(syncedValue, function));
+            AddToQueue(AssignAfterServerUpdate(syncedValue, function, assignIfChanged: false));
         }
 
-        private static IEnumerator AssignAfterServerUpdate<T>(CustomSyncedValue<T> syncedValue, Func<T> function)
+        public static void AssignValueIfChanged<T>(this CustomSyncedValue<T> syncedValue, T value)
         {
-            yield return AssignAfterServerUpdate(syncedValue, function());
+            AddToQueue(AssignAfterServerUpdate(syncedValue, value, assignIfChanged: true));
         }
 
-        private static IEnumerator AssignAfterServerUpdate<T>(CustomSyncedValue<T> syncedValue, T value)
+        public static void AssignValueIfChanged<T>(this CustomSyncedValue<T> syncedValue, Func<T> function)
         {
-            if (syncedValue.Value.Equals(value))
+            AddToQueue(AssignAfterServerUpdate(syncedValue, function, assignIfChanged: true));
+        }
+
+        private static IEnumerator AssignAfterServerUpdate<T>(CustomSyncedValue<T> syncedValue, Func<T> function, bool assignIfChanged)
+        {
+            yield return AssignAfterServerUpdate(syncedValue, function(), assignIfChanged);
+        }
+
+        private static IEnumerator AssignAfterServerUpdate<T>(CustomSyncedValue<T> syncedValue, T value, bool assignIfChanged)
+        {
+            if (assignIfChanged && syncedValue.Value.Equals(value))
                 yield break;
 
             yield return waitForServerUpdate;

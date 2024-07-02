@@ -2234,11 +2234,11 @@ namespace Seasons
             ReadConfigFile(eargs.Name, eargs.FullPath);
             if (eargs is RenamedEventArgs && GetSyncedValueToAssign((eargs as RenamedEventArgs).OldName, out CustomSyncedValue<string> syncedValue, out string logMessage))
             {
-                syncedValue.AssignValueSafe("");
+                syncedValue.AssignValueIfChanged("");
                 LogInfo(logMessage);
             }
 
-            cacheRevision.AssignValueSafe(GetRevision);
+            cacheRevision.AssignValueIfChanged(GetRevision);
         }
 
         private static void ReadConfigFile(string filename, string fullname)
@@ -2258,7 +2258,7 @@ namespace Seasons
                 logMessage += " defaults";
             }
 
-            syncedValue.AssignValueSafe(content);
+            syncedValue.AssignValueIfChanged(content);
 
             LogInfo(logMessage);
         }

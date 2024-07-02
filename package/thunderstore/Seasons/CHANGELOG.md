@@ -1,3 +1,7 @@
+# 1.2.6
+* season day sync fix
+* shield generator works as green dome negating seasonal effects
+
 # 1.2.5
 * more stable and responsive synchronization of files/values
 * fix for season change visual day 1 issue

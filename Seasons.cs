@@ -20,7 +20,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.2.5";
+        public const string pluginVersion = "1.2.6";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -168,6 +168,7 @@ namespace Seasons
         private static HashSet<string> _MeatToControlDrop = new HashSet<string>();
         private static HashSet<string> _GrassToControlSize = new HashSet<string>();
 
+        private static int _instanceChangeIDShieldGeneratorCache;
         private static readonly Dictionary<Vector3, bool> _cachedIgnoredPositions = new Dictionary<Vector3, bool>();
 
         private static readonly Dictionary<string, GameObject> _treeRegrowthPrefabs = new Dictionary<string, GameObject>();
@@ -640,7 +641,15 @@ namespace Seasons
             _cachedIgnoredPositions[position] = ignored;
             return ignored;
         }
-    
+
+        public static bool IsProtectedPosition(Vector3 position)
+        {
+            if (IsIgnoredPosition(position))
+                return true;
+
+            return ShieldGenerator.IsInsideShieldCached(position, ref _instanceChangeIDShieldGeneratorCache);
+        }
+
         public static void StartCacheRebuild()
         {
             if (SeasonState.IsActive)

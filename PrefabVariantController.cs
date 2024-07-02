@@ -1,5 +1,6 @@
 ﻿using HarmonyLib;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -155,7 +156,7 @@ namespace Seasons
                 if (m_nview != null && !m_nview.IsValid())
                     return;
 
-                if (m_wnt != null && m_covered)
+                if (m_wnt != null && m_covered || m_gameObject.layer != 9 && IsProtectedPosition(m_gameObject.transform.position))
                 {
                     RevertState();
                     return;
@@ -374,6 +375,9 @@ namespace Seasons
                 if (m_wnt == null)
                     return false;
 
+                if (IsProtectedPosition(m_gameObject.transform.position))
+                    return true;
+
                 if (m_prefabName == "vines")
                     return false;
 
@@ -525,17 +529,41 @@ namespace Seasons
             if (instance == null)
                 return;
 
+            UpdatePrefabColorsFromList(instance.m_prefabVariants);
+        }
+
+        public static void UpdatePrefabColorsAroundPosition(Vector3 position, float radius, float delay = 0f)
+        {
+            if (instance == null)
+                return;
+
+            if (delay == 0f)
+                UpdatePrefabColorsFromList(instance.m_prefabVariants.Where(kvp => kvp.Key == null || Vector3.Distance(kvp.Key.transform.position, position) < radius));
+            else
+                instance.StartCoroutine(UpdatePrefabColorsAroundPositionDelayed(position, radius, delay));
+        }
+
+        private static void UpdatePrefabColorsFromList(IEnumerable<KeyValuePair<GameObject, PrefabVariant>> variants)
+        {
+            if (instance == null)
+                return;
+
             s_tempObjects.Clear();
-            foreach (KeyValuePair<GameObject, PrefabVariant> controller in instance.m_prefabVariants)
+            foreach (KeyValuePair<GameObject, PrefabVariant> controller in variants)
                 if (controller.Key == null)
                     s_tempObjects.Add(controller.Key);
                 else
                     controller.Value.UpdateColors();
 
             foreach (GameObject item in s_tempObjects)
-            {
                 instance.m_prefabVariants.Remove(item);
-            }
+        }
+
+        public static IEnumerator UpdatePrefabColorsAroundPositionDelayed(Vector3 position, float radius, float delay = 0f)
+        {
+            yield return new WaitForSeconds(delay);
+
+            UpdatePrefabColorsFromList(instance.m_prefabVariants.Where(kvp => kvp.Key == null || Vector3.Distance(kvp.Key.transform.position, position) < radius));
         }
 
         public static int GetVariant(double factor)
@@ -738,4 +766,35 @@ namespace Seasons
                 PrefabVariantController.instance?.AddControllerTo(obj);
         }
     }
+
+    [HarmonyPatch(typeof(ShieldDomeImageEffect), nameof(ShieldDomeImageEffect.SetShieldData))]
+    public static class ShieldDomeImageEffect_SetShieldData_ProtectedStateChange
+    {
+        public static readonly Dictionary<ShieldGenerator, int> shieldRadius = new Dictionary<ShieldGenerator, int>();
+
+        [HarmonyPriority(Priority.First)]
+        private static void Prefix(ShieldGenerator shield, Vector3 position, float radius)
+        {
+            if (!shieldRadius.ContainsKey(shield) || shieldRadius[shield] != (int)radius)
+            {
+                shieldRadius[shield] = (int)radius;
+                UpdatePrefabColorsAroundPosition(position, shield.m_maxShieldRadius);
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(ShieldDomeImageEffect), nameof(ShieldDomeImageEffect.RemoveShield))]
+    public static class ShieldDomeImageEffect_RemoveShield_ProtectedStateChange
+    {
+        [HarmonyPriority(Priority.First)]
+        private static void Prefix(ShieldGenerator shield)
+        {
+            if (ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.shieldRadius.ContainsKey(shield))
+            {
+                ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.shieldRadius.Remove(shield);
+                UpdatePrefabColorsAroundPosition(shield.transform.position, shield.m_maxShieldRadius, delay: 5f);
+            }
+        }
+    }
+ 
 }

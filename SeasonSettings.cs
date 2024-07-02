@@ -1862,12 +1862,12 @@ namespace Seasons
         private static void ReadInitialConfigs()
         {
             foreach (FileInfo file in new DirectoryInfo(configDirectory).GetFiles("*.json", SearchOption.TopDirectoryOnly))
-                ReadConfigFile(file.Name, file.FullName);
+                ReadConfigFile(file.Name, file.FullName, initial: true);
 
-            ReadSeasonsSettings();
+            ReadSeasonsSettings(initial: true);
         }
 
-        private static void ReadSeasonsSettings()
+        private static void ReadSeasonsSettings(bool initial = false)
         {
             Dictionary<int, string> localConfig = new Dictionary<int, string>();
 
@@ -1882,7 +1882,10 @@ namespace Seasons
                     LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
                 }
 
-            seasonsSettingsJSON.AssignValueSafe(localConfig);
+            if (initial)
+                seasonsSettingsJSON.AssignValueSafe(localConfig);
+            else
+                seasonsSettingsJSON.AssignValueIfChanged(localConfig);
         }
 
         private static void ReadConfigs(object sender, FileSystemEventArgs eargs)
@@ -1892,7 +1895,7 @@ namespace Seasons
             {
                 if (GetSyncedValueToAssign((eargs as RenamedEventArgs).OldName, out CustomSyncedValue<string> syncedValue, out string logMessage))
                 {
-                    syncedValue.AssignValueSafe("");
+                    syncedValue.AssignValueIfChanged("");
                     LogInfo(logMessage + " defaults");
                 }
                 else if (TryGetSeasonByFilename(eargs.Name, out _))
@@ -1902,7 +1905,7 @@ namespace Seasons
             }
         }
 
-        private static void ReadConfigFile(string filename, string fullname)
+        private static void ReadConfigFile(string filename, string fullname, bool initial = false)
         {
             if (!GetSyncedValueToAssign(filename, out CustomSyncedValue<string> syncedValue, out string logMessage))
             {
@@ -1923,7 +1926,10 @@ namespace Seasons
                 logMessage += " defaults";
             }
 
-            syncedValue.AssignValueSafe(content);
+            if (initial)
+                syncedValue.AssignValueSafe(content);
+            else
+                syncedValue.AssignValueIfChanged(content);
 
             LogInfo(logMessage);
         }
@@ -2103,7 +2109,7 @@ namespace Seasons
         private static void Postfix()
         {
             SeasonSettings.SetupConfigWatcher(enabled: false);
+            SeasonState.ResetCurrentSeasonDay();
         }
     }
-    
 }
