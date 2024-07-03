@@ -2233,7 +2233,7 @@ namespace Seasons
     {
         private static void Postfix(string text)
         {
-            if (ZNet.instance.IsServer() && text.IndexOf("skiptime") > -1)
+            if (text.IndexOf("skiptime") > -1 && SeasonState.IsActive && ZNet.instance && ZNet.instance.IsServer())
             {
                 LogInfo("Force update season state after skiptime");
                 SeasonState.CheckSeasonChange();

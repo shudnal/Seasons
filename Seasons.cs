@@ -20,7 +20,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.2.7";
+        public const string pluginVersion = "1.2.8";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -65,6 +65,7 @@ namespace Seasons
         public static ConfigEntry<string> woodListToControlDrop;
         public static ConfigEntry<string> meatListToControlDrop;
         public static ConfigEntry<bool> shieldGeneratorProtection;
+        public static ConfigEntry<bool> shieldGeneratorOnlyWinter;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -306,6 +307,7 @@ namespace Seasons
             woodListToControlDrop = config("Season", "Wood to control drop", defaultValue: "Wood, FineWood, RoundLog, ElderBark, YggdrasilWood", "Wood item names to control drop from trees");
             meatListToControlDrop = config("Season", "Meat to control drop", defaultValue: "RawMeat, DeerMeat, NeckTail, WolfMeat, LoxMeat, ChickenMeat, HareMeat, SerpentMeat", "Meat item names to control drop from characters");
             shieldGeneratorProtection = config("Season", "Shield generator protects from weather", defaultValue: true, "If enabled - objects inside shield generator dome will be protected from seasonal effects both positive and negative.");
+            shieldGeneratorOnlyWinter = config("Season", "Shield generator protects from Winter only", defaultValue: true, "If enabled - objects inside shield generator dome will be protected from Winter only. If disabled - protection will work through all seasons.");
 
             seasonalStatsOutdoorsOnly.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
             cropsToSurviveInWinter.SettingChanged += (sender, args) => FillListsToControl();
@@ -649,7 +651,9 @@ namespace Seasons
             if (IsIgnoredPosition(position))
                 return true;
 
-            return shieldGeneratorProtection.Value && ShieldGenerator.IsInsideShieldCached(position, ref _instanceChangeIDShieldGeneratorCache);
+            return shieldGeneratorProtection.Value 
+                && (!shieldGeneratorOnlyWinter.Value || seasonState.GetCurrentSeason() == Season.Winter) 
+                && ShieldGenerator.IsInsideShieldCached(position, ref _instanceChangeIDShieldGeneratorCache);
         }
 
         public static void StartCacheRebuild()

@@ -1,3 +1,7 @@
+# 1.2.8
+* shield generator protects from Winter only by default
+* fixed terminal issue for server_devcommands "Auto exec" feature
+
 # 1.2.7
 * shield generator as green house is disableable feature now
 
@@ -29,6 +33,9 @@
 * seasonal clutter control
 * custom textures support
 
+<details>
+<summary><b>Changelog History</b> (<i>click to expand</i>)</summary>
+
 # 1.1.13
 * environment related console spam on season change fixed
 * Plains-Swamp border temporary fix (could be disabled)
@@ -44,9 +51,6 @@
 * Ashlands
 * grass control extended and moved to distinct JSON file
 * tree regrowth chance
-
-<details>
-<summary><b>Changelog History</b> (<i>click to expand</i>)</summary>
 
 # 1.1.9
 * patch 0.217.46
