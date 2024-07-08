@@ -44,6 +44,7 @@ namespace Seasons
                 FillListsToControl();
                 InvalidatePositionsCache();
                 CustomTextures.SetupConfigWatcher();
+                CustomMusic.SetupConfigWatcher();
             }
             else
                 LogInfo("Missing textures variants");

@@ -280,7 +280,7 @@ namespace Seasons
                         }
                     case "m_ambientLoop":
                         {
-                            env.m_ambientLoop = usedAudioClips.GetValueSafe(m_ambientLoop);
+                            env.m_ambientLoop = usedAudioClips.GetValueSafe(m_ambientLoop) ?? CustomMusic.audioClips.GetValueSafe(m_ambientLoop);
                             continue;
                         }
                 }

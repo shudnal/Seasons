@@ -310,6 +310,8 @@ namespace Seasons
                     EnvMan.instance.m_environments.Remove(env2);
             }
 
+            CustomMusic.CheckMusicList();
+
             if (!String.IsNullOrEmpty(customEnvironmentsJSON.Value))
             {
                 try
