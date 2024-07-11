@@ -20,7 +20,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.2.9";
+        public const string pluginVersion = "1.3.0";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -139,7 +139,7 @@ namespace Seasons
 
         public static readonly CustomSyncedValue<int> currentSeasonDay = new CustomSyncedValue<int>(configSync, "Current season and day", 1, Priority.First);
 
-        public static readonly CustomSyncedValue<string> customEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom environments JSON", "", Priority.Normal);
+        public static readonly CustomSyncedValue<string> customEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom environments JSON", "", Priority.HigherThanNormal);
         public static readonly CustomSyncedValue<string> customBiomeEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom biome environments JSON", "", Priority.Normal);
         public static readonly CustomSyncedValue<string> customEventsJSON = new CustomSyncedValue<string>(configSync, "Custom events JSON", "", Priority.Normal);
         public static readonly CustomSyncedValue<string> customLightingsJSON = new CustomSyncedValue<string>(configSync, "Custom lightings JSON", "", Priority.Normal);

@@ -21,8 +21,8 @@ namespace Seasons
         private bool m_isUsingIngameDays = true;
 
         public static readonly Dictionary<Season, SeasonSettings> seasonsSettings = new Dictionary<Season, SeasonSettings>();
-        public static SeasonBiomeEnvironments seasonBiomeEnvironments = new SeasonBiomeEnvironments(loadDefaults: true);
         public static List<SeasonEnvironment> seasonEnvironments = SeasonEnvironment.GetDefaultCustomEnvironments();
+        public static SeasonBiomeEnvironments seasonBiomeEnvironments = new SeasonBiomeEnvironments(loadDefaults: true);
         public static SeasonRandomEvents seasonRandomEvents = new SeasonRandomEvents(loadDefaults: true);
         public static SeasonLightings seasonLightings = new SeasonLightings(loadDefaults: true);
         public static SeasonStats seasonStats = new SeasonStats(loadDefaults: true);
@@ -50,6 +50,8 @@ namespace Seasons
             if (!initialize)
                 return;
 
+            biomesDefault.Clear();
+
             foreach (Season season in Enum.GetValues(typeof(Season)))
                 if (!seasonsSettings.ContainsKey(season))
                     seasonsSettings.Add(season, new SeasonSettings(season));
@@ -60,7 +62,7 @@ namespace Seasons
             LogInfo($"Saving default seasons settings");
             foreach (KeyValuePair<Season, SeasonSettings> seasonSettings in seasonsSettings)
             {
-                string filename = Path.Combine(folder, $"{seasonSettings.Key}.json");
+                string filename = Path.Combine(folder, GetSeasonalFileName(seasonSettings.Key));
                 seasonSettings.Value.SaveToJSON(filename);
             }
 
@@ -76,6 +78,8 @@ namespace Seasons
 
             UpdateUsingOfIngameDays();
         }
+
+        public static string GetSeasonalFileName(Season season) => $"{season}.json";
 
         public static bool IsActive => seasonState != null && EnvMan.instance != null;
 

@@ -1831,7 +1831,7 @@ namespace Seasons
             season = Season.Spring;
 
             foreach (Season season1 in Enum.GetValues(typeof(Season)))
-                if (filename.Equals($"{season1}.json", StringComparison.OrdinalIgnoreCase))
+                if (filename.Equals(SeasonState.GetSeasonalFileName(season1), StringComparison.OrdinalIgnoreCase))
                 {
                     season = season1;
                     return true;
@@ -1861,8 +1861,23 @@ namespace Seasons
 
         private static void ReadInitialConfigs()
         {
-            foreach (FileInfo file in new DirectoryInfo(configDirectory).GetFiles("*.json", SearchOption.TopDirectoryOnly))
-                ReadConfigFile(file.Name, file.FullName, initial: true);
+            // Order matters as it defines settings apply order
+            foreach (string filename in new List<string>()
+            {
+                customEnvironmentsFileName,
+                customBiomeEnvironmentsFileName,
+                customEventsFileName,
+                customLightingsFileName,
+                customStatsFileName,
+                customTraderItemsFileName,
+                customWorldSettingsFileName,
+                customGrassSettingsFileName,
+                customClutterSettingsFileName,
+                customBiomesSettingsFileName
+            })
+            {
+                ReadConfigFile(filename, Path.Combine(configDirectory, filename), initial: true);
+            };
 
             ReadSeasonsSettings(initial: true);
         }
@@ -1872,15 +1887,19 @@ namespace Seasons
             Dictionary<int, string> localConfig = new Dictionary<int, string>();
 
             foreach (FileInfo file in new DirectoryInfo(configDirectory).GetFiles("*.json", SearchOption.TopDirectoryOnly))
-            if (TryGetSeasonByFilename(file.Name, out Season season))
-                try
+            {
+                if (TryGetSeasonByFilename(file.Name, out Season season))
                 {
-                    localConfig.Add((int)season, File.ReadAllText(file.FullName));
+                    try
+                    {
+                        localConfig.Add((int)season, File.ReadAllText(file.FullName));
+                    }
+                    catch (Exception e)
+                    {
+                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
+                    }
                 }
-                catch (Exception e)
-                {
-                    LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
-                }
+            }
 
             if (initial)
                 seasonsSettingsJSON.AssignValueSafe(localConfig);
@@ -1921,7 +1940,9 @@ namespace Seasons
             }
             catch (Exception e)
             {
-                LogWarning($"Error reading file ({fullname})! Error: {e.Message}");
+                if (!initial) 
+                    LogWarning($"Error reading file ({fullname})! Error: {e.Message}");
+                
                 content = "";
                 logMessage += " defaults";
             }

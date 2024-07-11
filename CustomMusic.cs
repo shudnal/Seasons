@@ -19,7 +19,7 @@ namespace Seasons
 
             public float m_fadeInTime = 3f;
 
-            public bool m_alwaysFadeout;
+            public bool m_alwaysFadeout = false;
 
             public bool m_loop = true;
 

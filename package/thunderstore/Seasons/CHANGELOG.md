@@ -1,3 +1,7 @@
+# 1.3.0
+* custom music support for use in seasonal environments
+* environments sync fix
+
 # 1.2.8
 * shield generator protects from Winter only by default
 * fixed terminal issue for server_devcommands "Auto exec" feature
