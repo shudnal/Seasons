@@ -30,14 +30,10 @@ Custom seasonal settings are done by creating/changing JSON files.
 
 The mod creates a directory "shudnal.Seasons" at bepinex/config folder. There is the storage of cache, default and custom settings.
 
-This folder will henceforth be called "config folder".
-
 ### Default settings
 On every launch the mod is generating "Default settings" folder at config folder. There is storage of files with mod's default values to be applied.
 
 Mod creates **\BepInEx\config\shudnal.Seasons\Default settings** directory on every world load. So you need to launch a world at least once after mod was installed.
-
-This folder will henceforth be called "default settings folder".
 
 ## Texture recoloring
 The mods comes without built-in textures and generate them on the first launch.
@@ -137,6 +133,40 @@ File "Custom environments.json" contains default custom environments being added
 Properties in that file are similar to Environment while only changed one are presented.
 
 There are seasonal variants of vanilla weather mostly.
+
+### Custom music
+
+Place music files into "**...\BepInEx\config\shudnal.Seasons\Custom music**" folder.
+
+Any media track that Unity Engine can read will be loaded into music and will be available to use in custom environments.
+
+For example track "runichills.mp3" will be loaded as "runichills" music track.
+
+To set custom music track settings create file with **.json** extension and the same name as music track.
+
+For example track "runichills.mp3" can have "runichills.json" settings file otherwise default settings is used.
+
+Paste code in *.json file you created (this is default settings)
+```
+{
+  "m_enabled": true,
+  "m_volume": 1.0,
+  "m_fadeInTime": 3.0,
+  "m_alwaysFadeout": false,
+  "m_loop": true,
+  "m_resume": true,
+  "m_ambientMusic": true
+}
+```
+* m_enabled (bool) - music is enabled
+* m_volume (float) - volume level of that track
+* m_fadeInTime (float) - time in seconds where track volume will be gradually increased on track start
+* m_alwaysFadeout (bool) - track will always have fade out effect no matter if it crossed with another track or not
+* m_loop (bool) - track will be played continuously
+* m_resume (bool) - resume track playback from the moment it stopped previously
+* m_ambientMusic (bool) - if set to true then track will be played on loop if game setting "Continuous music" is enabled
+
+Both music tracks and json settings file should be shared with all clients via modpack or manually. Otherwise the music just will not be played.
 
 ### Custom biome environments
 

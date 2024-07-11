@@ -3,7 +3,7 @@
 
 Four customizable seasons.
 
-## You should not feel any impact on fps.
+## If you feel impact on fps.
 
 If you do then probably you GPU can do better. Try setting launch options
 `-gfx-enable-gfx-jobs -gfx-enable-native-gfx-jobs`
@@ -11,6 +11,8 @@ in Valheim general settings at Steam.
 
 It unlocks more GPU power available to the game which could help.
 It's more handy than editing **boot.config** file. It won't harm at least.
+
+If you use RenderLimits mod and have "Distance area" setting more than 10 it may cause noticable fps loss at tree heavy areas. It couldn't be optimized further using only tools available for mods.
 
 ## What can be customized in different seasons
 * environments. Add new weathers, replace currents weathers properties, remove weather.
@@ -26,44 +28,33 @@ The mod have general settings done by usual config through bepinex.
 ### Custom settings
 Custom seasonal settings are done by creating/changing JSON files.
 
-The mod creates a directory "shudnal.Seasons" at bepinex/config folder. There is the storage of cache, default and custom settings. 
-
-This folder will henceforth be called "config folder".
+The mod creates a directory "shudnal.Seasons" at bepinex/config folder. There is the storage of cache, default and custom settings.
 
 ### Default settings
 On every launch the mod is generating "Default settings" folder at config folder. There is storage of files with mod's default values to be applied.
 
-This folder will henceforth be called "default settings folder".
+Mod creates **\BepInEx\config\shudnal.Seasons\Default settings** directory on every world load. So you need to launch a world at least once after mod was installed.
 
 ## Texture recoloring
-The textures and rules for applying them to objects are stored at "Cache" folder in config folder.
-The seasonal colors for vegetation and grass can be set in bepinex config.
+The mods comes without built-in textures and generate them on the first launch.
+You can change cache settings as you pleased if you don't like the defaults.
+Cache settings will be synced from the server on log in.
 
-The mods comes without built-in textures but generate ones on the first launch. 
-It means you can change season colors as you pleased if you don't like the defaults. 
+The textures and rules for applying them to objects are stored at \BepInEx\cache\shudnal.Seasons folder.
+By default cache is saved as nonhumanreadable binary file for further faster loads. It can also be saved as JSON and PNG files.
 
-It also means you can't directly set external custom textures to objects you want. Yet you can replace generated textures with your own ones. That way the consistensy of game's look is your responsibility.
+The rules for cache forming are stored at "Cache settings" folder in config folder.
+The list of the objects comes from prefab, clutter and locations list after ZoneSystem.Start. Due to procedural generation of objects textures if the game have custom assets loaded at that moment they will be tried to recolored the same way as the default game's assets.
 
-If you have changed the seasonal colors in mod's config you should delete "Cache" folder from the config folder and restart the game completely to generate new textures on the next launch.
+You can replace generated textures with your own ones.
 
-Currently there is no customizable settings what object should be recolored because the game is not so consistent that way. Basically the idea is to get greenish colors in used materials and merge them with seasonal colors making color variants for every object. List of recolored objects:
-* all trees
-* all rocks and other ground objects like logs
-* terrain
-* building pieces: vines, roofs
-* creatures with green or brown colors: loxen, abominations, draugrs, greydwarves
+The main idea of the mod is only to change vanilla colors without changing other parts of object appearance.
 
-By default textures and cache settings are saved at nonhumanreadable binary file for further faster loads. They also can be saved at JSON and PNG files for you to make changes.
-
-The list of the objects comes from prefab, clutter and locations list after ZoneSystem.Start. Pls keep in mind if the game have custom assets loaded at that moment they will be tried to recolored the same way as the default game's assets. If you experience issues you can set cache format to JSON and delete unneeded assets from "cache.json" file.
-
-The main idea of the mod is only to change vanilla colors without changing other parts of object appearance. Due to procedural generation of objects textures I can fully support only the vanilla objects.
-
-Some texture generation setting could be exposed to setting but not at that moment. Maybe later maybe not.
+[Recoloring settings](https://valheim.thunderstore.io/package/shudnal/Seasons/wiki/1483-recoloring-settings/)
 
 ## Seasonal settings
 Basic seasonal settings are located in JSON files: Spring.json, Summer.json, Fall.json, Winter.json.
-Files with default settings are located in "Default settings" folder.
+Files with default settings are located in "Default settings" folder. Mod creates **\BepInEx\config\shudnal.Seasons\Default settings** directory on every world load. So you need to launch a world at least once after mod was installed.
 
 To start making custom changes you should copy the corresponding file to config folder "shudnal.Seasons". When you change the file there should be "[Info   :   Seasons] Settings updated: Season_Name" line in the bepinex console and LogOutput.log file.
 
@@ -88,7 +79,8 @@ It means you may left only changed values at custom file to make it more meaning
 * restedBuffDurationMultiplier (float) - multiplier of rested buff duration
 * livestockProcreationMultiplier (float) - complex multiplier of creatures breeding speed (affects pregnancy chance, speed, distance to partner, distance to other creatures)
 * overheatIn2WarmClothes (bool) - if you wear two armor pieces that have ResistantVSFrost modifiers you will have Warm status effect reducing stamina and eitr regen by 20% (change your cape to less warm one if you need)
-* m_meatFromAnimalsMultiplier (float) - multiplier of the maximum count of possible meet drops from boars, deers and other living creatures except bugs
+* meatFromAnimalsMultiplier (float) - multiplier of the maximum count of possible meet drops from boars, deers and other living creatures except bugs
+* treesRegrowthChance (float) - chance to left sapling when destroying tree stumps. If tree has no sapling it won't be regrown. Supports all custom saplings if they configured right.
 
 ### Some explanations and ideas behind default settings
 * default season length of 10 days should take enough time both to struggle and make profit of season effects
@@ -141,6 +133,40 @@ File "Custom environments.json" contains default custom environments being added
 Properties in that file are similar to Environment while only changed one are presented.
 
 There are seasonal variants of vanilla weather mostly.
+
+### Custom music
+
+Place music files into "**...\BepInEx\config\shudnal.Seasons\Custom music**" folder.
+
+Any media track that Unity Engine can read will be loaded into music and will be available to use in custom environments.
+
+For example track "runichills.mp3" will be loaded as "runichills" music track.
+
+To set custom music track settings create file with **.json** extension and the same name as music track.
+
+For example track "runichills.mp3" can have "runichills.json" settings file otherwise default settings is used.
+
+Paste code in *.json file you created (this is default settings)
+```
+{
+  "m_enabled": true,
+  "m_volume": 1.0,
+  "m_fadeInTime": 3.0,
+  "m_alwaysFadeout": false,
+  "m_loop": true,
+  "m_resume": true,
+  "m_ambientMusic": true
+}
+```
+* m_enabled (bool) - music is enabled
+* m_volume (float) - volume level of that track
+* m_fadeInTime (float) - time in seconds where track volume will be gradually increased on track start
+* m_alwaysFadeout (bool) - track will always have fade out effect no matter if it crossed with another track or not
+* m_loop (bool) - track will be played continuously
+* m_resume (bool) - resume track playback from the moment it stopped previously
+* m_ambientMusic (bool) - if set to true then track will be played on loop if game setting "Continuous music" is enabled
+
+Both music tracks and json settings file should be shared with all clients via modpack or manually. Otherwise the music just will not be played.
 
 ### Custom biome environments
 
@@ -300,6 +326,150 @@ The structure of the trader item reflects adapted ingame tradeable item descript
 * Haldor has some potentially unavailable items in winter
 * Haldor has some seeds in winter because he knows you will need some in spring
 
+## Grass control
+
+If you ever used grass tweaks mods you should be familiar with that settings.
+
+You can set default grass settings in "Season - Grass" section in general mod config.
+* Patch size (float) - size of terrain square populated with grass (sparseness or how wide a single grass "node" is across the ground). Increase to make grass more sparse and decrease to make grass more tight
+* Amount scale (float) - grass density or how many grass patches created around you at once
+* List of affected grass prefabs - string, comma separated - in case you have custom grass prefabs you should add it to that list
+
+Settings change will be applied on the fly to see effect immediately.
+
+File "Custom grass settings.json" contains distribution of grass settings between days and seasons.
+
+Grass settings depends on day and grass settings will be interpolated between two settings. 
+
+For example if scaleMax is set 1.1 in day 1 and 1.3 in day 5 it means intermediate values will be 
+* day 1 - 1.1
+* day 2 - 1.15
+* day 3 - 1.2
+* day 4 - 1.25
+* day 5 - 1.3
+
+The same logic works for other values. If value is not set it takes default value set in general settings.
+
+### Grass settings
+* m_day (int)
+* m_grassPatchSize (float)
+* m_amountScale (float)
+* m_scaleMin (float) - multiplier of minimum size of grass
+* m_scaleMax (float) - multiplier of maximum size of grass. If set to 0 the grass will be completely disabled.
+
+### Some explanations and ideas behind default settings
+* main goal was completely disabled grass in winter after set day. That should help greatly to performance in snow storms.
+* grass size will be gradually reduced to zero in winter to make it looks like more and more snow
+* grass will return in spring gradually
+* in spring grass size will be decreased a little in comparison to default grass state
+* in summer grass size will be increased but it will be a bit sparser to not hit performance
+* in fall grass size will be a bit increase and gradually decreased and made sparser on the last day
+
+## Seasonal clutter
+
+There is 3 new clutter prefabs:
+* Meadows flowers (red and blue)
+* Black forest flowers (pink)
+* Swamp flowers (white)
+
+By default that prefabs are only enabled in Spring adding some heavily needed flavor.
+
+File "Custom clutter settings.json" contains seasonal clutter distribution settings between seasons.
+
+You can add your own clutter using other mods and control its seasonal state through that file.
+
+### Seasonal clutter settings
+* clutterName - string - clutter name as it set in ClutterSystem.m_clutter
+* spring - bool - should it be enabled in spring
+* summer - bool - should it be enabled in summer
+* fall - bool - should it be enabled in fall
+* winter - bool - should it be enabled in winter
+
+## Custom textures
+
+Custom textures could be placed in **\BepInEx\config\shudnal.Seasons\Custom textures** folder.
+
+Mod comes with some predefined default textures. It will be placed in **\BepInEx\config\shudnal.Seasons\Custom textures\Defaults** folder. Default textures will be overwritten after mod version change.
+
+If you want to make changes to default textures then copy needed folder into **\BepInEx\config\shudnal.Seasons\Custom textures**.
+
+Folders inside of **\BepInEx\config\shudnal.Seasons\Custom textures** folder should be named as texture name. If different objects use the same texture it will be replaced for all of them.
+
+To find what texture name is you should set general config option "Test - Cache format" to "SaveBothLoadBinary" and rebuild the cache (by running console command or just deleting old one in **\BepInEx\cache\shudnal.Seasons**).
+
+After that new cache folder will form with files **cache.json** and **cache.bin** and **textures** folder. Cache.json consists of all objects and their materials and color that will be replaced. 
+
+In that file you can find prefab and texture number which corresponds with folder in "texture\" directory. 
+
+In that texture directory you can find file with name ending on ".orig.png". That is the name of texture you want to replace.
+
+Texture numbers could be generated differently on every cache build.
+
+Files inside of texture folder corresponds with season and variant. Naming convention is Season_Number.png. Your textures should be named accordingly.
+
+### Example
+
+You want to replace winter texture of Beech.
+
+Find your current cache revision folder. It's located in **\BepInEx\cache\shudnal.Seasons** folder and named as cache revision number.
+To get your current cache revision number you can enable logging and look for it in log file. Or simply delete every other folder and rebuild cache. 
+
+Most recent folder will be your current cache folder. In that example it's 2054891382. Go inside.
+
+Open **cache.json** file and look for beech prefab name. You can find its name on [Jotunn's prefab list](https://valheim-modding.github.io/Jotunn/data/prefabs/prefab-list.html) or using [RuntimeUnityEditor](https://github.com/ManlyMarco/RuntimeUnityEditor).
+
+In that case there are three beech prefabs in **cache.json**.
+* Beech_Sapling - small plantable version of beech
+* Beech_small1 - small variant
+* Beech_small2 - small variant
+* Beech1 - actual big meadows tree and our current target to change texture
+
+Beech_Sapling, Beech_small1 and Beech_small2 shares the same texture with number *112892* (your number might be different).
+
+Beech1 have material **beech_leaf** and its **_MainTex** (main texture) with number *171264*.
+There are also bark material and _MossTex. It should be ignored.
+
+So we take number *171264* and go into **\BepInEx\cache\shudnal.Seasons\2054891382\textures\171264** folder.
+There are set of seasonal files, **properties.json** file and **beech_leaf.orig.png** file. Last file is original texture used in vanilla game. Original texture file name convention is *{Texture name}.orig.png* so our texture name will be **beech_leaf**.
+
+Now we create new folder in **\BepInEx\config\shudnal.Seasons\Custom textures** and name it **beech_leaf**.
+
+For that example we take file Winter_1.png from **\BepInEx\cache\shudnal.Seasons\2054891382\textures\171264** folder to **\BepInEx\config\shudnal.Seasons\Custom textures\beech_leaf**.
+
+You can now edit that file as you wish. It will be loaded as Winter variant number 1 for Beech1 prefab in game.
+
+Any changes done to that file will be applied on the fly.
+
+Only textures appeared in **cache.json** file could be replaced.
+
+## Custom biome settings
+
+File "Custom biome settings.json" contains settings for biome terrain color seasonal override and winter colors for minimap.
+
+Changes made to terrain colors requires change of current season to get effect. You can simply override and change season in general config section "Season - Override".
+
+Changes made to winter minimap colors requires world restart.
+
+### Seasonal ground colors
+* biome - string -  biome name, case insensitive, custom biomes supported (you can set biome name if it added properly like in [Expand World Data](https://thunderstore.io/c/valheim/p/JereKuusela/Expand_World_Data/) or you can set biome numeric ID)
+* spring - string - biome terrain that should be used for that biome in Spring
+* summer - string - biome terrain that should be used for that biome in Summer
+* fall - string - biome terrain that should be used for that biome in Fall
+* winter - string - biome terrain that should be used for that biome in Winter
+
+### Winter colors
+
+Being set as pairs "Biome": "Color Hex Code".
+
+Vanilla winter colors made by interpolating original biome color to "#FAFAFF" preserving original alpha channel. #FAFAFF also called Ghost White and it's not just white color but has a bit snowy tint.
+
+### Some explanations and ideas behind default settings
+* Ashlands, Mountain and Deep north do not change its terrain.
+* All controlled biomes become mountain in Winter to get snow effect on the ground
+* Meadows have Plains color in Fall to get yellowish ground color
+* Black forest has Swamp color in Fall to get effect of wet dirt ground
+* Plains has Meadows color in Spring to get effect of blooming surroundings
+
 ## General settings
 * minimap will be recolored using the seasonal colors setting
 * seasonal items will be enabled in the corresponding season
@@ -312,7 +482,8 @@ The structure of the trader item reflects adapted ingame tradeable item descript
 * you can set localization strings for season names and tooltips
 * due to seasonal change of honey production and plants growth there are settings to show estimates of plants and beehive production (like in BetterUI)
 * seasons can be set changeable only when sleeping
-* water will freeze after set amount of days in winter (day is customizable)
+* ice floes will spawn in ocean in set period of days in winter
+* water will freeze in set period of days in winter
 * ships can be pushed out of water when the surface is frozen
 
 ## Custom world settings for realtime seasons calculations
@@ -351,12 +522,13 @@ Default seasonal keys:
 * season_summer
 * season_winter
 
+## Installation (manual)
+extract Seasons folder to your BepInEx\Plugins\ folder
+
 ## Configurating
-The best way to handle configs is configuration manager. Choose one that works for you:
+The best way to handle configs is [Configuration Manager](https://thunderstore.io/c/valheim/p/shudnal/ConfigurationManager/).
 
-https://www.nexusmods.com/site/mods/529
-
-https://valheim.thunderstore.io/package/Azumatt/Official_BepInEx_ConfigurationManager/
+Or [Official BepInEx Configuration Manager](https://valheim.thunderstore.io/package/Azumatt/Official_BepInEx_ConfigurationManager/).
 
 ## Mirrors
 [Nexus](https://www.nexusmods.com/valheim/mods/2654)
