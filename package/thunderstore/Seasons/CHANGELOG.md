@@ -1,3 +1,6 @@
+# 1.3.1
+* a little bit of bulletproof for clutter system
+
 # 1.3.0
 * custom music support for use in seasonal environments
 * environments sync fix

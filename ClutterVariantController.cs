@@ -81,7 +81,7 @@ namespace Seasons
             s_amountScale = ClutterSystem.instance.m_amountScale;
 
             m_clutterDefaults.Clear();
-            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c.m_prefab != null))
+            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c != null && c.m_name != "" && c.m_prefab != null))
             {
                 m_clutterDefaults.Add(clutter, Tuple.Create(clutter.m_enabled, clutter.m_scaleMin, clutter.m_scaleMax));
 
@@ -373,7 +373,7 @@ namespace Seasons
             ClutterSystem.instance.m_grassPatchSize = seasonGrass.m_grassPatchSize;
             ClutterSystem.instance.m_amountScale = seasonGrass.m_amountScale;
 
-            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c.m_prefab != null))
+            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c != null && c.m_name != "" && c.m_prefab != null))
             {
                 if (!ControlGrassSize(clutter.m_prefab))
                     continue;
@@ -397,7 +397,7 @@ namespace Seasons
             ClutterSystem.instance.m_grassPatchSize = s_grassPatchSize;
             ClutterSystem.instance.m_amountScale = s_amountScale;
 
-            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c.m_prefab != null))
+            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c != null && c.m_name != "" && c.m_prefab != null))
             {
                 if (!ControlGrassSize(clutter.m_prefab))
                     continue;
@@ -421,7 +421,7 @@ namespace Seasons
         public void UpdateSeasonalClutter()
         {
             Dictionary<string, bool> seasonalClutter = SeasonState.seasonClutterSettings.GetSeasonalState();
-            foreach (Clutter clutter in ClutterSystem.instance.m_clutter)
+            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c != null && c.m_name != "" && c.m_prefab != null))
             {
                 if (!seasonalClutter.TryGetValue(clutter.m_name, out bool m_enabled))
                     continue;
@@ -432,7 +432,7 @@ namespace Seasons
 
         public void RevertSeasonalClutter()
         {
-            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => SeasonState.seasonClutterSettings.GetSeasonalState().ContainsKey(c.m_name)))
+            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c != null && c.m_name != "" && SeasonState.seasonClutterSettings.GetSeasonalState().ContainsKey(c.m_name)))
                 clutter.m_enabled = false;
         }
 
