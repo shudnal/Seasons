@@ -2213,7 +2213,8 @@ namespace Seasons
         [HarmonyPriority(Priority.First)]
         static void Postfix(Trader __instance, ref List<Trader.TradeItem> __result)
         {
-            SeasonState.seasonTraderItems.AddSeasonalTraderItems(__instance, __result);
+            if (controlTraders.Value)
+                SeasonState.seasonTraderItems.AddSeasonalTraderItems(__instance, __result);
         }
     }
 
