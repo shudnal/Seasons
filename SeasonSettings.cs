@@ -1842,6 +1842,9 @@ namespace Seasons
 
         public static void SetupConfigWatcher(bool enabled)
         {
+            if (enabled)
+                ReadInitialConfigs();
+
             if (configWatcher == null)
             {
                 configWatcher = new FileSystemWatcher(configDirectory, $"*.json");
@@ -1854,9 +1857,6 @@ namespace Seasons
             }
 
             configWatcher.EnableRaisingEvents = enabled;
-
-            if (enabled)
-                ReadInitialConfigs();
         }
 
         private static void ReadInitialConfigs()
@@ -1882,29 +1882,32 @@ namespace Seasons
             ReadSeasonsSettings(initial: true);
         }
 
-        private static void ReadSeasonsSettings(bool initial = false)
+        internal static Dictionary<int, string> GetSeasonalSettings()
         {
             Dictionary<int, string> localConfig = new Dictionary<int, string>();
 
             foreach (FileInfo file in new DirectoryInfo(configDirectory).GetFiles("*.json", SearchOption.TopDirectoryOnly))
             {
-                if (TryGetSeasonByFilename(file.Name, out Season season))
+                try
                 {
-                    try
-                    {
+                    if (TryGetSeasonByFilename(file.Name, out Season season))
                         localConfig.Add((int)season, File.ReadAllText(file.FullName));
-                    }
-                    catch (Exception e)
-                    {
-                        LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
-                    }
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error reading file ({file.FullName})! Error: {e.Message}");
                 }
             }
 
+            return localConfig;
+        }
+
+        private static void ReadSeasonsSettings(bool initial = false)
+        {
             if (initial)
-                seasonsSettingsJSON.AssignValueSafe(localConfig);
+                seasonsSettingsJSON.AssignValueSafe(GetSeasonalSettings);
             else
-                seasonsSettingsJSON.AssignValueIfChanged(localConfig);
+                seasonsSettingsJSON.AssignValueIfChanged(GetSeasonalSettings);
         }
 
         private static void ReadConfigs(object sender, FileSystemEventArgs eargs)

@@ -90,7 +90,7 @@ namespace Seasons
 
         public void UpdateState(bool timeForSeasonToChange = false, bool forceSeasonChange = false)
         {
-            if (!ZNet.instance.IsServer())
+            if (!IsActive || !ZNet.instance.IsServer())
                 return;
 
             int worldDay = GetCurrentWorldDay();
@@ -773,6 +773,9 @@ namespace Seasons
 
             m_worldDay = worldDay;
 
+            if (logSeasonChange.Value)
+                LogInfo($"Current season update started: {(Season)currentSeason} -> {setSeason}{(overrideSeason.Value ? "(override)" : "")}, Day: {m_day} -> {dayInSeason}");
+
             UpdateCurrentSeasonDay(setSeason, dayInSeason);
 
             return true;
@@ -874,7 +877,12 @@ namespace Seasons
             m_worldDay = worldDay;
 
             if (dayInSeason > m_day || forceSeasonChange)
+            {
+                if (logSeasonChange.Value)
+                    LogInfo($"Day {(forceSeasonChange ? "force " : "")}changed {m_day} -> {dayInSeason}");
+
                 UpdateCurrentSeasonDay(m_season, dayInSeason);
+            }
         }
 
         private int GetYearLengthInDays()
@@ -1025,6 +1033,7 @@ namespace Seasons
             seasonState.m_season = seasonDay.Item1;
             seasonState.m_day = seasonDay.Item2;
 
+            if (logSeasonChange.Value || seasonChanged || dayChanged)
             LogInfo($"Season: {seasonState.m_season}, day: {seasonState.m_day}");
 
             if (seasonChanged)
