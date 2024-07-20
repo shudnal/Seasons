@@ -33,6 +33,7 @@ namespace Seasons
         public static SeasonBiomeSettings seasonBiomeSettings = new SeasonBiomeSettings(loadDefaults: true);
 
         private static readonly List<ItemDrop.ItemData> _itemDataList = new List<ItemDrop.ItemData>();
+        private static int _pendingSeasonChange = 0;
 
         private SeasonSettings settings
         {
@@ -773,10 +774,7 @@ namespace Seasons
 
             m_worldDay = worldDay;
 
-            if (logSeasonChange.Value)
-                LogInfo($"Current season update started: {(Season)currentSeason} -> {setSeason}{(overrideSeason.Value ? "(override)" : "")}, Day: {m_day} -> {dayInSeason}");
-
-            UpdateCurrentSeasonDay(setSeason, dayInSeason);
+            SetCurrentSeasonDay(setSeason, dayInSeason);
 
             return true;
         }
@@ -878,10 +876,7 @@ namespace Seasons
 
             if (dayInSeason > m_day || forceSeasonChange)
             {
-                if (logSeasonChange.Value)
-                    LogInfo($"Day {(forceSeasonChange ? "force " : "")}changed {m_day} -> {dayInSeason}");
-
-                UpdateCurrentSeasonDay(m_season, dayInSeason);
+                SetCurrentDay(dayInSeason);
             }
         }
 
@@ -1004,9 +999,31 @@ namespace Seasons
             }
         }
 
-        private void UpdateCurrentSeasonDay(Season season, int day)
+        private void SetCurrentSeasonDay(Season season, int day)
         {
-            currentSeasonDay.AssignValueIfChanged((int)season * 10000 + day);
+            UpdateCurrentSeasonDay((int)season * 10000 + day);
+        }
+
+        private void SetCurrentDay(int day)
+        {
+            UpdateCurrentSeasonDay((int)(_pendingSeasonChange == 0 ? m_season : GetPendingSeasonDay().Item1) * 10000 + day);
+        }
+
+        private void UpdateCurrentSeasonDay(int newValue)
+        {
+            if (_pendingSeasonChange == newValue)
+                return;
+
+            _pendingSeasonChange = newValue;
+
+            currentSeasonDay.AssignValueSafe(GetPendingSeasonDayChange);
+
+            LogInfo($"Season update pending: {m_season} -> {GetPendingSeasonDay().Item1}{(overrideSeason.Value ? "(override)" : "")}, Day: {m_day} -> {GetPendingSeasonDay().Item2}");
+        }
+
+        internal static int GetPendingSeasonDayChange()
+        {
+            return _pendingSeasonChange;
         }
 
         public static void CheckSeasonChange()
@@ -1017,6 +1034,7 @@ namespace Seasons
 
         public static void ResetCurrentSeasonDay()
         {
+            _pendingSeasonChange = 0;
             currentSeasonDay.AssignValueSafe(0);
         }
 
@@ -1025,6 +1043,7 @@ namespace Seasons
             if (!IsActive)
                 return;
 
+            _pendingSeasonChange = 0;
             Tuple<Season, int> seasonDay = GetSyncedCurrentSeasonDay();
 
             bool dayChanged = seasonState.m_day != seasonDay.Item2;
@@ -1033,8 +1052,8 @@ namespace Seasons
             seasonState.m_season = seasonDay.Item1;
             seasonState.m_day = seasonDay.Item2;
 
-            if (logSeasonChange.Value || seasonChanged || dayChanged)
-            LogInfo($"Season: {seasonState.m_season}, day: {seasonState.m_day}");
+            if (seasonChanged || dayChanged)
+                LogInfo($"Season: {seasonState.m_season}, day: {seasonState.m_day}");
 
             if (seasonChanged)
                 seasonState.StartSeasonChange();
@@ -1060,6 +1079,11 @@ namespace Seasons
         public static Tuple<Season, int> GetSyncedCurrentSeasonDay()
         {
             return Tuple.Create((Season)((currentSeasonDay.Value / 10000) % 4), currentSeasonDay.Value % 10000);
+        }
+
+        public static Tuple<Season, int> GetPendingSeasonDay()
+        {
+            return Tuple.Create((Season)((_pendingSeasonChange / 10000) % 4), _pendingSeasonChange % 10000);
         }
     }
 

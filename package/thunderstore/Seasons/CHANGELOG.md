@@ -1,5 +1,7 @@
 # 1.3.1
 * a little bit of bulletproof for clutter system
+* control trader config now works properly
+* season and day change stability improved
 
 # 1.3.0
 * custom music support for use in seasonal environments
