@@ -1,3 +1,6 @@
+# 1.3.2
+* a little bit of bulletproof for textures
+
 # 1.3.1
 * a little bit of bulletproof for clutter system
 * control trader config now works properly

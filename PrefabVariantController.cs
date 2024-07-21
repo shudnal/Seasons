@@ -173,11 +173,11 @@ namespace Seasons
 
                                 materialVariants.Key.GetPropertyBlock(s_matBlock, materialIndex.Key);
 
-                                if (CustomTextures.HaveCustomTexture(texVar.Value.originalName, seasonState.GetCurrentSeason(), variant, texVar.Value.properties, out Texture2D customTexture))
-                                    s_matBlock.SetTexture(texVar.Key, customTexture);
-                                else
-                                    s_matBlock.SetTexture(texVar.Key, texture);
+                                Texture2D tex = CustomTextures.HaveCustomTexture(texVar.Value.originalName, seasonState.GetCurrentSeason(), variant, texVar.Value.properties, out Texture2D customTexture) ? customTexture : texture;
 
+                                if (tex != null)
+                                    s_matBlock.SetTexture(texVar.Key, tex);
+                                
                                 materialVariants.Key.SetPropertyBlock(s_matBlock, materialIndex.Key);
                             }
 

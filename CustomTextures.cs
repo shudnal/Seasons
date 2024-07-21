@@ -86,7 +86,7 @@ namespace Seasons
                 textures[textureName][season][variant] = texture;
             }
 
-            return result;
+            return result && texture != null && texture.isReadable;
         }
 
         public static void LoadCustomTextures(string path)
