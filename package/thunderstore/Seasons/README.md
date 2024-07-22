@@ -162,7 +162,7 @@ Paste code in *.json file you created (this is default settings)
 * m_volume (float) - volume level of that track
 * m_fadeInTime (float) - time in seconds where track volume will be gradually increased on track start
 * m_alwaysFadeout (bool) - track will always have fade out effect no matter if it crossed with another track or not
-* m_loop (bool) - track will be played continuously
+* m_loop (bool) - if enabled then track will be played continuously, if disabled it will play just once with random start interval
 * m_resume (bool) - resume track playback from the moment it stopped previously
 * m_ambientMusic (bool) - if set to true then track will be played on loop if game setting "Continuous music" is enabled
 
