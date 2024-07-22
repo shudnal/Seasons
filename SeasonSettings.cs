@@ -554,7 +554,7 @@ namespace Seasons
 
             Summer.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Meadows", new EnvEntry { m_environment = "Heath clear", m_weight = 2.0f }));
 
-            Summer.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Black forest", new EnvEntry { m_environment = "Light Rain", m_weight = 0.1f }));
+            Summer.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Black forest", new EnvEntry { m_environment = "LightRain", m_weight = 0.1f }));
             Summer.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Black forest", new EnvEntry { m_environment = "Clear", m_weight = 0.2f }));
 
             Summer.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Swamp", new EnvEntry { m_environment = "SwampRain Summer", m_weight = 0.1f }));
