@@ -1,3 +1,6 @@
+# 1.3.3
+* a little bit of bulletproof for custom clutters
+
 # 1.3.2
 * a little bit of bulletproof for textures
 
