@@ -1,3 +1,6 @@
+# 1.3.4
+* option to automatically disable Bloom in Winter (it will not change Graphics setting, only disables posteffect)
+
 # 1.3.3
 * a little bit of bulletproof for custom clutters
 

@@ -20,7 +20,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.3.3";
+        public const string pluginVersion = "1.3.4";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -54,6 +54,7 @@ namespace Seasons
         public static ConfigEntry<bool> showCurrentSeasonInRaven;
         public static ConfigEntry<TimerFormatRaven> seasonsTimerFormatInRaven;
 
+        public static ConfigEntry<bool> disableBloomInWinter;
         public static ConfigEntry<bool> enableSeasonalItems;
         public static ConfigEntry<bool> preventDeathFromFreezing;
         public static ConfigEntry<bool> freezingSwimmingInWinter;
@@ -296,6 +297,8 @@ namespace Seasons
             controlGrass.SettingChanged += (sender, args) => ClutterVariantController.Instance.UpdateGrass();
             customTextures.SettingChanged += (sender, args) => CustomTextures.UpdateTexturesOnChange();
 
+            disableBloomInWinter = config("Season", "Disable Bloom in Winter", defaultValue: true, "Force disables Bloom graphics setting while in Winter and restores it in other seasons (it will not change Graphics setting, only disables posteffect)." +
+                                                                                                   "\nBloom in Winter is what makes you blind with that much of white.");
             enableSeasonalItems = config("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
             preventDeathFromFreezing = config("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
             seasonalStatsOutdoorsOnly = config("Season", "Seasonal stats works only outdoors", defaultValue: true, "Make seasonal stats works only outdoors");
@@ -314,6 +317,7 @@ namespace Seasons
             cropsToControlGrowth.SettingChanged += (sender, args) => FillListsToControl();
             woodListToControlDrop.SettingChanged += (sender, args) => FillListsToControl();
             meatListToControlDrop.SettingChanged += (sender, args) => FillListsToControl();
+            disableBloomInWinter.SettingChanged += (sender, args) => seasonState.UpdateWinterBloomEffect();
 
             grassDefaultPatchSize = config("Season - Grass", "Default patch size", defaultValue: 10f, "Default size of grass patch (sparseness or how wide a single grass \"node\" is across the ground)" +
                                                                                                      "Increase to make grass more sparse and decrease to make grass more tight");

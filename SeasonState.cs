@@ -843,6 +843,7 @@ namespace Seasons
         {
             UpdateBiomesSetup();
             UpdateGlobalKeys();
+            UpdateWinterBloomEffect();
             ZoneSystemVariantController.UpdateWaterState();
 
             if (UseTextureControllers())
@@ -858,13 +859,19 @@ namespace Seasons
                     MinimapVariantController.instance.UpdateColors();
                     UpdateMinimapBorder();
                 }
-                
+
                 if (Player.m_localPlayer != null)
                 {
                     Player.m_localPlayer.UpdateCurrentSeason();
                     CheckOverheatStatus(Player.m_localPlayer);
                 }
             }
+        }
+
+        public void UpdateWinterBloomEffect()
+        {
+            if (IsActive && UseTextureControllers())
+                CameraEffects.instance.SetBloom((!disableBloomInWinter.Value || GetCurrentSeason() != Season.Winter) && PlatformPrefs.GetInt("Bloom", 1) == 1);
         }
 
         private void CheckIfDayChanged(int dayInSeason, int worldDay, bool forceSeasonChange)
