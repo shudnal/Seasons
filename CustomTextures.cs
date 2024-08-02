@@ -77,6 +77,13 @@ namespace Seasons
             if (result && texture != null && texture.isReadable)
             {
                 Color32[] pixels = texture.GetPixels32();
+
+                if (pixels.Length != properties.width * properties.height)
+                {
+                    properties.width = texture.width;
+                    properties.height = texture.height;
+                }
+
                 UnityEngine.Object.Destroy(texture);
 
                 texture = properties.CreateTexture();

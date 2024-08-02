@@ -1,3 +1,6 @@
+# 1.3.5
+* better support for HD variants of Custom Textures
+
 # 1.3.4
 * option to automatically disable Bloom in Winter (it will not change Graphics setting, only disables posteffect)
 
