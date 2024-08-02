@@ -119,14 +119,14 @@ namespace Seasons
                     double timeSeconds = ZNet.instance.GetTimeSeconds() - EnvMan.instance.m_dayLengthSec;
                     
                     ZNet.instance.SetNetTime(Math.Max(timeSeconds, 0));
+                    ZNet.instance.SendNetTime();
+
                     EnvMan.instance.m_skipTime = false;
                     EnvMan.instance.m_totalSeconds = ZNet.instance.GetTimeSeconds();
 
                     worldDay = GetCurrentWorldDay();
                     dayInSeason = GetDayInSeason(worldDay);
                     newSeason = GetSeason(worldDay);
-
-                    UpdateCurrentEnvironment();
                 }
 
                 setSeason = newSeason;
@@ -854,6 +854,7 @@ namespace Seasons
             UpdateGlobalKeys();
             UpdateWinterBloomEffect();
             ZoneSystemVariantController.UpdateWaterState();
+            UpdateCurrentEnvironment();
 
             if (UseTextureControllers())
             {
@@ -1082,6 +1083,7 @@ namespace Seasons
             StartClutterUpdate();
             ZoneSystemVariantController.UpdateWaterState();
             seasonState.UpdateGlobalKeys();
+            UpdateCurrentEnvironment();
         }
 
         private static void StartClutterUpdate()
