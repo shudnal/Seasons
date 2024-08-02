@@ -1,6 +1,6 @@
 {
   "name": "Seasons",
-  "version_number": "1.3.5",
+  "version_number": "1.3.6",
   "website_url": "https://github.com/shudnal/Seasons",
   "description": "Four customizable seasons",
   "dependencies": ["denikson-BepInExPack_Valheim-5.4.2202"]

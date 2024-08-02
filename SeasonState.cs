@@ -266,7 +266,7 @@ namespace Seasons
                 }
             }
 
-            EnvMan.instance.m_environmentPeriod--;
+            EnvMan.instance.m_environmentPeriod = -1L;
         }
 
         public static void UpdateSeasonSettings()

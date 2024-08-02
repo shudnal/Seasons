@@ -1,3 +1,6 @@
+# 1.3.6
+* potential fix for boss environments (weather) which stays after fight
+
 # 1.3.5
 * better support for HD variants of Custom Textures
 
