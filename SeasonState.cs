@@ -125,6 +125,8 @@ namespace Seasons
                     worldDay = GetCurrentWorldDay();
                     dayInSeason = GetDayInSeason(worldDay);
                     newSeason = GetSeason(worldDay);
+
+                    UpdateCurrentEnvironment();
                 }
 
                 setSeason = newSeason;
@@ -266,7 +268,7 @@ namespace Seasons
                 }
             }
 
-            EnvMan.instance.m_environmentPeriod = -1L;
+            UpdateCurrentEnvironment();
         }
 
         public static void UpdateSeasonSettings()
@@ -343,6 +345,13 @@ namespace Seasons
 
                 EnvMan.instance.AppendEnvironment(senv.ToEnvSetup());
             }
+
+            UpdateCurrentEnvironment();
+        }
+
+        private static void UpdateCurrentEnvironment()
+        {
+            EnvMan.instance.m_environmentPeriod = -1L;
         }
 
         public static void UpdateBiomeEnvironments()
