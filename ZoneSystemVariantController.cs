@@ -174,12 +174,9 @@ namespace Seasons
             int num = heightmap.m_width + 1;
             Vector3 vector = heightmap.transform.position + new Vector3((float)((double)heightmap.m_width * (double)heightmap.m_scale * -0.5), 0f, (float)((double)heightmap.m_width * (double)heightmap.m_scale * -0.5));
             s_tempColors.Clear();
+            
             for (int i = 0; i < num; i++)
-            {
-                float iy = DUtils.SmoothStep(0f, 1f, (float)((double)i / (double)heightmap.m_width));
                 for (int j = 0; j < num; j++)
-                {
-                    float ix = DUtils.SmoothStep(0f, 1f, (float)((double)j / (double)heightmap.m_width));
                     if (heightmap.m_isDistantLod)
                     {
                         float wx = vector.x + j * heightmap.m_scale;
@@ -189,10 +186,10 @@ namespace Seasons
                     }
                     else
                     {
+                        float ix = DUtils.SmoothStep(0f, 1f, (float)j / heightmap.m_width);
+                        float iy = DUtils.SmoothStep(0f, 1f, (float)i / heightmap.m_width);
                         s_tempColors.Add(heightmap.GetBiomeColor(ix, iy));
                     }
-                }
-            }
 
             Heightmap_GetBiomeColor_TerrainColor.overrideColor = false;
 

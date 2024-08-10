@@ -20,7 +20,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.3.6";
+        public const string pluginVersion = "1.3.7";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -306,7 +306,8 @@ namespace Seasons
             changeSeasonOnlyAfterSleep = config("Season", "Change season only after sleep", defaultValue: false, "Season can be changed regular way only after sleep");
             cropsDiesAfterSetDayInWinter = config("Season", "Crops will die after set day in winter", defaultValue: 3, "Crops and pickables will perish after set day in winter");
             cropsToSurviveInWinter = config("Season", "Crops will survive in winter", defaultValue: "Pickable_Carrot, Pickable_Barley, Pickable_Barley_Wild, Pickable_Flax, Pickable_Flax_Wild, Pickable_Thistle, Pickable_Mushroom_Magecap", "Crops and pickables from the list will not perish after set day in winter");
-            cropsToControlGrowth = config("Season", "Crops to control growth", defaultValue: "Pickable_Barley, Pickable_Barley_Wild, Pickable_Dandelion, Pickable_Flax, Pickable_Flax_Wild, Pickable_SeedCarrot, Pickable_SeedOnion, Pickable_SeedTurnip, Pickable_Thistle, Pickable_Turnip", "Crops and pickables from the list will be controlled by growth multiplier in addition to consumable crops");
+            cropsToControlGrowth = config("Season", "Crops to control growth", defaultValue: "Pickable_Barley, Pickable_Barley_Wild, Pickable_Dandelion, Pickable_Flax, Pickable_Flax_Wild, Pickable_SeedCarrot, Pickable_SeedOnion, Pickable_SeedTurnip, Pickable_Thistle, Pickable_Turnip", "All consumable crops will be added automatically. Set only unconsumable crops here." +
+                                                                                                                                                                                                                                                                                              "Crops and pickables from the list will be controlled by growth multiplier in addition to consumable crops");
             woodListToControlDrop = config("Season", "Wood to control drop", defaultValue: "Wood, FineWood, RoundLog, ElderBark, YggdrasilWood", "Wood item names to control drop from trees");
             meatListToControlDrop = config("Season", "Meat to control drop", defaultValue: "RawMeat, DeerMeat, NeckTail, WolfMeat, LoxMeat, ChickenMeat, HareMeat, SerpentMeat", "Meat item names to control drop from characters");
             shieldGeneratorProtection = config("Season", "Shield generator protects from weather", defaultValue: true, "If enabled - objects inside shield generator dome will be protected from seasonal effects both positive and negative.");
@@ -535,9 +536,9 @@ namespace Seasons
             _MeatToControlDrop = ConfigToHashSet(meatListToControlDrop.Value);
 
             _GrassToControlSize = ConfigToHashSet(grassToControlSize.Value);
-            _GrassToControlSize.Add(ClutterVariantController.c_meadowsFlowersPrefabName);
-            _GrassToControlSize.Add(ClutterVariantController.c_forestBloomPrefabName);
-            _GrassToControlSize.Add(ClutterVariantController.c_swampGrassBloomName);
+            _GrassToControlSize.Add(ClutterVariantController.c_meadowsFlowersPrefabName.ToLower());
+            _GrassToControlSize.Add(ClutterVariantController.c_forestBloomPrefabName.ToLower());
+            _GrassToControlSize.Add(ClutterVariantController.c_swampGrassBloomName.ToLower());
 
             _treeRegrowthPrefabs.Clear();
 
@@ -548,7 +549,7 @@ namespace Seasons
             {
                 if (prefab.TryGetComponent(out Pickable pickable) && pickable.m_itemPrefab != null && 
                     pickable.m_itemPrefab.TryGetComponent(out ItemDrop itemDrop) && itemDrop.m_itemData.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Consumable)
-                    _PlantsToControlGrowth.Add(pickable.gameObject.name);
+                    _PlantsToControlGrowth.Add(pickable.gameObject.name.ToLower());
 
                 if (prefab.TryGetComponent(out TreeBase tree) && tree.m_stubPrefab != null &&
                     tree.m_stubPrefab.TryGetComponent(out Destructible destructible) && IsTree(destructible))
@@ -561,7 +562,7 @@ namespace Seasons
                 if (prefab.TryGetComponent(out Plant plant) && plant.m_grownPrefabs != null)
                 {
                     if (plant.m_grownPrefabs.Any(prefab => ControlPlantGrowth(prefab)))
-                        _PlantsToControlGrowth.Add(plant.gameObject.name);
+                        _PlantsToControlGrowth.Add(plant.gameObject.name.ToLower());
 
                     if (plant.m_grownPrefabs.Any(prefab => PlantWillSurviveWinter(prefab)))
                         _PlantsToSurviveWinter.Add(plant.gameObject.name.ToLower());
@@ -595,7 +596,7 @@ namespace Seasons
 
         public static bool ControlPlantGrowth(GameObject gameObject)
         {
-            return _PlantsToControlGrowth.Contains(PrefabVariantController.GetPrefabName(gameObject));
+            return _PlantsToControlGrowth.Contains(PrefabVariantController.GetPrefabName(gameObject).ToLower());
         }
 
         public static bool PlantWillSurviveWinter(GameObject gameObject)

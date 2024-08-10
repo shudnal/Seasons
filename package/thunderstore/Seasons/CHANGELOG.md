@@ -1,5 +1,8 @@
+# 1.3.7
+* fix for undying winter crops and crops to control growth
+
 # 1.3.6
-* potential fix for boss environments (weather) which stays after fight
+* potential fix for environments (weather) synchronization
 
 # 1.3.5
 * better support for HD variants of Custom Textures
