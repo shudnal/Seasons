@@ -3,6 +3,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using UnityEngine;
 using static Seasons.Seasons;
 using static Seasons.ZoneSystemVariantController;
@@ -99,7 +100,10 @@ namespace Seasons
         private readonly List<WaterVolume> tempWaterVolumesList = new List<WaterVolume>();
         private readonly List<ZoneSystem.ClearArea> m_tempClearAreas = new List<ZoneSystem.ClearArea>();
         private readonly List<GameObject> m_tempSpawnedObjects = new List<GameObject>();
-        public static readonly List<Color32> s_tempColors = new List<Color32>();
+        private static readonly List<Color32> s_tempColors = new List<Color32>();
+        private static readonly List<Color32> s_smoothColors = new List<Color32>();
+        private static readonly List<Heightmap> s_protectedHeightmaps = new List<Heightmap>();
+        private static readonly List<Heightmap> s_tempHeightmaps = new List<Heightmap>();
 
         public static bool IsWaterSurfaceFrozen() => s_freezeStatus == 1f;
         
@@ -164,7 +168,7 @@ namespace Seasons
             s_iceFloe.m_prefab.GetComponent<ZNetView>().m_syncInitialScale = true;
         }
 
-        private static void UpdateTerrainColor(Heightmap heightmap)
+        public static void UpdateTerrainColor(Heightmap heightmap)
         {
             if (heightmap?.m_renderMesh == null)
                 return;
@@ -174,7 +178,8 @@ namespace Seasons
             int num = heightmap.m_width + 1;
             Vector3 vector = heightmap.transform.position + new Vector3((float)((double)heightmap.m_width * (double)heightmap.m_scale * -0.5), 0f, (float)((double)heightmap.m_width * (double)heightmap.m_scale * -0.5));
             s_tempColors.Clear();
-            
+
+            bool hasShieldedPosition = false;
             for (int i = 0; i < num; i++)
                 for (int j = 0; j < num; j++)
                     if (heightmap.m_isDistantLod)
@@ -188,18 +193,119 @@ namespace Seasons
                     {
                         float ix = DUtils.SmoothStep(0f, 1f, (float)j / heightmap.m_width);
                         float iy = DUtils.SmoothStep(0f, 1f, (float)i / heightmap.m_width);
-                        s_tempColors.Add(heightmap.GetBiomeColor(ix, iy));
+                        if (IsProtectedHeightmap(heightmap) && IsShieldedPosition(heightmap.transform.position + heightmap.CalcVertex(j, i)))
+                        {
+                            hasShieldedPosition = true;
+                            Heightmap_GetBiomeColor_TerrainColor.overrideColor = false;
+                            s_tempColors.Add(heightmap.GetBiomeColor(ix, iy));
+                            Heightmap_GetBiomeColor_TerrainColor.overrideColor = true;
+                        }
+                        else
+                        {
+                            s_tempColors.Add(heightmap.GetBiomeColor(ix, iy));
+                        }
                     }
+
 
             Heightmap_GetBiomeColor_TerrainColor.overrideColor = false;
 
+            if (hasShieldedPosition)
+                SmoothenProtectedBorders(s_tempColors, heightmap.m_width + 1);
+
             heightmap.m_renderMesh.SetColors(s_tempColors);
+            s_tempColors.Clear();
+        }
+
+        public static void SmoothenProtectedBorders(List<Color32> colors, int size)
+        {
+            s_smoothColors.Clear();
+            s_smoothColors.AddRange(colors);
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    int r = 0, g = 0, b = 0, a = 0;
+                    int count = 0;
+
+                    for (int dx = -1; dx <= 1; dx++)
+                        for (int dy = -1; dy <= 1; dy++)
+                        {
+                            int nx = x + dx;
+                            int ny = y + dy;
+
+                            if (nx >= 0 && nx < size && ny >= 0 && ny < size)
+                            {
+                                Color32 neighbor = colors[ny * size + nx];
+
+                                r += neighbor.r;
+                                g += neighbor.g;
+                                b += neighbor.b;
+                                a += neighbor.a;
+                                count++;
+                            }
+                        }
+
+                    s_smoothColors[y * size + x] = new Color32((byte)(r / count), (byte)(g / count), (byte)(b / count), (byte)(a / count));
+                }
+            }
+
+            colors.Clear();
+            colors.AddRange(s_smoothColors);
+            s_smoothColors.Clear();
         }
 
         public static void UpdateTerrainColors()
         {
-            foreach (Heightmap instance in Heightmap.Instances.Cast<Heightmap>())
+            UpdateTerrainColorsFromList(Heightmap.Instances.Cast<Heightmap>());
+        }
+
+        public static void UpdateTerrainColorsFromList(IEnumerable<Heightmap> list)
+        {
+            UpdateProtectedHeightmaps();
+            foreach (Heightmap instance in list)
                 UpdateTerrainColor(instance);
+        }
+
+        private static void UpdateProtectedHeightmaps()
+        {
+            s_protectedHeightmaps.Clear();
+            if (IsShieldProtectionActive())
+                foreach (ShieldGenerator instance in ShieldGenerator.m_instances)
+                    Heightmap.FindHeightmap(instance.m_shieldDome?.transform.position ?? instance.transform.position, instance.m_radius, s_protectedHeightmaps);
+        }
+
+        public static bool IsProtectedHeightmap(Heightmap heightmap)
+        {
+            return heightmap != null && s_protectedHeightmaps.Contains(heightmap);
+        }
+
+        public static void UpdateTerrainColorsAroundPosition(Vector3 position, float radius, float delay = 0f)
+        {
+            if (instance == null)
+                return;
+
+            if (delay == 0f)
+                UpdateTerrainAroundPosition(position, radius);
+            else
+                instance.StartCoroutine(UpdateTerrainColorsAroundPositionDelayed(position, radius, delay));
+        }
+
+        public static IEnumerator UpdateTerrainColorsAroundPositionDelayed(Vector3 position, float radius, float delay = 0f)
+        {
+            yield return new WaitForSeconds(delay);
+
+            UpdateTerrainAroundPosition(position, radius);
+        }
+
+        private static void UpdateTerrainAroundPosition(Vector3 position, float radius)
+        {
+            s_tempHeightmaps.Clear();
+            Heightmap.FindHeightmap(position, radius, s_tempHeightmaps);
+
+            UpdateTerrainColorsFromList(s_tempHeightmaps);
+
+            ClutterSystem.instance.ResetGrass(position, radius);
         }
 
         public static void AddIceCollider(Transform water)
@@ -1073,9 +1179,9 @@ namespace Seasons
     [HarmonyPatch(typeof(Leviathan), nameof(Leviathan.FixedUpdate))]
     public static class Leviathan_FixedUpdate_FrozenOceanLeviathan
     {
-        private static bool Prefix(Rigidbody ___m_body, ZNetView ___m_nview)
+        private static bool Prefix(Leviathan __instance, Rigidbody ___m_body, ZNetView ___m_nview)
         {
-            if (!IsWaterSurfaceFrozen())
+            if (IsIgnoredPosition(__instance.transform.position) || !IsWaterSurfaceFrozen())
                 return true;
 
             if (___m_nview.IsValid() && ___m_nview.IsOwner())
@@ -1092,9 +1198,9 @@ namespace Seasons
     [HarmonyPatch(typeof(Leviathan), nameof(Leviathan.OnHit))]
     public static class Leviathan_OnHit_FrozenOceanLeviathan
     {
-        private static bool Prefix()
+        private static bool Prefix(Leviathan __instance)
         {
-            return !IsWaterSurfaceFrozen();
+            return IsIgnoredPosition(__instance.transform.position) || !IsWaterSurfaceFrozen();
         }
     }
 
@@ -1406,6 +1512,41 @@ namespace Seasons
 
             if (__state != __instance.GetCurrentBiome() && (__state == Heightmap.Biome.AshLands || __instance.GetCurrentBiome() == Heightmap.Biome.AshLands))
                 UpdateWaterState();
+        }
+    }
+
+    [HarmonyPatch(typeof(Heightmap), nameof(Heightmap.RebuildRenderMesh))]
+    public static class Heightmap_RebuildRenderMesh_UpdateProtectedHmap
+    {
+        private static void Postfix(Heightmap __instance)
+        {
+            if (!UseTextureControllers())
+                return;
+
+            if (!SeasonState.IsActive)
+                return;
+
+            if (IsProtectedHeightmap(__instance))
+                UpdateTerrainColor(__instance);
+        }
+    }
+
+    [HarmonyPatch]
+    public static class InstanceRenderer_AddInstance_PreventInProtectedArea
+    {
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            yield return AccessTools.Method(typeof(InstanceRenderer), nameof(InstanceRenderer.AddInstance), new Type[3] { typeof(Vector3), typeof(Quaternion), typeof(float) });
+            yield return AccessTools.Method(typeof(InstanceRenderer), nameof(InstanceRenderer.AddInstance), new Type[2] { typeof(Vector3), typeof(Quaternion) });
+        }
+
+        [HarmonyPriority(Priority.First)]
+        private static bool Prefix(Vector3 pos)
+        {
+            if (SeasonState.IsActive && seasonState.GetCurrentSeason() == Season.Winter && IsShieldedPosition(pos))
+                return false;
+
+            return true;
         }
     }
 }

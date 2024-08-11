@@ -20,7 +20,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.3.7";
+        public const string pluginVersion = "1.3.8";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -651,14 +651,19 @@ namespace Seasons
             return ignored;
         }
 
+        public static bool IsShieldProtectionActive()
+        {
+            return shieldGeneratorProtection.Value && (!shieldGeneratorOnlyWinter.Value || seasonState.GetCurrentSeason() == Season.Winter);
+        }
+
+        public static bool IsShieldedPosition(Vector3 position)
+        {
+            return IsShieldProtectionActive() && ShieldGenerator.IsInsideShieldCached(position, ref _instanceChangeIDShieldGeneratorCache);
+        }
+
         public static bool IsProtectedPosition(Vector3 position)
         {
-            if (IsIgnoredPosition(position))
-                return true;
-
-            return shieldGeneratorProtection.Value 
-                && (!shieldGeneratorOnlyWinter.Value || seasonState.GetCurrentSeason() == Season.Winter) 
-                && ShieldGenerator.IsInsideShieldCached(position, ref _instanceChangeIDShieldGeneratorCache);
+            return IsIgnoredPosition(position) || IsShieldedPosition(position);
         }
 
         public static void StartCacheRebuild()

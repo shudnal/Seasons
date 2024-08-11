@@ -778,7 +778,11 @@ namespace Seasons
             if (!shieldRadius.ContainsKey(shield) || shieldRadius[shield] != (int)radius)
             {
                 shieldRadius[shield] = (int)radius;
-                UpdatePrefabColorsAroundPosition(position, shield.m_maxShieldRadius);
+                if (IsShieldProtectionActive())
+                {
+                    UpdatePrefabColorsAroundPosition(position, shield.m_maxShieldRadius);
+                    ZoneSystemVariantController.UpdateTerrainColorsAroundPosition(position, radius);
+                }
             }
         }
     }
@@ -792,7 +796,12 @@ namespace Seasons
             if (ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.shieldRadius.ContainsKey(shield))
             {
                 ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.shieldRadius.Remove(shield);
-                UpdatePrefabColorsAroundPosition(shield.transform.position, shield.m_maxShieldRadius, delay: 5f);
+                if (IsShieldProtectionActive())
+                {
+                    Vector3 position = shield.m_shieldDome?.transform?.position ?? shield.transform.position;
+                    UpdatePrefabColorsAroundPosition(position, shield.m_maxShieldRadius, delay: 5f);
+                    ZoneSystemVariantController.UpdateTerrainColorsAroundPosition(position, shield.m_maxShieldRadius, delay: 5f);
+                }
             }
         }
     }

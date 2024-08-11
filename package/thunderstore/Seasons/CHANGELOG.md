@@ -1,3 +1,6 @@
+# 1.3.8
+* shield generator affects terrain color
+
 # 1.3.7
 * fix for undying winter crops and crops to control growth
 
@@ -36,6 +39,9 @@
 * season day sync fix
 * shield generator works as green house negating seasonal effects
 
+<details>
+<summary><b>Changelog History</b> (<i>click to expand</i>)</summary>
+
 # 1.2.5
 * more stable and responsive synchronization of files/values
 * fix for season change visual day 1 issue
@@ -59,9 +65,6 @@
 * new seasonal clutters (flowers for spring)
 * seasonal clutter control
 * custom textures support
-
-<details>
-<summary><b>Changelog History</b> (<i>click to expand</i>)</summary>
 
 # 1.1.13
 * environment related console spam on season change fixed

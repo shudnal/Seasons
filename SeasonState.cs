@@ -2211,9 +2211,12 @@ namespace Seasons
     [HarmonyPatch(typeof(FootStep), nameof(FootStep.FindBestStepEffect))]
     public static class FootStep_FindBestStepEffect_SnowFootsteps
     {
-        private static void Prefix(ref FootStep.GroundMaterial material)
+        private static void Prefix(FootStep __instance, ref FootStep.GroundMaterial material)
         {
-            if (seasonState.GetCurrentSeason() == Season.Winter && (material == FootStep.GroundMaterial.Mud || material == FootStep.GroundMaterial.Grass | material == FootStep.GroundMaterial.GenericGround))
+            if (IsShieldProtectionActive() && ZoneSystemVariantController.IsProtectedHeightmap(__instance.m_character?.GetLastGroundCollider()?.GetComponent<Heightmap>()))
+                return;
+
+            if (seasonState.GetCurrentSeason() == Season.Winter && (material == FootStep.GroundMaterial.Mud || material == FootStep.GroundMaterial.Grass || material == FootStep.GroundMaterial.GenericGround))
                 material = FootStep.GroundMaterial.Snow;
             else if (ZoneSystemVariantController.IsWaterSurfaceFrozen() && material == FootStep.GroundMaterial.Water)
                 material = FootStep.GroundMaterial.Snow;
