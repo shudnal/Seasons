@@ -1,3 +1,6 @@
+# 1.3.9
+* fixed timer string for last portion of last day of a season
+
 # 1.3.8
 * shield generator affects terrain color
 

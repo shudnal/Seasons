@@ -17,6 +17,7 @@ namespace Seasons
         private Season m_season = Season.Spring;
         private int m_day = 0;
         private int m_worldDay = 0;
+        private int m_dayInSeasonGlobal = 0;
         private bool m_seasonIsChanging = false;
         private bool m_isUsingIngameDays = true;
 
@@ -95,7 +96,7 @@ namespace Seasons
                 return;
 
             int worldDay = GetCurrentWorldDay();
-            int dayInSeason = GetDayInSeason(worldDay);
+            m_dayInSeasonGlobal = GetDayInSeason(worldDay);
             Season newSeason = GetSeason(worldDay);
 
             int currentSeason = (int)m_season;
@@ -107,14 +108,14 @@ namespace Seasons
                             || Game.instance.m_sleeping;
 
             if (logTime.Value)
-                LogInfo($"Current: {m_season, -6} {m_day} {m_worldDay} New: {newSeason, -6} {dayInSeason} {worldDay} Time: {EnvMan.instance.GetDayFraction(),-6:F4} TotalSeconds: {GetTotalSeconds(), -10:F2} TimeToChange:{timeForSeasonToChange, -5} SleepCheck:{sleepCheck,-5} Force:{forceSeasonChange, -5} ToPast:{timeForSeasonToChange && !forceSeasonChange && !sleepCheck && m_isUsingIngameDays && changeSeasonOnlyAfterSleep.Value && GetCurrentDay() == GetDaysInSeason() && dayInSeason != GetCurrentDay(), -5}");
+                LogInfo($"Current: {m_season, -6} {m_day} {m_worldDay} New: {newSeason, -6} {m_dayInSeasonGlobal} {worldDay} Time: {EnvMan.instance.GetDayFraction(),-6:F4} TotalSeconds: {GetTotalSeconds(), -10:F2} TimeToChange:{timeForSeasonToChange, -5} SleepCheck:{sleepCheck,-5} Force:{forceSeasonChange, -5} ToPast:{timeForSeasonToChange && !forceSeasonChange && !sleepCheck && m_isUsingIngameDays && changeSeasonOnlyAfterSleep.Value && GetCurrentDay() == GetDaysInSeason() && m_dayInSeasonGlobal != GetCurrentDay(), -5}");
 
             Season setSeason = m_season;
             if (overrideSeason.Value)
                 setSeason = seasonOverrided.Value;
             else if (newSeason != GetCurrentSeason() && (timeForSeasonToChange || forceSeasonChange))
             {
-                if (timeForSeasonToChange && !forceSeasonChange && !sleepCheck && m_isUsingIngameDays && changeSeasonOnlyAfterSleep.Value && GetCurrentDay() == GetDaysInSeason() && dayInSeason != GetCurrentDay())
+                if (timeForSeasonToChange && !forceSeasonChange && !sleepCheck && m_isUsingIngameDays && changeSeasonOnlyAfterSleep.Value && GetCurrentDay() == GetDaysInSeason() && m_dayInSeasonGlobal != GetCurrentDay())
                 {
                     double timeSeconds = ZNet.instance.GetTimeSeconds() - EnvMan.instance.m_dayLengthSec;
                     
@@ -125,15 +126,15 @@ namespace Seasons
                     EnvMan.instance.m_totalSeconds = ZNet.instance.GetTimeSeconds();
 
                     worldDay = GetCurrentWorldDay();
-                    dayInSeason = GetDayInSeason(worldDay);
+                    m_dayInSeasonGlobal = GetDayInSeason(worldDay);
                     newSeason = GetSeason(worldDay);
                 }
 
                 setSeason = newSeason;
             }
 
-            if (!CheckIfSeasonChanged(currentSeason, setSeason, dayInSeason, worldDay))
-                CheckIfDayChanged(dayInSeason, worldDay, forceSeasonChange);
+            if (!CheckIfSeasonChanged(currentSeason, setSeason, m_dayInSeasonGlobal, worldDay))
+                CheckIfDayChanged(m_dayInSeasonGlobal, worldDay, forceSeasonChange);
         }
 
         private World GetCurrentWorld()
@@ -623,7 +624,12 @@ namespace Seasons
         public double GetStartOfCurrentSeason()
         {
             double startOfDay = GetTotalSeconds() - GetTotalSeconds() % GetDayLengthInSeconds();
-            return startOfDay - (GetCurrentDay() - 1) * GetDayLengthInSeconds();
+            return startOfDay - (GetCurrentDay() - (IsPendingSeasonChange() ? 0 : 1)) * GetDayLengthInSeconds();
+        }
+
+        public bool IsPendingSeasonChange()
+        {
+            return m_dayInSeasonGlobal != GetCurrentDay();
         }
 
         public float DayStartFraction()
@@ -1083,6 +1089,7 @@ namespace Seasons
             StartClutterUpdate();
             ZoneSystemVariantController.UpdateWaterState();
             seasonState.UpdateGlobalKeys();
+            seasonState.UpdateWinterBloomEffect();
             UpdateCurrentEnvironment();
         }
 
