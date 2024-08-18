@@ -1,3 +1,6 @@
+# 1.3.10
+* time to season end calculation refined
+
 # 1.3.9
 * fixed timer string for last portion of last day of a season
 

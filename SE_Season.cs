@@ -54,7 +54,7 @@ namespace Seasons
                 _sb.AppendFormat("{0} / {1}\n", Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}"), seasonState.GetDaysInSeason());
 
             if (seasonsTimerFormatInRaven.Value == TimerFormatRaven.TimeToEnd || seasonsTimerFormatInRaven.Value == TimerFormatRaven.CurrentDayAndTimeToEnd)
-                _sb.AppendFormat("{0}: {1}\n", MessageNextSeason(), TimerString(seasonState.GetEndOfCurrentSeason() - seasonState.GetTotalSeconds()));
+                _sb.AppendFormat("{0}: {1}\n", MessageNextSeason(), TimerString(seasonState.GetTimeToCurrentSeasonEnd()));
 
             string statsTooltip = base.GetTooltipString();
             if (statsTooltip.Length > 0)
@@ -82,13 +82,9 @@ namespace Seasons
             else if (seasonsTimerFormat.Value == TimerFormat.CurrentDay)
                 return seasonState.GetCurrentDay() >= seasonState.GetDaysInSeason() && !String.IsNullOrEmpty(MessageNextSeason()) ? MessageNextSeason() : Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}");
 
-            double secondsToEndOfSeason = seasonState.GetEndOfCurrentSeason() - seasonState.GetTotalSeconds();
-            if (secondsToEndOfSeason <= 0d)
-                return MessageNextSeason();
-            else
-                return TimerString(secondsToEndOfSeason);
+            return TimerString(seasonState.GetTimeToCurrentSeasonEnd());
         }
-        
+
         public override void ModifyRaiseSkill(Skills.SkillType skill, ref float value)
         {
             if (m_customRaiseSkills.ContainsKey(skill))
@@ -140,7 +136,7 @@ namespace Seasons
         private static string TimerString(double secondsToEndOfSeason)
         {
             if (secondsToEndOfSeason < 60)
-                return DateTime.FromBinary(599266080000000000).AddSeconds(secondsToEndOfSeason).ToString(@"ss\s");
+                return DateTime.FromBinary(599266080000000000).AddSeconds(Math.Abs(secondsToEndOfSeason)).ToString(@"ss\s");
 
             TimeSpan span = TimeSpan.FromSeconds(secondsToEndOfSeason);
             if (hideSecondsInTimer.Value)
@@ -154,7 +150,6 @@ namespace Seasons
                 else
                     return span.ToString(span.Hours > 0 ? @"hh\:mm\:ss" : @"mm\:ss");
         }
-
     }
 
     [HarmonyPatch(typeof(ObjectDB), nameof(ObjectDB.Awake))]

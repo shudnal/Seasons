@@ -616,6 +616,11 @@ namespace Seasons
             };
         }
 
+        public double GetTimeToCurrentSeasonEnd()
+        {
+            return GetEndOfCurrentSeason() + (seasonState.DayStartFraction() * (1f - ((0.25f - GetDayFractionForSeasonChange()) * seasonState.DayStartFraction() / 0.25f)) * seasonState.GetDayLengthInSeconds()) - seasonState.GetTotalSeconds();
+        }
+
         public double GetEndOfCurrentSeason()
         {
             return GetStartOfCurrentSeason() + seasonState.GetSecondsInSeason();
@@ -629,7 +634,7 @@ namespace Seasons
 
         public bool IsPendingSeasonChange()
         {
-            return m_dayInSeasonGlobal != GetCurrentDay();
+            return 0 < m_dayInSeasonGlobal && m_dayInSeasonGlobal < GetCurrentDay();
         }
 
         public float DayStartFraction()
@@ -1044,6 +1049,11 @@ namespace Seasons
             LogInfo($"Season update pending: {m_season} -> {GetPendingSeasonDay().Item1}{(overrideSeason.Value ? "(override)" : "")}, Day: {m_day} -> {GetPendingSeasonDay().Item2}");
         }
 
+        internal static float GetDayFractionForSeasonChange()
+        {
+            return changeSeasonOnlyAfterSleep.Value ? 0.2498f : 0.24f;
+        }
+
         internal static int GetPendingSeasonDayChange()
         {
             return _pendingSeasonChange;
@@ -1138,7 +1148,7 @@ namespace Seasons
     {
         private static void Postfix(float oldDayFraction, float newDayFraction)
         {
-            float fraction = changeSeasonOnlyAfterSleep.Value ? 0.2498f : 0.24f;
+            float fraction = SeasonState.GetDayFractionForSeasonChange();
 
             bool timeForSeasonToChange = oldDayFraction > 0.16f && oldDayFraction <= fraction && newDayFraction >= fraction && newDayFraction < 0.3f;
             seasonState.UpdateState(timeForSeasonToChange);
@@ -1483,13 +1493,11 @@ namespace Seasons
             if (IsProtectedPosition(plant.transform.position))
                 return secondsLeft;
 
-            double timeSeconds = seasonState.GetTotalSeconds();
-
             Season season = seasonState.GetCurrentSeason();
             float growthMultiplier = seasonState.GetPlantsGrowthMultiplier(season);
 
             double secondsToGrow = 0d;
-            double secondsToSeasonEnd = seasonState.GetEndOfCurrentSeason() - timeSeconds;
+            double secondsToSeasonEnd = seasonState.GetTimeToCurrentSeasonEnd();
             do
             {
                 double timeInSeasonLeft = growthMultiplier == 0 ? secondsToSeasonEnd : Math.Min(secondsLeft / growthMultiplier, secondsToSeasonEnd);
@@ -1580,13 +1588,11 @@ namespace Seasons
             if (IsProtectedPosition(beehive.transform.position))
                 return secondsLeft;
 
-            double timeSeconds = seasonState.GetTotalSeconds();
-
             Season season = seasonState.GetCurrentSeason();
             float multiplier = seasonState.GetBeehiveProductionMultiplier(season);
 
             double secondsToProduct = 0d;
-            double secondsToSeasonEnd = seasonState.GetEndOfCurrentSeason() - timeSeconds;
+            double secondsToSeasonEnd = seasonState.GetTimeToCurrentSeasonEnd();
 
             do
             {
