@@ -484,6 +484,9 @@ namespace Seasons
             if (humanoid.InInterior())
                 return;
 
+            if (ragdoll.m_nview == null || !ragdoll.m_nview.IsValid())
+                return;
+
             AddControllerTo(ragdoll.gameObject, checkLocation: false, ragdoll.m_nview);
         }
 
@@ -492,14 +495,26 @@ namespace Seasons
             if (m_pieceControllers.ContainsKey(wnt))
                 return;
 
+            if (wnt.m_nview == null || !wnt.m_nview.IsValid())
+                return;
+
             AddControllerTo(wnt.gameObject, checkLocation: true, wnt.m_nview, wnt);
         }
 
         public void AddControllerTo(MineRock5 mineRock, MeshRenderer meshRenderer)
         {
-            string prefabName = ZNetScene.instance.GetPrefab(mineRock.m_nview.GetZDO().GetPrefab()).name;
+            if (mineRock.m_nview == null || !mineRock.m_nview.IsValid())
+                return;
 
-            AddControllerTo(mineRock.gameObject, checkLocation: true, mineRock.m_nview, wnt:null, prefabName, meshRenderer);
+            int prefab = mineRock.m_nview.GetZDO().GetPrefab();
+            if (prefab == 0)
+                return;
+
+            GameObject gameObject = ZNetScene.instance.GetPrefab(prefab);
+            if (gameObject == null)
+                return;
+
+            AddControllerTo(mineRock.gameObject, checkLocation: true, mineRock.m_nview, wnt:null, gameObject.name, meshRenderer);
         }
 
         public void RemoveController(GameObject gameObject)
