@@ -1339,7 +1339,7 @@ namespace Seasons
             if (biome == Heightmap.Biome.Mountain || biome == Heightmap.Biome.DeepNorth)
                 return;
 
-            if (__instance.GetHealth() <= 2)
+            if (__instance.GetHealth() <= 5)
                 hit.ApplyModifier(0f);
         }
     }
