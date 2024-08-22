@@ -20,7 +20,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.3.10";
+        public const string pluginVersion = "1.3.11";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -52,7 +52,7 @@ namespace Seasons
         public static ConfigEntry<TimerFormat> seasonsTimerFormat;
         public static ConfigEntry<bool> hideSecondsInTimer;
         public static ConfigEntry<bool> showCurrentSeasonInRaven;
-        public static ConfigEntry<TimerFormatRaven> seasonsTimerFormatInRaven;
+        public static ConfigEntry<TimerFormat> seasonsTimerFormatInRaven;
 
         public static ConfigEntry<bool> disableBloomInWinter;
         public static ConfigEntry<bool> enableSeasonalItems;
@@ -196,13 +196,6 @@ namespace Seasons
         {
             None,
             CurrentDay,
-            TimeToEnd
-        }
-
-        public enum TimerFormatRaven
-        {
-            None,
-            CurrentDay,
             TimeToEnd,
             CurrentDayAndTimeToEnd,
         }
@@ -338,7 +331,7 @@ namespace Seasons
             seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
             hideSecondsInTimer = config("Season - Buff", "Hide seconds", defaultValue: true, "Hide seconds at season buff timer");
             showCurrentSeasonInRaven = config("Season - Buff", "Raven menu Show current season", defaultValue: true, "Show current season tooltip in Raven menu");
-            seasonsTimerFormatInRaven = config("Season - Buff", "Raven menu Timer format", defaultValue: TimerFormatRaven.CurrentDayAndTimeToEnd, "What to show at season buff timer in Raven menu");
+            seasonsTimerFormatInRaven = config("Season - Buff", "Raven menu Timer format", defaultValue: TimerFormat.CurrentDayAndTimeToEnd, "What to show at season buff timer in Raven menu");
 
             showCurrentSeasonBuff.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
 

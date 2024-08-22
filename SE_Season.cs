@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using TMPro;
 using UnityEngine;
 using static Seasons.Seasons;
 using static Seasons.SeasonStats;
@@ -34,6 +35,9 @@ namespace Seasons
 
         public override void Setup(Character character)
         {
+            if (seasonsTimerFormat.Value == TimerFormat.CurrentDayAndTimeToEnd && Hud.instance.m_statusEffectTemplate?.Find("TimeText"))
+                Hud.instance.m_statusEffectTemplate.Find("TimeText").GetComponent<TMP_Text>().richText = true;
+            
             m_season = seasonState.GetCurrentSeason();
             m_indoors = m_character != null && m_character == Player.m_localPlayer && m_character.InInterior();
 
@@ -50,10 +54,10 @@ namespace Seasons
             _sb.Clear();
             _sb.AppendFormat("{0}\n", GetSeasonTooltip());
             
-            if (seasonsTimerFormatInRaven.Value == TimerFormatRaven.CurrentDay || seasonsTimerFormatInRaven.Value == TimerFormatRaven.CurrentDayAndTimeToEnd)
+            if (seasonsTimerFormatInRaven.Value == TimerFormat.CurrentDay || seasonsTimerFormatInRaven.Value == TimerFormat.CurrentDayAndTimeToEnd)
                 _sb.AppendFormat("{0} / {1}\n", Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}"), seasonState.GetDaysInSeason());
 
-            if (seasonsTimerFormatInRaven.Value == TimerFormatRaven.TimeToEnd || seasonsTimerFormatInRaven.Value == TimerFormatRaven.CurrentDayAndTimeToEnd)
+            if (seasonsTimerFormatInRaven.Value == TimerFormat.TimeToEnd || seasonsTimerFormatInRaven.Value == TimerFormat.CurrentDayAndTimeToEnd)
                 _sb.AppendFormat("{0}: {1}\n", MessageNextSeason(), TimerString(seasonState.GetTimeToCurrentSeasonEnd()));
 
             string statsTooltip = base.GetTooltipString();
@@ -79,10 +83,22 @@ namespace Seasons
         {
             if (seasonsTimerFormat.Value == TimerFormat.None)
                 return "";
-            else if (seasonsTimerFormat.Value == TimerFormat.CurrentDay)
-                return seasonState.GetCurrentDay() >= seasonState.GetDaysInSeason() && !String.IsNullOrEmpty(MessageNextSeason()) ? MessageNextSeason() : Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}");
 
-            return TimerString(seasonState.GetTimeToCurrentSeasonEnd());
+            _sb.Clear();
+            
+            if (seasonsTimerFormat.Value == TimerFormat.CurrentDay || seasonsTimerFormat.Value == TimerFormat.CurrentDayAndTimeToEnd)
+                _sb.Append(seasonState.GetCurrentDay() >= seasonState.GetDaysInSeason() && !String.IsNullOrEmpty(MessageNextSeason()) ? MessageNextSeason() : Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}"));
+
+            if (seasonsTimerFormat.Value == TimerFormat.CurrentDayAndTimeToEnd)
+                _sb.Append(" (");
+
+            if (seasonsTimerFormat.Value == TimerFormat.TimeToEnd || seasonsTimerFormat.Value == TimerFormat.CurrentDayAndTimeToEnd)
+                _sb.AppendFormat(TimerString(seasonState.GetTimeToCurrentSeasonEnd(), icon: true));
+
+            if (seasonsTimerFormat.Value == TimerFormat.CurrentDayAndTimeToEnd)
+                _sb.Append(")");
+
+            return _sb.ToString();
         }
 
         public override void ModifyRaiseSkill(Skills.SkillType skill, ref float value)
@@ -133,17 +149,27 @@ namespace Seasons
             return GetSeasonIsComing(seasonState.GetNextSeason());
         }
     
-        private static string TimerString(double secondsToEndOfSeason)
+        private static string TimerString(double seconds, bool icon = false)
         {
-            if (secondsToEndOfSeason < 60)
-                return DateTime.FromBinary(599266080000000000).AddSeconds(Math.Abs(secondsToEndOfSeason)).ToString(@"ss\s");
+            if (seconds < 60)
+                return DateTime.FromBinary(599266080000000000).AddSeconds(Math.Abs(seconds)).ToString(@"ss\s");
 
-            TimeSpan span = TimeSpan.FromSeconds(secondsToEndOfSeason);
+            TimeSpan span = TimeSpan.FromSeconds(seconds);
             if (hideSecondsInTimer.Value)
-                if (span.Hours > 0)
-                    return $"{(int)span.TotalHours}{new DateTime(span.Ticks):\\h mm\\m}";
+                if (icon)
+                {
+                    if (span.Hours > 0)
+                        return string.Format((int)seconds % 2 == 0 ? "{0:d2}:{1:d2}" : "{0:d2}<alpha=#00>:<alpha=#ff>{1:d2}", (int)span.TotalHours, span.Minutes);
+                    else
+                        return new DateTime(span.Ticks).ToString(@"mm\:ss");
+                }
                 else
-                    return new DateTime(span.Ticks).ToString(@"mm\m ss\s");
+                {
+                    if (span.Hours > 0)
+                        return $"{(int)span.TotalHours}{new DateTime(span.Ticks):\\h mm\\m}";
+                    else
+                        return new DateTime(span.Ticks).ToString(@"mm\m ss\s");
+                }
             else
                 if (span.TotalHours > 24)
                     return string.Format("{0:d2}:{1:d2}:{2:d2}", (int)span.TotalHours, span.Minutes, span.Seconds);

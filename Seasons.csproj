@@ -89,6 +89,10 @@
       <HintPath>..\Assemblies\beta\SoftReferenceableAssets.dll</HintPath>
     </Reference>
     <Reference Include="System" />
+    <Reference Include="Unity.TextMeshPro, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\Assemblies\beta\Unity.TextMeshPro.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine">
       <HintPath>..\Assemblies\beta\UnityEngine.dll</HintPath>
     </Reference>

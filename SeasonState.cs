@@ -1321,26 +1321,25 @@ namespace Seasons
     [HarmonyPatch(typeof(Character), nameof(Character.ApplyDamage))]
     public static class Character_ApplyDamage_PreventDeathFromFreezing
     {
-        private static void Prefix(Character __instance, ref HitData hit)
+        private static bool Prefix(Character __instance, ref HitData hit)
         {
             if (!preventDeathFromFreezing.Value)
-                return;
+                return true;
 
             if (!__instance.IsPlayer())
-                return;
+                return true;
 
             if (__instance != Player.m_localPlayer)
-                return;
+                return true;
 
             if (hit.m_hitType != HitData.HitType.Freezing)
-                return;
+                return true;
 
             Heightmap.Biome biome = (__instance as Player).GetCurrentBiome();
             if (biome == Heightmap.Biome.Mountain || biome == Heightmap.Biome.DeepNorth)
-                return;
-
-            if (__instance.GetHealth() <= 5)
-                hit.ApplyModifier(0f);
+                return true;
+            
+            return __instance.GetHealth() >= 5;
         }
     }
 

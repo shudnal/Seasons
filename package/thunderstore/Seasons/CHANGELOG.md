@@ -1,3 +1,9 @@
+# 1.3.11
+* proper protection from freezing death in Winter
+* minimal hp of freezing protection is 5
+* minor bulletproof for incorrect prefab variant initialization
+* option in status effect text to see both current day and time to season end
+
 # 1.3.10
 * time to season end calculation refined
 
