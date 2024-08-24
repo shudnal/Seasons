@@ -2225,7 +2225,7 @@ namespace Seasons
     {
         private static void Prefix(FootStep __instance, ref FootStep.GroundMaterial material)
         {
-            if (IsShieldProtectionActive() && ZoneSystemVariantController.IsProtectedHeightmap(__instance.m_character?.GetLastGroundCollider()?.GetComponent<Heightmap>()))
+            if (IsShieldProtectionActive() && __instance.m_character?.GetLastGroundCollider() != null && ZoneSystemVariantController.IsProtectedHeightmap(__instance.m_character.GetLastGroundCollider().GetComponent<Heightmap>()))
                 return;
 
             if (seasonState.GetCurrentSeason() == Season.Winter && (material == FootStep.GroundMaterial.Mud || material == FootStep.GroundMaterial.Grass || material == FootStep.GroundMaterial.GenericGround))
