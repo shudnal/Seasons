@@ -44,10 +44,10 @@ namespace Seasons
 
         private readonly Dictionary<Material, Color> m_originalColors = new Dictionary<Material, Color>();
 
+        private readonly Dictionary<string, Tuple<bool, float, float>> m_clutterDefaults = new Dictionary<string, Tuple<bool, float, float>>();
+
         public static ClutterVariantController Instance => m_instance;
         
-        private readonly Dictionary<Clutter, Tuple<bool, float, float>> m_clutterDefaults = new Dictionary<Clutter, Tuple<bool, float, float>>();
-
         private static readonly List<Renderer> s_tempRenderers = new List<Renderer>();
 
         private static float s_grassPatchSize;
@@ -81,9 +81,14 @@ namespace Seasons
             s_amountScale = ClutterSystem.instance.m_amountScale;
 
             m_clutterDefaults.Clear();
-            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => !string.IsNullOrWhiteSpace(c?.m_name) && c.m_prefab != null))
+            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c?.m_prefab != null))
             {
-                m_clutterDefaults.Add(clutter, Tuple.Create(clutter.m_enabled, clutter.m_scaleMin, clutter.m_scaleMax));
+                string name = GetClutterName(clutter);
+                if (!m_clutterDefaults.ContainsKey(name))
+                    m_clutterDefaults.Add(name, Tuple.Create(clutter.m_enabled, clutter.m_scaleMin, clutter.m_scaleMax));
+                
+                if (!m_clutterDefaults.ContainsKey(clutter.m_prefab.name))
+                    m_clutterDefaults.Add(clutter.m_prefab.name, Tuple.Create(clutter.m_enabled, clutter.m_scaleMin, clutter.m_scaleMax));
 
                 if (!texturesVariants.controllers.TryGetValue(Utils.GetPrefabName(clutter.m_prefab), out PrefabController controller))
                     continue;
@@ -373,12 +378,12 @@ namespace Seasons
             ClutterSystem.instance.m_grassPatchSize = seasonGrass.m_grassPatchSize;
             ClutterSystem.instance.m_amountScale = seasonGrass.m_amountScale;
 
-            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => !string.IsNullOrWhiteSpace(c?.m_name) && c.m_prefab != null))
+            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c?.m_prefab != null))
             {
                 if (!ControlGrassSize(clutter.m_prefab))
                     continue;
 
-                if (!m_clutterDefaults.TryGetValue(clutter, out Tuple<bool, float, float> defaultState))
+                if (!m_clutterDefaults.TryGetValue(GetClutterName(clutter), out Tuple<bool, float, float> defaultState))
                     continue;
 
                 clutter.m_scaleMin = defaultState.Item2 * seasonGrass.m_scaleMin;
@@ -397,14 +402,12 @@ namespace Seasons
             ClutterSystem.instance.m_grassPatchSize = s_grassPatchSize;
             ClutterSystem.instance.m_amountScale = s_amountScale;
 
-            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => !string.IsNullOrWhiteSpace(c?.m_name) && c.m_prefab != null))
+            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c?.m_prefab != null))
             {
                 if (!ControlGrassSize(clutter.m_prefab))
                     continue;
 
-                //clutter.m_enabled = true;
-
-                if (!m_clutterDefaults.TryGetValue(clutter, out Tuple<bool, float, float> defaultState))
+                if (!m_clutterDefaults.TryGetValue(GetClutterName(clutter), out Tuple<bool, float, float> defaultState))
                     continue;
 
                 clutter.m_scaleMin = defaultState.Item2;
@@ -420,20 +423,26 @@ namespace Seasons
 
         public void UpdateSeasonalClutter()
         {
-            Dictionary<string, bool> seasonalClutter = SeasonState.seasonClutterSettings.GetSeasonalState();
-            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => !string.IsNullOrWhiteSpace(c?.m_name) && c.m_prefab != null))
+            Dictionary<string, bool> seasonalClutter = SeasonState.seasonClutterSettings.GetSeasonalClutterState();
+            foreach (Clutter clutter in ClutterSystem.instance.m_clutter)
             {
-                if (!seasonalClutter.TryGetValue(clutter.m_name, out bool m_enabled))
-                    continue;
-
-                clutter.m_enabled = m_enabled;
+                if (seasonalClutter.TryGetValue(clutter?.m_name, out bool nameEnabled))
+                    clutter.m_enabled = nameEnabled;
+                else if (seasonalClutter.TryGetValue(clutter?.m_prefab?.name, out bool prefabEnabled))
+                    clutter.m_enabled = prefabEnabled;
             }
         }
 
         public void RevertSeasonalClutter()
         {
-            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => !string.IsNullOrWhiteSpace(c?.m_name) && SeasonState.seasonClutterSettings.GetSeasonalState().ContainsKey(c.m_name)))
-                clutter.m_enabled = false;
+            Dictionary<string, bool> seasonalClutter = SeasonState.seasonClutterSettings.GetSeasonalClutterState();
+            foreach (Clutter clutter in ClutterSystem.instance.m_clutter)
+            {
+                if (seasonalClutter.ContainsKey(clutter?.m_name))
+                    clutter.m_enabled = false;
+                else if (seasonalClutter.ContainsKey(clutter?.m_prefab?.name))
+                    clutter.m_enabled = false;
+            }
         }
 
         public IEnumerator UpdateDayState()
@@ -467,6 +476,22 @@ namespace Seasons
             return (Math.Sin(Math.Sign(seed) * seedFactor * day) + Math.Sin(Math.Sqrt(seedFactor) * Math.E * day) + Math.Sin(Math.PI * day)) / 2;
         }
 
+        private static string GetClutterName(Clutter clutter)
+        {
+            if (clutter == null)
+                return "";
+
+            string name = clutter.m_name;
+            string prefab = clutter.m_prefab?.name;
+
+            if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(prefab))
+                return $"{name}_{prefab}";
+            else if (!string.IsNullOrWhiteSpace(prefab))
+                return prefab;
+
+            return name;
+        }
+
         internal static void AddSeasonalClutter()
         {
             AddMeadowsFlowers();
@@ -478,10 +503,10 @@ namespace Seasons
 
         internal static void AddMeadowsFlowers()
         {
-            if (ClutterSystem.instance.m_clutter.Any(clutter => clutter.m_name == c_meadowsFlowersName))
+            if (ClutterSystem.instance.m_clutter.Any(clutter => clutter?.m_name == c_meadowsFlowersName || clutter?.m_prefab?.name == c_meadowsFlowersPrefabName))
                 return;
 
-            Clutter clutter = ClutterSystem.instance.m_clutter.Find(clutter => clutter.m_name == "heath flowers");
+            Clutter clutter = ClutterSystem.instance.m_clutter.Find(clutter => clutter?.m_name == "heath flowers" || clutter?.m_prefab?.name == "instanced_heathflowers");
             if (clutter == null)
                 return;
 
@@ -512,10 +537,10 @@ namespace Seasons
         
         internal static void AddForestBloom()
         {
-            if (ClutterSystem.instance.m_clutter.Any(clutter => clutter.m_name == c_forestBloomName))
+            if (ClutterSystem.instance.m_clutter.Any(clutter => clutter?.m_name == c_forestBloomName || clutter?.m_prefab?.name == c_forestBloomPrefabName))
                 return;
 
-            Clutter clutter = ClutterSystem.instance.m_clutter.Find(clutter => clutter.m_name == "forest groundcover");
+            Clutter clutter = ClutterSystem.instance.m_clutter.Find(clutter => clutter?.m_name == "forest groundcover" || clutter?.m_prefab?.name == "instanced_forest_groundcover");
             if (clutter == null)
                 return;
 
@@ -546,10 +571,10 @@ namespace Seasons
 
         internal static void AddSwampgrassBloom()
         {
-            if (ClutterSystem.instance.m_clutter.Any(clutter => clutter.m_name == c_swampGrassBloomName))
+            if (ClutterSystem.instance.m_clutter.Any(clutter => clutter?.m_name == c_swampGrassBloomName || clutter?.m_prefab?.name == c_swampGrassBloomPrefabName))
                 return;
 
-            Clutter clutter = ClutterSystem.instance.m_clutter.Find(clutter => clutter.m_name == "swampgrass");
+            Clutter clutter = ClutterSystem.instance.m_clutter.Find(clutter => clutter?.m_name == "swampgrass" || clutter?.m_prefab?.name == "instanced_swamp_grass");
             if (clutter == null)
                 return;
 
@@ -598,5 +623,13 @@ namespace Seasons
             Initialize();
         }
 
+        [HarmonyPatch(typeof(ClutterSystem), nameof(ClutterSystem.Awake))]
+        public static class ClutterSystem_Awake_AddSeasonalClutter
+        {
+            private static void Postfix()
+            {
+                AddSeasonalClutter();
+            }
+        }
     }
 }

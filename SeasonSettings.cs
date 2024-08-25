@@ -1496,14 +1496,33 @@ namespace Seasons
                 clutterName = ClutterVariantController.c_swampGrassBloomName,
                 spring = true
             });
+
+            seasonalClutters.Add(new SeasonalClutter()
+            {
+                clutterName = ClutterVariantController.c_meadowsFlowersPrefabName,
+                spring = true
+            });
+
+            seasonalClutters.Add(new SeasonalClutter()
+            {
+                clutterName = ClutterVariantController.c_forestBloomPrefabName,
+                spring = true
+            });
+
+            seasonalClutters.Add(new SeasonalClutter()
+            {
+                clutterName = ClutterVariantController.c_swampGrassBloomPrefabName,
+                spring = true
+            });
+
         }
 
-        public Dictionary<string, bool> GetSeasonalState()
+        public Dictionary<string, bool> GetSeasonalClutterState()
         {
-            return GetSeasonalState(seasonState.GetCurrentSeason());
+            return GetSeasonalClutterState(seasonState.GetCurrentSeason());
         }
 
-        public Dictionary<string, bool> GetSeasonalState(Season season)
+        public Dictionary<string, bool> GetSeasonalClutterState(Season season)
         {
             Dictionary<string, bool> result = new Dictionary<string, bool>();
             foreach (SeasonalClutter clutter in seasonalClutters)
