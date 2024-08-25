@@ -139,7 +139,7 @@ namespace Seasons
         
         private void OnDestroy()
         {
-            RevertColors();
+            m_instance = null;
         }
 
         private void AddCachedInstanceRenderer(GameObject prefab, string path, CachedRenderer cachedRenderer)
@@ -426,6 +426,9 @@ namespace Seasons
             Dictionary<string, bool> seasonalClutter = SeasonState.seasonClutterSettings.GetSeasonalClutterState();
             foreach (Clutter clutter in ClutterSystem.instance.m_clutter)
             {
+                if (clutter == null || clutter.m_name == null && clutter.m_prefab == null)
+                    continue;
+
                 if (seasonalClutter.TryGetValue(clutter?.m_name, out bool nameEnabled))
                     clutter.m_enabled = nameEnabled;
                 else if (seasonalClutter.TryGetValue(clutter?.m_prefab?.name, out bool prefabEnabled))
@@ -438,6 +441,9 @@ namespace Seasons
             Dictionary<string, bool> seasonalClutter = SeasonState.seasonClutterSettings.GetSeasonalClutterState();
             foreach (Clutter clutter in ClutterSystem.instance.m_clutter)
             {
+                if (clutter == null || clutter.m_name == null && clutter.m_prefab == null)
+                    continue;
+
                 if (seasonalClutter.ContainsKey(clutter?.m_name))
                     clutter.m_enabled = false;
                 else if (seasonalClutter.ContainsKey(clutter?.m_prefab?.name))

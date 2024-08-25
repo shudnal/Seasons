@@ -91,6 +91,11 @@ namespace Seasons
 
         public float m_createDestroyTimer;
         public RaycastHit[] rayHits = new RaycastHit[200];
+        
+        private ParticleSystem m_snowStorm;
+        private Heightmap.Biome m_currentBiome;
+        private int m_snowStormMaxParticles;
+        private float m_snowStormEmissionRate;
 
         private static ZoneSystemVariantController m_instance;
 
@@ -166,6 +171,74 @@ namespace Seasons
                 s_iceFloe.m_prefab.AddComponent<IceFloeClimb>();
 
             s_iceFloe.m_prefab.GetComponent<ZNetView>().m_syncInitialScale = true;
+        }
+
+        public bool BiomeChanged(Heightmap.Biome biome)
+        {
+            if (m_currentBiome == biome)
+                return false;
+
+            m_currentBiome = biome;
+            return true;
+        }
+
+        public void CheckBiomeChanged(Heightmap.Biome biome)
+        {
+            if (!UseTextureControllers())
+                return;
+
+            if (!SeasonState.IsActive)
+                return;
+
+            if (reduceSnowStormInWinter.Value == Vector2.zero || Player.m_localPlayer == null)
+            {
+                if (m_snowStorm != null && m_snowStormMaxParticles != 0 && m_snowStormEmissionRate != 0f)
+                {
+                    ParticleSystem.MainModule main = m_snowStorm.main;
+                    ParticleSystem.EmissionModule emission = m_snowStorm.emission;
+                    emission.rateOverTimeMultiplier = m_snowStormEmissionRate;
+                    main.maxParticles = m_snowStormMaxParticles;
+                }
+                return;
+            }
+
+            if (!BiomeChanged(biome))
+                return;
+
+            if (m_snowStorm == null)
+            {
+                Transform snowStormTransform = EnvMan.instance.transform.Find("FollowPlayer/SnowStorm") ?? Utils.FindChild(EnvMan.instance.transform, "SnowStorm");
+                if (snowStormTransform == null)
+                    return;
+
+                Transform snowParticles = snowStormTransform.Find("snow (1)");
+                if (snowParticles == null)
+                    return;
+
+                m_snowStorm = snowParticles.GetComponent<ParticleSystem>();
+            }
+
+            ParticleSystem.MainModule snowStormMain = m_snowStorm.main;
+            ParticleSystem.EmissionModule snowStormEmission = m_snowStorm.emission;
+
+            if (m_snowStormMaxParticles == 0)
+                m_snowStormMaxParticles = snowStormMain.maxParticles;
+
+            if (m_snowStormEmissionRate == 0f)
+                m_snowStormEmissionRate = snowStormEmission.rateOverTimeMultiplier;
+
+            bool reduceParticles = seasonState.GetCurrentSeason() == Season.Winter && biome != Heightmap.Biome.Mountain && biome != Heightmap.Biome.AshLands && biome != Heightmap.Biome.DeepNorth;
+
+            snowStormEmission.rateOverTimeMultiplier = reduceParticles ? reduceSnowStormInWinter.Value.x : m_snowStormEmissionRate;
+            snowStormMain.maxParticles = reduceParticles ? (int)reduceSnowStormInWinter.Value.y : m_snowStormMaxParticles;
+        }
+        
+        public static void SnowStormReduceParticlesChanged()
+        {
+            if (!Instance)
+                return;
+
+            Instance.m_currentBiome = Heightmap.Biome.None;
         }
 
         public static void UpdateTerrainColor(Heightmap heightmap)
@@ -1547,6 +1620,15 @@ namespace Seasons
                 return false;
 
             return true;
+        }
+    }
+
+    [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.UpdateEnvironment))]
+    public static class EnvMan_UpdateEnvironment_CheckSnowStormOnBiomeChange
+    {
+        private static void Postfix(EnvMan __instance)
+        {
+            Instance?.CheckBiomeChanged(__instance.m_currentBiome);
         }
     }
 }

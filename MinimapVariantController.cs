@@ -37,6 +37,7 @@ namespace Seasons
         private void OnDestroy()
         {
             RevertTextures();
+            m_instance = null;
         }
 
         public void RevertTextures()

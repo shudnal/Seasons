@@ -1,3 +1,7 @@
+# 1.3.12
+* clutter control compatibility with Expand World Data
+* option to reduce snow storm particles amount in Winter
+
 # 1.3.11
 * proper protection from freezing death in Winter
 * minimal hp of freezing protection is 5
