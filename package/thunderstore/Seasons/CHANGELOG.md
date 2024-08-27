@@ -1,3 +1,7 @@
+# 1.3.14
+* fix for season timer blinking text
+* fix for clutter error on destroy
+
 # 1.3.13
 * bloom properly disabled in Winter every time after applying graphic settings
 

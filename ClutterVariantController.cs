@@ -426,12 +426,12 @@ namespace Seasons
             Dictionary<string, bool> seasonalClutter = SeasonState.seasonClutterSettings.GetSeasonalClutterState();
             foreach (Clutter clutter in ClutterSystem.instance.m_clutter)
             {
-                if (clutter == null || clutter.m_name == null && clutter.m_prefab == null)
+                if (clutter == null)
                     continue;
 
-                if (seasonalClutter.TryGetValue(clutter?.m_name, out bool nameEnabled))
+                if (clutter.m_name != null && seasonalClutter.TryGetValue(clutter.m_name, out bool nameEnabled))
                     clutter.m_enabled = nameEnabled;
-                else if (seasonalClutter.TryGetValue(clutter?.m_prefab?.name, out bool prefabEnabled))
+                else if (clutter.m_prefab != null && seasonalClutter.TryGetValue(clutter?.m_prefab?.name, out bool prefabEnabled))
                     clutter.m_enabled = prefabEnabled;
             }
         }
@@ -441,12 +441,12 @@ namespace Seasons
             Dictionary<string, bool> seasonalClutter = SeasonState.seasonClutterSettings.GetSeasonalClutterState();
             foreach (Clutter clutter in ClutterSystem.instance.m_clutter)
             {
-                if (clutter == null || clutter.m_name == null && clutter.m_prefab == null)
+                if (clutter == null)
                     continue;
 
-                if (seasonalClutter.ContainsKey(clutter?.m_name))
+                if (clutter.m_name != null && seasonalClutter.ContainsKey(clutter.m_name))
                     clutter.m_enabled = false;
-                else if (seasonalClutter.ContainsKey(clutter?.m_prefab?.name))
+                else if (clutter.m_prefab != null && seasonalClutter.ContainsKey(clutter.m_prefab.name))
                     clutter.m_enabled = false;
             }
         }

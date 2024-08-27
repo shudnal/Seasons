@@ -35,7 +35,7 @@ namespace Seasons
 
         public override void Setup(Character character)
         {
-            if (seasonsTimerFormat.Value == TimerFormat.CurrentDayAndTimeToEnd && Hud.instance.m_statusEffectTemplate?.Find("TimeText"))
+            if (Hud.instance.m_statusEffectTemplate?.Find("TimeText")?.GetComponent<TMP_Text>())
                 Hud.instance.m_statusEffectTemplate.Find("TimeText").GetComponent<TMP_Text>().richText = true;
             
             m_season = seasonState.GetCurrentSeason();
