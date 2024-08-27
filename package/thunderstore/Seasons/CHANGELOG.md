@@ -1,3 +1,6 @@
+# 1.3.13
+* bloom properly disabled in Winter every time after applying graphic settings
+
 # 1.3.12
 * clutter control compatibility with Expand World Data
 * option to reduce snow storm particles amount in Winter

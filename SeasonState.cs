@@ -2314,4 +2314,12 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(Settings), nameof(Settings.SaveTabSettings))]
+    public static class Settings_SaveTabSettings_ForceUpdateState
+    {
+        private static void Postfix()
+        {
+            seasonState?.UpdateWinterBloomEffect();
+        }
+    }
 }
