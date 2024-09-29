@@ -2,6 +2,7 @@
 * heat from fire protects crops and pickables from winter perish
 * fixed visuals for ship frozen under water
 * new test option to make frozen Karve inventory available after water freeze
+* fish positioning in frozen ocean finally fixed
 
 # 1.3.14
 * fix for season timer blinking text
@@ -31,6 +32,9 @@
 
 # 1.3.7
 * fix for undying winter crops and crops to control growth
+
+<details>
+<summary><b>Changelog History</b> (<i>click to expand</i>)</summary>
 
 # 1.3.6
 * potential fix for environments (weather) synchronization
@@ -66,9 +70,6 @@
 # 1.2.6
 * season day sync fix
 * shield generator works as green house negating seasonal effects
-
-<details>
-<summary><b>Changelog History</b> (<i>click to expand</i>)</summary>
 
 # 1.2.5
 * more stable and responsive synchronization of files/values

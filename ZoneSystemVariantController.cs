@@ -588,8 +588,9 @@ namespace Seasons
             if (fish.m_nview.HasOwner() && !fish.m_nview.IsOwner())
                 return;
 
-            if (fish.transform.position.y >= WaterLevel - _winterWaterSurfaceOffset - fish.m_height)
-                fish.transform.position = new Vector3(fish.transform.position.x, WaterLevel - _winterWaterSurfaceOffset - fish.m_height, fish.transform.position.z);
+            float maximumLevel = WaterLevel - _winterWaterSurfaceOffset - fish.m_height - 0.2f;
+            if (fish.transform.position.y > maximumLevel)
+                fish.transform.position = new Vector3(fish.transform.position.x, maximumLevel, fish.transform.position.z);
 
             fish.m_body.velocity = Vector3.zero;
             fish.m_haveWaypoint = false;
