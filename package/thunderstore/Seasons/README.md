@@ -473,7 +473,7 @@ Vanilla winter colors made by interpolating original biome color to "#FAFAFF" pr
 ## General settings
 * minimap will be recolored using the seasonal colors setting
 * seasonal items will be enabled in the corresponding season
-* you won't die from freezing debuff if you're not in the mountains or deep north. You will stay at 1 hp.
+* you won't die from freezing debuff if you're not in the mountains or deep north. You will stay at very low hp.
 * seasonal stats will be applied only outdoors. In dungeons you won't have advantage.
 * current seasonal buff can be hidden and timer format can bet set to current day or the time left to next season
 * seasons are changed in the morning of first day
@@ -485,6 +485,7 @@ Vanilla winter colors made by interpolating original biome color to "#FAFAFF" pr
 * ice floes will spawn in ocean in set period of days in winter
 * water will freeze in set period of days in winter
 * ships can be pushed out of water when the surface is frozen
+* fish will be pushed below surface when it freezes
 
 ## Custom world settings for realtime seasons calculations
 
