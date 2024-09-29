@@ -2341,4 +2341,29 @@ namespace Seasons
             seasonState?.UpdateWinterBloomEffect();
         }
     }
+
+    [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.OnMorning))]
+    public static class EnvMan_OnMorning_SeasonChangeAnnouncement
+    {
+        private static void ShowMessage(string message)
+        {
+            MessageHud.instance.m_msgQeue.Clear();
+            MessageHud.instance.ShowMessage(MessageHud.MessageType.Center, message);
+        }
+
+        private static void Postfix()
+        {
+            if (!overrideNewDayMessagesOnSeasonStartEnd.Value)
+                return;
+
+            Player player = Player.m_localPlayer;
+            if (player == null)
+                return;
+
+            if (seasonState.GetCurrentDay() == 1)
+                ShowMessage(GetSeasonTooltip(seasonState.GetCurrentSeason()));
+            else if (seasonState.GetCurrentDay() == seasonState.GetDaysInSeason())
+                ShowMessage(GetSeasonIsComing(seasonState.GetNextSeason()));
+        }
+    }
 }

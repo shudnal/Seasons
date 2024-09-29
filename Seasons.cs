@@ -53,6 +53,7 @@ namespace Seasons
         public static ConfigEntry<bool> hideSecondsInTimer;
         public static ConfigEntry<bool> showCurrentSeasonInRaven;
         public static ConfigEntry<TimerFormat> seasonsTimerFormatInRaven;
+        public static ConfigEntry<bool> overrideNewDayMessagesOnSeasonStartEnd;
 
         public static ConfigEntry<bool> disableBloomInWinter;
         public static ConfigEntry<Vector2> reduceSnowStormInWinter;
@@ -341,6 +342,7 @@ namespace Seasons
             hideSecondsInTimer = config("Season - Buff", "Hide seconds", defaultValue: true, "Hide seconds at season buff timer");
             showCurrentSeasonInRaven = config("Season - Buff", "Raven menu Show current season", defaultValue: true, "Show current season tooltip in Raven menu");
             seasonsTimerFormatInRaven = config("Season - Buff", "Raven menu Timer format", defaultValue: TimerFormat.CurrentDayAndTimeToEnd, "What to show at season buff timer in Raven menu");
+            overrideNewDayMessagesOnSeasonStartEnd = config("Season - Buff", "Show seasonal messages on morning", defaultValue: true, "Show messages \"Season is coming\" on last day and \"Season has come\" on first day of season");
 
             showCurrentSeasonBuff.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
 
