@@ -548,11 +548,17 @@ namespace Seasons
             ship.m_body.WakeUp();
             ship.m_body.isKinematic = false;
 
-            if (ship.m_body.position.y > WaterLevel + ship.m_waterLevelOffset || !IsWaterSurfaceFrozen())
+            List<MeshRenderer> watermask = ship.GetComponentsInChildren<MeshRenderer>(includeInactive: true)
+                .Where(renderer => renderer.sharedMaterial != null && renderer.sharedMaterial.shader != null && renderer.sharedMaterial.shader.name == "Custom/WaterMask").ToList();
+
+            watermask.Do(renderer => renderer.gameObject.SetActive(true));
+
+            float positionDelta = ship.m_body.position.y - (WaterLevel + ship.m_waterLevelOffset);
+            if (positionDelta > 0 || !IsWaterSurfaceFrozen())
                 return;
 
             ship.m_body.isKinematic = !placeShipAboveFrozenOcean.Value;
-            
+
             if (ship.TryGetComponent(out ZSyncTransform zSyncTransform))
                 zSyncTransform.m_isKinematicBody = ship.m_body.isKinematic;
 
@@ -561,6 +567,16 @@ namespace Seasons
                 ship.m_body.rotation = Quaternion.identity;
                 ship.m_body.position = new Vector3(ship.m_body.position.x, WaterLevel + ship.m_waterLevelOffset + 0.1f, ship.m_body.position.z);
                 ship.m_body.velocity = Vector3.zero;
+            }
+            else if (frozenKarvePositionFix.Value && Utils.GetPrefabName(ship.name) == "Karve" && positionDelta <= -1.43f)
+            {
+                ship.m_body.rotation = Quaternion.identity;
+                ship.m_body.position = new Vector3(ship.m_body.position.x, WaterLevel + ship.m_waterLevelOffset - 1.42f, ship.m_body.position.z);
+                ship.m_body.velocity = Vector3.zero;
+            }
+            else if (positionDelta < -ship.m_waterLevelOffset * 1.5f && ship.m_body.isKinematic)
+            {
+                watermask.Do(renderer => renderer.gameObject.SetActive(false));
             }
         }
 

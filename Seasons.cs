@@ -34,6 +34,7 @@ namespace Seasons
         public static ConfigEntry<bool> logTime;
         public static ConfigEntry<bool> logFloes;
         public static ConfigEntry<bool> plainsSwampBorderFix;
+        public static ConfigEntry<bool> frozenKarvePositionFix;
 
         public static ConfigEntry<bool> overrideSeason;
         public static ConfigEntry<Season> seasonOverrided;
@@ -402,6 +403,7 @@ namespace Seasons
             logTime = config("Test", "Log time", defaultValue: false, "Log time info on state update");
             logFloes = config("Test", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying");
             plainsSwampBorderFix = config("Test", "Plains Swamp border fix", defaultValue: true, "Fix clipping into ground on Plains - Swamp border");
+            frozenKarvePositionFix = config("Test", "Fix position for frozen Karve", defaultValue: false, "Make Karve storage always available if frozen. If Karve is below certain level it will be pushed to the surface.");
 
             plainsSwampBorderFix.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateTerrainColors();
 

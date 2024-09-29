@@ -1,5 +1,7 @@
 # 1.3.15
 * heat from fire protects crops and pickables from winter perish
+* fixed visuals for ship frozen under water
+* new test option to make frozen Karve inventory available after water freeze
 
 # 1.3.14
 * fix for season timer blinking text
