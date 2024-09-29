@@ -1355,7 +1355,7 @@ namespace Seasons
                     && !PlantWillSurviveWinter(pickable.gameObject)
                     && !IsProtectedPosition(pickable.transform.position);
         }
-
+        
         public static bool IsIgnored(Pickable pickable)
         {
             return pickable.m_nview == null || 
@@ -1370,7 +1370,7 @@ namespace Seasons
             if (IsIgnored(__instance))
                 return;
 
-            if (ShouldBePicked(__instance))
+            if (ShouldBePicked(__instance) && !ProtectedWithHeat(__instance.transform.position))
                 __instance.StartCoroutine(PickableSetPicked(__instance));
         }
     }
@@ -1383,7 +1383,7 @@ namespace Seasons
             if (Pickable_Awake_PlantsGrowthMultiplier.IsIgnored(__instance))
                 return true;
 
-            if (Pickable_Awake_PlantsGrowthMultiplier.ShouldBePicked(__instance))
+            if (Pickable_Awake_PlantsGrowthMultiplier.ShouldBePicked(__instance) && !ProtectedWithHeat(__instance.transform.position))
             {
                 __instance.SetPicked(true);
                 return false;
@@ -1407,6 +1407,25 @@ namespace Seasons
                 return;
 
             ___m_respawnTimeMinutes = __state; 
+        }
+    }
+
+    [HarmonyPatch(typeof(Pickable), nameof(Pickable.GetHoverText))]
+    public static class Pickable_GetHoverText_FireWarmthPerishProtection
+    {
+        private static void Postfix(Pickable __instance, ref string __result)
+        {
+            if (Pickable_Awake_PlantsGrowthMultiplier.IsIgnored(__instance))
+                return;
+
+            if (__result.IsNullOrWhiteSpace())
+                return;
+
+            if (!Pickable_Awake_PlantsGrowthMultiplier.ShouldBePicked(__instance))
+                return;
+
+            if (ProtectedWithHeat(__instance.transform.position))
+                __result += Localization.instance.Localize("\n<color=#ADD8E6>$se_fire_tooltip</color>");
         }
     }
 
@@ -1449,8 +1468,8 @@ namespace Seasons
                 return;
 
             if (___m_status == Plant.Status.Healthy && seasonState.GetPlantsGrowthMultiplier() == 0f && seasonState.GetCurrentSeason() == Season.Winter 
-                                                    && seasonState.GetCurrentDay() >= cropsDiesAfterSetDayInWinter.Value && !PlantWillSurviveWinter(__instance.gameObject))
-                ___m_status = Plant.Status.WrongBiome;
+                                                    && !PlantWillSurviveWinter(__instance.gameObject) && !ProtectedWithHeat(__instance.transform.position))
+                ___m_status = Plant.Status.TooCold;
         }
     }
 

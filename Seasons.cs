@@ -20,7 +20,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.3.14";
+        public const string pluginVersion = "1.3.15";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -68,6 +68,7 @@ namespace Seasons
         public static ConfigEntry<string> meatListToControlDrop;
         public static ConfigEntry<bool> shieldGeneratorProtection;
         public static ConfigEntry<bool> shieldGeneratorOnlyWinter;
+        public static ConfigEntry<bool> fireHeatProtectsFromPerish;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -303,6 +304,7 @@ namespace Seasons
             freezingSwimmingInWinter = config("Season", "Get freezing when swimming in cold water in winter", defaultValue: true, "Swimming in cold water during winter will get you freezing debuff");
             changeSeasonOnlyAfterSleep = config("Season", "Change season only after sleep", defaultValue: false, "Season can be changed regular way only after sleep");
             cropsDiesAfterSetDayInWinter = config("Season", "Crops will die after set day in winter", defaultValue: 3, "Crops and pickables will perish after set day in winter");
+            fireHeatProtectsFromPerish = config("Season", "Crops will survive if protected by fire", defaultValue: true, "Crops and pickables will not perish in winter if there are fire source nearby");
             cropsToSurviveInWinter = config("Season", "Crops will survive in winter", defaultValue: "Pickable_Carrot, Pickable_Barley, Pickable_Barley_Wild, Pickable_Flax, Pickable_Flax_Wild, Pickable_Thistle, Pickable_Mushroom_Magecap", "Crops and pickables from the list will not perish after set day in winter");
             cropsToControlGrowth = config("Season", "Crops to control growth", defaultValue: "Pickable_Barley, Pickable_Barley_Wild, Pickable_Dandelion, Pickable_Flax, Pickable_Flax_Wild, Pickable_SeedCarrot, Pickable_SeedOnion, Pickable_SeedTurnip, Pickable_Thistle, Pickable_Turnip", "All consumable crops will be added automatically. Set only unconsumable crops here." +
                                                                                                                                                                                                                                                                                               "Crops and pickables from the list will be controlled by growth multiplier in addition to consumable crops");
@@ -667,6 +669,11 @@ namespace Seasons
             return IsIgnoredPosition(position) || IsShieldedPosition(position);
         }
 
+        public static bool ProtectedWithHeat(Vector3 position)
+        {
+            return fireHeatProtectsFromPerish.Value && EffectArea.IsPointInsideArea(position, EffectArea.Type.Heat);
+        }
+
         public static void StartCacheRebuild()
         {
             if (SeasonState.IsActive)
@@ -697,7 +704,7 @@ namespace Seasons
         {
             yield return waitForFixedUpdate;
 
-            pickable.SetPicked(true);
+            pickable.m_nview?.InvokeRPC(ZNetView.Everybody, "RPC_SetPicked", true);
         }
 
         public static IEnumerator ReplantTree(GameObject prefab, Vector3 position, Quaternion rotation, float scale)

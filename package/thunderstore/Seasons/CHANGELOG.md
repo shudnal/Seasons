@@ -1,3 +1,6 @@
+# 1.3.15
+* heat from fire protects crops and pickables from winter perish
+
 # 1.3.14
 * fix for season timer blinking text
 * fix for clutter error on destroy
