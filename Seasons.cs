@@ -380,11 +380,11 @@ namespace Seasons
             placeShipAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateShipsPositions();
 
             enableSeasonalGlobalKeys = config("Seasons - Global keys", "Enable setting seasonal Global Keys", defaultValue: false, "Enables setting seasonal global key");
-            seasonalGlobalKeyFall = config("Seasons - Global keys", "Fall", defaultValue: "Season_Fall", "Seasonal global key for automn. You can set it like \"Season Fall\" space separated and it will be treated as key value pair.");
-            seasonalGlobalKeySpring = config("Seasons - Global keys", "Spring", defaultValue: "Season_Spring", "Seasonal global key for spring. You can set it like \"Season Spring\" space separated and it will be treated as key value pair.");
-            seasonalGlobalKeySummer = config("Seasons - Global keys", "Summer", defaultValue: "Season_Summer", "Seasonal global key for summer. You can set it like \"Season Summer\" space separated and it will be treated as key value pair.");
-            seasonalGlobalKeyWinter = config("Seasons - Global keys", "Winter", defaultValue: "Season_Winter", "Seasonal global key for winter. You can set it like \"Season Winter\" space separated and it will be treated as key value pair.");
-            seasonalGlobalKeyDay = config("Seasons - Global keys", "Day number", defaultValue: "SeasonDay_{0}", "Seasonal global key for current day number. You can set it like \"SeasonDay {0}\" space separated and it will be treated as key value pair.");
+            seasonalGlobalKeyFall = config("Seasons - Global keys", "Fall", defaultValue: "Season_Fall", "Seasonal global key for autumn. You can set config value like \"Season Fall\" space separated and it will be treated as key value pair.");
+            seasonalGlobalKeySpring = config("Seasons - Global keys", "Spring", defaultValue: "Season_Spring", "Seasonal global key for spring. You can set config value like \"Season Spring\" space separated and it will be treated as key value pair.");
+            seasonalGlobalKeySummer = config("Seasons - Global keys", "Summer", defaultValue: "Season_Summer", "Seasonal global key for summer. You can set config value like \"Season Summer\" space separated and it will be treated as key value pair.");
+            seasonalGlobalKeyWinter = config("Seasons - Global keys", "Winter", defaultValue: "Season_Winter", "Seasonal global key for winter. You can set config value like \"Season Winter\" space separated and it will be treated as key value pair.");
+            seasonalGlobalKeyDay = config("Seasons - Global keys", "Day number", defaultValue: "SeasonDay_{0}", "Seasonal global key for current day number. You can set config value like \"SeasonDay {0}\" space separated and it will be treated as key value pair.");
 
             enableSeasonalGlobalKeys.SettingChanged += (sender, args) => seasonState.UpdateGlobalKeys();
             seasonalGlobalKeyFall.SettingChanged += (sender, args) => seasonState.UpdateGlobalKeys();
