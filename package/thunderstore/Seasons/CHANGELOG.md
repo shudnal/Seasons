@@ -1,3 +1,6 @@
+# 1.3.16
+* option to set current day as global key
+
 # 1.3.15
 * heat from fire protects crops and pickables from winter perish
 * fixed visuals for ship frozen under water

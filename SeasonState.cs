@@ -588,20 +588,22 @@ namespace Seasons
 
         public void UpdateGlobalKeys()
         {
-            if (!enableSeasonalGlobalKeys.Value)
+            if (!IsActive)
                 return;
 
             foreach (Season season in Enum.GetValues(typeof(Season)))
-            {
-                string globalKey = GetSeasonalGlobalKey(season);
-                if (globalKey.IsNullOrWhiteSpace())
-                    continue;
+                ZoneSystem.instance.RemoveGlobalKey(GetSeasonalGlobalKey(season));
 
-                if (season == GetCurrentSeason())
-                    ZoneSystem.instance.SetGlobalKey(globalKey);
-                else
-                    ZoneSystem.instance.RemoveGlobalKey(globalKey);
-            }
+            string globalKey = GetSeasonalGlobalKey(GetCurrentSeason());
+            
+            if (enableSeasonalGlobalKeys.Value)
+                ZoneSystem.instance.SetGlobalKey(globalKey);
+
+            for (int i = 0; i <= seasonState.GetYearLengthInDays(); i++)
+                ZoneSystem.instance.RemoveGlobalKey(GetSeasonalDayGlobalKey(i));
+
+            if (enableSeasonalGlobalKeys.Value && !(globalKey = GetSeasonalDayGlobalKey(seasonState.GetCurrentDay())).IsNullOrWhiteSpace())
+                ZoneSystem.instance.SetGlobalKey(globalKey);
         }
 
         public string GetSeasonalGlobalKey(Season season)
@@ -614,6 +616,11 @@ namespace Seasons
                 Season.Winter => seasonalGlobalKeyWinter.Value,
                 _ => seasonalGlobalKeySpring.Value
             };
+        }
+
+        public string GetSeasonalDayGlobalKey(int day)
+        {
+            return string.Format(seasonalGlobalKeyDay.Value, day.ToString());
         }
 
         public double GetTimeToCurrentSeasonEnd()
