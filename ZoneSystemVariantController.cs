@@ -664,7 +664,7 @@ namespace Seasons
             if (WorldGenerator.instance.GetBiome(position) != Heightmap.Biome.Ocean)
                 return true;
 
-            Vector2i zoneID = ZoneSystem.instance.GetZone(position);
+            Vector2i zoneID = ZoneSystem.GetZone(position);
 
             if (!ZoneSystem.instance.IsZoneLoaded(zoneID))
                 return false;
@@ -687,7 +687,7 @@ namespace Seasons
                 Instance.m_tempClearAreas.Clear();
                 Instance.m_tempSpawnedObjects.Clear();
 
-                Vector3 zonePos = ZoneSystem.instance.GetZonePos(zoneID);
+                Vector3 zonePos = ZoneSystem.GetZonePos(zoneID);
 
                 ZoneSystem.SpawnMode mode = ZNetScene.instance.IsAreaReady(position) ? ZoneSystem.SpawnMode.Full : ZoneSystem.SpawnMode.Ghost;
 

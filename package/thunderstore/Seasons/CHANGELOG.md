@@ -1,3 +1,6 @@
+# 1.4.0
+* bog witch
+
 # 1.3.16
 * option to set current day as global key
 

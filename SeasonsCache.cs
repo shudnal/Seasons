@@ -723,6 +723,8 @@ namespace Seasons
                 ClutterVariantController.Reinitialize();
                 PrefabVariantController.ReinitializePrefabVariants();
 
+                yield return waitForFixedUpdate;
+
                 LogInfo($"Colors reinitialized in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
             }
 
@@ -731,7 +733,7 @@ namespace Seasons
             SeasonalTexturePrefabCache.SetCurrentTextureVariants(this);
 
             PrefabVariantController.UpdatePrefabColors();
-            ClutterVariantController.Instance.UpdateColors();
+            ClutterVariantController.Instance?.UpdateColors();
         }
     }
 
@@ -974,6 +976,10 @@ namespace Seasons
                     "FaderLocation",
                     "LeviathanLava",
                     "FernFiddleHeadAshlands",
+                    "DevKitchen",
+                    "DevDressingRoom",
+                    "DevGarden",
+                    "DevForge"
                 };
 
                 ignorePrefabPartialName = new List<string>()
@@ -1450,8 +1456,8 @@ namespace Seasons
                 moss.Add(new ColorFits());
 
                 grass.Add(new ColorFits(65, 135, s1: 0.13f));
-                grass.Add(new ColorFits(55, 65, s1: 0.55f, l1: 0.5f));
-                grass.Add(new ColorFits(35, 65, s2: 0.35f, l1: 0.35f));
+                grass.Add(new ColorFits(55, 65, s1: 0.53f, l1: 0.5f));
+                grass.Add(new ColorFits(35, 65, s2: 0.39f, l1: 0.28f));
                 grass.Add(new ColorFits(40, 60, s1: 0.4f));
 
                 specific.Add(new ColorSpecific(
@@ -2460,7 +2466,7 @@ namespace Seasons
         }
 
         // Used to force global cache rebuild after mod changes
-        const string globalRevision = "1.2.0";
+        const string globalRevision = "1.4.0";
 
         public static uint GetRevision()
         {
