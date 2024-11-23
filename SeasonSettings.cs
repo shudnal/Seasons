@@ -1118,6 +1118,21 @@ namespace Seasons
                              {
                                  new TradeableItem { prefab = "HelmetYule", price = 100, stack = 1},
                              });
+
+            Summer.Add("bogwitch", new List<TradeableItem>
+                             {
+                                 new TradeableItem { prefab = "Root", price = 250, stack = 5},
+                             });
+
+            Fall.Add("bogwitch", new List<TradeableItem>
+                             {
+                                 new TradeableItem { prefab = "Pukeberries", price = 100, stack = 10},
+                             });
+
+            Winter.Add("bogwitch", new List<TradeableItem>
+                             {
+                                 new TradeableItem { prefab = "Resin", price = 200, stack = 20},
+                             });
         }
 
         public void AddSeasonalTraderItems(Trader trader, List<Trader.TradeItem> itemList)
