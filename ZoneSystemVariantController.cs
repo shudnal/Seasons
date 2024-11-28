@@ -1597,11 +1597,14 @@ namespace Seasons
 
         private static void Postfix(Player __instance, Heightmap.Biome __state)
         {
-            if (__state == Heightmap.Biome.None)
+            if (__state == Heightmap.Biome.None || __state == __instance.GetCurrentBiome())
                 return;
 
-            if (__state != __instance.GetCurrentBiome() && (__state == Heightmap.Biome.AshLands || __instance.GetCurrentBiome() == Heightmap.Biome.AshLands))
+            if (__state == Heightmap.Biome.AshLands || __instance.GetCurrentBiome() == Heightmap.Biome.AshLands)
                 UpdateWaterState();
+
+            if (seasonState.GetTorchAsFiresource() && (SeasonState.TorchHeatInBiome(__state) != SeasonState.TorchHeatInBiome(__instance.GetCurrentBiome())))
+                seasonState.UpdateTorchesFireWarmth();
         }
     }
 

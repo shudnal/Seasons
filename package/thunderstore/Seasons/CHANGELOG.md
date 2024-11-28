@@ -1,3 +1,9 @@
+# 1.4.1
+* Custom Textures fixed
+* Eyescream can be used to get rid of overheat debuff in Summer
+* Torch will no longer protects from mountains and deep north freezing
+* You will not get overheat debuff in cold environment in Summer
+
 # 1.4.0
 * bog witch
 

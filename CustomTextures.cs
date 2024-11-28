@@ -72,9 +72,9 @@ namespace Seasons
 
             bool result = textures.TryGetValue(textureName, out Dictionary<Season, Dictionary<int, Texture2D>> seasonalTex) && 
                 seasonalTex.TryGetValue(season, out Dictionary<int, Texture2D> variantTex) && 
-                 variantTex.TryGetValue(variant, out texture);
+                 variantTex.TryGetValue(variant, out texture) && texture != null;
 
-            if (result && texture != null && texture.isReadable)
+            if (result && texture.isReadable)
             {
                 Color32[] pixels = texture.GetPixels32();
 
@@ -82,6 +82,7 @@ namespace Seasons
                 {
                     properties.width = texture.width;
                     properties.height = texture.height;
+                    properties.mipmapCount = Math.Min(Mathf.FloorToInt(Mathf.Log(Math.Min(properties.width, properties.height), 2)), properties.mipmapCount);
                 }
 
                 UnityEngine.Object.Destroy(texture);
@@ -93,7 +94,7 @@ namespace Seasons
                 textures[textureName][season][variant] = texture;
             }
 
-            return result && texture != null && texture.isReadable;
+            return result;
         }
 
         public static void LoadCustomTextures(string path)

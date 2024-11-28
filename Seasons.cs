@@ -20,7 +20,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.4.0";
+        public const string pluginVersion = "1.4.1";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -279,7 +279,7 @@ namespace Seasons
 
             configLocked = config("General", "Lock Configuration", defaultValue: true, "Configuration is locked and can be changed by server admins only.");
             loggingEnabled = config("General", "Logging enabled", defaultValue: false, "Enable logging. [Not Synced with Server]", false);
-            dayLengthSec = config("General", "Day length in seconds", defaultValue: 1800L, "Day length in seconds. Vanilla - 1800 seconds.");
+            dayLengthSec = config("General", "Day length in seconds", defaultValue: 1800L, "Day length in seconds. Vanilla - 1800 seconds. Set to 0 to disable.");
 
             controlEnvironments = config("Season - Control", "Control environments", defaultValue: true, "Enables seasonal weathers");
             controlRandomEvents = config("Season - Control", "Control random events", defaultValue: true, "Enables seasonal random events");

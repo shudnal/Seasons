@@ -94,6 +94,7 @@ It means you may left only changed values at custom file to make it more meaning
 * creatures breed mostly in spring and summer
 * it's harder to stay rested in winter
 * you will get overheat in summer if you're wearing 2 warm clothes at once
+* change your cape or consume eyescream to not get overheat
 * creatures ususally gets more weight to live through winter so fall and winter means more meaty enemies
 
 ## Seasonal environments
@@ -533,3 +534,6 @@ Or [Official BepInEx Configuration Manager](https://valheim.thunderstore.io/pack
 
 ## Mirrors
 [Nexus](https://www.nexusmods.com/valheim/mods/2654)
+
+## Donation
+[Buy Me a Coffee](https://buymeacoffee.com/shudnal)

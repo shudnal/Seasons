@@ -946,17 +946,8 @@ namespace Seasons
 
         public void UpdateTorchesFireWarmth()
         {
-            GameObject prefabGoblinTorch = ObjectDB.instance.GetItemPrefab("GoblinTorch");
-            if (prefabGoblinTorch != null)
-                UpdateTorchFireWarmth(prefabGoblinTorch);
-
-            GameObject prefabTorchMist = ObjectDB.instance.GetItemPrefab("TorchMist");
-            if (prefabTorchMist != null)
-                UpdateTorchFireWarmth(prefabTorchMist);
-
-            GameObject prefabTorch = ObjectDB.instance.GetItemPrefab(SeasonSettings.itemNameTorch);
-            if (prefabTorch != null)
-                UpdateTorchFireWarmth(prefabTorch);
+            UpdateTorchFireWarmth("GoblinTorch");
+            UpdateTorchFireWarmth(SeasonSettings.itemNameTorch);
 
             if (Player.m_localPlayer != null)
                 PatchTorchesInInventory(Player.m_localPlayer.GetInventory());
@@ -971,20 +962,36 @@ namespace Seasons
                 PatchTorchItemData(item);
         }
 
-        public void UpdateTorchFireWarmth(GameObject prefab, string childName = "FireWarmth")
+        public void UpdateTorchFireWarmth(string prefabName)
         {
-            Transform fireWarmth = Utils.FindChild(prefab.transform, childName);
-            if (fireWarmth == null)
+            GameObject prefab = ObjectDB.instance.GetItemPrefab(prefabName);
+            if (prefab == null)
                 return;
 
-            EffectArea component = fireWarmth.gameObject.GetComponent<EffectArea>();
+            EffectArea component = prefab.GetComponentInChildren<EffectArea>(includeInactive: true);
             if (component == null)
                 return;
 
-            component.m_type = seasonState.GetTorchAsFiresource() ? EffectArea.Type.Heat | EffectArea.Type.Fire : EffectArea.Type.Fire;
+            component.m_type = seasonState.GetTorchAsFiresource() && (!Player.m_localPlayer || TorchHeatInBiome(Player.m_localPlayer.GetCurrentBiome())) ? EffectArea.Type.Heat | EffectArea.Type.Fire : EffectArea.Type.Fire;
+            component.m_isHeatType = component.m_type.HasFlag(EffectArea.Type.Heat);
 
             ItemDrop item = prefab.GetComponent<ItemDrop>();
             PatchTorchItemData(item.m_itemData);
+
+            if (Player.m_localPlayer != null)
+            {
+                if (Player.m_localPlayer.m_visEquipment.m_rightItem == prefabName && (Player.m_localPlayer.m_visEquipment.m_rightItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea rightEffect))
+                {
+                    rightEffect.m_type = component.m_type;
+                    rightEffect.m_isHeatType = component.m_isHeatType;
+                }
+
+                if (Player.m_localPlayer.m_visEquipment.m_leftItem == prefabName && (Player.m_localPlayer.m_visEquipment.m_leftItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea leftEffect))
+                {
+                    leftEffect.m_type = component.m_type;
+                    leftEffect.m_isHeatType = component.m_isHeatType;
+                }
+            }
         }
 
         public void UpdateMinimapBorder()
@@ -1015,22 +1022,25 @@ namespace Seasons
             }
         }
 
-        public void CheckOverheatStatus(Humanoid humanoid)
+        public void CheckOverheatStatus(Player player)
         {
-            bool getOverheat = seasonState.GetOverheatIn2WarmClothes();
-            int warmClothesCount = humanoid.GetInventory().GetEquippedItems().Count(itemData => itemData.m_shared.m_damageModifiers.Any(dmod => dmod.m_type == HitData.DamageType.Frost && dmod.m_modifier == HitData.DamageModifier.Resistant));
-            bool haveOverheat = humanoid.GetSEMan().HaveStatusEffect(statusEffectOverheatHash);
+            if (player == null || player.m_isLoading || player.m_nview == null || !player.m_nview.IsValid())
+                return;
+
+            bool getOverheat = seasonState.GetOverheatIn2WarmClothes() && !EnvMan.IsFreezing() && !EnvMan.IsCold() && !player.GetFoods().Any(food => food.m_item.m_shared.m_name == "$item_eyescream");
+            bool haveOverheat = player.GetSEMan().HaveStatusEffect(statusEffectOverheatHash);
             if (!getOverheat)
             {
                 if (haveOverheat)
-                    humanoid.GetSEMan().RemoveStatusEffect(statusEffectOverheatHash);
+                    player.GetSEMan().RemoveStatusEffect(statusEffectOverheatHash);
             }
             else
             {
+                int warmClothesCount = player.GetInventory().GetEquippedItems().Count(itemData => itemData.m_shared.m_damageModifiers.Any(dmod => dmod.m_type == HitData.DamageType.Frost && dmod.m_modifier == HitData.DamageModifier.Resistant));
                 if (!haveOverheat && warmClothesCount > 1)
-                    humanoid.GetSEMan().AddStatusEffect(statusEffectOverheatHash);
+                    player.GetSEMan().AddStatusEffect(statusEffectOverheatHash);
                 else if (haveOverheat && warmClothesCount <= 1)
-                    humanoid.GetSEMan().RemoveStatusEffect(statusEffectOverheatHash);
+                    player.GetSEMan().RemoveStatusEffect(statusEffectOverheatHash);
             }
         }
 
@@ -1109,6 +1119,8 @@ namespace Seasons
             seasonState.UpdateWinterBloomEffect();
             UpdateCurrentEnvironment();
         }
+
+        internal static bool TorchHeatInBiome(Heightmap.Biome biome) => biome != Heightmap.Biome.Mountain && biome != Heightmap.Biome.DeepNorth && biome != Heightmap.Biome.AshLands;
 
         private static void StartClutterUpdate()
         {
@@ -1229,6 +1241,20 @@ namespace Seasons
             LogInfo($"Time: {timeSeconds,-10:F2} Day: {day} Next morning: {morningStartSec,-10:F2} Skipspeed: {___m_timeSkipSpeed,-5:F2}");
 
             return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.FixedUpdate))]
+    public static class EnvMan_FixedUpdate_UpdateWarmStatus
+    {
+        private static void Prefix(ref bool __state)
+        {
+            __state = EnvMan.IsFreezing() || EnvMan.IsCold();
+        }
+        private static void Postfix(bool __state)
+        {
+            if (__state != EnvMan.IsFreezing() || EnvMan.IsCold())
+                seasonState.CheckOverheatStatus(Player.m_localPlayer);
         }
     }
 
@@ -2021,12 +2047,37 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch]
+    public static class Player_Food_OverheatIn2WarmClothesExcludeEyescream
+    {
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            yield return AccessTools.Method(typeof(Player), nameof(Player.UpdateFood));
+            yield return AccessTools.Method(typeof(Player), nameof(Player.ClearFood));
+            yield return AccessTools.Method(typeof(Player), nameof(Player.EatFood));
+            yield return AccessTools.Method(typeof(Player), nameof(Player.RemoveOneFood));
+        }
+
+        private static void Prefix(Player __instance, ref int __state)
+        {
+            if (__instance == Player.m_localPlayer)
+                __state = __instance.GetFoods().Count;
+        }
+
+        private static void Postfix(Player __instance, int __state)
+        {
+            if (__instance == Player.m_localPlayer && __state != __instance.GetFoods().Count)
+                seasonState.CheckOverheatStatus(__instance);
+        }
+    }
+
     [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.EquipItem))]
     public static class Humanoid_EquipItem_OverheatIn2WarmClothes
     {
         private static void Postfix(Humanoid __instance)
         {
-            seasonState.CheckOverheatStatus(__instance);
+            if (__instance.IsPlayer())
+                seasonState.CheckOverheatStatus(__instance as Player);
         }
     }
 
@@ -2035,7 +2086,8 @@ namespace Seasons
     {
         private static void Postfix(Humanoid __instance)
         {
-            seasonState.CheckOverheatStatus(__instance);
+            if (__instance.IsPlayer())
+                seasonState.CheckOverheatStatus(__instance as Player);
         }
     }
 
