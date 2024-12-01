@@ -863,7 +863,7 @@ namespace Seasons
 
                 shaderIgnoreMaterial = new Dictionary<string, string[]>
                 {
-                    { "Custom/Vegetation", new string[] { "bark", "trunk", "_wood", "HildirFlowerGirland_", "HildirTentCloth_", "TraderTent_", "VinesBranch_mat", "VinesBranch_Ashlands_mat" } },
+                    { "Custom/Vegetation", new string[] { "bark", "trunk", "_wood", "HildirFlowerGirland_", "HildirTentCloth_", "TraderTent_", "VinesBranch_mat", "VinesBranch_Ashlands_mat", "BogWitchHutCurtains2_mat", "BogWitchHutCurtains_mat" } },
                 };
 
                 shaderOnlyMaterial = new Dictionary<string, string[]>
@@ -979,7 +979,8 @@ namespace Seasons
                     "DevKitchen",
                     "DevDressingRoom",
                     "DevGarden",
-                    "DevForge"
+                    "DevForge",
+                    "rock4_ashlands_frac"
                 };
 
                 ignorePrefabPartialName = new List<string>()
@@ -1660,6 +1661,18 @@ namespace Seasons
                     new List<ColorFits>()
                     {
                         new ColorFits(2),
+                    }
+                ));
+
+                specific.Add(new ColorSpecific(
+                    new List<MaterialFits>()
+                    {
+                        new MaterialFits(prefab: "instanced_forest_groundcover_brown", only: true),
+                        new MaterialFits(material: "grasscross_forest_brown", only: true),
+                    },
+                    new List<ColorFits>()
+                    {
+                        new ColorFits(),
                     }
                 ));
 
@@ -2466,7 +2479,7 @@ namespace Seasons
         }
 
         // Used to force global cache rebuild after mod changes
-        const string globalRevision = "1.4.0";
+        const string globalRevision = "1.4.2";
 
         public static uint GetRevision()
         {

@@ -1,3 +1,8 @@
+# 1.4.2
+* EpicLoot Serpent bounty made no longer obtainable when water is frozen to prevent infinite loop
+* changes to cache settings to ignore certain redundant objects
+* season calculation throttled to improve performance a bit
+
 # 1.4.1
 * Custom Textures fixed
 * Eyescream can be used to get rid of overheat debuff in Summer

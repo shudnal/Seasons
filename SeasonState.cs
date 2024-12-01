@@ -910,18 +910,14 @@ namespace Seasons
             m_worldDay = worldDay;
 
             if (dayInSeason > m_day || forceSeasonChange)
-            {
                 SetCurrentDay(dayInSeason);
-            }
         }
 
         private int GetYearLengthInDays()
         {
             int days = 0;
             foreach (Season season in Enum.GetValues(typeof(Season)))
-            {
                 days += GetDaysInSeason(season);
-            }
             return days;
         }
 
@@ -1165,12 +1161,15 @@ namespace Seasons
     [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.UpdateTriggers))]
     public static class EnvMan_UpdateTriggers_SeasonStateUpdate
     {
+        private static int secondUpdated;
+
         private static void Postfix(float oldDayFraction, float newDayFraction)
         {
             float fraction = SeasonState.GetDayFractionForSeasonChange();
 
             bool timeForSeasonToChange = oldDayFraction > 0.16f && oldDayFraction <= fraction && newDayFraction >= fraction && newDayFraction < 0.3f;
-            seasonState.UpdateState(timeForSeasonToChange);
+            if (secondUpdated != (secondUpdated = DateTime.Now.Second) || timeForSeasonToChange)
+                seasonState.UpdateState(timeForSeasonToChange);
         }
     }
 

@@ -39,7 +39,7 @@ namespace Seasons.Compatibility
                     return false;
 
                 if (original == null)
-                    LogInfo("EpicLoot.Adventure.Feature.BountiesAdventureFeature:AcceptBounty method is patched to prevent accepting serpents bounty in Winter");
+                    LogInfo("EpicLoot.Adventure.Feature.BountiesAdventureFeature:AcceptBounty method is patched to prevent accepting serpents bounty when water is frozen");
 
                 return true;
             }
