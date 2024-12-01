@@ -16,6 +16,7 @@ namespace Seasons
 {
     [BepInPlugin(pluginID, pluginName, pluginVersion)]
     [BepInIncompatibility("RustyMods.Seasonality")]
+    [BepInDependency(Compatibility.EpicLootCompat.GUID, BepInDependency.DependencyFlags.SoftDependency)]
     public class Seasons : BaseUnityPlugin
     {
         public const string pluginID = "shudnal.Seasons";
@@ -214,12 +215,14 @@ namespace Seasons
 
         private void Awake()
         {
-            harmony.PatchAll();
-
             instance = this;
 
             ConfigInit();
             _ = configSync.AddLockingConfigEntry(configLocked);
+
+            Compatibility.EpicLootCompat.CheckForCompatibility();
+
+            harmony.PatchAll();
 
             currentSeasonDay.ValueChanged += new Action(SeasonState.OnSeasonDayChange);
 

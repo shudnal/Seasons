@@ -35,6 +35,7 @@
     <LangVersion>8.0</LangVersion>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Compatibility\EpicLootCompat.cs" />
     <Compile Include="CustomMusic.cs" />
     <Compile Include="CustomPrefabs.cs" />
     <Compile Include="CustomTextures.cs" />
