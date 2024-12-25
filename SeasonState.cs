@@ -85,10 +85,9 @@ namespace Seasons
 
         public static bool IsActive => seasonState != null && EnvMan.instance != null;
 
-        public int GetCurrentWorldDay()
-        {
-            return (int)(GetTotalSeconds() / GetDayLengthInSeconds());
-        }
+        public int GetWorldDay(double seconds) => (int)(seconds / GetDayLengthInSeconds());
+
+        public int GetCurrentWorldDay() => GetWorldDay(GetTotalSeconds());
 
         public void UpdateState(bool timeForSeasonToChange = false, bool forceSeasonChange = false)
         {
@@ -753,7 +752,7 @@ namespace Seasons
             return Season.Winter;
         }
 
-        private int GetDayInSeason(int day)
+        public int GetDayInSeason(int day)
         {
             int dayOfYear = GetDayOfYear(day);
             int days = 0;
@@ -768,7 +767,7 @@ namespace Seasons
             return dayOfYear >= days ? daysInSeason : dayOfYear - days;
         }
 
-        private int GetDayOfYear(int day)
+        public int GetDayOfYear(int day)
         {
             int yearLength = GetYearLengthInDays();
             int dayOfYear = day % yearLength;
@@ -1032,12 +1031,18 @@ namespace Seasons
             }
             else
             {
-                int warmClothesCount = player.GetInventory().GetEquippedItems().Count(itemData => itemData.m_shared.m_damageModifiers.Any(dmod => dmod.m_type == HitData.DamageType.Frost && dmod.m_modifier == HitData.DamageModifier.Resistant));
-                if (!haveOverheat && warmClothesCount > 1)
+                int warmClothCount = player.GetInventory().GetEquippedItems().Count(itemData => itemData.m_shared.m_damageModifiers.Any(IsFrostResistant));
+                if (!haveOverheat && warmClothCount > 1)
                     player.GetSEMan().AddStatusEffect(statusEffectOverheatHash);
-                else if (haveOverheat && warmClothesCount <= 1)
+                else if (haveOverheat && warmClothCount <= 1)
                     player.GetSEMan().RemoveStatusEffect(statusEffectOverheatHash);
             }
+        }
+
+        public static bool IsFrostResistant(HitData.DamageModPair damageMod)
+        {
+            return damageMod.m_type == HitData.DamageType.Frost &&
+                   (damageMod.m_modifier == HitData.DamageModifier.Resistant || damageMod.m_modifier == HitData.DamageModifier.VeryResistant || damageMod.m_modifier == HitData.DamageModifier.Immune);
         }
 
         private void SetCurrentSeasonDay(Season season, int day)
@@ -1246,13 +1251,15 @@ namespace Seasons
     [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.FixedUpdate))]
     public static class EnvMan_FixedUpdate_UpdateWarmStatus
     {
+        private static bool IsCold() => EnvMan.IsFreezing() || EnvMan.IsCold();
+
         private static void Prefix(ref bool __state)
         {
-            __state = EnvMan.IsFreezing() || EnvMan.IsCold();
+            __state = IsCold();
         }
         private static void Postfix(bool __state)
         {
-            if (__state != EnvMan.IsFreezing() || EnvMan.IsCold())
+            if (__state != IsCold())
                 seasonState.CheckOverheatStatus(Player.m_localPlayer);
         }
     }
@@ -1380,14 +1387,19 @@ namespace Seasons
     {
         public static bool ShouldBePicked(Pickable pickable)
         {
-            return !pickable.GetPicked() &&
-                    seasonState.GetPlantsGrowthMultiplier() == 0f &&
-                    seasonState.GetCurrentSeason() == Season.Winter &&
-                    seasonState.GetCurrentDay() >= cropsDiesAfterSetDayInWinter.Value
-                    && !PlantWillSurviveWinter(pickable.gameObject)
-                    && !IsProtectedPosition(pickable.transform.position);
+            return !pickable.GetPicked() 
+                && IsVulnerableToWinter(pickable) 
+                && seasonState.GetCurrentDay() >= cropsDiesAfterSetDayInWinter.Value
+                && !IsProtectedPosition(pickable.transform.position);
         }
-        
+
+        public static bool IsVulnerableToWinter(Pickable pickable)
+        {
+            return seasonState.GetPlantsGrowthMultiplier() == 0f &&
+                    seasonState.GetCurrentSeason() == Season.Winter
+                    && !PlantWillSurviveWinter(pickable.gameObject);
+        }
+
         public static bool IsIgnored(Pickable pickable)
         {
             return pickable.m_nview == null || 
@@ -1410,6 +1422,43 @@ namespace Seasons
     [HarmonyPatch(typeof(Pickable), nameof(Pickable.UpdateRespawn))]
     public static class Pickable_UpdateRespawn_PlantsGrowthMultiplier
     {
+        public static double GetRespawnTime(Pickable pickable, long pickedTimeTicks)
+        {
+            double secondsLeft = pickable.m_respawnTimeMinutes * 60;
+
+            if (IsProtectedPosition(pickable.transform.position))
+                return secondsLeft;
+
+            double pickedTimeSeconds = TimeSpan.FromTicks(pickedTimeTicks).TotalSeconds;
+            int worldDay = seasonState.GetWorldDay(pickedTimeSeconds);
+            Season season = seasonState.GetSeason(worldDay);
+
+            double startOfDay = pickedTimeSeconds - pickedTimeSeconds % seasonState.GetDayLengthInSeconds();
+            double seasonStart = startOfDay - (seasonState.GetDayInSeason(worldDay) - (worldDay == seasonState.GetCurrentWorldDay() && seasonState.IsPendingSeasonChange() ? 0 : 1)) * seasonState.GetDayLengthInSeconds();
+            double seasonEnd = seasonStart + seasonState.GetSecondsInSeason(season);
+
+            float dayStartFractionLength = seasonState.DayStartFraction() * (1f - ((0.25f - SeasonState.GetDayFractionForSeasonChange()) * seasonState.DayStartFraction() / 0.25f)) * seasonState.GetDayLengthInSeconds();
+            
+            double secondsToSeasonEnd = seasonEnd + dayStartFractionLength - pickedTimeSeconds;
+            double secondsToGrow = 0d;
+            float growthMultiplier = seasonState.GetPlantsGrowthMultiplier(season);
+            do
+            {
+                double timeInSeasonLeft = growthMultiplier == 0 ? secondsToSeasonEnd : Math.Min(secondsLeft / growthMultiplier, secondsToSeasonEnd);
+
+                secondsToGrow += timeInSeasonLeft;
+                secondsLeft -= timeInSeasonLeft * growthMultiplier;
+
+                season = seasonState.GetNextSeason(season);
+                growthMultiplier = seasonState.GetPlantsGrowthMultiplier(season);
+
+                secondsToSeasonEnd = seasonState.GetDaysInSeason(season) * seasonState.GetDayLengthInSeconds();
+
+            } while (secondsLeft > 0);
+
+            return secondsToGrow;
+        }
+
         private static bool Prefix(Pickable __instance, ref float ___m_respawnTimeMinutes, ref float __state)
         {
             if (Pickable_Awake_PlantsGrowthMultiplier.IsIgnored(__instance))
@@ -1428,7 +1477,10 @@ namespace Seasons
                 return false;
 
             __state = ___m_respawnTimeMinutes;
-            ___m_respawnTimeMinutes /= seasonState.GetPlantsGrowthMultiplier();
+
+            long pickedTime = __instance.m_nview.GetZDO().GetLong(ZDOVars.s_pickedTime, 0L);
+
+            ___m_respawnTimeMinutes = (float)GetRespawnTime(__instance, pickedTime) / 60f;
 
             return true;
         }
@@ -1438,26 +1490,55 @@ namespace Seasons
             if (__state == 0f)
                 return;
 
-            ___m_respawnTimeMinutes = __state; 
+            ___m_respawnTimeMinutes = __state;
         }
     }
 
     [HarmonyPatch(typeof(Pickable), nameof(Pickable.GetHoverText))]
     public static class Pickable_GetHoverText_FireWarmthPerishProtection
     {
+        private static string GetPickableStatus(Pickable __instance)
+        {
+            if (!Pickable_Awake_PlantsGrowthMultiplier.IsVulnerableToWinter(__instance))
+                return "$se_frostres_name";
+            else if (ProtectedWithHeat(__instance.transform.position))
+                return "$se_fire_tooltip";
+            else
+                return "$piece_plant_toocold";
+        }
+
         private static void Postfix(Pickable __instance, ref string __result)
         {
-            if (Pickable_Awake_PlantsGrowthMultiplier.IsIgnored(__instance))
+            if (hoverPickable.Value != StationHover.Vanilla)
+            {
+                if (__instance.m_picked && __instance.m_enabled > 0 && __instance.m_nview != null && __instance.m_nview.IsValid())
+                {
+                    long pickedTime = __instance.m_nview.GetZDO().GetLong(ZDOVars.s_pickedTime, 0L);
+                    if (pickedTime > 1)
+                    {
+                        if (string.IsNullOrWhiteSpace(__result))
+                            __result = Localization.instance.Localize(__instance.GetHoverName());
+
+                        TimeSpan timeSpan = ZNet.instance.GetTime() - new DateTime(pickedTime);
+                        double respawnTimeSeconds = Pickable_UpdateRespawn_PlantsGrowthMultiplier.GetRespawnTime(__instance, pickedTime);
+
+                        if (hoverPickable.Value == StationHover.Percentage)
+                            __result += $"\n{timeSpan.TotalSeconds / respawnTimeSeconds:P0}";
+                        else if (hoverPickable.Value == StationHover.Bar)
+                            __result += $"\n{FromPercent(timeSpan.TotalSeconds / respawnTimeSeconds)}";
+                        else if (hoverPickable.Value == StationHover.MinutesSeconds)
+                            __result += $"\n{FromSeconds(respawnTimeSeconds - timeSpan.TotalSeconds)}";
+                    }
+                }
+            }
+
+            if (Pickable_Awake_PlantsGrowthMultiplier.IsIgnored(__instance) || seasonState.GetCurrentSeason() != Season.Winter)
                 return;
 
-            if (__result.IsNullOrWhiteSpace())
-                return;
+            if (string.IsNullOrWhiteSpace(__result))
+                __result = Localization.instance.Localize(__instance.GetHoverName());
 
-            if (!Pickable_Awake_PlantsGrowthMultiplier.ShouldBePicked(__instance))
-                return;
-
-            if (ProtectedWithHeat(__instance.transform.position))
-                __result += Localization.instance.Localize("\n<color=#ADD8E6>$se_fire_tooltip</color>");
+            __result += Localization.instance.Localize($"\n<color=#ADD8E6>{GetPickableStatus(__instance)}</color>");
         }
     }
 
@@ -1578,6 +1659,8 @@ namespace Seasons
 
             if (hoverPlant.Value == StationHover.Percentage)
                 __result += $"\n{__instance.TimeSincePlanted() / __instance.GetGrowTime():P0}";
+            else if (hoverPlant.Value == StationHover.Bar)
+                __result += $"\n{FromPercent(__instance.TimeSincePlanted() / __instance.GetGrowTime())}";
             else if (hoverPlant.Value == StationHover.MinutesSeconds)
                 __result += $"\n{FromSeconds(GetGrowTime(__instance))}";
         }
@@ -1678,12 +1761,16 @@ namespace Seasons
 
             if (hoverBeeHive.Value == StationHover.Percentage)
                 __result += $"\n{product / __instance.m_secPerUnit:P0}";
+            else if (hoverBeeHive.Value == StationHover.Bar)
+                __result += $"\n{FromPercent(product / __instance.m_secPerUnit)}";
             else if (hoverBeeHive.Value == StationHover.MinutesSeconds)
                 __result += $"\n{FromSeconds(GetNextProduct(__instance, product, 1))}";
 
             if (hoverBeeHiveTotal.Value && honeyLevel < 3)
                 if (hoverBeeHive.Value == StationHover.Percentage)
                     __result += $"\n{(product + __instance.m_secPerUnit * honeyLevel) / (__instance.m_secPerUnit * __instance.m_maxHoney):P0}";
+                else if (hoverBeeHive.Value == StationHover.Bar)
+                    __result += $"\n{FromPercent((product + __instance.m_secPerUnit * honeyLevel) / (__instance.m_secPerUnit * __instance.m_maxHoney))}";
                 else if (hoverBeeHive.Value == StationHover.MinutesSeconds)
                     __result += $"\n{FromSeconds(GetNextProduct(__instance, product, __instance.m_maxHoney - honeyLevel))}";
         }
@@ -2070,6 +2157,38 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(Player), nameof(Player.UpdateEnvStatusEffects))]
+    public static class Player_UpdateEnvStatusEffects_ColdStatus
+    {
+        public static bool isCalled = false;
+
+        private static void Prefix(Player __instance)
+        {
+            isCalled = gettingWetInWinterCausesCold.Value && seasonState.GetCurrentSeason() == Season.Winter && EnvMan.IsCold() && __instance.GetSEMan().HaveStatusEffect(SEMan.s_statusEffectWet);
+        }
+
+        private static void Postfix()
+        {
+            isCalled = false;
+        }
+    }
+
+    [HarmonyPatch(typeof(Player), nameof(Player.ApplyArmorDamageMods))]
+    public static class Player_ApplyArmorDamageMods_ColdStatusWhenWet
+    {
+        [HarmonyPriority(Priority.Last)]
+        private static void Postfix(ref HitData.DamageModifiers mods)
+        {
+            if (!Player_UpdateEnvStatusEffects_ColdStatus.isCalled)
+                return;
+
+            // Method is called in Winter when player is wet and environment is cold
+            HitData.DamageModifier modifier = mods.GetModifier(HitData.DamageType.Frost);
+            if (modifier == HitData.DamageModifier.Resistant || modifier == HitData.DamageModifier.VeryResistant)
+                mods.m_frost = HitData.DamageModifier.Normal;
+        }
+    }
+
     [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.EquipItem))]
     public static class Humanoid_EquipItem_OverheatIn2WarmClothes
     {
@@ -2321,8 +2440,8 @@ namespace Seasons
         }
     }
 
-    [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.IsFreezing))]
-    public static class EnvMan_IsFreezing_SwimmingInWinterIsFreezing
+    [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.CalculateFreezing))]
+    public static class EnvMan_CalculateFreezing_SwimmingInWinterIsFreezing
     {
         private static void Postfix(ref bool __result)
         {

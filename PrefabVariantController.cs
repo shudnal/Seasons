@@ -25,6 +25,7 @@ namespace Seasons
             private double m_fallFactor;
             private double m_winterFactor;
 
+            private bool m_isVines = false;
             private bool m_covered = true;
 
             private readonly Dictionary<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>> m_materialVariants = new Dictionary<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>>();
@@ -112,6 +113,7 @@ namespace Seasons
 
                 WorldToMapPoint(m_gameObject.transform.position, out float mx, out float my);
                 UpdateFactors(mx, my);
+                CheckIsVine();
 
                 return true;
             }
@@ -149,6 +151,11 @@ namespace Seasons
 
                 m_covered = haveRoof;
                 UpdateColors();
+            }
+
+            public void CheckIsVine()
+            {
+                m_isVines = m_prefabName == "vines" || m_wnt != null && m_gameObject.GetComponent<Vine>() != null;
             }
 
             public void UpdateColors()
@@ -372,19 +379,16 @@ namespace Seasons
 
             private bool HaveRoof()
             {
-                if (m_wnt == null)
+                if (m_wnt == null || m_isVines)
                     return false;
 
                 if (IsProtectedPosition(m_gameObject.transform.position))
                     return true;
 
-                if (m_prefabName == "vines")
-                    return false;
-
                 if (!m_wnt.HaveRoof())
                     return false;
 
-                int num = Physics.SphereCastNonAlloc(m_gameObject.transform.position + new Vector3(0, 2f, 0), 0.1f, Vector3.up, s_raycastHits, 100f, instance.m_rayMask);
+                int num = Physics.SphereCastNonAlloc(m_gameObject.transform.position + new Vector3(0, 2f, 0), 0.15f, Vector3.up, s_raycastHits, 100f, instance.m_rayMask);
                 for (int i = 0; i < num; i++)
                 {
                     if (s_raycastHits[i].collider.transform.root == m_wnt.transform.root)
@@ -790,7 +794,7 @@ namespace Seasons
         [HarmonyPriority(Priority.First)]
         private static void Prefix(ShieldGenerator shield, Vector3 position, float radius)
         {
-            if (!shieldRadius.ContainsKey(shield) || shieldRadius[shield] != (int)radius)
+            if (!shieldRadius.ContainsKey(shield) || ((shieldRadius[shield] / 2) != ((int)radius / 2)))
             {
                 shieldRadius[shield] = (int)radius;
                 if (IsShieldProtectionActive())

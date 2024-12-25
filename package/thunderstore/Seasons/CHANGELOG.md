@@ -1,3 +1,14 @@
+# 1.4.3
+* terrain recoloring throttled a bit when shield generator radius is changing rapidly
+* vines on a wall will be more consistent in its seasonal color
+* grass will change colors every 2 days instead of every day
+* new config option (Getting Wet in winter causes Cold) to get Cold status along Wet status in winter if not protected with mead
+* freezing while swimming option in winter will ignore cloth but respect frost resistance mead
+* more precise Pickable respawn calculations
+* new config option for hover text with respawn time for Pickable
+* new visual hover type for plants, pickables, beehives: Bar
+* more clear hover info on pickables which is winter resistant or protected by fire or vulnerable to cold
+
 # 1.4.2
 * EpicLoot Serpent bounty made no longer obtainable when water is frozen to prevent infinite loop
 * changes to cache settings to ignore certain redundant objects

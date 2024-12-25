@@ -460,7 +460,7 @@ namespace Seasons
 
         private int GetCurrentMainVariant()
         {
-            double factor = GetVariantFactor(seasonState.GetCurrentWorldDay());
+            double factor = GetVariantFactor(seasonState.GetCurrentWorldDay() / 2);
             if (factor < -0.5)
                 return 0;
             else if (factor < 0)

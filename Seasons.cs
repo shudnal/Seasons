@@ -21,7 +21,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.4.2";
+        public const string pluginVersion = "1.4.3";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -72,6 +72,7 @@ namespace Seasons
         public static ConfigEntry<bool> shieldGeneratorProtection;
         public static ConfigEntry<bool> shieldGeneratorOnlyWinter;
         public static ConfigEntry<bool> fireHeatProtectsFromPerish;
+        public static ConfigEntry<bool> gettingWetInWinterCausesCold;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -95,6 +96,7 @@ namespace Seasons
         public static ConfigEntry<StationHover> hoverBeeHive;
         public static ConfigEntry<bool> hoverBeeHiveTotal;
         public static ConfigEntry<StationHover> hoverPlant;
+        public static ConfigEntry<StationHover> hoverPickable;
         public static ConfigEntry<bool> seasonalMinimapBorderColor;
 
         public static ConfigEntry<string> localizationSeasonNameSpring;
@@ -210,7 +212,8 @@ namespace Seasons
         {
             Vanilla,
             Percentage,
-            MinutesSeconds
+            MinutesSeconds,
+            Bar
         }
 
         private void Awake()
@@ -281,7 +284,7 @@ namespace Seasons
             config("General", "NexusID", 2654, "Nexus mod ID for updates", false);
 
             configLocked = config("General", "Lock Configuration", defaultValue: true, "Configuration is locked and can be changed by server admins only.");
-            loggingEnabled = config("General", "Logging enabled", defaultValue: false, "Enable logging. [Not Synced with Server]", false);
+            loggingEnabled = config("General", "Logging enabled", defaultValue: false, "Enable logging. [Not Synced with Server]", synchronizedSetting: false);
             dayLengthSec = config("General", "Day length in seconds", defaultValue: 1800L, "Day length in seconds. Vanilla - 1800 seconds. Set to 0 to disable.");
 
             controlEnvironments = config("Season - Control", "Control environments", defaultValue: true, "Enables seasonal weathers");
@@ -299,11 +302,11 @@ namespace Seasons
             customTextures.SettingChanged += (sender, args) => CustomTextures.UpdateTexturesOnChange();
 
             disableBloomInWinter = config("Season", "Disable Bloom in Winter", defaultValue: true, "Force disables Bloom graphics setting while in Winter and restores it in other seasons (it will not change Graphics setting, only disables posteffect)." +
-                                                                                                   "\nBloom in Winter is what makes you blind with that much of white.");
+                                                                                                   "\nBloom in Winter is what makes you blind with that much of white. [Not Synced with Server]", synchronizedSetting: false);
             reduceSnowStormInWinter = config("Season", "Reduce SnowStorm particles in Winter", defaultValue: new Vector2(250, 1000), "Reduce SnowStorm particles emission rate and maximum amount. Vanilla values is 500:2000" +
                                                                                                    "\nFirst parameter is emission rate and second is max particles amount." +
                                                                                                    "\nHelps fps in Winter. Doesn't affect Mountains, Ashlands and DeepNorth." +
-                                                                                                   "\nSet to 0:0 to return Vanilla behaviour.");
+                                                                                                   "\nSet to 0:0 to return Vanilla behaviour. [Not Synced with Server]", synchronizedSetting: false);
             enableSeasonalItems = config("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
             preventDeathFromFreezing = config("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
             seasonalStatsOutdoorsOnly = config("Season", "Seasonal stats works only outdoors", defaultValue: true, "Make seasonal stats works only outdoors");
@@ -318,6 +321,8 @@ namespace Seasons
             meatListToControlDrop = config("Season", "Meat to control drop", defaultValue: "RawMeat, DeerMeat, NeckTail, WolfMeat, LoxMeat, ChickenMeat, HareMeat, SerpentMeat", "Meat item names to control drop from characters");
             shieldGeneratorProtection = config("Season", "Shield generator protects from weather", defaultValue: true, "If enabled - objects inside shield generator dome will be protected from seasonal effects both positive and negative.");
             shieldGeneratorOnlyWinter = config("Season", "Shield generator protects from Winter only", defaultValue: true, "If enabled - objects inside shield generator dome will be protected from Winter only. If disabled - protection will work through all seasons.");
+            gettingWetInWinterCausesCold = config("Season", "Getting Wet in winter causes Cold", defaultValue: true, "If you get Wet status during winter you will get Cold status," +
+                                                                                                                     "\nunless you have frost resistance mead or you are near a fire or in shelter");
 
             seasonalStatsOutdoorsOnly.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
             cropsToSurviveInWinter.SettingChanged += (sender, args) => FillListsToControl();
@@ -354,10 +359,11 @@ namespace Seasons
             showFadeOnSeasonChange = config("Season - Fade", "Show fade effect on season change", defaultValue: true, "Show black fade loading screen when season is changed.");
             fadeOnSeasonChangeDuration = config("Season - Fade", "Duration of fade effect", defaultValue: 0.5f, "Fade duration");
 
-            hoverBeeHive = Config.Bind("Season - UI", "Bee Hive Hover", defaultValue: StationHover.Vanilla, "Hover text for bee hive.");
-            hoverBeeHiveTotal = Config.Bind("Season - UI", "Bee Hive Show total", defaultValue: true, "Show total needed time/percent for bee hive.");
-            hoverPlant = Config.Bind("Season - UI", "Plants Hover", defaultValue: StationHover.Vanilla, "Hover text for plants.");
-            seasonalMinimapBorderColor = Config.Bind("Season - UI", "Seasonal colored minimap border", defaultValue: true, "Change minimap border color according to current season");
+            hoverBeeHive = config("Season - UI", "Bee Hive Hover", defaultValue: StationHover.Vanilla, "Hover text for bee hive. [Not Synced with Server]", synchronizedSetting:false);
+            hoverBeeHiveTotal = config("Season - UI", "Bee Hive Show total", defaultValue: true, "Show total needed time/percent for bee hive. [Not Synced with Server]", synchronizedSetting: false);
+            hoverPlant = config("Season - UI", "Plants Hover", defaultValue: StationHover.Vanilla, "Hover text for plants. [Not Synced with Server]", synchronizedSetting: false);
+            hoverPickable = config("Season - UI", "Pickables Hover", defaultValue: StationHover.Vanilla, "Hover text for pickables. [Not Synced with Server]", synchronizedSetting: false);
+            seasonalMinimapBorderColor = config("Season - UI", "Seasonal colored minimap border", defaultValue: true, "Change minimap border color according to current season. [Not Synced with Server]", synchronizedSetting: false);
 
             overrideSeason = config("Season - Override", "Override", defaultValue: false, "The season will be overrided by set season.");
             seasonOverrided = config("Season - Override", "Season", defaultValue: Season.Spring, "The season to set.");
@@ -537,9 +543,14 @@ namespace Seasons
 
         public static string FromSeconds(double seconds)
         {
+            if (seconds <= 0)
+                return Localization.instance.Localize("$hud_ready");
+
             TimeSpan ts = TimeSpan.FromSeconds(seconds);
             return ts.ToString(ts.Hours > 0 ? @"h\:mm\:ss" : @"m\:ss");
         }
+
+        public static string FromPercent(double percent) => "<sup><alpha=#ff>▀▀▀▀▀▀▀▀▀▀<alpha=#ff></sup>".Insert(Mathf.Clamp(Mathf.RoundToInt((float)percent * 10), 0, 10) + 16, "<alpha=#33>");
 
         public static bool UseTextureControllers()
         {
