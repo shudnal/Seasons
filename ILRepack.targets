@@ -35,8 +35,8 @@
 				Overwrite="true"/>
 	</Target>
 	<Target Name="CopyDLLPlugins" AfterTargets="CopyDLLThunderstore">
-		<Copy SourceFiles="$(TargetDir)\thunderstore\$(TargetFileName)" DestinationFolder="C:\Users\Suden\AppData\Roaming\r2modmanPlus-local\Valheim\profiles\beta\BepInEx\plugins\shudnal-$(SolutionName)\" />
-		<Copy SourceFiles="$(OutputPath)Newtonsoft.Json.dll" DestinationFolder="C:\Users\Suden\AppData\Roaming\r2modmanPlus-local\Valheim\profiles\beta\BepInEx\plugins\shudnal-$(SolutionName)\" />
+		<Copy SourceFiles="$(TargetDir)\thunderstore\$(TargetFileName)" DestinationFolder="D:\r2modman\Valheim\profiles\beta\BepInEx\plugins\shudnal-$(SolutionName)\" />
+		<Copy SourceFiles="$(OutputPath)Newtonsoft.Json.dll" DestinationFolder="D:\r2modman\Valheim\profiles\beta\BepInEx\plugins\shudnal-$(SolutionName)\" />
 		<Message Text="Copied to r2 folder." Importance="High" />
 	</Target>
 </Project>

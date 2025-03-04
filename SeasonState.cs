@@ -1960,7 +1960,7 @@ namespace Seasons
             if (__instance.GetDestructibleType() != DestructibleType.Tree)
                 return;
 
-            if (TreeToRegrowth(__instance.gameObject) == null)
+            if (TreeToRegrowth(__instance.gameObject) is not GameObject plant)
                 return;
 
             if (IsProtectedPosition(__instance.transform.position))
@@ -1968,8 +1968,6 @@ namespace Seasons
 
             if ((bool)EffectArea.IsPointInsideArea(__instance.transform.position, EffectArea.Type.PlayerBase))
                 return;
-
-            GameObject plant = TreeToRegrowth(__instance.gameObject);
 
             float scale = ___m_nview.GetZDO().GetFloat(ZDOVars.s_scaleScalarHash);
 

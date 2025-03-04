@@ -1,4 +1,5 @@
 ﻿using HarmonyLib;
+using System;
 using System.Collections;
 using System.Diagnostics;
 using System.Threading;
@@ -77,8 +78,15 @@ namespace Seasons
 
         private void SetMapTextures(bool winter, Texture2D forestTex)
         {
-            m_minimap.m_mapTexture.SetPixels32(winter ? m_mapWinterTexture : m_mapTexture);
-            m_minimap.m_mapTexture.Apply();
+            try
+            {
+                m_minimap.m_mapTexture.SetPixels32(winter ? m_mapWinterTexture : m_mapTexture);
+                m_minimap.m_mapTexture.Apply();
+            }
+            catch (Exception e)
+            {
+                LogWarning($"Error applying {(winter ? "winter ": "")}map texture length {(winter ? m_mapWinterTexture : m_mapTexture).Length} to minimap texture length {m_minimap.m_mapTexture.height * m_minimap.m_mapTexture.width}:\n{e}");
+            }
 
             m_minimap.m_mapLargeShader.SetTexture("_ForestTex", forestTex);
             m_minimap.m_mapSmallShader.SetTexture("_ForestTex", forestTex);

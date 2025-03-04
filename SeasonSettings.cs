@@ -18,21 +18,21 @@ namespace Seasons
         public int daysInSeason;
         public int nightLength;
         public bool torchAsFiresource;
-        public float torchDurabilityDrain;
-        public float plantsGrowthMultiplier;
-        public float beehiveProductionMultiplier;
-        public float foodDrainMultiplier;
-        public float staminaDrainMultiplier;
-        public float fireplaceDrainMultiplier;
-        public float sapCollectingSpeedMultiplier;
+        public float torchDurabilityDrain = -1f;
+        public float plantsGrowthMultiplier = -1f;
+        public float beehiveProductionMultiplier = -1f;
+        public float foodDrainMultiplier = -1f;
+        public float staminaDrainMultiplier = -1f;
+        public float fireplaceDrainMultiplier = -1f;
+        public float sapCollectingSpeedMultiplier = -1f;
         public bool rainProtection;
-        public float woodFromTreesMultiplier;
-        public float windIntensityMultiplier;
-        public float restedBuffDurationMultiplier;
-        public float livestockProcreationMultiplier;
+        public float woodFromTreesMultiplier = -1f;
+        public float windIntensityMultiplier = -1f;
+        public float restedBuffDurationMultiplier = -1f;
+        public float livestockProcreationMultiplier = -1f;
         public bool overheatIn2WarmClothes;
-        public float meatFromAnimalsMultiplier;
-        public float treesRegrowthChance;
+        public float meatFromAnimalsMultiplier = -1f;
+        public float treesRegrowthChance = -1f;
 
         public SeasonSettingsFile(SeasonSettings settings)
         {

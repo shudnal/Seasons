@@ -1,3 +1,7 @@
+# 1.4.4
+* patch 0.220.3
+* little fixes here and there
+
 # 1.4.3
 * terrain recoloring throttled a bit when shield generator radius is changing rapidly
 * vines on a wall will be more consistent in its seasonal color
