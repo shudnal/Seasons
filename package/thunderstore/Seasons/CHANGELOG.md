@@ -1,3 +1,9 @@
+# 1.5.0
+* major FPS optimization
+* fish should now stays below ice
+* floating containers (e.g. cargo crates) can now be placed above ice surface (config disabled by default)
+* torch as fire source now should be properly disabled in mountains
+
 # 1.4.5
 * ServerSync updated
 

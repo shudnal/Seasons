@@ -517,6 +517,16 @@ namespace Seasons
                 variants.Add(variant, tex);
         }
 
+        public Texture2D GetSeasonalVariant(Season season, int variant)
+        {
+            if (CustomTextures.HaveCustomTexture(originalName, season, variant, properties, out Texture2D customTexture))
+                return customTexture;
+
+            if (seasons.TryGetValue(season, out Dictionary<int, Texture2D> variants) && variants.TryGetValue(variant, out Texture2D texture))
+                return texture;
+
+            return original;
+        }
     }
 
     public class SeasonalTextureVariants
@@ -2479,7 +2489,7 @@ namespace Seasons
         }
 
         // Used to force global cache rebuild after mod changes
-        const string globalRevision = "1.4.2";
+        const string globalRevision = "1.5.0";
 
         public static uint GetRevision()
         {

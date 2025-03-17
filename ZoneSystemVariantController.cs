@@ -503,10 +503,13 @@ namespace Seasons
             foreach (WaterVolume waterVolume in waterStates.Keys)
             {
                 foreach (IWaterInteractable waterInteractable in waterVolume.m_inWater)
-                    if (waterInteractable is Fish)
-                        CheckIfFishAboveSurface(waterInteractable as Fish);
-                    else if (waterInteractable is Character)
-                        CheckIfCharacterAboveSurface(waterInteractable as Character);
+                    if (waterInteractable is Fish fish)
+                        CheckIfFishAboveSurface(fish);
+                    else if (waterInteractable is Character character)
+                        CheckIfCharacterBelowSurface(character);
+                    else if (waterInteractable is Floating floating)
+                        CheckIfFloatingContainerBelowSurface(floating);
+
 
                 Instance.waterVolumesCheckFloes.Add(waterVolume);
             }
@@ -527,6 +530,12 @@ namespace Seasons
             foreach (Ship ship in Ship.Instances.ToArray().Cast<Ship>())
                 if (ship.m_nview.IsOwner())
                     PlaceShip(ship);
+        }
+
+        public static void UpdateFloatingPositions()
+        {
+            foreach (Floating floating in Floating.Instances.ToArray().Cast<Floating>())
+                CheckIfFloatingContainerBelowSurface(floating);
         }
 
         public static IEnumerator CheckIfShipBelowSurface(Ship ship)
@@ -588,16 +597,19 @@ namespace Seasons
             if (fish.m_nview.HasOwner() && !fish.m_nview.IsOwner())
                 return;
 
-            float maximumLevel = WaterLevel - _winterWaterSurfaceOffset - fish.m_height - 0.2f;
+            float maximumLevel = WaterLevel - _winterWaterSurfaceOffset - fish.m_height - 0.5f;
             if (fish.transform.position.y > maximumLevel)
+            {
                 fish.transform.position = new Vector3(fish.transform.position.x, maximumLevel, fish.transform.position.z);
+                fish.m_nview.GetZDO().SetPosition(fish.transform.position);
+            }
 
             fish.m_body.velocity = Vector3.zero;
             fish.m_haveWaypoint = false;
             fish.m_isJumping = false;
         }
 
-        public static void CheckIfCharacterAboveSurface(Character character)
+        public static void CheckIfCharacterBelowSurface(Character character)
         {
             if (character == null || character.m_nview == null || !character.m_nview.IsValid())
                 return;
@@ -628,6 +640,31 @@ namespace Seasons
                 character.m_maxAirAltitude = character.transform.position.y;
                 character.m_swimTimer = 0.6f;
             }
+        }
+
+        public static void CheckIfFloatingContainerBelowSurface(Floating floating)
+        {
+            if (!placeFloatingContainersAboveFrozenOcean.Value)
+                return;
+
+            if (floating == null || floating.m_nview == null || !floating.m_nview.IsValid())
+                return;
+
+            if (!floating.m_nview.IsOwner())
+                return;
+
+            if (floating.GetComponent<Container>() == null)
+                return;
+
+            floating.m_body.WakeUp();
+
+            float positionDelta = floating.m_body.position.y - (WaterLevel + floating.m_waterLevelOffset);
+            if (positionDelta > 0 || !IsWaterSurfaceFrozen())
+                return;
+
+            floating.m_body.rotation = Quaternion.identity;
+            floating.m_body.position = new Vector3(floating.m_body.position.x, WaterLevel + floating.m_waterLevelOffset + 0.1f, floating.m_body.position.z);
+            floating.m_body.velocity = Vector3.zero;
         }
 
         public static void CheckToRemoveIceFloes()
@@ -1369,12 +1406,12 @@ namespace Seasons
             if (!IsWaterSurfaceFrozen())
                 return;
 
-            CheckIfCharacterAboveSurface(__instance);
+            CheckIfCharacterBelowSurface(__instance);
         }
     }
 
-    [HarmonyPatch(typeof(Fish), nameof(Fish.Awake))]
-    public static class Fish_Awake_FrozenOceanCharacter
+    [HarmonyPatch(typeof(Fish), nameof(Fish.Start))]
+    public static class Fish_Start_FrozenOcean
     {
         private static void Postfix(Fish __instance)
         {
@@ -1574,7 +1611,7 @@ namespace Seasons
     }
 
     [HarmonyPatch(typeof(Player), nameof(Player.UpdateBiome))]
-    public static class Player_UpdateBiome_AshlandsUnfrozenSurface
+    public static class Player_UpdateBiome_OnBiomeChange
     {
         private static void Prefix(Player __instance, ref Heightmap.Biome __state)
         {
@@ -1589,22 +1626,12 @@ namespace Seasons
             if (!SeasonState.IsActive)
                 return;
 
-            if (seasonState.GetCurrentSeason() != Season.Winter)
-                return;
-
             __state = __instance.GetCurrentBiome();
         }
 
         private static void Postfix(Player __instance, Heightmap.Biome __state)
         {
-            if (__state == Heightmap.Biome.None || __state == __instance.GetCurrentBiome())
-                return;
-
-            if (__state == Heightmap.Biome.AshLands || __instance.GetCurrentBiome() == Heightmap.Biome.AshLands)
-                UpdateWaterState();
-
-            if (seasonState.GetTorchAsFiresource() && (SeasonState.TorchHeatInBiome(__state) != SeasonState.TorchHeatInBiome(__instance.GetCurrentBiome())))
-                seasonState.UpdateTorchesFireWarmth();
+            seasonState.OnBiomeChange(__state, __instance.GetCurrentBiome());
         }
     }
 

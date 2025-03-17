@@ -136,6 +136,18 @@ namespace Seasons
                 CheckIfDayChanged(m_dayInSeasonGlobal, worldDay, forceSeasonChange);
         }
 
+        public void OnBiomeChange(Heightmap.Biome previousBiome, Heightmap.Biome currentBiome)
+        {
+            if (previousBiome == Heightmap.Biome.None || previousBiome == currentBiome)
+                return;
+
+            if (GetCurrentSeason() == Season.Winter && (previousBiome == Heightmap.Biome.AshLands || currentBiome == Heightmap.Biome.AshLands))
+                ZoneSystemVariantController.UpdateWaterState();
+
+            if (GetTorchAsFiresource() && (TorchHeatInBiome(previousBiome) != TorchHeatInBiome(currentBiome)))
+                UpdateTorchesFireWarmth();
+        }
+
         private World GetCurrentWorld()
         {
             return ZNet.m_world ?? (WorldGenerator.instance?.m_world);

@@ -39,6 +39,8 @@ namespace Seasons
         {
             UpdateTextures();
 
+            PrefabVariantController.MaterialVariants.UpdateSeasonalMaterials();
+
             PrefabVariantController.UpdatePrefabColors();
             ClutterVariantController.Instance?.UpdateColors();
         }

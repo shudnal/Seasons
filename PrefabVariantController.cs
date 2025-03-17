@@ -12,6 +12,113 @@ namespace Seasons
 {
     public class PrefabVariantController : MonoBehaviour
     {
+        public class MaterialVariants
+        {
+            public Material m_originalMaterial;
+            public Dictionary<string, TextureVariants> m_textureVariants = new Dictionary<string, TextureVariants>();
+            public Dictionary<string, Color[]> m_colorVariants = new Dictionary<string, Color[]>();
+            public Material[] seasonalMaterials = Array.Empty<Material>();
+            
+            public Season season;
+            public bool updateSeasonalMaterials = true;
+
+            public readonly static Dictionary<Material, MaterialVariants> s_materialVariants = new Dictionary<Material, MaterialVariants>();
+            
+            private readonly static List<Material> s_tempMaterials = new List<Material>();
+
+            private MaterialVariants(Material originalMaterial)
+            {
+                m_originalMaterial = originalMaterial;
+
+                seasonalMaterials = new Material[seasonColorVariants];
+                for (int i = 0; i < seasonColorVariants; i++)
+                    seasonalMaterials[i] = new Material(m_originalMaterial);
+
+                updateSeasonalMaterials = true;
+
+                s_materialVariants[m_originalMaterial] = this;
+            }
+
+            public void InitializeTextureVariants(Dictionary<string, int> cachedTextures)
+            {
+                foreach (KeyValuePair<string, int> tex in cachedTextures)
+                    m_textureVariants[tex.Key] = texturesVariants.textures[tex.Value];
+
+                foreach (KeyValuePair<string, TextureVariants> textureVariants in m_textureVariants)
+                    if (!textureVariants.Value.HaveOriginalTexture())
+                        textureVariants.Value.SetOriginalTexture(m_originalMaterial.GetTexture(textureVariants.Key));
+            }
+
+            public void InitializeColorVariants(Dictionary<string, string[]> cachedColors)
+            {
+                foreach (KeyValuePair<string, string[]> tex in cachedColors)
+                    if (!m_colorVariants.ContainsKey(tex.Key))
+                    {
+                        s_tempColors.Clear();
+                        foreach (string str in tex.Value)
+                        {
+                            if (ColorUtility.TryParseHtmlString(str, out Color color))
+                                s_tempColors.Add(color);
+                        }
+                        m_colorVariants.Add(tex.Key, s_tempColors.ToArray());
+                    }
+            }
+
+            public void ReplaceSharedMaterial(Renderer renderer, int materialIndex, int variant)
+            {
+                if (updateSeasonalMaterials || season != seasonState.GetCurrentSeason())
+                {
+                    updateSeasonalMaterials = false;
+                    season = seasonState.GetCurrentSeason();
+
+                    for (int i = 0; i < seasonColorVariants; i++)
+                    {
+                        foreach (KeyValuePair<string, TextureVariants> textureVariants in m_textureVariants)
+                            seasonalMaterials[i].SetTexture(textureVariants.Key, textureVariants.Value.GetSeasonalVariant(season, i));
+
+                        foreach (KeyValuePair<string, Color[]> colorVariants in m_colorVariants)
+                            seasonalMaterials[i].SetColor(colorVariants.Key, colorVariants.Value[(int)seasonState.GetCurrentSeason() * seasonsCount + variant]);
+                    }
+                }
+
+                ApplySharedMaterial(renderer, materialIndex, seasonalMaterials[variant]);
+            }
+
+            public void RevertSharedMaterial(Renderer renderer, int materialIndex) => ApplySharedMaterial(renderer, materialIndex, m_originalMaterial);
+
+            private void ApplySharedMaterial(Renderer renderer, int materialIndex, Material material)
+            {
+                s_tempMaterials.Clear();
+                renderer.GetSharedMaterials(s_tempMaterials);
+
+                if (s_tempMaterials.Count <= materialIndex)
+                    return;
+
+                s_tempMaterials[materialIndex] = material;
+                renderer.SetSharedMaterials(s_tempMaterials);
+            }
+
+            public static MaterialVariants GetMaterialVariants(Material material)
+            {
+                if (s_materialVariants.TryGetValue(material, out MaterialVariants materialVariants))
+                    return materialVariants;
+
+                return new MaterialVariants(material);
+            }
+
+            public static void UpdateSeasonalMaterials()
+            {
+                s_materialVariants.Values.Do(matVar => matVar.updateSeasonalMaterials = true);
+            }
+
+            public static void Clear()
+            {
+                s_tempMaterials.Clear();
+                s_materialVariants.Values.Do(matVar => matVar.seasonalMaterials.Do(Destroy));
+                s_materialVariants.Clear();
+            }
+        }
+
         public class PrefabVariant
         {
             private ZNetView m_nview;
@@ -28,8 +135,7 @@ namespace Seasons
             private bool m_isVines = false;
             private bool m_covered = true;
 
-            private readonly Dictionary<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>> m_materialVariants = new Dictionary<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>>();
-            private readonly Dictionary<Renderer, Dictionary<int, Dictionary<string, Color[]>>> m_colorVariants = new Dictionary<Renderer, Dictionary<int, Dictionary<string, Color[]>>>();
+            private readonly Dictionary<Renderer, Dictionary<int, MaterialVariants>> m_materialVariants = new Dictionary<Renderer, Dictionary<int, MaterialVariants>>();
             private readonly Dictionary<ParticleSystem, Color[]> m_startColors = new Dictionary<ParticleSystem, Color[]>();
 
             public bool Initialize(PrefabController controller, GameObject gameObject, string prefabName = null, ZNetView netView = null, WearNTear wnt = null, MeshRenderer meshRenderer = null)
@@ -42,7 +148,7 @@ namespace Seasons
                 if (m_nview != null && (!m_nview.IsValid() || m_nview.m_ghost))
                     return false;
 
-                m_prefabName = String.IsNullOrEmpty(prefabName) ? GetPrefabName(m_gameObject) : prefabName;
+                m_prefabName = string.IsNullOrEmpty(prefabName) ? GetPrefabName(m_gameObject) : prefabName;
                 m_renderer = meshRenderer;
 
                 if (m_renderer != null)
@@ -108,7 +214,7 @@ namespace Seasons
                     }
                 }
 
-                if (m_materialVariants.Count == 0 && m_colorVariants.Count == 0 && m_startColors.Count == 0)
+                if (m_materialVariants.Count == 0 && m_startColors.Count == 0)
                     return false;
 
                 WorldToMapPoint(m_gameObject.transform.position, out float mx, out float my);
@@ -124,7 +230,6 @@ namespace Seasons
                     return false;
 
                 m_materialVariants.Clear();
-                m_colorVariants.Clear();
                 m_startColors.Clear();
                 
                 return Initialize(controller, m_gameObject, m_prefabName, m_nview, m_wnt, m_renderer);
@@ -132,15 +237,9 @@ namespace Seasons
 
             public void RevertState()
             {
-                foreach (KeyValuePair<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>> materialVariants in m_materialVariants)
-                    foreach (KeyValuePair<int, Dictionary<string, TextureVariants>> materialIndex in materialVariants.Value)
-                        if (materialVariants.Key != null && materialVariants.Key.HasPropertyBlock() && materialVariants.Key.sharedMaterials.Length >= materialIndex.Key)
-                            materialVariants.Key.SetPropertyBlock(null, materialIndex.Key);
-
-                foreach (KeyValuePair<Renderer, Dictionary<int, Dictionary<string, Color[]>>> colorVariants in m_colorVariants)
-                    foreach (KeyValuePair<int, Dictionary<string, Color[]>> colorIndex in colorVariants.Value)
-                        if (colorVariants.Key != null && colorVariants.Key.HasPropertyBlock() && colorVariants.Key.sharedMaterials.Length >= colorIndex.Key)
-                            colorVariants.Key.SetPropertyBlock(null, colorIndex.Key);
+                foreach (KeyValuePair<Renderer, Dictionary<int, MaterialVariants>> materialVariants in m_materialVariants)
+                    foreach (KeyValuePair<int, MaterialVariants> materialIndex in materialVariants.Value)
+                        materialIndex.Value.RevertSharedMaterial(materialVariants.Key, materialIndex.Key);
             }
 
             public void CheckCoveredStatus()
@@ -170,32 +269,9 @@ namespace Seasons
                 }
 
                 int variant = GetCurrentVariant();
-                foreach (KeyValuePair<Renderer, Dictionary<int, Dictionary<string, TextureVariants>>> materialVariants in m_materialVariants)
-                    foreach (KeyValuePair<int, Dictionary<string, TextureVariants>> materialIndex in materialVariants.Value)
-                        foreach (KeyValuePair<string, TextureVariants> texVar in materialIndex.Value)
-                            if (texVar.Value.seasons.TryGetValue(seasonState.GetCurrentSeason(), out Dictionary<int, Texture2D> variants) && variants.TryGetValue(variant, out Texture2D texture))
-                            {
-                                if (!texVar.Value.HaveOriginalTexture())
-                                    texVar.Value.SetOriginalTexture(materialVariants.Key.sharedMaterials[materialIndex.Key].GetTexture(texVar.Key));
-
-                                materialVariants.Key.GetPropertyBlock(s_matBlock, materialIndex.Key);
-
-                                Texture2D tex = CustomTextures.HaveCustomTexture(texVar.Value.originalName, seasonState.GetCurrentSeason(), variant, texVar.Value.properties, out Texture2D customTexture) ? customTexture : texture;
-
-                                if (tex != null)
-                                    s_matBlock.SetTexture(texVar.Key, tex);
-                                
-                                materialVariants.Key.SetPropertyBlock(s_matBlock, materialIndex.Key);
-                            }
-
-                foreach (KeyValuePair<Renderer, Dictionary<int, Dictionary<string, Color[]>>> colorVariants in m_colorVariants)
-                    foreach (KeyValuePair<int, Dictionary<string, Color[]>> colorIndex in colorVariants.Value)
-                        foreach (KeyValuePair<string, Color[]> colVar in colorIndex.Value)
-                        {
-                            colorVariants.Key.GetPropertyBlock(s_matBlock, colorIndex.Key);
-                            s_matBlock.SetColor(colVar.Key, colVar.Value[(int)seasonState.GetCurrentSeason() * seasonsCount + variant]);
-                            colorVariants.Key.SetPropertyBlock(s_matBlock, colorIndex.Key);
-                        }
+                foreach (KeyValuePair<Renderer, Dictionary<int, MaterialVariants>> materialVariants in m_materialVariants)
+                    foreach (KeyValuePair<int, MaterialVariants> materialIndex in materialVariants.Value)
+                        materialIndex.Value.ReplaceSharedMaterial(materialVariants.Key, materialIndex.Key, variant);
 
                 foreach (KeyValuePair<ParticleSystem, Color[]> startColor in m_startColors)
                 {
@@ -275,55 +351,25 @@ namespace Seasons
 
                     foreach (KeyValuePair<string, CachedMaterial> cachedRendererMaterial in cachedRenderer.materials)
                     {
-                        if (cachedRendererMaterial.Value.textureProperties.Count > 0)
+                        if (cachedRendererMaterial.Value.textureProperties.Count > 0 || cachedRendererMaterial.Value.colorVariants.Count > 0)
                         {
                             if (material.name.StartsWith(cachedRendererMaterial.Key) && (material.shader.name == cachedRendererMaterial.Value.shaderName))
                             {
-                                if (!m_materialVariants.TryGetValue(renderer, out Dictionary<int, Dictionary<string, TextureVariants>> materialIndex))
+                                if (!m_materialVariants.TryGetValue(renderer, out Dictionary<int, MaterialVariants> materialIndex))
                                 {
-                                    materialIndex = new Dictionary<int, Dictionary<string, TextureVariants>>();
+                                    materialIndex = new Dictionary<int, MaterialVariants>();
                                     m_materialVariants.Add(renderer, materialIndex);
                                 }
 
-                                if (!materialIndex.TryGetValue(i, out Dictionary<string, TextureVariants> texVariants))
+                                if (!materialIndex.TryGetValue(i, out MaterialVariants materialVariants))
                                 {
-                                    texVariants = new Dictionary<string, TextureVariants>();
-                                    materialIndex.Add(i, texVariants);
+                                    materialVariants = MaterialVariants.GetMaterialVariants(material);
+                                    materialIndex.Add(i, materialVariants);
                                 }
 
-                                foreach (KeyValuePair<string, int> tex in cachedRendererMaterial.Value.textureProperties)
-                                    if (!texVariants.ContainsKey(tex.Key))
-                                        texVariants.Add(tex.Key, texturesVariants.textures[tex.Value]);
-                            }
-                        }
+                                materialVariants.InitializeTextureVariants(cachedRendererMaterial.Value.textureProperties);
 
-                        if (cachedRendererMaterial.Value.colorVariants.Count > 0)
-                        {
-                            if (material.name.StartsWith(cachedRendererMaterial.Key) && (material.shader.name == cachedRendererMaterial.Value.shaderName))
-                            {
-                                if (!m_colorVariants.TryGetValue(renderer, out Dictionary<int, Dictionary<string, Color[]>> colorIndex))
-                                {
-                                    colorIndex = new Dictionary<int, Dictionary<string, Color[]>>();
-                                    m_colorVariants.Add(renderer, colorIndex);
-                                }
-
-                                if (!colorIndex.TryGetValue(i, out Dictionary<string, Color[]> colorVariants))
-                                {
-                                    colorVariants = new Dictionary<string, Color[]>();
-                                    colorIndex.Add(i, colorVariants);
-                                }
-
-                                foreach (KeyValuePair<string, string[]> tex in cachedRendererMaterial.Value.colorVariants)
-                                    if (!colorVariants.ContainsKey(tex.Key))
-                                    {
-                                        s_tempColors.Clear();
-                                        foreach (string str in tex.Value)
-                                        {
-                                            if (ColorUtility.TryParseHtmlString(str, out Color color))
-                                                s_tempColors.Add(color);
-                                        }
-                                        colorVariants.Add(tex.Key, s_tempColors.ToArray());
-                                    }
+                                materialVariants.InitializeColorVariants(cachedRendererMaterial.Value.colorVariants);
                             }
                         }
                     }
@@ -442,6 +488,8 @@ namespace Seasons
 
             RevertPrefabsState();
             m_prefabVariants.Clear();
+
+            MaterialVariants.Clear();
 
             m_instance = null;
         }

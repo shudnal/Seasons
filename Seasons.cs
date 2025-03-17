@@ -21,7 +21,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.4.5";
+        public const string pluginVersion = "1.5.0";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -82,6 +82,7 @@ namespace Seasons
         public static ConfigEntry<bool> enableNightMusicOnFrozenOcean;
         public static ConfigEntry<float> frozenOceanSlipperiness;
         public static ConfigEntry<bool> placeShipAboveFrozenOcean;
+        public static ConfigEntry<bool> placeFloatingContainersAboveFrozenOcean;
         public static ConfigEntry<Vector2> iceFloesScale;
 
         public static ConfigEntry<float> grassDefaultPatchSize;
@@ -379,6 +380,7 @@ namespace Seasons
             enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
             frozenOceanSlipperiness = config("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1f, "Slipperiness factor of the frozen ocean surface");
             placeShipAboveFrozenOcean = config("Season - Winter ocean", "Place ship above frozen ocean surface", defaultValue: false, "Place ship above frozen ocean surface to move them without destroying");
+            placeFloatingContainersAboveFrozenOcean = config("Season - Winter ocean", "Place floating containers above frozen ocean surface", defaultValue: false, "Place floating containers above frozen ocean surface");
 
             enableFrozenWater.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             enableIceFloes.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
@@ -386,6 +388,7 @@ namespace Seasons
             iceFloesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             amountOfIceFloesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             placeShipAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateShipsPositions();
+            placeFloatingContainersAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateFloatingPositions();
 
             enableSeasonalGlobalKeys = config("Seasons - Global keys", "Enable setting seasonal Global Keys", defaultValue: false, "Enables setting seasonal global key");
             seasonalGlobalKeyFall = config("Seasons - Global keys", "Fall", defaultValue: "Season_Fall", "Seasonal global key for autumn. You can set config value like \"Season Fall\" space separated and it will be treated as key value pair.");
