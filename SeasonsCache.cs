@@ -841,6 +841,7 @@ namespace Seasons
                     { "Grausten_RoofSlab_mat", new string[] { "_Color" }},
                     { "Vine_Sapling_ashlands_mat", new string[] { "_Color" }},
                     { "Vines_ashlands_mat", new string[] { "_Color" }},
+                    { "bca_Bush01_raspberry", new string[] { "_Color" }},
                 };
 
                 materialTextures = new Dictionary<string, string[]>
@@ -2836,7 +2837,7 @@ namespace Seasons
             int i = 0;
             foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
             {
-                if (materialSettings.ignorePrefab.Contains(prefab.name) || prefab.layer == 12)
+                if (materialSettings.ignorePrefab.Contains(prefab.name) || (prefab.layer == 12 && !prefab.name.StartsWith("BH_Pickable")))
                     continue;
 
                 if (materialSettings.ignorePrefabPartialName.Any(namepart => prefab.name.Contains(namepart)))
