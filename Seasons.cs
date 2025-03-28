@@ -36,6 +36,8 @@ namespace Seasons
         public static ConfigEntry<bool> logFloes;
         public static ConfigEntry<bool> plainsSwampBorderFix;
         public static ConfigEntry<bool> frozenKarvePositionFix;
+        public static ConfigEntry<float> lastDayTerrainFactor;
+        public static ConfigEntry<float> firstDayTerrainFactor;
 
         public static ConfigEntry<bool> overrideSeason;
         public static ConfigEntry<Season> seasonOverrided;
@@ -331,7 +333,10 @@ namespace Seasons
             meatListToControlDrop.SettingChanged += (sender, args) => FillListsToControl();
             disableBloomInWinter.SettingChanged += (sender, args) => seasonState.UpdateWinterBloomEffect();
             reduceSnowStormInWinter.SettingChanged += (sender, args) => ZoneSystemVariantController.SnowStormReduceParticlesChanged();
-            
+
+            shieldGeneratorProtection.SettingChanged += (sender, args) => { ClutterVariantController.UpdateShieldActiveState(); ZoneSystemVariantController.UpdateTerrainColors(); };
+            shieldGeneratorOnlyWinter.SettingChanged += (sender, args) => { ClutterVariantController.UpdateShieldActiveState(); ZoneSystemVariantController.UpdateTerrainColors(); };
+
 
             grassDefaultPatchSize = config("Season - Grass", "Default patch size", defaultValue: 10f, "Default size of grass patch (sparseness or how wide a single grass \"node\" is across the ground)" +
                                                                                                      "Increase to make grass more sparse and decrease to make grass more tight");
@@ -425,8 +430,12 @@ namespace Seasons
             logFloes = config("Test", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying");
             plainsSwampBorderFix = config("Test", "Plains Swamp border fix", defaultValue: true, "Fix clipping into ground on Plains - Swamp border");
             frozenKarvePositionFix = config("Test", "Fix position for frozen Karve", defaultValue: false, "Make Karve storage always available if frozen. If Karve is below certain level it will be pushed to the surface.");
+            lastDayTerrainFactor = config("Test", "Last day terrain factor", defaultValue: 0.0f, "Last day");
+            firstDayTerrainFactor = config("Test", "First day terrain factor", defaultValue: 0.0f, "First day");
 
             plainsSwampBorderFix.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateTerrainColors();
+            lastDayTerrainFactor.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateTerrainColors();
+            firstDayTerrainFactor.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateTerrainColors();
 
             configDirectory = Path.Combine(Paths.ConfigPath, pluginID);
             cacheDirectory = Path.Combine(Paths.CachePath, pluginID);

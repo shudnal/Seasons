@@ -3,6 +3,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using UnityEngine;
 using static ClutterSystem;
 using static Seasons.PrefabController;
@@ -34,6 +35,8 @@ namespace Seasons
             {  c_swampGrassBloomPrefabName, 2 },
             {  "instanced_swamp_grass", 3 },
         };
+
+        private static readonly Dictionary<string, GameObject> s_shieldedPrefabs = new Dictionary<string, GameObject>();
 
         private static readonly List<Color> s_tempColors = new List<Color>();
 
@@ -455,6 +458,7 @@ namespace Seasons
         {
             yield return new WaitForSeconds(fadeOnSeasonChangeDuration.Value);
 
+            UpdateShieldActiveState();
             UpdateColors();
         }
 
@@ -505,6 +509,47 @@ namespace Seasons
             AddForestBloom();
 
             AddSwampgrassBloom();
+
+            AddShieldedGrass();
+        }
+
+        internal static void AddShieldedGrass()
+        {
+            foreach (string clutterName in new string[] { 
+                "instanced_meadows_grass",
+                "instanced_meadows_grass_short",
+                "instanced_forest_groundcover",
+                "instanced_heathgrass",
+                "instanced_swamp_grass",
+                "instanced_mistlands_grass_short"})
+            {
+                Clutter clutter = ClutterSystem.instance.m_clutter.Find(clutter => clutter?.m_name == clutterName || clutter?.m_prefab?.name == clutterName);
+                if (clutter == null || clutter.m_prefab == null)
+                    continue;
+
+                string clutterShieldedName = clutter.m_name + "_inshield";
+                if (ClutterSystem.instance.m_clutter.Any(clutter => clutter?.m_name == clutterShieldedName || clutter?.m_prefab?.name == clutterShieldedName))
+                    continue;
+
+                Clutter shieldedCopy = JsonUtility.FromJson<Clutter>(JsonUtility.ToJson(clutter));
+                shieldedCopy.m_name = clutterShieldedName;
+                shieldedCopy.m_enabled = false;
+
+                clutterShieldedName = clutter.m_prefab.name + "_inshield";
+
+                if (!s_shieldedPrefabs.TryGetValue(clutterShieldedName, out GameObject prefab) || !prefab)
+                {
+                    prefab = CustomPrefabs.InitPrefabClone(clutter.m_prefab, clutterShieldedName);
+                    InstanceRenderer renderer = prefab.GetComponent<InstanceRenderer>();
+                    renderer.m_material = DeepCopyMaterial(renderer.m_material, clutterShieldedName);
+
+                    s_shieldedPrefabs.Add(prefab.name, prefab);
+                }
+
+                shieldedCopy.m_prefab = prefab;
+
+                ClutterSystem.instance.m_clutter.Add(shieldedCopy);
+            }
         }
 
         internal static void AddMeadowsFlowers()
@@ -513,7 +558,7 @@ namespace Seasons
                 return;
 
             Clutter clutter = ClutterSystem.instance.m_clutter.Find(clutter => clutter?.m_name == "heath flowers" || clutter?.m_prefab?.name == "instanced_heathflowers");
-            if (clutter == null)
+            if (clutter == null || clutter.m_prefab == null)
                 return;
 
             Clutter flowers = JsonUtility.FromJson<Clutter>(JsonUtility.ToJson(clutter));
@@ -547,7 +592,7 @@ namespace Seasons
                 return;
 
             Clutter clutter = ClutterSystem.instance.m_clutter.Find(clutter => clutter?.m_name == "forest groundcover" || clutter?.m_prefab?.name == "instanced_forest_groundcover");
-            if (clutter == null)
+            if (clutter == null || clutter.m_prefab == null)
                 return;
 
             Clutter bloom = JsonUtility.FromJson<Clutter>(JsonUtility.ToJson(clutter));
@@ -581,7 +626,7 @@ namespace Seasons
                 return;
 
             Clutter clutter = ClutterSystem.instance.m_clutter.Find(clutter => clutter?.m_name == "swampgrass" || clutter?.m_prefab?.name == "instanced_swamp_grass");
-            if (clutter == null)
+            if (clutter == null || clutter.m_prefab == null)
                 return;
 
             Clutter bloom = JsonUtility.FromJson<Clutter>(JsonUtility.ToJson(clutter));
@@ -629,12 +674,98 @@ namespace Seasons
             Initialize();
         }
 
+        private static Texture2D CopyTexture(Texture2D source)
+        {
+            if (source == null)
+                return null;
+
+            RenderTexture rt = RenderTexture.GetTemporary(source.width, source.height, 0, RenderTextureFormat.Default, RenderTextureReadWrite.Default);
+
+            Graphics.Blit(source, rt);
+
+            Texture2D copy = new Texture2D(source.width, source.height, TextureFormat.RGBA32, source.mipmapCount > 1);
+
+            RenderTexture.active = rt;
+            copy.ReadPixels(new Rect(0, 0, source.width, source.height), 0, 0);
+            copy.filterMode = source.filterMode;
+            copy.Apply(true, true);
+            RenderTexture.active = null;
+
+            RenderTexture.ReleaseTemporary(rt);
+
+            return copy;
+        }
+
+        private static Material DeepCopyMaterial(Material original, string name)
+        {
+            Material copy = new Material(original.shader);
+
+            copy.CopyPropertiesFromMaterial(original);
+
+            CopyTextureIfExists(original, copy, "_MainTex");
+            CopyTextureIfExists(original, copy, "_TerrainColorTex");
+            CopyTextureIfExists(original, copy, "_BumpMap");
+            CopyTextureIfExists(original, copy, "_EmissiveTex");
+
+            copy.name = name;
+
+            return copy;
+        }
+
+        private static void CopyTextureIfExists(Material original, Material copy, string propertyName)
+        {
+            if (!original.HasProperty(propertyName))
+                return;
+
+            Texture2D originalTexture = original.GetTexture(propertyName) as Texture2D;
+            if (originalTexture == null)
+                return;
+
+            copy.SetTexture(propertyName, CopyTexture(originalTexture));
+        }
+
         [HarmonyPatch(typeof(ClutterSystem), nameof(ClutterSystem.Awake))]
         public static class ClutterSystem_Awake_AddSeasonalClutter
         {
             private static void Postfix()
             {
                 AddSeasonalClutter();
+            }
+        }
+
+        private static bool isAnyShieldActive = false;
+
+        public static void UpdateShieldActiveState()
+        {
+            if (isAnyShieldActive != (isAnyShieldActive = ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.IsThereAnyActiveShieldedArea()))
+            {
+                if (!ClutterSystem.instance)
+                    return;
+
+                ClutterSystem.instance.m_clutter.Where(clutter => clutter != null && clutter.m_prefab != null && s_shieldedPrefabs.ContainsKey(clutter.m_prefab.name)).Do(clutter => clutter.m_enabled = isAnyShieldActive);
+            }
+        }
+
+        [HarmonyPatch]
+        public static class InstanceRenderer_AddInstance_PreventInProtectedArea
+        {
+            private static IEnumerable<MethodBase> TargetMethods()
+            {
+                yield return AccessTools.Method(typeof(InstanceRenderer), nameof(InstanceRenderer.AddInstance), new Type[3] { typeof(Vector3), typeof(Quaternion), typeof(float) });
+                yield return AccessTools.Method(typeof(InstanceRenderer), nameof(InstanceRenderer.AddInstance), new Type[2] { typeof(Vector3), typeof(Quaternion) });
+            }
+
+            [HarmonyPriority(Priority.First)]
+            private static bool Prefix(InstanceRenderer __instance, Vector3 pos)
+            {
+                if (!isAnyShieldActive)
+                    return true;
+
+                bool isShieldedGrass = s_shieldedPrefabs.ContainsKey(Utils.GetPrefabName(__instance.name));
+                if (SeasonState.IsActive && IsShieldedPosition(pos))
+                    return isShieldedGrass && ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.IsCoveredByShield(pos);
+
+                return !isShieldedGrass;
             }
         }
     }

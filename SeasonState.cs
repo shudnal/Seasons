@@ -222,6 +222,11 @@ namespace Seasons
             return GetSeasonSettings(season).m_plantsGrowthMultiplier;
         }
 
+        public Season GetPreviousSeason()
+        {
+            return GetPreviousSeason(m_season);
+        }
+
         public Season GetNextSeason()
         {
             return GetNextSeason(m_season);
@@ -887,9 +892,11 @@ namespace Seasons
 
             if (UseTextureControllers())
             {
+                ClutterVariantController.UpdateShieldActiveState();
+                ClutterVariantController.Instance?.UpdateColors();
+
                 PrefabVariantController.UpdatePrefabColors();
                 ZoneSystemVariantController.UpdateTerrainColors();
-                ClutterVariantController.Instance?.UpdateColors();
 
                 UpdateTorchesFireWarmth();
 

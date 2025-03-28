@@ -77,7 +77,7 @@ namespace Seasons
                             seasonalMaterials[i].SetTexture(textureVariants.Key, textureVariants.Value.GetSeasonalVariant(season, i));
 
                         foreach (KeyValuePair<string, Color[]> colorVariants in m_colorVariants)
-                            seasonalMaterials[i].SetColor(colorVariants.Key, colorVariants.Value[(int)seasonState.GetCurrentSeason() * seasonsCount + variant]);
+                            seasonalMaterials[i].SetColor(colorVariants.Key, colorVariants.Value[(int)season * seasonsCount + variant]);
                     }
                 }
 
@@ -839,10 +839,16 @@ namespace Seasons
     {
         public static readonly Dictionary<ShieldGenerator, int> shieldRadius = new Dictionary<ShieldGenerator, int>();
 
+        public static Vector3 GetShieldPosition(ShieldGenerator shield) => shield.m_shieldDome?.transform?.position ?? shield.transform.position;
+
+        public static bool IsThereAnyActiveShieldedArea() => shieldRadius.Count > 0 && IsShieldProtectionActive() && shieldRadius.Any(shield => !IsIgnoredPosition(GetShieldPosition(shield.Key)) && shield.Value > 0f);
+
+        public static bool IsCoveredByShield(Vector3 position) => shieldRadius.Any(kvp => Vector3.Distance(GetShieldPosition(kvp.Key), position) < kvp.Value - 2);
+
         [HarmonyPriority(Priority.First)]
         private static void Prefix(ShieldGenerator shield, Vector3 position, float radius)
         {
-            if (!shieldRadius.ContainsKey(shield) || ((shieldRadius[shield] / 2) != ((int)radius / 2)))
+            if (!shieldRadius.ContainsKey(shield) || radius == 0f || ((shieldRadius[shield] / 3) != ((int)radius / 3)))
             {
                 shieldRadius[shield] = (int)radius;
                 if (IsShieldProtectionActive())
@@ -865,12 +871,12 @@ namespace Seasons
                 ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.shieldRadius.Remove(shield);
                 if (IsShieldProtectionActive())
                 {
-                    Vector3 position = shield.m_shieldDome?.transform?.position ?? shield.transform.position;
+                    Vector3 position = ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.GetShieldPosition(shield);
                     UpdatePrefabColorsAroundPosition(position, shield.m_maxShieldRadius, delay: 5f);
                     ZoneSystemVariantController.UpdateTerrainColorsAroundPosition(position, shield.m_maxShieldRadius, delay: 5f);
                 }
             }
         }
     }
- 
+
 }
