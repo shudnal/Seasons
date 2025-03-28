@@ -1,3 +1,7 @@
+# 1.5.1
+* grass inside shield dome at winter
+* supported plants from Herbalist and CookingAdditions
+
 # 1.5.0
 * major FPS optimization
 * fish should now stays below ice
