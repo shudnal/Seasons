@@ -519,6 +519,7 @@ namespace Seasons
                 "instanced_meadows_grass",
                 "instanced_meadows_grass_short",
                 "instanced_forest_groundcover",
+                "instanced_forest_groundcover_brown",
                 "instanced_heathgrass",
                 "instanced_swamp_grass",
                 "instanced_mistlands_grass_short"})
@@ -541,7 +542,13 @@ namespace Seasons
                 {
                     prefab = CustomPrefabs.InitPrefabClone(clutter.m_prefab, clutterShieldedName);
                     InstanceRenderer renderer = prefab.GetComponent<InstanceRenderer>();
-                    renderer.m_material = DeepCopyMaterial(renderer.m_material, clutterShieldedName);
+                    
+                    Material copiedMaterial = new Material(renderer.m_material)
+                    {
+                        name = clutterShieldedName
+                    };
+
+                    renderer.m_material = copiedMaterial;
 
                     s_shieldedPrefabs.Add(prefab.name, prefab);
                 }
@@ -674,61 +681,14 @@ namespace Seasons
             Initialize();
         }
 
-        private static Texture2D CopyTexture(Texture2D source)
-        {
-            if (source == null)
-                return null;
-
-            RenderTexture rt = RenderTexture.GetTemporary(source.width, source.height, 0, RenderTextureFormat.Default, RenderTextureReadWrite.Default);
-
-            Graphics.Blit(source, rt);
-
-            Texture2D copy = new Texture2D(source.width, source.height, TextureFormat.RGBA32, source.mipmapCount > 1);
-
-            RenderTexture.active = rt;
-            copy.ReadPixels(new Rect(0, 0, source.width, source.height), 0, 0);
-            copy.filterMode = source.filterMode;
-            copy.Apply(true, true);
-            RenderTexture.active = null;
-
-            RenderTexture.ReleaseTemporary(rt);
-
-            return copy;
-        }
-
-        private static Material DeepCopyMaterial(Material original, string name)
-        {
-            Material copy = new Material(original.shader);
-
-            copy.CopyPropertiesFromMaterial(original);
-
-            CopyTextureIfExists(original, copy, "_MainTex");
-            CopyTextureIfExists(original, copy, "_TerrainColorTex");
-            CopyTextureIfExists(original, copy, "_BumpMap");
-            CopyTextureIfExists(original, copy, "_EmissiveTex");
-
-            copy.name = name;
-
-            return copy;
-        }
-
-        private static void CopyTextureIfExists(Material original, Material copy, string propertyName)
-        {
-            if (!original.HasProperty(propertyName))
-                return;
-
-            Texture2D originalTexture = original.GetTexture(propertyName) as Texture2D;
-            if (originalTexture == null)
-                return;
-
-            copy.SetTexture(propertyName, CopyTexture(originalTexture));
-        }
-
         [HarmonyPatch(typeof(ClutterSystem), nameof(ClutterSystem.Awake))]
         public static class ClutterSystem_Awake_AddSeasonalClutter
         {
             private static void Postfix()
             {
+                if (FejdStartup.instance)
+                    return;
+
                 AddSeasonalClutter();
             }
         }
@@ -743,6 +703,7 @@ namespace Seasons
                     return;
 
                 ClutterSystem.instance.m_clutter.Where(clutter => clutter != null && clutter.m_prefab != null && s_shieldedPrefabs.ContainsKey(clutter.m_prefab.name)).Do(clutter => clutter.m_enabled = isAnyShieldActive);
+                ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.shieldRadius.Where(kvp => !IsIgnoredPosition(kvp.Key.GetShieldPosition())).Do(kvp => ClutterSystem.instance?.ResetGrass(kvp.Key.GetShieldPosition(), kvp.Value + 1));
             }
         }
 

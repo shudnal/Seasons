@@ -379,7 +379,7 @@ namespace Seasons
 
             UpdateTerrainColorsFromList(s_tempHeightmaps);
 
-            ClutterSystem.instance.ResetGrass(position, radius + 1);
+            ClutterSystem.instance?.ResetGrass(position, radius + 1);
         }
 
         public static void AddIceCollider(Transform water)
@@ -416,12 +416,12 @@ namespace Seasons
 
         public static void UpdateWaterState()
         {
-            if (!SeasonState.IsActive)
+            if (Instance == null || !SeasonState.IsActive)
                 return;
 
             s_freezeStatus = seasonState.GetWaterSurfaceFreezeStatus();
 
-            CheckToRemoveIceFloes();
+            CheckToRemoveIceFloes();    
 
             foreach (KeyValuePair<WaterVolume, WaterState> waterState in waterStates)
                 UpdateWater(waterState.Key, waterState.Value);

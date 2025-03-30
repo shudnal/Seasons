@@ -18,12 +18,12 @@ namespace Seasons
             public Dictionary<string, TextureVariants> m_textureVariants = new Dictionary<string, TextureVariants>();
             public Dictionary<string, Color[]> m_colorVariants = new Dictionary<string, Color[]>();
             public Material[] seasonalMaterials = Array.Empty<Material>();
-            
+
             public Season season;
             public bool updateSeasonalMaterials = true;
 
             public readonly static Dictionary<Material, MaterialVariants> s_materialVariants = new Dictionary<Material, MaterialVariants>();
-            
+
             private readonly static List<Material> s_tempMaterials = new List<Material>();
 
             private MaterialVariants(Material originalMaterial)
@@ -231,7 +231,7 @@ namespace Seasons
 
                 m_materialVariants.Clear();
                 m_startColors.Clear();
-                
+
                 return Initialize(controller, m_gameObject, m_prefabName, m_nview, m_wnt, m_renderer);
             }
 
@@ -286,7 +286,7 @@ namespace Seasons
 
                 if (m_wnt != null)
                     instance.m_pieceControllers.Add(m_wnt, this);
-                
+
                 UpdateColors();
             }
 
@@ -456,7 +456,7 @@ namespace Seasons
         public readonly Dictionary<WearNTear, PrefabVariant> m_pieceControllers = new Dictionary<WearNTear, PrefabVariant>();
 
         private static readonly MaterialPropertyBlock s_matBlock = new MaterialPropertyBlock();
-        
+
         private static readonly List<Renderer> s_tempRenderers = new List<Renderer>();
         private static readonly List<Color> s_tempColors = new List<Color>();
         private static readonly Dictionary<string, string> s_tempPrefabNames = new Dictionary<string, string>();
@@ -477,7 +477,7 @@ namespace Seasons
             m_instance = this;
 
             m_rayMask = LayerMask.GetMask("piece", "static_solid", "Default_small", "terrain");
-            
+
             int seed = ZNet.m_world != null ? ZNet.m_world.m_seed : WorldGenerator.instance != null ? WorldGenerator.instance.GetSeed() : 0;
             m_seed = seed == 0 ? 0 : Mathf.Log10(Math.Abs(seed));
         }
@@ -566,7 +566,7 @@ namespace Seasons
             if (gameObject == null)
                 return;
 
-            AddControllerTo(mineRock.gameObject, checkLocation: true, mineRock.m_nview, wnt:null, gameObject.name, meshRenderer);
+            AddControllerTo(mineRock.gameObject, checkLocation: true, mineRock.m_nview, wnt: null, gameObject.name, meshRenderer);
         }
 
         public void RemoveController(GameObject gameObject)
@@ -590,7 +590,7 @@ namespace Seasons
 
             return path;
         }
-        
+
         public static void UpdatePrefabColors()
         {
             if (instance == null)
@@ -608,6 +608,13 @@ namespace Seasons
                 UpdatePrefabColorsFromList(instance.m_prefabVariants.Where(kvp => kvp.Key == null || Vector3.Distance(kvp.Key.transform.position, position) < radius));
             else
                 instance.StartCoroutine(UpdatePrefabColorsAroundPositionDelayed(position, radius, delay));
+        }
+
+        public static void UpdateShieldStateAfterConfigChange()
+        {
+            ClutterVariantController.UpdateShieldActiveState();
+            ZoneSystemVariantController.UpdateTerrainColors();
+            ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.shieldRadius.Where(kvp => !IsIgnoredPosition(kvp.Key.GetShieldPosition())).Do(kvp => UpdatePrefabColorsAroundPosition(kvp.Key.GetShieldPosition(), kvp.Value + 1));
         }
 
         private static void UpdatePrefabColorsFromList(IEnumerable<KeyValuePair<GameObject, PrefabVariant>> variants)
@@ -839,16 +846,14 @@ namespace Seasons
     {
         public static readonly Dictionary<ShieldGenerator, int> shieldRadius = new Dictionary<ShieldGenerator, int>();
 
-        public static Vector3 GetShieldPosition(ShieldGenerator shield) => shield.m_shieldDome?.transform?.position ?? shield.transform.position;
+        public static bool IsThereAnyActiveShieldedArea() => shieldRadius.Count > 0 && IsShieldProtectionActive() && shieldRadius.Any(shield => !IsIgnoredPosition(shield.Key.GetShieldPosition()) && shield.Value > 0f);
 
-        public static bool IsThereAnyActiveShieldedArea() => shieldRadius.Count > 0 && IsShieldProtectionActive() && shieldRadius.Any(shield => !IsIgnoredPosition(GetShieldPosition(shield.Key)) && shield.Value > 0f);
-
-        public static bool IsCoveredByShield(Vector3 position) => shieldRadius.Any(kvp => Vector3.Distance(GetShieldPosition(kvp.Key), position) < kvp.Value - 2);
+        public static bool IsCoveredByShield(Vector3 position) => shieldRadius.Any(kvp => Vector3.Distance(kvp.Key.GetShieldPosition(), position) < kvp.Value - 2);
 
         [HarmonyPriority(Priority.First)]
         private static void Prefix(ShieldGenerator shield, Vector3 position, float radius)
         {
-            if (!shieldRadius.ContainsKey(shield) || radius == 0f || ((shieldRadius[shield] / 3) != ((int)radius / 3)))
+            if (!shieldRadius.TryGetValue(shield, out int currentRadius) || ((currentRadius / 3) != ((int)radius / 3)) || (currentRadius != radius && (radius == 0f || currentRadius == 0f)))
             {
                 shieldRadius[shield] = (int)radius;
                 if (IsShieldProtectionActive())
@@ -858,6 +863,11 @@ namespace Seasons
                 }
             }
         }
+    }
+
+    public static class ShieldGeneratorExtensions
+    {
+        public static Vector3 GetShieldPosition(this ShieldGenerator shield) => shield.m_shieldDome?.transform?.position ?? shield.transform.position;
     }
 
     [HarmonyPatch(typeof(ShieldDomeImageEffect), nameof(ShieldDomeImageEffect.RemoveShield))]
@@ -871,7 +881,7 @@ namespace Seasons
                 ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.shieldRadius.Remove(shield);
                 if (IsShieldProtectionActive())
                 {
-                    Vector3 position = ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.GetShieldPosition(shield);
+                    Vector3 position = shield.GetShieldPosition();
                     UpdatePrefabColorsAroundPosition(position, shield.m_maxShieldRadius, delay: 5f);
                     ZoneSystemVariantController.UpdateTerrainColorsAroundPosition(position, shield.m_maxShieldRadius, delay: 5f);
                 }

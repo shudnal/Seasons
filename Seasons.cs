@@ -21,7 +21,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.5.1";
+        public const string pluginVersion = "1.5.2";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -41,6 +41,8 @@ namespace Seasons
 
         public static ConfigEntry<bool> overrideSeason;
         public static ConfigEntry<Season> seasonOverrided;
+        public static ConfigEntry<bool> overrideSeasonDay;
+        public static ConfigEntry<int> seasonDayOverrided;
 
         public static ConfigEntry<bool> controlEnvironments;
         public static ConfigEntry<bool> controlRandomEvents;
@@ -279,6 +281,8 @@ namespace Seasons
         public static void LogWarning(object data)
         {
             instance.Logger.LogWarning(data);
+
+            foreach (var clutter in ClutterSystem.instance.m_clutter) { if (clutter.m_name.EndsWith("_inshield")) ZLog.Log($"{clutter.m_name} {clutter.m_enabled}"); };
         }
 
         public void ConfigInit()
@@ -316,11 +320,25 @@ namespace Seasons
             changeSeasonOnlyAfterSleep = config("Season", "Change season only after sleep", defaultValue: false, "Season can be changed regular way only after sleep");
             cropsDiesAfterSetDayInWinter = config("Season", "Crops will die after set day in winter", defaultValue: 3, "Crops and pickables will perish after set day in winter");
             fireHeatProtectsFromPerish = config("Season", "Crops will survive if protected by fire", defaultValue: true, "Crops and pickables will not perish in winter if there are fire source nearby");
-            cropsToSurviveInWinter = config("Season", "Crops will survive in winter", defaultValue: "Pickable_Carrot, Pickable_Barley, Pickable_Barley_Wild, Pickable_Flax, Pickable_Flax_Wild, Pickable_Thistle, Pickable_Mushroom_Magecap", "Crops and pickables from the list will not perish after set day in winter");
-            cropsToControlGrowth = config("Season", "Crops to control growth", defaultValue: "Pickable_Barley, Pickable_Barley_Wild, Pickable_Dandelion, Pickable_Flax, Pickable_Flax_Wild, Pickable_SeedCarrot, Pickable_SeedOnion, Pickable_SeedTurnip, Pickable_Thistle, Pickable_Turnip", "All consumable crops will be added automatically. Set only unconsumable crops here." +
-                                                                                                                                                                                                                                                                                              "Crops and pickables from the list will be controlled by growth multiplier in addition to consumable crops");
-            woodListToControlDrop = config("Season", "Wood to control drop", defaultValue: "Wood, FineWood, RoundLog, ElderBark, YggdrasilWood", "Wood item names to control drop from trees");
-            meatListToControlDrop = config("Season", "Meat to control drop", defaultValue: "RawMeat, DeerMeat, NeckTail, WolfMeat, LoxMeat, ChickenMeat, HareMeat, SerpentMeat", "Meat item names to control drop from characters");
+            cropsToSurviveInWinter = config("Season", "Crops will survive in winter", defaultValue: "Pickable_Carrot,Pickable_Barley,Pickable_Barley_Wild,Pickable_Flax,Pickable_Flax_Wild,Pickable_Thistle,Pickable_Mushroom_Magecap",
+                                                                                                new ConfigDescription("Crops and pickables from the list will not perish after set day in winter", 
+                                                                                                null, 
+                                                                                                new CustomConfigs.ConfigurationManagerAttributes { CustomDrawer = CustomConfigs.DrawSeparatedStrings(",") }));
+            cropsToControlGrowth = config("Season", "Crops to control growth", defaultValue: "Pickable_Barley,Pickable_Barley_Wild,Pickable_Dandelion,Pickable_Flax,Pickable_Flax_Wild,Pickable_SeedCarrot,Pickable_SeedOnion,Pickable_SeedTurnip,Pickable_Thistle,Pickable_Turnip",
+                                                                                            new ConfigDescription("All consumable crops will be added automatically. Set only unconsumable crops here." +
+                                                                                            "Crops and pickables from the list will be controlled by growth multiplier in addition to consumable crops", 
+                                                                                            null, 
+                                                                                            new CustomConfigs.ConfigurationManagerAttributes { CustomDrawer = CustomConfigs.DrawSeparatedStrings(",") }));
+
+
+            woodListToControlDrop = config("Season", "Wood to control drop", defaultValue: "Wood,FineWood,RoundLog,ElderBark,YggdrasilWood",
+                                                                                            new ConfigDescription("Wood item names to control drop from trees",
+                                                                                            null,
+                                                                                            new CustomConfigs.ConfigurationManagerAttributes { CustomDrawer = CustomConfigs.DrawSeparatedStrings(",") }));
+            meatListToControlDrop = config("Season", "Meat to control drop", defaultValue: "RawMeat,DeerMeat,NeckTail,WolfMeat,LoxMeat,ChickenMeat,HareMeat,SerpentMeat",
+                                                                                            new ConfigDescription("Meat item names to control drop from characters",
+                                                                                            null,
+                                                                                            new CustomConfigs.ConfigurationManagerAttributes { CustomDrawer = CustomConfigs.DrawSeparatedStrings(",") }));
             shieldGeneratorProtection = config("Season", "Shield generator protects from weather", defaultValue: true, "If enabled - objects inside shield generator dome will be protected from seasonal effects both positive and negative.");
             shieldGeneratorOnlyWinter = config("Season", "Shield generator protects from Winter only", defaultValue: true, "If enabled - objects inside shield generator dome will be protected from Winter only. If disabled - protection will work through all seasons.");
             gettingWetInWinterCausesCold = config("Season", "Getting Wet in winter causes Cold", defaultValue: true, "If you get Wet status during winter you will get Cold status," +
@@ -334,14 +352,17 @@ namespace Seasons
             disableBloomInWinter.SettingChanged += (sender, args) => seasonState.UpdateWinterBloomEffect();
             reduceSnowStormInWinter.SettingChanged += (sender, args) => ZoneSystemVariantController.SnowStormReduceParticlesChanged();
 
-            shieldGeneratorProtection.SettingChanged += (sender, args) => { ClutterVariantController.UpdateShieldActiveState(); ZoneSystemVariantController.UpdateTerrainColors(); };
-            shieldGeneratorOnlyWinter.SettingChanged += (sender, args) => { ClutterVariantController.UpdateShieldActiveState(); ZoneSystemVariantController.UpdateTerrainColors(); };
+            shieldGeneratorProtection.SettingChanged += (sender, args) => PrefabVariantController.UpdateShieldStateAfterConfigChange();
+            shieldGeneratorOnlyWinter.SettingChanged += (sender, args) => PrefabVariantController.UpdateShieldStateAfterConfigChange();
 
 
             grassDefaultPatchSize = config("Season - Grass", "Default patch size", defaultValue: 10f, "Default size of grass patch (sparseness or how wide a single grass \"node\" is across the ground)" +
                                                                                                      "Increase to make grass more sparse and decrease to make grass more tight");
             grassDefaultAmountScale = config("Season - Grass", "Default amount scale", defaultValue: 1.5f, "Default amount scale (grass density or how many grass patches created around you at once)");
-            grassToControlSize = config("Season - Grass", "List of grass prefabs to control size", defaultValue: "instanced_meadows_grass, instanced_forest_groundcover_brown, instanced_forest_groundcover, instanced_swamp_grass, instanced_heathgrass, grasscross_heath_green, instanced_meadows_grass_short, instanced_heathflowers, instanced_mistlands_grass_short", "Grass with set prefabs to be hidden in winter and to change size in other seasons");
+            grassToControlSize = config("Season - Grass", "List of grass prefabs to control size", defaultValue: "instanced_meadows_grass,instanced_forest_groundcover_brown,instanced_forest_groundcover,instanced_swamp_grass,instanced_heathgrass,grasscross_heath_green,instanced_meadows_grass_short,instanced_heathflowers,instanced_mistlands_grass_short",
+                                                                                            new ConfigDescription("Grass with set prefabs to be hidden in winter and to change size in other seasons",
+                                                                                            null,
+                                                                                            new CustomConfigs.ConfigurationManagerAttributes { CustomDrawer = CustomConfigs.DrawSeparatedStrings(",") }));
 
             grassSizeDefaultScaleMin = config("Season - Grass", "Default minimum size multiplier", defaultValue: 1f, "Default minimum size of grass will be multiplier by given number");
             grassSizeDefaultScaleMax = config("Season - Grass", "Default maximum size multiplier", defaultValue: 1f, "Default maximum size of grass will be multiplier by given number");
@@ -370,11 +391,15 @@ namespace Seasons
             hoverPickable = config("Season - UI", "Pickables Hover", defaultValue: StationHover.Vanilla, "Hover text for pickables. [Not Synced with Server]", synchronizedSetting: false);
             seasonalMinimapBorderColor = config("Season - UI", "Seasonal colored minimap border", defaultValue: true, "Change minimap border color according to current season. [Not Synced with Server]", synchronizedSetting: false);
 
-            overrideSeason = config("Season - Override", "Override", defaultValue: false, "The season will be overrided by set season.");
+            overrideSeason = config("Season - Override", "Override", defaultValue: false, "The season will be overridden by set season.");
             seasonOverrided = config("Season - Override", "Season", defaultValue: Season.Spring, "The season to set.");
+            overrideSeasonDay = config("Season - Override", "Day override", defaultValue: false, "The season day will be overridden by set day.");
+            seasonDayOverrided = config("Season - Override", "Day", defaultValue: 1, "The season day to set.");
 
             overrideSeason.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
             seasonOverrided.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
+            overrideSeasonDay.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
+            seasonDayOverrided.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
 
             enableFrozenWater = config("Season - Winter ocean", "Enable frozen water", defaultValue: true, "Enable frozen water in winter");
             waterFreezesInWinterDays = config("Season - Winter ocean", "Freeze the water at given days from to", defaultValue: new Vector2(6f, 9f), "Water will freeze in the first set day of winter and will be unfrozen after second set day");

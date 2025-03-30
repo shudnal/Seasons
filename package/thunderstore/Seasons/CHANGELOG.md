@@ -1,3 +1,8 @@
+# 1.5.2
+* fix of minor issue with occasional NRE possibly preventing season day change
+* new config value to override season day
+* improvements to grass in dome feature
+
 # 1.5.1
 * grass inside shield dome at winter
 * supported plants from Herbalist and CookingAdditions

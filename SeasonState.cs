@@ -132,6 +132,9 @@ namespace Seasons
                 setSeason = newSeason;
             }
 
+            if (overrideSeasonDay.Value)
+                m_dayInSeasonGlobal = Math.Clamp(seasonDayOverrided.Value, 1, GetDaysInSeason(setSeason));
+
             if (!CheckIfSeasonChanged(currentSeason, setSeason, m_dayInSeasonGlobal, worldDay))
                 CheckIfDayChanged(m_dayInSeasonGlobal, worldDay, forceSeasonChange);
         }
@@ -1083,7 +1086,7 @@ namespace Seasons
 
             currentSeasonDay.AssignValueSafe(GetPendingSeasonDayChange);
 
-            LogInfo($"Season update pending: {m_season} -> {GetPendingSeasonDay().Item1}{(overrideSeason.Value ? "(override)" : "")}, Day: {m_day} -> {GetPendingSeasonDay().Item2}");
+            LogInfo($"Season update pending: {m_season} -> {GetPendingSeasonDay().Item1}{(overrideSeason.Value ? "(override)" : "")}, Day: {m_day} -> {GetPendingSeasonDay().Item2}{(overrideSeasonDay.Value ? "(override)" : "")}");
         }
 
         internal static float GetDayFractionForSeasonChange()
@@ -1145,9 +1148,7 @@ namespace Seasons
         private static void StartClutterUpdate()
         {
             if (UseTextureControllers())
-            {
                 ClutterVariantController.Instance?.StartCoroutine(ClutterVariantController.Instance.UpdateDayState());
-            }
         }
 
         public static Tuple<Season, int> GetSyncedCurrentSeasonDay()
