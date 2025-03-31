@@ -991,7 +991,10 @@ namespace Seasons
                     "DevDressingRoom",
                     "DevGarden",
                     "DevForge",
-                    "rock4_ashlands_frac"
+                    "rock4_ashlands_frac",
+                    ClutterVariantController.c_meadowsFlowersPrefabName,
+                    ClutterVariantController.c_forestBloomPrefabName,
+                    ClutterVariantController.c_swampGrassBloomPrefabName
                 };
 
                 ignorePrefabPartialName = new List<string>()
@@ -1031,6 +1034,7 @@ namespace Seasons
                     "AshlandsBranch",
                     "Ashlands_rock",
                     "instanced_ashlands_grass",
+                    ClutterVariantController.c_shieldedGrassSuffix
                 };
 
             }

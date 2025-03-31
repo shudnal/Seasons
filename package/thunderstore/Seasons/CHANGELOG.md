@@ -1,3 +1,6 @@
+# 1.5.3
+* fixed issue with white grass inside shield dome
+
 # 1.5.2
 * fix of minor issue with occasional NRE possibly preventing season day change
 * new config value to override season day

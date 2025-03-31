@@ -65,6 +65,8 @@ namespace Seasons
         public const string c_swampGrassBloomName = "swampgrass bloom";
         public const string c_swampGrassBloomPrefabName = "instanced_swamp_grass_bloom";
 
+        public const string c_shieldedGrassSuffix = "_inshield_seasons";
+
         private static GameObject s_meadowsFlowers;
         private static GameObject s_forestBloom;
         private static GameObject s_swampBloom;
@@ -528,7 +530,7 @@ namespace Seasons
                 if (clutter == null || clutter.m_prefab == null)
                     continue;
 
-                string clutterShieldedName = clutter.m_name + "_inshield";
+                string clutterShieldedName = clutter.m_name + c_shieldedGrassSuffix;
                 if (ClutterSystem.instance.m_clutter.Any(clutter => clutter?.m_name == clutterShieldedName || clutter?.m_prefab?.name == clutterShieldedName))
                     continue;
 
@@ -536,7 +538,7 @@ namespace Seasons
                 shieldedCopy.m_name = clutterShieldedName;
                 shieldedCopy.m_enabled = false;
 
-                clutterShieldedName = clutter.m_prefab.name + "_inshield";
+                clutterShieldedName = clutter.m_prefab.name + c_shieldedGrassSuffix;
 
                 if (!s_shieldedPrefabs.TryGetValue(clutterShieldedName, out GameObject prefab) || !prefab)
                 {
