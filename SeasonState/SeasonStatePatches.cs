@@ -949,10 +949,7 @@ namespace Seasons
             private static void Postfix(string text)
             {
                 if (text.IndexOf("skiptime") > -1 && SeasonState.IsActive && ZNet.instance && ZNet.instance.IsServer())
-                {
-                    LogInfo("Force update season state after skiptime");
-                    SeasonState.CheckSeasonChange();
-                }
+                    EnvManPatches.skiptimeUsed = true;
             }
         }
 

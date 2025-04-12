@@ -7,8 +7,11 @@ using static Seasons.Seasons;
 
 namespace Seasons
 {
-    internal class EnvManPatches
+    internal static class EnvManPatches
     {
+        private static int totalSecondsCached;
+        internal static bool skiptimeUsed;
+
         [HarmonyPatch]
         public static class EnvMan_DayLength
         {
@@ -30,6 +33,18 @@ namespace Seasons
             }
         }
 
+        [HarmonyPatch]
+        public static class EnvMan_TotalSecondsUpdate
+        {
+            private static IEnumerable<MethodBase> TargetMethods()
+            {
+                yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.Awake));
+                yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.OnDestroy));
+            }
+
+            private static void Postfix() => totalSecondsCached = 0;
+        }
+
         [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.UpdateTriggers))]
         public static class EnvMan_UpdateTriggers_SeasonStateUpdate
         {
@@ -40,8 +55,26 @@ namespace Seasons
                 float fraction = SeasonState.GetDayFractionForSeasonChange();
 
                 bool timeForSeasonToChange = oldDayFraction > 0.16f && oldDayFraction <= fraction && newDayFraction >= fraction && newDayFraction < 0.3f;
-                if (secondUpdated != (secondUpdated = DateTime.Now.Second) || timeForSeasonToChange)
-                    seasonState.UpdateState(timeForSeasonToChange);
+                if (logTime.Value && timeForSeasonToChange)
+                    LogInfo($"It's time to check for seasons change {oldDayFraction} -> {newDayFraction}");
+
+                bool forceSeasonChange = totalSecondsCached != 0 && Math.Abs(totalSecondsCached - (int)seasonState.GetTotalSeconds()) > 10;
+                if (logTime.Value && forceSeasonChange)
+                    LogInfo($"Total seconds was changed significantly, force update season");
+
+                if (!forceSeasonChange && skiptimeUsed)
+                {
+                    forceSeasonChange = true;
+                    LogInfo("Force update season state after skiptime command");
+                }
+
+                skiptimeUsed = false;
+
+                if (secondUpdated != (secondUpdated = DateTime.Now.Second) || timeForSeasonToChange || forceSeasonChange)
+                {
+                    totalSecondsCached = (int)seasonState.GetTotalSeconds();
+                    seasonState.UpdateState(timeForSeasonToChange, forceSeasonChange);
+                }
             }
         }
 
