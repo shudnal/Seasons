@@ -204,7 +204,6 @@
     <EmbeddedResource Include="Assets\Textures\birch_leaf_yellow\Winter_3.png" />
     <EmbeddedResource Include="Assets\Textures\oak_leaf\Winter_1.png" />
     <EmbeddedResource Include="Assets\Textures\oak_leaf\Winter_3.png" />
-    <Content Include="Libs\Newtonsoft.Json.dll" />
   </ItemGroup>
   <ItemGroup>
     <None Include="ILRepack.targets" />
@@ -212,6 +211,9 @@
   <ItemGroup>
     <PackageReference Include="ILRepack.Lib.MSBuild.Task">
       <Version>2.0.18.2</Version>
+    </PackageReference>
+    <PackageReference Include="Newtonsoft.Json">
+      <Version>13.0.3</Version>
     </PackageReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

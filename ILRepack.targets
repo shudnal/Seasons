@@ -8,8 +8,7 @@
 		<ILRepack Parallel="true" DebugInfo="true" Internalize="true" InputAssemblies="@(InputAssemblies)" OutputFile="$(TargetDir)thunderstore\$(TargetFileName)" TargetKind="SameAsPrimaryAssembly" LibraryPath="$(OutputPath)" />
 	</Target>
 	<Target Name="CopyDLLThunderstore" AfterTargets="RepackThunderstore">
-		<Copy SourceFiles="$(TargetDir)\thunderstore\$(TargetFileName)" DestinationFolder="$(ProjectDir)package\thunderstore\$(SolutionName)\$(SolutionName)\" />
-		<Copy SourceFiles="$(OutputPath)Newtonsoft.Json.dll" DestinationFolder="$(ProjectDir)package\thunderstore\$(SolutionName)\$(SolutionName)\" />
+		<Copy SourceFiles="$(TargetDir)\thunderstore\$(TargetFileName)" DestinationFolder="$(ProjectDir)package\thunderstore\$(SolutionName)\" />
 		<Message Text="Copied to thunderstore package folder." Importance="High" />
 	</Target>
 	<Target Name="RepackNexus" AfterTargets="CopyDLLThunderstore">
@@ -36,7 +35,6 @@
 	</Target>
 	<Target Name="CopyDLLPlugins" AfterTargets="CopyDLLThunderstore">
 		<Copy SourceFiles="$(TargetDir)\thunderstore\$(TargetFileName)" DestinationFolder="D:\r2modman\Valheim\profiles\beta\BepInEx\plugins\shudnal-$(SolutionName)\" />
-		<Copy SourceFiles="$(OutputPath)Newtonsoft.Json.dll" DestinationFolder="D:\r2modman\Valheim\profiles\beta\BepInEx\plugins\shudnal-$(SolutionName)\" />
 		<Message Text="Copied to r2 folder." Importance="High" />
 	</Target>
 </Project>

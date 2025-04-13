@@ -362,10 +362,9 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /package/nexus
-package/thunderstore/Seasons/Seasons
 /package/thunderstore/Seasons.zip
-/%appdata%/r2modmanPlus-local/Valheim/profiles/beta/BepInEx/plugins/shudnal-Seasons
 /package/thunderstore/Seasons/CHANGELOG.md
 /package/thunderstore/Seasons/README.md
 /ILRepack.targets
 /testimgs
+/package/thunderstore/Seasons/Seasons.dll

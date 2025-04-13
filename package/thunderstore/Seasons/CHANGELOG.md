@@ -1,3 +1,8 @@
+# 1.6.0
+* internal structural clean up
+* seasonal state calculation made more sensitive to time skips and jumps
+* fixed rare collision of season and day initialization on start up
+
 # 1.5.3
 * fixed issue with white grass inside shield dome
 
