@@ -939,7 +939,7 @@ namespace Seasons
             private static void Postfix(bool ___m_sleeping, bool __state)
             {
                 if (!___m_sleeping && __state)
-                    SeasonState.CheckSeasonChange();
+                    EnvManPatches.sleepingUpdated = true;
             }
         }
 

@@ -321,7 +321,7 @@ namespace Seasons
 
             seasonState.UpdateTorchesFireWarmth();
 
-            CheckSeasonChange();
+            EnvManPatches.settingsUpdated = true;
         }
 
         public static void UpdateSeasonEnvironments()
@@ -980,6 +980,17 @@ namespace Seasons
             return true;
         }
 
+        private void CheckIfDayChanged(int dayInSeason, int worldDay, bool forceSeasonChange)
+        {
+            if (m_day == dayInSeason && m_worldDay == worldDay)
+                return;
+
+            m_worldDay = worldDay;
+
+            if (dayInSeason > m_day || forceSeasonChange)
+                SetCurrentDay(dayInSeason, forceSeasonChange);
+        }
+
         public void StartSeasonChange()
         {
             if (!showFadeOnSeasonChange.Value || Hud.instance == null || Hud.instance.m_loadingScreen.isActiveAndEnabled || Hud.instance.m_loadingScreen.alpha > 0)
@@ -1076,17 +1087,6 @@ namespace Seasons
         {
             if (IsActive && UseTextureControllers())
                 CameraEffects.instance.SetBloom((!disableBloomInWinter.Value || GetCurrentSeason() != Season.Winter) && PlatformPrefs.GetInt("Bloom", 1) == 1);
-        }
-
-        private void CheckIfDayChanged(int dayInSeason, int worldDay, bool forceSeasonChange)
-        {
-            if (m_day == dayInSeason && m_worldDay == worldDay)
-                return;
-
-            m_worldDay = worldDay;
-
-            if (dayInSeason > m_day || forceSeasonChange)
-                SetCurrentDay(dayInSeason);
         }
 
         private int GetYearLengthInDays()
@@ -1227,9 +1227,9 @@ namespace Seasons
             UpdateCurrentSeasonDay((int)season * 10000 + day);
         }
 
-        private void SetCurrentDay(int day)
+        private void SetCurrentDay(int day, bool forceSeasonChange)
         {
-            UpdateCurrentSeasonDay((int)(_pendingSeasonChange == 0 ? m_season : GetPendingSeasonDay().Item1) * 10000 + day);
+            SetCurrentSeasonDay(_pendingSeasonChange == 0 || forceSeasonChange ? m_season : GetPendingSeasonDay().Item1, day);
         }
 
         private void UpdateCurrentSeasonDay(int newValue)

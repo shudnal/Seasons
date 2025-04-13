@@ -11,6 +11,8 @@ namespace Seasons
     {
         private static int totalSecondsCached;
         internal static bool skiptimeUsed;
+        internal static bool settingsUpdated;
+        internal static bool sleepingUpdated;
 
         [HarmonyPatch]
         public static class EnvMan_DayLength
@@ -60,7 +62,7 @@ namespace Seasons
 
                 bool forceSeasonChange = totalSecondsCached != 0 && Math.Abs(totalSecondsCached - (int)seasonState.GetTotalSeconds()) > 10;
                 if (logTime.Value && forceSeasonChange)
-                    LogInfo($"Total seconds was changed significantly, force update season");
+                    LogInfo($"Force update season after total seconds was changed significantly");
 
                 if (!forceSeasonChange && skiptimeUsed)
                 {
@@ -68,7 +70,21 @@ namespace Seasons
                     LogInfo("Force update season state after skiptime command");
                 }
 
+                if (!forceSeasonChange && settingsUpdated)
+                {
+                    forceSeasonChange = true;
+                    LogInfo("Force update season state after settings update");
+                }
+
+                if (!forceSeasonChange && sleepingUpdated)
+                {
+                    forceSeasonChange = true;
+                    LogInfo("Force update season state after sleeping update");
+                }
+
                 skiptimeUsed = false;
+                settingsUpdated = false;
+                sleepingUpdated = false;
 
                 if (secondUpdated != (secondUpdated = DateTime.Now.Second) || timeForSeasonToChange || forceSeasonChange)
                 {
