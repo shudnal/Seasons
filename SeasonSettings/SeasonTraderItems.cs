@@ -20,14 +20,14 @@ namespace Seasons
 
             public override string ToString()
             {
-                return $"{prefab}x{stack}, {price} coins {(!requiredGlobalKey.IsNullOrWhiteSpace() ? $", {requiredGlobalKey}" : "")}";
+                return $"{prefab} x{stack}, {price} coins {(!requiredGlobalKey.IsNullOrWhiteSpace() ? $", {requiredGlobalKey}" : "")}";
             }
         }
 
-        public Dictionary<string, List<TradeableItem>> Spring = new Dictionary<string, List<TradeableItem>>(StringComparer.OrdinalIgnoreCase);
-        public Dictionary<string, List<TradeableItem>> Summer = new Dictionary<string, List<TradeableItem>>(StringComparer.OrdinalIgnoreCase);
-        public Dictionary<string, List<TradeableItem>> Fall = new Dictionary<string, List<TradeableItem>>(StringComparer.OrdinalIgnoreCase);
-        public Dictionary<string, List<TradeableItem>> Winter = new Dictionary<string, List<TradeableItem>>(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, List<TradeableItem>> Spring = new Dictionary<string, List<TradeableItem>>();
+        public Dictionary<string, List<TradeableItem>> Summer = new Dictionary<string, List<TradeableItem>>();
+        public Dictionary<string, List<TradeableItem>> Fall = new Dictionary<string, List<TradeableItem>>();
+        public Dictionary<string, List<TradeableItem>> Winter = new Dictionary<string, List<TradeableItem>>();
 
         public SeasonTraderItems(bool loadDefaults = false)
         {
@@ -176,13 +176,6 @@ namespace Seasons
             };
         }
 
-        private List<TradeableItem> GetSeasonItems(string trader, Season season)
-        {
-            Dictionary<string, List<TradeableItem>> list = GetSeasonList(season);
-            if (list.ContainsKey(trader))
-                return list[trader];
-
-            return null;
-        }
+        private List<TradeableItem> GetSeasonItems(string trader, Season season) => GetSeasonList(season).FirstOrDefault(kvp => kvp.Key.Equals(trader, StringComparison.OrdinalIgnoreCase)).Value;
     }
 }

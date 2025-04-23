@@ -1,3 +1,6 @@
+# 1.6.1
+* fixed bogwitch custom trader item list
+
 # 1.6.0
 * internal structural clean up
 * seasonal state calculation made more sensitive to time skips and jumps
