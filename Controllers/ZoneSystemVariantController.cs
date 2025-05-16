@@ -421,7 +421,7 @@ namespace Seasons
 
             s_freezeStatus = seasonState.GetWaterSurfaceFreezeStatus();
 
-            CheckToRemoveIceFloes();    
+            CheckToRemoveIceFloes();
 
             foreach (KeyValuePair<WaterVolume, WaterState> waterState in waterStates)
                 UpdateWater(waterState.Key, waterState.Value);
