@@ -60,6 +60,8 @@ namespace Seasons
 
         private static MeshRenderer s_waterPlane;
         private static WaterState s_waterPlaneState;
+        public static float s_waterEdge;
+        public static bool s_waterEdgeLocalPlayerState;
         
         public static readonly Dictionary<WaterVolume, WaterState> waterStates = new Dictionary<WaterVolume, WaterState>();
         
@@ -115,6 +117,8 @@ namespace Seasons
         public static bool IsTimeForIceFloes() => enableIceFloes.Value && !IsWaterSurfaceFrozen() && seasonState.GetCurrentSeason() == Season.Winter && (int)iceFloesInWinterDays.Value.x <= seasonState.GetCurrentDay() && seasonState.GetCurrentDay() <= (int)iceFloesInWinterDays.Value.y;
 
         public static float WaterLevel => s_colliderHeight == 0f || !IsWaterSurfaceFrozen() ? ZoneSystem.instance.m_waterLevel : s_colliderHeight;
+
+        public static bool IsBeyondWorldEdge(Vector3 position, float offset = 0f) => Utils.DistanceXZ(Vector3.zero, position) > s_waterEdge - offset;
 
         private void Awake()
         {
@@ -710,6 +714,7 @@ namespace Seasons
             m_tempZDOList.Clear();
             ZDOMan.instance.FindObjects(zoneID, m_tempZDOList);
             m_tempZDOList.RemoveAll(zdo => zdo.GetPrefab() != _iceFloePrefab);
+            
             if (IsTimeForIceFloes() && m_tempZDOList.Count > 0)
                 return true;
             else if (!IsTimeForIceFloes() && m_tempZDOList.Count == 0)
@@ -755,6 +760,9 @@ namespace Seasons
             for (int i = 0; i < spawnCount; i++)
             {
                 Vector3 p = new Vector3(UnityEngine.Random.Range(zoneCenterPos.x - num, zoneCenterPos.x + num), 0f, UnityEngine.Random.Range(zoneCenterPos.z - num, zoneCenterPos.z + num));
+                if (IsBeyondWorldEdge(p, 100f))
+                    continue;
+
                 if (ZoneSystem.instance.InsideClearArea(clearAreas, p))
                     continue;
 
@@ -1716,6 +1724,47 @@ namespace Seasons
         private static void Postfix(EnvMan __instance)
         {
             Instance?.CheckBiomeChanged(__instance.m_currentBiome);
+        }
+    }
+
+    [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.Awake))]
+    public static class EnvMan_Awake_GetWorldEdge
+    {
+        [HarmonyPriority(Priority.Last)]
+        [HarmonyAfter("expand_world_size")]
+        private static void Postfix(EnvMan __instance)
+        {
+            var water = __instance.transform.Find("WaterPlane").Find("watersurface");
+            s_waterEdge = water.GetComponent<MeshRenderer>().material.GetFloat("_WaterEdge");
+            s_waterEdgeLocalPlayerState = false;
+        }
+    }
+
+    [HarmonyPatch(typeof(Player), nameof(Player.OnSpawned))]
+    public static class Player_OnSpawned_CheckForEdgePosition
+    {
+        private static void Postfix(Player __instance)
+        {
+            if (Player.m_localPlayer != __instance)
+                return;
+
+            s_waterEdgeLocalPlayerState = IsBeyondWorldEdge(__instance.transform.position);
+        }
+    }
+
+    [HarmonyPatch(typeof(Player), nameof(Player.EdgeOfWorldKill))]
+    public static class Player_EdgeOfWorldKill_CheckForEdgePosition
+    {
+        private static void Postfix(Player __instance)
+        {
+            if (Player.m_localPlayer != __instance)
+                return;
+
+            if (__instance.IsDead())
+                return;
+
+            if (s_waterEdgeLocalPlayerState != (s_waterEdgeLocalPlayerState = IsBeyondWorldEdge(__instance.transform.position)))
+                UpdateWaterState();
         }
     }
 }

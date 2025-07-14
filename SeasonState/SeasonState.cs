@@ -813,8 +813,14 @@ namespace Seasons
             if (!enableFrozenWater.Value)
                 return 0f;
 
-            if (Player.m_localPlayer?.GetCurrentBiome() == Heightmap.Biome.AshLands)
-                return 0f;
+            if (Player.m_localPlayer)
+            {
+                if (Player.m_localPlayer?.GetCurrentBiome() == Heightmap.Biome.AshLands)
+                    return 0f;
+
+                if (ZoneSystemVariantController.IsBeyondWorldEdge(Player.m_localPlayer.transform.position))
+                    return 0f;
+            }
 
             int currentDay = GetCurrentDay();
             int daysInSeason = GetDaysInSeason();
