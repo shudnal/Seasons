@@ -3,151 +3,215 @@
 
 Four customizable seasons.
 
-## If you feel impact on fps.
+## If you experience FPS issues
 
-If you do then probably you GPU can do better. Try setting launch options
-`-gfx-enable-gfx-jobs -gfx-enable-native-gfx-jobs`
-in Valheim general settings at Steam.
+If you notice FPS drops, your GPU might handle more. Try adding these launch options:
 
-It unlocks more GPU power available to the game which could help.
-It's more handy than editing **boot.config** file. It won't harm at least.
+```
+-gfx-enable-gfx-jobs -gfx-enable-native-gfx-jobs
+```
 
-If you use RenderLimits mod and have "Distance area" setting more than 10 it may cause noticable fps loss at tree heavy areas. It couldn't be optimized further using only tools available for mods.
+in Valheim's launch options on Steam.
 
-## What can be customized in different seasons
-* environments. Add new weathers, replace currents weathers properties, remove weather.
-* random events. Make some events appear more often or be removed completely, change biome restrictions.
-* lightings. Control luminance, fog density on every time of day and indoors.
-* stats. Control different stats and multipliers like regeneration modifiers, stamina usage, skill levels or raise skill speed, damage modifiers and so.
-* seasonal settings like days in season, night length, related production and other multipliers
-* trader items. Adds some items targeting potential lack of gatherable items in corresponding (prices may be high but he's an entrepreneur after all)
+This unlocks more GPU power for the game, which might help. It is more convenient than editing the **boot.config** file and is safe to try.
 
-## Configurating the mod
-The mod have general settings done by usual config through bepinex.
+If you use the RenderLimits mod and have the "Distance area" setting higher than 10, it may cause noticeable FPS loss in areas with many trees. This cannot be further optimized with modding tools alone.
+
+## What can be customized per season
+
+- Environments: add new weather types, modify weather properties, or remove weather.
+- Random events: adjust event frequency, remove events, or change biome restrictions.
+- Lighting: control luminance, fog density for different times of day and indoors.
+- Stats: modify regeneration rates, stamina usage, skill levels, skill gain speed, damage modifiers, and more.
+- Seasonal settings: adjust season length, night length, production rates, and other multipliers.
+- Trader items: add seasonal trader inventory to balance resource availability.
+
+## Configuring the mod
+
+The mod uses general settings through BepInEx configuration.
 
 ### Custom settings
-Custom seasonal settings are done by creating/changing JSON files.
 
-The mod creates a directory "shudnal.Seasons" at bepinex/config folder. There is the storage of cache, default and custom settings.
+Custom seasonal settings are defined using JSON files.
+
+The mod creates a `shudnal.Seasons` directory inside the BepInEx `config` folder. This is where default and custom settings are stored.
 
 ### Default settings
-On every launch the mod is generating "Default settings" folder at config folder. There is storage of files with mod's default values to be applied.
 
-Mod creates **\BepInEx\config\shudnal.Seasons\Default settings** directory on every world load. So you need to launch a world at least once after mod was installed.
+On each world load, the mod generates a `Default settings` folder containing files with default values.
+
+```
+BepInEx\config\shudnal.Seasons\Default settings
+```
+
+You need to launch the world at least once after installing the mod to generate these default files.
+
+**Important:** Do not edit files inside the `Default settings` folder directly. Any changes will be overwritten the next time you load a world or update the mod.
+
+### How to create custom settings
+
+To create custom seasonal settings:
+
+1. Open the folder:
+   ```
+   BepInEx\config\shudnal.Seasons\Default settings
+   ```
+2. Copy the file you want to edit (e.g., `Winter.json`).
+3. Paste it into the main `shudnal.Seasons` config folder:
+   ```
+   BepInEx\config\shudnal.Seasons\
+   ```
+4. Edit the copied file as needed.
+
+If your changes are applied, you will see this message in the BepInEx console or `LogOutput.log`:
+
+```
+[Info   :   Seasons] Settings updated: Winter
+```
+
+**Note:** Any property not defined in your custom file will default to the value in `Default settings`. This allows you to keep your custom file minimal, containing only the settings you want to change.
+
+#### Example: Changing winter length
+
+To make winter last 20 days instead of 10:
+
+1. Copy `Winter.json` from:
+   ```
+   BepInEx\config\shudnal.Seasons\Default settings
+   ```
+   to:
+   ```
+   BepInEx\config\shudnal.Seasons\
+   ```
+2. Open the copied file and modify:
+   ```json
+   "daysInSeason": 10
+   ```
+   to:
+   ```json
+   "daysInSeason": 20
+   ```
+3. Save the file. The change will apply in-game when the season system updates.
 
 ## Texture recoloring
-The mods comes without built-in textures and generate them on the first launch.
-You can change cache settings as you pleased if you don't like the defaults.
-Cache settings will be synced from the server on log in.
 
-The textures and rules for applying them to objects are stored at \BepInEx\cache\shudnal.Seasons folder.
-By default cache is saved as nonhumanreadable binary file for further faster loads. It can also be saved as JSON and PNG files.
+The mod does not include built-in textures; they are generated on the first launch.
 
-The rules for cache forming are stored at "Cache settings" folder in config folder.
-The list of the objects comes from prefab, clutter and locations list after ZoneSystem.Start. Due to procedural generation of objects textures if the game have custom assets loaded at that moment they will be tried to recolored the same way as the default game's assets.
+You can adjust cache settings if you dislike the defaults. Cache settings are synced from the server on login.
 
-You can replace generated textures with your own ones.
+Textures and the rules for applying them are stored in:
 
-The main idea of the mod is only to change vanilla colors without changing other parts of object appearance.
+```
+BepInEx\cache\shudnal.Seasons
+```
+
+If you experience any issue with textures or just want to rebuild cache you can safely delete the files inside this folder.
+
+By default, cache is saved as a non-human-readable binary file for faster loading. It can also be saved as JSON and PNG files.
+
+You can replace generated textures with your own custom textures using approach described in Custom textures. There is no need to alter files in cache folder.
+
+The mod's main idea is to change vanilla colors without altering other object properties.
 
 [Recoloring settings](https://valheim.thunderstore.io/package/shudnal/Seasons/wiki/1483-recoloring-settings/)
 
 ## Seasonal settings
-Basic seasonal settings are located in JSON files: Spring.json, Summer.json, Fall.json, Winter.json.
-Files with default settings are located in "Default settings" folder. Mod creates **\BepInEx\config\shudnal.Seasons\Default settings** directory on every world load. So you need to launch a world at least once after mod was installed.
 
-To start making custom changes you should copy the corresponding file to config folder "shudnal.Seasons". When you change the file there should be "[Info   :   Seasons] Settings updated: Season_Name" line in the bepinex console and LogOutput.log file.
+Basic seasonal settings are located in JSON files: `Spring.json`, `Summer.json`, `Fall.json`, `Winter.json`.
 
-Every property not represented in the custom file will fall to default value from "Default settings" seasonal file.
-It means you may left only changed values at custom file to make it more meaningful.
+See the "Default settings" and customization instructions above.
 
 ### Settings descriptions
 
-* daysInSeason (integer, 10) - season length in days, change of this value will recalculate current day and season with immediate effect
-* nightLength (integer, 30) - the fraction of the day which is gonna be night. Default 30 is vanilla which means 30% of day length will be night time. Change of the value will immediately take effect on sun/moon position and corresponding values
-* torchAsFiresource (bool) - torch become a warmth source with a price of extra durability drain
-* torchDurabilityDrain (float) - vanilla drain is 0.0333 and warm torch are worn at x3 speed of 0.1f
-* plantsGrowthMultiplier (float) - multiplier of speed which plants and pickables(consumable ones) are growing
-* beehiveProductionMultiplier (float) - multiplier or beehive production speed
-* foodDrainMultiplier (float) - multiplier of food drain speed
-* staminaDrainMultiplier (float) - works on every action that uses stamina
-* fireplaceDrainMultiplier (float) - multiplier of how much woods are used in fireplaces, oven and bath
-* sapCollectingSpeedMultiplier (float) - multiplier of sap collection speed (sap level restoration is intact)
-* rainProtection (bool) - makes building pieces not damaged by weather
-* woodFromTreesMultiplier (float) - multiplier of the maximum count of possible wood drops from trees and bushes
-* windIntensityMultiplier (float) - multiplier of wind force and intensity (affect boats and windmill)
-* restedBuffDurationMultiplier (float) - multiplier of rested buff duration
-* livestockProcreationMultiplier (float) - complex multiplier of creatures breeding speed (affects pregnancy chance, speed, distance to partner, distance to other creatures)
-* overheatIn2WarmClothes (bool) - if you wear two armor pieces that have ResistantVSFrost modifiers you will have Warm status effect reducing stamina and eitr regen by 20% (change your cape to less warm one if you need)
-* meatFromAnimalsMultiplier (float) - multiplier of the maximum count of possible meet drops from boars, deers and other living creatures except bugs
-* treesRegrowthChance (float) - chance to left sapling when destroying tree stumps. If tree has no sapling it won't be regrown. Supports all custom saplings if they configured right.
+- **daysInSeason (integer, default 10):** Season length in days. Changing this value recalculates the current day and season immediately.
+- **nightLength (integer, default 30):** Percentage of the day that is night. 30 means 30% of the day is night.
+- **torchAsFiresource (bool):** Makes torches provide warmth but drain durability faster.
+- **torchDurabilityDrain (float):** Default drain is 0.0333; warm torches wear at 0.1.
+- **plantsGrowthMultiplier (float):** Speed multiplier for plant and pickable growth.
+- **beehiveProductionMultiplier (float):** Multiplier for beehive production speed.
+- **foodDrainMultiplier (float):** Multiplier for food drain speed.
+- **staminaDrainMultiplier (float):** Affects all stamina-consuming actions.
+- **fireplaceDrainMultiplier (float):** Wood consumption multiplier for fireplaces, ovens, and baths.
+- **sapCollectingSpeedMultiplier (float):** Multiplier for sap collection speed.
+- **rainProtection (bool):** Prevents building pieces from weather damage.
+- **woodFromTreesMultiplier (float):** Multiplier for wood drops from trees and bushes.
+- **windIntensityMultiplier (float):** Multiplier for wind force (affects boats and windmills).
+- **restedBuffDurationMultiplier (float):** Multiplier for rested buff duration.
+- **livestockProcreationMultiplier (float):** Affects breeding speed and conditions for creatures.
+- **overheatIn2WarmClothes (bool):** Wearing two frost-resistant armor pieces applies a "Warm" effect, reducing stamina and eitr regeneration by 20%.
+- **meatFromAnimalsMultiplier (float):** Multiplier for meat drops from animals.
+- **treesRegrowthChance (float):** Chance for tree stumps to leave a sapling when destroyed.
 
-### Some explanations and ideas behind default settings
-* default season length of 10 days should take enough time both to struggle and make profit of season effects
-* short nights in summer and long nights in winter corresponds with similar cycle in Scandinavia. Also white snow in winter even at night makes environment look pretty bright
-* you could face freezing at some moments of fall and winter hence it's handy to use torch to get warm
-* plants doesn't grow in winter, slow growth in fall, and grow fast at spring and summer to balance overall value
-* bees sleep in winter and do most of the work in summer and fall
-* you don't need much firewood at spring and summer but much more to make warmth in fall and winter
-* snow in winter doesn't damage the buildings
-* summer and fall have more winds
-* creatures breed mostly in spring and summer
-* it's harder to stay rested in winter
-* you will get overheat in summer if you're wearing 2 warm clothes at once
-* change your cape or consume eyescream to not get overheat
-* creatures ususally gets more weight to live through winter so fall and winter means more meaty enemies
+### Ideas behind default settings
+
+- Default season length of 10 days balances challenge and seasonal benefits.
+- Short nights in summer and long nights in winter reflect Scandinavian cycles. White snow in winter even at night makes environment look brighter.
+- Plants grow slower in fall and stop in winter but grow quickly in spring and summer.
+- Bees sleep in winter but work harder in summer and fall.
+- Snow in winter does no damage to buildings.
+- Summer and fall are windier.
+- Overheating occurs if you wear two warm clothes in summer. Change your cape or consume eyescream to not get overheat.
+- You could face freezing at some moments of fall and winter. It is handy to use torch to get warm.
+- You need less firewood at spring and summer but more in fall and winter
+- It is harder to stay rested in winter
 
 ## Seasonal environments
 
-There are files with unloaded vanilla environments "Default environments.json" (basically vanilla weather list) and biome environments "Default biome environments.json" (distribution between biomes). This files are for informational purposes only. To get an idea behind vanilla weather and to further copy that weather to customize.
+Default vanilla environment data is stored in:
 
-### Environment
+- `Default environments.json` (weather list)
+- `Default biome environments.json` (weather distribution by biome)
 
-The structure of the environment reflects adapted ingame environment settings. The most useful to change vanilla environment properties:
-* m_default (bool) - this is the default valheim weather to be set in default situations (it is set to true for "Clear" by default and it should stays that way)
-* m_name (string) - name of the environment, it should be unique
-* m_isWet (bool) - should exposed to environment characters get Wet debuff
-* m_isFreezing (bool) - should exposed to environment characters get Freezing debuff (despite time of day)
-* m_isFreezingAtNight (bool) - should exposed to environment characters get Freezing debuff (at night time)
-* m_isCold (bool) - should exposed to environment characters get Cold debuff (at all time)
-* m_isColdAtNight (bool) - should exposed to environment characters get Cold debuff (at night time)
-* m_alwaysDark (bool) - if set to true then environment will darken all colors (like in the vanilla Swamps)
-* m_psystems (string) - particle system names separated by commas (mist, rain, snow effects, etc)
-* m_ambientLoop (string) - name of audio clip being played on the loop (sounds of wind, snow, rain, etc)
+These files are for reference only.
+
+### Environment structure
+
+- **m\_default (bool):** Default weather (true for "Clear").
+- **m\_name (string):** Environment name, must be unique.
+- **m\_isWet (bool):** Characters get the Wet debuff.
+- **m\_isFreezing (bool):** Characters get the Freezing debuff.
+- **m\_isFreezingAtNight (bool):** Freezing debuff only at night.
+- **m\_isCold (bool):** Characters get the Cold debuff.
+- **m\_isColdAtNight (bool):** Cold debuff only at night.
+- **m\_alwaysDark (bool):** Darkens all colors (e.g., Swamp).
+- **m\_psystems (string):** Particle system names (mist, rain, snow, etc.). Comma separated.
+- **m\_ambientLoop (string):** Looping ambient audio (sounds of wind, snow, rain, etc).
 
 Custom properties:
-* m_cloneFrom (string) - which vanilla environment properties should be copied to custom environment
+- **m\_cloneFrom (string):** Which vanilla environment properties should be copied to custom environment
 
 ### Biome environments
 
-The structure of the biome environment reflects adapted ingame biome environment settings.
+Biome environment files define weather distribution per biome.
+
 Customized biome environment settings:
-* m_name (string) - name of the biome settings, in most cases the biome name
-* m_environments - contains an array of environments represented by name and weight. More weight the environment have means the weather will be like this more often.
+
+- **m\_name (string):** Name of the biome settings, in most cases the biome name
+- **m\_environments:** Array of environments represented by name and weight. More weight the environment have means the weather will be like this more often.
 
 Weather are chosed from environments list based on pseudorandom value common to all clients.
 
 ### Custom environments
 
-File "Custom environments.json" contains default custom environments being added to environment list. Basically it's the list of new weather.
-
-Properties in that file are similar to Environment while only changed one are presented.
+File `Custom environments.json` defines custom weather, similar to Environment properties but only listing changes.
 
 There are seasonal variants of vanilla weather mostly.
 
 ### Custom music
 
-Place music files into "**...\BepInEx\config\shudnal.Seasons\Custom music**" folder.
+Place music files in:
 
-Any media track that Unity Engine can read will be loaded into music and will be available to use in custom environments.
+```
+BepInEx\config\shudnal.Seasons\Custom music
+```
 
-For example track "runichills.mp3" will be loaded as "runichills" music track.
+Any Unity-compatible audio file will be loaded as a music track. Create a `.json` file with the same name as your track to define settings.
+
+For example track "runichills.mp3" will be loaded as "runichills" music track. It will try to find "runichills.json" settings file otherwise default settings will be used.
 
 To set custom music track settings create file with **.json** extension and the same name as music track.
 
-For example track "runichills.mp3" can have "runichills.json" settings file otherwise default settings is used.
-
-Paste code in *.json file you created (this is default settings)
+Example (default settings):
 ```
 {
   "m_enabled": true,
@@ -159,15 +223,15 @@ Paste code in *.json file you created (this is default settings)
   "m_ambientMusic": true
 }
 ```
-* m_enabled (bool) - music is enabled
-* m_volume (float) - volume level of that track
-* m_fadeInTime (float) - time in seconds where track volume will be gradually increased on track start
-* m_alwaysFadeout (bool) - track will always have fade out effect no matter if it crossed with another track or not
-* m_loop (bool) - if enabled then track will be played continuously, if disabled it will play just once with random start interval
-* m_resume (bool) - resume track playback from the moment it stopped previously
-* m_ambientMusic (bool) - if set to true then track will be played on loop if game setting "Continuous music" is enabled
+- **m\_enabled (bool):** Music is enabled
+- **m\_volume (float):** Volume level of that track
+- **m\_fadeInTime (float):** Time in seconds where track volume will be gradually increased on track start
+- **m\_alwaysFadeout (bool):** Track will always have fade out effect no matter if it crossed with another track or not
+- **m\_loop (bool):** If enabled then track will be played continuously, if disabled it will play just once with random start interval
+- **m\_resume (bool):** Resume track playback from the moment it stopped previously
+- **m\_ambientMusic (bool):** If set to true then track will be played on loop if game setting "Continuous music" is enabled
 
-Both music tracks and json settings file should be shared with all clients via modpack or manually. Otherwise the music just will not be played.
+Both music and its settings file must be shared with all clients. Otherwise the music just will not be played.
 
 ### Custom biome environments
 
@@ -537,3 +601,6 @@ Or [Official BepInEx Configuration Manager](https://valheim.thunderstore.io/pack
 
 ## Donation
 [Buy Me a Coffee](https://buymeacoffee.com/shudnal)
+
+## Discord
+[Join server](https://discord.gg/e3UtQB8GFK)
