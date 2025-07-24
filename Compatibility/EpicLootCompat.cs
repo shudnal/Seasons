@@ -11,17 +11,17 @@ namespace Seasons.Compatibility
     public static class EpicLootCompat
     {
         public const string GUID = "randyknapp.mods.epicloot";
-        public static PluginInfo epicLootPlugin;
+        public static PluginInfo plugin;
         public static Assembly assembly;
 
         public static bool isEnabled;
 
         public static void CheckForCompatibility()
         {
-            isEnabled = Chainloader.PluginInfos.TryGetValue(GUID, out epicLootPlugin);
+            isEnabled = Chainloader.PluginInfos.TryGetValue(GUID, out plugin);
 
             if (isEnabled)
-                assembly ??= Assembly.GetAssembly(epicLootPlugin.Instance.GetType());
+                assembly ??= Assembly.GetAssembly(plugin.Instance.GetType());
         }
 
         [HarmonyPatch]

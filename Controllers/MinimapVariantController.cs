@@ -17,6 +17,8 @@ namespace Seasons
         private Color32[] m_mapTexture;
         private Color32[] m_mapWinterTexture;
         private Texture2D m_forestTex;
+        
+        private bool m_isWinter = false;
 
         public static MinimapVariantController instance => m_instance;
 
@@ -46,7 +48,7 @@ namespace Seasons
             if (!m_initialized)
                 return;
 
-            SetMapTextures(winter:false, m_forestTex);
+            SetMapTextures(winterChanged: m_isWinter, m_forestTex);
         }
 
         public void UpdateColors()
@@ -61,7 +63,8 @@ namespace Seasons
             }
 
             Season season = seasonState.GetCurrentSeason();
-            SetMapTextures(season == Season.Winter, GetSeasonalForestTex(season));
+            bool winterChanged = m_isWinter != (m_isWinter = season == Season.Winter);
+            SetMapTextures(winterChanged, GetSeasonalForestTex(season));
         }
 
         public Texture2D GetSeasonalForestTex(Season season)
@@ -76,16 +79,21 @@ namespace Seasons
             };
         }
 
-        private void SetMapTextures(bool winter, Texture2D forestTex)
+        private void SetMapTextures(bool winterChanged, Texture2D forestTex)
         {
             try
             {
-                m_minimap.m_mapTexture.SetPixels32(winter ? m_mapWinterTexture : m_mapTexture);
-                m_minimap.m_mapTexture.Apply();
+                if (winterChanged)
+                {
+                    m_minimap.m_mapTexture.SetPixels32(m_isWinter ? m_mapWinterTexture : m_mapTexture);
+                    m_minimap.m_mapTexture.Apply();
+
+                    Compatibility.MarketplaceCompat.UpdateMap();
+                }
             }
             catch (Exception e)
             {
-                LogWarning($"Error applying {(winter ? "winter ": "")}map texture length {(winter ? m_mapWinterTexture : m_mapTexture).Length} to minimap texture length {m_minimap.m_mapTexture.height * m_minimap.m_mapTexture.width}:\n{e}");
+                LogWarning($"Error applying {(m_isWinter ? "winter ": "")}map texture length {(m_isWinter ? m_mapWinterTexture : m_mapTexture).Length} to minimap texture length {m_minimap.m_mapTexture.height * m_minimap.m_mapTexture.width}:\n{e}");
             }
 
             m_minimap.m_mapLargeShader.SetTexture("_ForestTex", forestTex);

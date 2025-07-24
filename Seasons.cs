@@ -229,6 +229,7 @@ namespace Seasons
             _ = configSync.AddLockingConfigEntry(configLocked);
 
             Compatibility.EpicLootCompat.CheckForCompatibility();
+            Compatibility.MarketplaceCompat.CheckForCompatibility();
 
             harmony.PatchAll();
 
