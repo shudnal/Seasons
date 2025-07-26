@@ -1,3 +1,8 @@
+# 1.6.2
+* proper world edge handling (no more walking on the air)
+* KG Marketplace territories compatibility (no more map resetting)
+* mod description updated
+
 # 1.6.1
 * fixed bogwitch custom trader item list
 
