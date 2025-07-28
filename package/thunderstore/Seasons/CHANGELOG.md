@@ -1,3 +1,6 @@
+# 1.6.3
+* proper current day calculation on initialization when custom day length used
+
 # 1.6.2
 * proper world edge handling (no more walking on the air)
 * KG Marketplace territories compatibility (no more map resetting)

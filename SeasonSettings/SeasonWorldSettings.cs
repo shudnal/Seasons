@@ -40,7 +40,7 @@ namespace Seasons
         public long GetDayLengthSeconds(World world)
         {
             if (!HasWorldSettings(world))
-                return EnvMan.instance == null ? 1800L : EnvMan.instance.m_dayLengthSec;
+                return SeasonState.GetDayLengthInSecondsEnvMan();
 
             return Math.Max(GetWorldSettings(world).dayLengthSeconds, 5);
         }

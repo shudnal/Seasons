@@ -84,6 +84,8 @@ namespace Seasons
 
         public static bool IsActive => seasonState != null && EnvMan.instance != null;
 
+        public static long GetDayLengthInSecondsEnvMan() => EnvMan.instance == null ? (dayLengthSec.Value != 0L ? dayLengthSec.Value : 1800L) : EnvMan.instance.m_dayLengthSec;
+
         public int GetWorldDay(double seconds) => (int)(seconds / GetDayLengthInSeconds());
 
         public int GetCurrentWorldDay() => GetWorldDay(GetTotalSeconds());
@@ -176,7 +178,7 @@ namespace Seasons
 
         public long GetDayLengthInSeconds()
         {
-            return Math.Max(5, m_isUsingIngameDays ? (EnvMan.instance == null ? 1800L : EnvMan.instance.m_dayLengthSec) : seasonWorldSettings.GetDayLengthSeconds(GetCurrentWorld()));
+            return Math.Max(5, m_isUsingIngameDays ? GetDayLengthInSecondsEnvMan() : seasonWorldSettings.GetDayLengthSeconds(GetCurrentWorld()));
         }
 
         public Season GetCurrentSeason()
