@@ -1,3 +1,6 @@
+# 1.6.4
+* current day and season recalculation on day length change
+
 # 1.6.3
 * proper current day calculation on initialization when custom day length used
 

@@ -21,7 +21,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.6.3";
+        public const string pluginVersion = "1.6.4";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -282,8 +282,6 @@ namespace Seasons
         public static void LogWarning(object data)
         {
             instance.Logger.LogWarning(data);
-
-            foreach (var clutter in ClutterSystem.instance.m_clutter) { if (clutter.m_name.EndsWith("_inshield")) ZLog.Log($"{clutter.m_name} {clutter.m_enabled}"); };
         }
 
         public void ConfigInit()

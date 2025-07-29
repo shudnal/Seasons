@@ -31,7 +31,10 @@ namespace Seasons
             private static void Prefix(ref long ___m_dayLengthSec)
             {
                 if (dayLengthSec.Value != 0L && ___m_dayLengthSec != dayLengthSec.Value)
+                {
                     ___m_dayLengthSec = dayLengthSec.Value;
+                    SeasonState.CheckSeasonChange();
+                }
             }
         }
 
