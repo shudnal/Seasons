@@ -1,3 +1,10 @@
+# 1.6.6
+* fixed an ice floes being left after winter is ended
+* ice floes will no longer spawns again during one season (you can clear the water and it will stay for a whole winter)
+* there should be no occasional double spawns of ice floes
+* ice floes position, size and rotation will be different between different seasons
+* ice floes will more differentiate in sizes and should overlap less
+
 # 1.6.5
 * improved compatibility with EWD and EWS
 * added direct incompatibility with LongerDays
