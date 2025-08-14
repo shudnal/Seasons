@@ -82,6 +82,8 @@ namespace Seasons
 
         public static GameObject s_iceSurface;
         public static ZoneSystem.ZoneVegetation s_iceFloe;
+        public static int s_iceFloeWatermark = "Seasons_IceFloe".GetStableHashCode();
+        public static int s_iceFloeMass = "Seasons_IceFloeMass".GetStableHashCode();
 
         private const float _FoamDepthFrozen = 10f;
         private const float _WaveVel = 0f;
@@ -678,23 +680,15 @@ namespace Seasons
                 return;
 
             int floes = 0;
-            foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values)
+            foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values.Where(IsValidIceFloe).ToList())
             {
-                if (zdo.GetPrefab() != _iceFloePrefab)
-                    continue;
-
-                Vector3 position = zdo.GetPosition();
-
-                float num = WorldGenerator.WorldAngle(position.x, position.z) * 100.0f;
-
-                if (new Vector2(position.x, position.z + 4000.0f).magnitude > 12000.0f + num)
-                    continue;
-
                 RemoveObject(zdo, true);
                 floes++;
             }
-            
+
             LogFloeState($"Removed overworld floes:{floes}");
+
+            static bool IsValidIceFloe(ZDO zdo) => zdo.GetPrefab() == _iceFloePrefab && !WorldGenerator.IsDeepnorth(zdo.GetPosition().x, zdo.GetPosition().z); // && zdo.GetBool(s_iceFloeWatermark); TODO: Unlock later
         }
 
         public static bool CheckWaterVolumeForIceFloes(WaterVolume waterVolume)
@@ -795,15 +789,20 @@ namespace Seasons
                 if (mode == ZoneSystem.SpawnMode.Ghost)
                     ZNetView.FinishGhostInit();
 
-                ZNetView component = gameObject.GetComponent<ZNetView>();
+                ZNetView netView = gameObject.GetComponent<ZNetView>();
 
                 float scaleX = UnityEngine.Random.Range(iceFloesScale.Value.x, iceFloesScale.Value.y);
-                float scaleY = UnityEngine.Random.Range(iceFloesScale.Value.x, iceFloesScale.Value.y);
+                float scaleY = PowSquash(UnityEngine.Random.Range(iceFloesScale.Value.x, iceFloesScale.Value.y), 0.6f); // Squash a bit to prevent extra thick or thin
                 float scaleZ = UnityEngine.Random.Range(iceFloesScale.Value.x, iceFloesScale.Value.y);
 
                 float radius = 5f;
 
-                component.SetLocalScale(new Vector3(scaleX, scaleY, scaleZ));
+                netView.SetLocalScale(new Vector3(scaleX, scaleY, scaleZ));
+
+                ZDO zdo = netView.GetZDO();
+                zdo.Set(s_iceFloeWatermark, true);
+                zdo.Set(s_iceFloeMass, netView.m_body.mass * PowSquash(Mathf.Sqrt(Mathf.Abs(scaleX * scaleY * scaleZ)), 0.6f));
+
                 Collider[] componentsInChildren = gameObject.GetComponentsInChildren<Collider>();
                 foreach (Collider obj in componentsInChildren)
                 {
@@ -815,11 +814,13 @@ namespace Seasons
                 if (mode == ZoneSystem.SpawnMode.Ghost)
                     spawnedObjects.Add(gameObject);
 
-                clearAreas.Add(new ZoneSystem.ClearArea(p, radius));
+                clearAreas.Add(new ZoneSystem.ClearArea(p, radius + 1));
             }
 
             UnityEngine.Random.state = state;
         }
+
+        public static float PowSquash(float x, float gamma = 0.5f) => Mathf.Pow(Mathf.Max(0f, x), gamma);
 
         private static void RemoveObject(ZDO zdo, bool force = false)
         {

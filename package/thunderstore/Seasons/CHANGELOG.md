@@ -1,3 +1,8 @@
+# 1.6.5
+* improved compatibility with EWD and EWS
+* added direct incompatibility with LongerDays
+* tweaks for ice floes: generation, interaction and mass
+
 # 1.6.4
 * current day and season recalculation on day length change
 

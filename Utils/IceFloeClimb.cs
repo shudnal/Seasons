@@ -7,6 +7,17 @@ namespace Seasons
         public float m_useDistance = 3f;
         public float m_radius = 4f;
 
+        public void Start()
+        {
+            ZNetView m_nview = GetComponent<ZNetView>();
+            if (m_nview != null && m_nview.m_body != null)
+            {
+                float mass = m_nview.GetZDO().GetFloat(ZoneSystemVariantController.s_iceFloeMass);
+                if (mass != 0f)
+                    m_nview.m_body.mass = mass;
+            }
+        }
+
         public bool Interact(Humanoid character, bool hold, bool alt)
         {
             if (hold)
@@ -43,10 +54,18 @@ namespace Seasons
             if (base.transform.position.y - human.transform.position.y < 0.5f)
                 return false;
 
-            float distance = Vector3.Distance(human.transform.position, base.transform.position) / Mathf.Max(base.transform.localScale.x, base.transform.localScale.z);
+            Vector3 distance = human.transform.position - transform.position;
+            distance.y = 0f;
 
-            return m_radius < distance && distance < m_radius + m_useDistance;
+            float sx = Mathf.Max(0.0001f, transform.lossyScale.x);
+            float sz = Mathf.Max(0.0001f, transform.lossyScale.z);
+
+            float ellipticalDistance = Mathf.Sqrt(
+                (distance.x * distance.x) / (sx * sx) +
+                (distance.z * distance.z) / (sz * sz)
+            );
+
+            return m_radius < ellipticalDistance && ellipticalDistance < m_radius + m_useDistance;
         }
     }
-
 }

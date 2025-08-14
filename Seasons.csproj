@@ -36,6 +36,7 @@
     <LangVersion>9.0</LangVersion>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Compatibility\EWDCompat.cs" />
     <Compile Include="Compatibility\MarketplaceCompat.cs" />
     <Compile Include="SeasonTextures\CachedData.cs" />
     <Compile Include="Compatibility\EpicLootCompat.cs" />

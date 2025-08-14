@@ -16,12 +16,15 @@ namespace Seasons
 {
     [BepInPlugin(pluginID, pluginName, pluginVersion)]
     [BepInIncompatibility("RustyMods.Seasonality")]
+    [BepInIncompatibility("TastyChickenLegs.LongerDays")]
     [BepInDependency(Compatibility.EpicLootCompat.GUID, BepInDependency.DependencyFlags.SoftDependency)]
+    [BepInDependency(Compatibility.MarketplaceCompat.GUID, BepInDependency.DependencyFlags.SoftDependency)]
+    [BepInDependency(Compatibility.EWDCompat.GUID, BepInDependency.DependencyFlags.SoftDependency)]
     public class Seasons : BaseUnityPlugin
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.6.4";
+        public const string pluginVersion = "1.6.5";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -173,7 +176,7 @@ namespace Seasons
 
         public static readonly CustomSyncedValue<uint> cacheRevision = new CustomSyncedValue<uint>(configSync, "Cache revision", 0, Priority.VeryLow);
 
-        public static readonly List<string> biomesDefault = new List<string>();
+        public static readonly Dictionary<Heightmap.Biome, string> biomesDefault = new Dictionary<Heightmap.Biome, string>();
         public static Color minimapBorderColor = Color.clear;
 
         public static WaitForFixedUpdate waitForFixedUpdate = new WaitForFixedUpdate();
