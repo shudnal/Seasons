@@ -32,6 +32,7 @@ namespace Seasons
         public static SeasonClutterSettings seasonClutterSettings = new SeasonClutterSettings(loadDefaults: true);
         public static SeasonBiomeSettings seasonBiomeSettings = new SeasonBiomeSettings(loadDefaults: true);
 
+        private static readonly Dictionary<Heightmap.Biome, string> biomesDefault = new Dictionary<Heightmap.Biome, string>();
         private static readonly List<ItemDrop.ItemData> _itemDataList = new List<ItemDrop.ItemData>();
         private static int _pendingSeasonChange = 0;
 
@@ -51,7 +52,7 @@ namespace Seasons
             if (!initialize)
                 return;
 
-            biomesDefault.Clear();
+            ClearBiomesDefault();
 
             foreach (Season season in Enum.GetValues(typeof(Season)))
                 if (!seasonsSettings.ContainsKey(season))
@@ -256,10 +257,12 @@ namespace Seasons
             return GetSeasonSettings(season).m_nightLength;
         }
 
+        public static void ClearBiomesDefault() => biomesDefault.Clear();
+
         public static void RefreshBiomesDefault(bool forceUpdate)
         {
             if (forceUpdate)
-                biomesDefault.Clear();
+                ClearBiomesDefault();
 
             if (!EnvMan.instance)
                 return;
@@ -268,9 +271,13 @@ namespace Seasons
             {
                 if (biomesDefault.TryGetValue(biome.m_biome, out string biomeJSON))
                 {
-                    BiomeEnvSetup biomeEnvironment = JsonUtility.FromJson<BiomeEnvSetup>(biomeJSON);
-                    biomeEnvironment.m_environments.AddRange(biome.m_environments);
-                    biomesDefault[biome.m_biome] = JsonUtility.ToJson(biomeEnvironment);
+                    if (forceUpdate)
+                    {
+                        // Combine several entries just in case
+                        BiomeEnvSetup biomeEnvironment = JsonUtility.FromJson<BiomeEnvSetup>(biomeJSON);
+                        biomeEnvironment.m_environments.AddRange(biome.m_environments);
+                        biomesDefault[biome.m_biome] = JsonUtility.ToJson(biomeEnvironment);
+                    }
                 }
                 else
                 {
