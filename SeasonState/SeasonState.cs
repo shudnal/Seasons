@@ -1258,7 +1258,7 @@ namespace Seasons
         public static bool IsFrostResistant(HitData.DamageModPair damageMod)
         {
             return damageMod.m_type == HitData.DamageType.Frost &&
-                   (damageMod.m_modifier == HitData.DamageModifier.Resistant || damageMod.m_modifier == HitData.DamageModifier.VeryResistant || damageMod.m_modifier == HitData.DamageModifier.Immune);
+                   (damageMod.m_modifier == HitData.DamageModifier.SlightlyResistant || damageMod.m_modifier == HitData.DamageModifier.Resistant || damageMod.m_modifier == HitData.DamageModifier.VeryResistant || damageMod.m_modifier == HitData.DamageModifier.Immune);
         }
 
         private void SetCurrentSeasonDay(Season season, int day)

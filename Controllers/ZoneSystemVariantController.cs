@@ -62,7 +62,8 @@ namespace Seasons
         private static WaterState s_waterPlaneState;
         public static float s_waterEdge;
         public static bool s_waterEdgeLocalPlayerState;
-        
+        public static float s_waterDistance;
+
         public static readonly Dictionary<WaterVolume, WaterState> waterStates = new Dictionary<WaterVolume, WaterState>();
         
         private static readonly MaterialPropertyBlock s_matBlock = new MaterialPropertyBlock();
@@ -104,6 +105,7 @@ namespace Seasons
         private int m_snowStormMaxParticles;
         private float m_snowStormEmissionRate;
 
+        internal static bool waterStateInitialized = false;
         private static ZoneSystemVariantController m_instance;
 
         public static ZoneSystemVariantController Instance => m_instance;
@@ -146,6 +148,9 @@ namespace Seasons
         {
             m_tempClearAreas.Clear();
 
+            if (!waterStateInitialized)
+                return;
+
             tempWaterVolumesList.Clear();
             foreach (WaterVolume waterVolume in waterVolumesCheckFloes)
             {
@@ -165,6 +170,7 @@ namespace Seasons
             s_iceSurface = null;
             waterStates.Clear();
             m_instance = null;
+            waterStateInitialized = false;
         }
 
         public void Initialize(ZoneSystem instance)
@@ -424,7 +430,7 @@ namespace Seasons
             iceCollider.sharedMesh = waterSurface.GetComponent<MeshFilter>().sharedMesh;
             iceCollider.material.staticFriction = 0.1f;
             iceCollider.material.dynamicFriction = 0.1f;
-            iceCollider.material.frictionCombine = PhysicMaterialCombine.Minimum;
+            iceCollider.material.frictionCombine = PhysicsMaterialCombine.Minimum;
             iceCollider.cookingOptions = MeshColliderCookingOptions.UseFastMidphase;
         }
 
@@ -434,6 +440,8 @@ namespace Seasons
                 return;
 
             s_freezeStatus = seasonState.GetWaterSurfaceFreezeStatus();
+
+            waterStateInitialized = true;
 
             CheckToRemoveIceFloes();
 
@@ -590,13 +598,13 @@ namespace Seasons
             {
                 ship.m_body.rotation = Quaternion.identity;
                 ship.m_body.position = new Vector3(ship.m_body.position.x, WaterLevel + ship.m_waterLevelOffset + 0.1f, ship.m_body.position.z);
-                ship.m_body.velocity = Vector3.zero;
+                ship.m_body.linearVelocity = Vector3.zero;
             }
             else if (frozenKarvePositionFix.Value && Utils.GetPrefabName(ship.name) == "Karve" && positionDelta <= -1.43f)
             {
                 ship.m_body.rotation = Quaternion.identity;
                 ship.m_body.position = new Vector3(ship.m_body.position.x, WaterLevel + ship.m_waterLevelOffset - 1.42f, ship.m_body.position.z);
-                ship.m_body.velocity = Vector3.zero;
+                ship.m_body.linearVelocity = Vector3.zero;
             }
             else if (positionDelta < -ship.m_waterLevelOffset * 1.5f && ship.m_body.isKinematic)
             {
@@ -619,7 +627,7 @@ namespace Seasons
                 fish.m_nview.GetZDO().SetPosition(fish.transform.position);
             }
 
-            fish.m_body.velocity = Vector3.zero;
+            fish.m_body.linearVelocity = Vector3.zero;
             fish.m_haveWaypoint = false;
             fish.m_isJumping = false;
         }
@@ -642,14 +650,14 @@ namespace Seasons
                     Vector3 hit = m_tempHits.Find(h => h.y < WaterLevel);
                     if (hit.y != 0)
                     {
-                        character.m_body.velocity = Vector3.zero;
+                        character.m_body.linearVelocity = Vector3.zero;
                         character.transform.position = new Vector3(character.transform.position.x, Mathf.Max(WaterLevel - _winterWaterSurfaceOffset, hit.y + 0.1f), character.transform.position.z);
                     }
                 }
             }
             else if (character.transform.position.y <= WaterLevel && !character.IsAttachedToShip())
             {
-                character.m_body.velocity = Vector3.zero;
+                character.m_body.linearVelocity = Vector3.zero;
                 character.transform.position = new Vector3(character.transform.position.x, WaterLevel + 0.5f, character.transform.position.z);
                 character.InvalidateCachedLiquidDepth();
                 character.m_maxAirAltitude = character.transform.position.y;
@@ -679,7 +687,7 @@ namespace Seasons
 
             floating.m_body.rotation = Quaternion.identity;
             floating.m_body.position = new Vector3(floating.m_body.position.x, WaterLevel + floating.m_waterLevelOffset + 0.1f, floating.m_body.position.z);
-            floating.m_body.velocity = Vector3.zero;
+            floating.m_body.linearVelocity = Vector3.zero;
         }
 
         public static void CheckToRemoveIceFloes()
@@ -711,7 +719,7 @@ namespace Seasons
             static bool IsValidIceFloe(ZDO zdo) => zdo.GetPrefab() == _iceFloePrefab && (!WorldGenerator.IsDeepnorth(zdo.GetPosition().x, zdo.GetPosition().z) || zdo.GetBool(s_iceFloeWatermark)); // TODO: Remove IsDeepnorth check to prevent other floes from removing
         }
 
-        public static bool CheckWaterVolumeForIceFloes(WaterVolume waterVolume)
+        public bool CheckWaterVolumeForIceFloes(WaterVolume waterVolume)
         {
             if (waterVolume == null || waterVolume.m_heightmap == null)
                 return true;
@@ -1038,7 +1046,7 @@ namespace Seasons
                 if (frozenOceanSlipperiness.Value == 0 || !___m_nview.IsValid() || !___m_nview.IsOwner())
                     return;
 
-                __state = new Tuple<float, Vector3>(Mathf.Max(0f, ___m_maxAirAltitude - __instance.transform.position.y), __instance.m_body.velocity);
+                __state = new Tuple<float, Vector3>(Mathf.Max(0f, ___m_maxAirAltitude - __instance.transform.position.y), __instance.m_body.linearVelocity);
             }
 
             private static void Postfix(Character __instance, float ___m_maxAirAltitude, Tuple<float, Vector3> __state)
@@ -1078,7 +1086,7 @@ namespace Seasons
             private static void Postfix(Player __instance, bool ___m_inDodge, ref bool __state)
             {
                 m_initiateSlide = frozenOceanSlipperiness.Value > 0 && ___m_inDodge && __instance == Player.m_localPlayer;
-                m_bodyVelocity = __instance.m_queuedDodgeDir * __instance.m_body.velocity.magnitude;
+                m_bodyVelocity = __instance.m_queuedDodgeDir * __instance.m_body.linearVelocity.magnitude;
 
                 if (__state && !___m_inDodge && __instance.IsOnIce())
                     __instance.StartIceSliding(m_bodyVelocity);
@@ -1113,7 +1121,7 @@ namespace Seasons
 
                 ___m_collider.material.staticFriction = 0.1f;
                 ___m_collider.material.dynamicFriction = 0.1f;
-                ___m_collider.material.frictionCombine = PhysicMaterialCombine.Minimum;
+                ___m_collider.material.frictionCombine = PhysicsMaterialCombine.Minimum;
 
                 return false;
             }
@@ -1614,45 +1622,58 @@ namespace Seasons
     [HarmonyPatch(typeof(Floating), nameof(Floating.CustomFixedUpdate))]
     public static class Floating_CustomFixedUpdate_IceFloeRotation
     {
-        private static void AddWaveForce(Vector3[] positions, Rigidbody rbody, float fixedDeltaTime)
+        private static readonly Vector3[] positions = new Vector3[4];
+        private static void AddWaveForce(Floating floating, float fixedDeltaTime)
         {
+            floating.m_body.WakeUp();
+            
             foreach (Vector3 position in positions)
             {
                 float depthDelta = position.y - Floating.GetLiquidLevel(position);
-                if (Mathf.Abs(depthDelta) < 0.2f)
-                    continue;
-
-                Vector3 force = 0.5f * Mathf.Clamp01(Mathf.Abs(depthDelta / 4)) * (fixedDeltaTime * 50f) * depthDelta < 0 ? Vector3.up / 2 : Vector3.down;
-                rbody.AddForceAtPosition(force * 0.02f, position, ForceMode.VelocityChange);
+                Vector3 force = 0.5f * Mathf.Clamp01(Mathf.Abs(depthDelta / 4)) * (fixedDeltaTime * 50f) * depthDelta < 0 ? Vector3.up * 0.6f : Vector3.down;
+                floating.m_body.AddForceAtPosition(force * 0.02f * floating.m_body.mass * 0.25f, position, ForceMode.Impulse);
             }
         }
 
-        private static void Postfix(Floating __instance, float fixedDeltaTime, ZNetView ___m_nview, Rigidbody ___m_body, Collider ___m_collider)
+        private static float Dampen(float value) => value / (1f + Mathf.Abs(value));
+
+        private static bool Prefix(Floating __instance, float fixedDeltaTime)
         {
-            if (!___m_nview.IsValid() || !___m_nview.IsOwner())
-                return;
+            if (!GameCamera.instance || __instance.m_nview is not ZNetView nview || !nview.IsValid() || nview.GetZDO()?.GetPrefab() != _iceFloePrefab || !__instance.m_body)
+                return true;
 
-            if (___m_nview.GetZDO().GetPrefab() != _iceFloePrefab)
-                return;
+            ZSyncTransform syncTransform = __instance.GetComponent<ZSyncTransform>();
+            bool inActiveWaterDistance = Utils.DistanceXZ(GameCamera.instance.transform.position, __instance.transform.position) < s_waterDistance;
+            syncTransform.m_syncBodyVelocity = inActiveWaterDistance || !__instance.HaveLiquidLevel();
 
-            if (__instance.HaveLiquidLevel() && __instance.GetFloatDepth() > 0f && ___m_body.IsSleeping())
-                ___m_body.WakeUp();
+            if ((syncTransform.m_syncPosition != (syncTransform.m_syncPosition = syncTransform.m_syncBodyVelocity)) && syncTransform.m_syncPosition)
+                syncTransform.SyncNow();
 
-            if (!__instance.HaveLiquidLevel() || __instance.GetFloatDepth() > 0f)
-                return;
-
-            Vector3 wind = WaterVolume.s_globalWindAlpha == 0f ? WaterVolume.s_globalWind1 : Vector4.Lerp(WaterVolume.s_globalWind1, WaterVolume.s_globalWind2, WaterVolume.s_globalWindAlpha);
-            Vector3 windSide = Vector3.Cross(wind, __instance.transform.up);
-
-            Vector3[] forcePositions = new Vector3[4]
+            if (!syncTransform.m_syncPosition && __instance.HaveLiquidLevel() && !inActiveWaterDistance)
             {
-                ___m_collider.ClosestPoint(___m_body.worldCenterOfMass + wind * 100f),
-                ___m_collider.ClosestPoint(___m_body.worldCenterOfMass - wind * 100f),
-                ___m_collider.ClosestPoint(___m_body.worldCenterOfMass + windSide * 100f),
-                ___m_collider.ClosestPoint(___m_body.worldCenterOfMass - windSide * 100f)
-            };
+                __instance.m_body.Sleep();
+                __instance.transform.position = new Vector3(__instance.transform.position.x, WaterLevel + __instance.m_waterLevelOffset + Dampen(__instance.m_waterLevel - WaterLevel), __instance.transform.position.z);
+                return false;
+            }
 
-            AddWaveForce(forcePositions, ___m_body, fixedDeltaTime);
+            if (!nview.IsOwner() || !__instance.HaveLiquidLevel())
+                return true;
+
+            Vector3 wind = WaterVolume.s_globalWindAlpha == 0f
+                ? WaterVolume.s_globalWind1
+                : Vector4.Lerp(WaterVolume.s_globalWind1, WaterVolume.s_globalWind2, WaterVolume.s_globalWindAlpha);
+
+            Vector3 windSide = Vector3.Cross(wind, __instance.transform.up);
+            Vector3 center = __instance.m_body.worldCenterOfMass;
+
+            positions[0] = __instance.m_collider.ClosestPoint(center + wind * 100f);
+            positions[1] = __instance.m_collider.ClosestPoint(center - wind * 100f);
+            positions[2] = __instance.m_collider.ClosestPoint(center + windSide * 100f);
+            positions[3] = __instance.m_collider.ClosestPoint(center - windSide * 100f);
+
+            AddWaveForce(__instance, fixedDeltaTime);
+
+            return true;
         }
     }
 
@@ -1805,7 +1826,9 @@ namespace Seasons
         private static void Postfix(EnvMan __instance)
         {
             var water = __instance.transform.Find("WaterPlane").Find("watersurface");
-            s_waterEdge = water.GetComponent<MeshRenderer>().material.GetFloat("_WaterEdge");
+            Material waterMaterial = water.GetComponent<MeshRenderer>().sharedMaterial;
+            s_waterDistance = waterMaterial.GetFloat("_VisibleMaxDistance");
+            s_waterEdge = waterMaterial.GetFloat("_WaterEdge");
             s_waterEdgeLocalPlayerState = false;
         }
     }

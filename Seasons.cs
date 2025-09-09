@@ -24,7 +24,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.6.6";
+        public const string pluginVersion = "1.6.7";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -176,7 +176,6 @@ namespace Seasons
 
         public static readonly CustomSyncedValue<uint> cacheRevision = new CustomSyncedValue<uint>(configSync, "Cache revision", 0, Priority.VeryLow);
 
-        public static readonly Dictionary<Heightmap.Biome, string> biomesDefault = new Dictionary<Heightmap.Biome, string>();
         public static Color minimapBorderColor = Color.clear;
 
         public static WaitForFixedUpdate waitForFixedUpdate = new WaitForFixedUpdate();

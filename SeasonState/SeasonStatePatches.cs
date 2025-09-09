@@ -802,7 +802,7 @@ namespace Seasons
 
                 // Method is called in Winter when player is wet and environment is cold
                 HitData.DamageModifier modifier = mods.GetModifier(HitData.DamageType.Frost);
-                if (modifier == HitData.DamageModifier.Resistant || modifier == HitData.DamageModifier.VeryResistant)
+                if (modifier == HitData.DamageModifier.Resistant || modifier == HitData.DamageModifier.VeryResistant || modifier == HitData.DamageModifier.SlightlyResistant)
                     mods.m_frost = HitData.DamageModifier.Normal;
             }
         }
