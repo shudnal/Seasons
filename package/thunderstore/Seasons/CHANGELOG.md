@@ -1,3 +1,6 @@
+# 1.6.8
+* night length will be changed gradually between seasons
+
 # 1.6.7
 * Call To Arms patch
 * fixed potential weather desync bringed in version 1.6.5

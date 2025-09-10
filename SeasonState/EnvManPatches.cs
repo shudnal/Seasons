@@ -135,7 +135,7 @@ namespace Seasons
             [HarmonyPriority(Priority.First)]
             public static bool Prefix(EnvMan __instance, int day, ref double __result)
             {
-                __result = (day * __instance.m_dayLengthSec) + (double)(__instance.m_dayLengthSec * seasonState.DayStartFraction(seasonState.GetSeason(day)));
+                __result = (day * __instance.m_dayLengthSec) + (double)(__instance.m_dayLengthSec * seasonState.DayStartFraction(seasonState.GetSeason(day), seasonState.GetDayInSeason(day)));
                 return false;
             }
         }

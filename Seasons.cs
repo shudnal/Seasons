@@ -24,7 +24,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.6.7";
+        public const string pluginVersion = "1.6.8";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -80,6 +80,7 @@ namespace Seasons
         public static ConfigEntry<bool> shieldGeneratorOnlyWinter;
         public static ConfigEntry<bool> fireHeatProtectsFromPerish;
         public static ConfigEntry<bool> gettingWetInWinterCausesCold;
+        public static ConfigEntry<bool> changeNightLengthGradually;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -322,13 +323,13 @@ namespace Seasons
             cropsDiesAfterSetDayInWinter = config("Season", "Crops will die after set day in winter", defaultValue: 3, "Crops and pickables will perish after set day in winter");
             fireHeatProtectsFromPerish = config("Season", "Crops will survive if protected by fire", defaultValue: true, "Crops and pickables will not perish in winter if there are fire source nearby");
             cropsToSurviveInWinter = config("Season", "Crops will survive in winter", defaultValue: "Pickable_Carrot,Pickable_Barley,Pickable_Barley_Wild,Pickable_Flax,Pickable_Flax_Wild,Pickable_Thistle,Pickable_Mushroom_Magecap",
-                                                                                                new ConfigDescription("Crops and pickables from the list will not perish after set day in winter", 
-                                                                                                null, 
+                                                                                                new ConfigDescription("Crops and pickables from the list will not perish after set day in winter",
+                                                                                                null,
                                                                                                 new CustomConfigs.ConfigurationManagerAttributes { CustomDrawer = CustomConfigs.DrawSeparatedStrings(",") }));
             cropsToControlGrowth = config("Season", "Crops to control growth", defaultValue: "Pickable_Barley,Pickable_Barley_Wild,Pickable_Dandelion,Pickable_Flax,Pickable_Flax_Wild,Pickable_SeedCarrot,Pickable_SeedOnion,Pickable_SeedTurnip,Pickable_Thistle,Pickable_Turnip",
                                                                                             new ConfigDescription("All consumable crops will be added automatically. Set only unconsumable crops here." +
-                                                                                            "Crops and pickables from the list will be controlled by growth multiplier in addition to consumable crops", 
-                                                                                            null, 
+                                                                                            "Crops and pickables from the list will be controlled by growth multiplier in addition to consumable crops",
+                                                                                            null,
                                                                                             new CustomConfigs.ConfigurationManagerAttributes { CustomDrawer = CustomConfigs.DrawSeparatedStrings(",") }));
 
 
@@ -344,6 +345,8 @@ namespace Seasons
             shieldGeneratorOnlyWinter = config("Season", "Shield generator protects from Winter only", defaultValue: true, "If enabled - objects inside shield generator dome will be protected from Winter only. If disabled - protection will work through all seasons.");
             gettingWetInWinterCausesCold = config("Season", "Getting Wet in winter causes Cold", defaultValue: true, "If you get Wet status during winter you will get Cold status," +
                                                                                                                      "\nunless you have frost resistance mead or you are near a fire or in shelter");
+            changeNightLengthGradually = config("Season", "Change night length gradually", defaultValue: true, "If enabled - night length from seasonal settings will peak at mid season and gradually change to the next season." + 
+                                                                                                             "\nIf disabled - it will be fixed value for any day of a season.");
 
             seasonalStatsOutdoorsOnly.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
             cropsToSurviveInWinter.SettingChanged += (sender, args) => FillListsToControl();

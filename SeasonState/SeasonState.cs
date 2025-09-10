@@ -249,12 +249,50 @@ namespace Seasons
 
         public int GetNightLength()
         {
-            return GetNightLength(GetSeason(GetCurrentWorldDay()));
+            int day = GetCurrentWorldDay();
+            return GetNightLength(GetSeason(day), GetDayInSeason(day));
         }
 
-        public int GetNightLength(Season season)
+        public int GetNightLength(Season season, int dayInSeason)
         {
-            return GetSeasonSettings(season).m_nightLength;
+            int currentNightLength = GetSeasonSettings(season).m_nightLength;
+            if (!changeNightLengthGradually.Value)
+                return currentNightLength;
+
+            int daysInSeason = GetDaysInSeason(season);
+            
+            float currentPeakDay = daysInSeason / 2f;
+            int lastPeakDay = Mathf.CeilToInt(currentPeakDay);
+            int firstPeakDay = Mathf.FloorToInt(currentPeakDay);
+
+            if (dayInSeason == firstPeakDay || dayInSeason == lastPeakDay)
+                return currentNightLength;
+            else if (dayInSeason < firstPeakDay)
+            {
+                Season previous = GetPreviousSeason(season);
+                int daysInPreviousSeason = GetDaysInSeason(season);
+
+                lastPeakDay = Mathf.CeilToInt(daysInPreviousSeason / 2f);
+                int daysInPrevious = daysInPreviousSeason - lastPeakDay;
+
+                int previousNightLength = GetSeasonSettings(previous).m_nightLength;
+
+                return Mathf.RoundToInt(Mathf.Lerp(previousNightLength, currentNightLength, (float)(dayInSeason + daysInPrevious) / (firstPeakDay + daysInPrevious)));
+            }
+            else if (dayInSeason > lastPeakDay)
+            {
+                Season next = GetNextSeason(season);
+                int daysInNextSeason = GetDaysInSeason(next);
+                
+                firstPeakDay = Mathf.FloorToInt(daysInNextSeason / 2f);
+                int daysLeft = daysInSeason - lastPeakDay;
+
+                int nextNightLength = GetSeasonSettings(next).m_nightLength;
+
+                return Mathf.RoundToInt(Mathf.Lerp(currentNightLength, nextNightLength, (float)(dayInSeason - lastPeakDay) / (firstPeakDay + daysLeft)));
+            }
+
+            return currentNightLength;
         }
 
         public static void ClearBiomesDefault() => biomesDefault.Clear();
@@ -702,12 +740,13 @@ namespace Seasons
 
         public float DayStartFraction()
         {
-            return DayStartFraction(GetSeason(GetCurrentWorldDay()));
+            int day = GetCurrentWorldDay();
+            return DayStartFraction(GetSeason(day), GetDayInSeason(day));
         }
 
-        public float DayStartFraction(Season season)
+        public float DayStartFraction(Season season, int dayInSeason)
         {
-            return (seasonState.GetNightLength(season) / 2f) / 100f;
+            return (seasonState.GetNightLength(season, dayInSeason) / 2f) / 100f;
         }
 
         public bool GetTorchAsFiresource()
