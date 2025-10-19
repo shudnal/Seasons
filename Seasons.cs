@@ -24,7 +24,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.6.8";
+        public const string pluginVersion = "1.6.9";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -261,12 +261,8 @@ namespace Seasons
 
         private void FixedUpdate()
         {
-            Player player = Player.m_localPlayer;
-            if (player == null)
-                return;
-
-            if (!player.GetSEMan().HaveStatusEffect(statusEffectSeasonHash))
-                player.GetSEMan().AddStatusEffect(statusEffectSeasonHash);
+            if (Player.m_localPlayer is Player player && player.GetSEMan() is SEMan seman && !seman.HaveStatusEffect(statusEffectSeasonHash) && player.IsOwner() && !player.IsDead())
+                seman.AddStatusEffect(statusEffectSeasonHash);
         }
 
         private void OnDestroy()

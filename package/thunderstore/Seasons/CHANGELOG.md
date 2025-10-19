@@ -1,3 +1,7 @@
+# 1.6.9
+* fixed rare occasional error when ESP looks on some MWL locations
+* fixed rare occasional error if local player has no netView component initialized
+
 # 1.6.8
 * night length will be changed gradually between seasons
 

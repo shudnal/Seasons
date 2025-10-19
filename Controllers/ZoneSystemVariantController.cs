@@ -1608,7 +1608,7 @@ namespace Seasons
             __result = false;
             for (int i = 0; i < num; i++)
             {
-                if (Instance.rayHits[i].collider.name == _iceSurfaceName)
+                if (Instance.rayHits[i].collider != null && Instance.rayHits[i].collider.name == _iceSurfaceName)
                     continue;
                 
                 __result = true;
