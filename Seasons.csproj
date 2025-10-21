@@ -204,6 +204,7 @@
     <EmbeddedResource Include="Assets\Textures\oak_leaf\Winter_3.png" />
   </ItemGroup>
   <ItemGroup>
+    <None Include=".editorconfig" />
     <None Include="ILRepack.targets" />
   </ItemGroup>
   <ItemGroup>

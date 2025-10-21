@@ -1,3 +1,10 @@
+# 1.6.10
+* better compatibility with worlds stretched by EWS
+* some new modifiers available in custom seasonal stats (for stamina, swim, adrenaline and stagger)
+* fixed Custom music
+* custom music tracks will now properly update its properties on json file change
+* fixed \"remove\" part of seasonal biome environments JSON file
+
 # 1.6.9
 * fixed rare occasional error when ESP looks on some MWL locations
 * fixed rare occasional error if local player has no netView component initialized

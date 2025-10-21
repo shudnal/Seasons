@@ -701,7 +701,7 @@ namespace Seasons
             int floes = 0; int zones = 0;
             foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values)
             {
-                if (IsValidIceFloe(zdo))
+                if (zdo.GetPrefab() == _iceFloePrefab && zdo.GetBool(s_iceFloeWatermark))
                 {
                     RemoveObject(zdo, true);
                     floes++;
@@ -715,8 +715,6 @@ namespace Seasons
             }
 
             LogFloeState($"Removed overworld floes:{floes}, Zones refreshed:{zones}");
-
-            static bool IsValidIceFloe(ZDO zdo) => zdo.GetPrefab() == _iceFloePrefab && (!WorldGenerator.IsDeepnorth(zdo.GetPosition().x, zdo.GetPosition().z) || zdo.GetBool(s_iceFloeWatermark)); // TODO: Remove IsDeepnorth check to prevent other floes from removing
         }
 
         public bool CheckWaterVolumeForIceFloes(WaterVolume waterVolume)

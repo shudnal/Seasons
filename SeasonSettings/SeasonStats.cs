@@ -16,25 +16,25 @@ namespace Seasons
             [Header("__SE_Stats__")]
             [Header("HP per tick")]
             public float m_tickInterval;
-
             public float m_healthPerTickMinHealthPercentage;
-
             public float m_healthPerTick;
-
             public string m_healthHitType = "";
             
             [Header("Stamina")]
-            public float m_staminaDrainPerSec;
-
             public float m_runStaminaDrainModifier;
-
             public float m_jumpStaminaUseModifier;
+            public float m_attackStaminaUseModifier;
+            public float m_blockStaminaUseModifier;
+            public float m_blockStaminaUseFlatValue;
+            public float m_dodgeStaminaUseModifier;
+            public float m_swimStaminaUseModifier;
+            public float m_homeItemStaminaUseModifier;
+            public float m_sneakStaminaUseModifier;
+            public float m_runStaminaUseModifier;
 
             [Header("Regen modifiers")]
             public float m_healthRegenMultiplier = 1f;
-
             public float m_staminaRegenMultiplier = 1f;
-
             public float m_eitrRegenMultiplier = 1f;
 
             [Header("Skills modifiers")]
@@ -47,7 +47,6 @@ namespace Seasons
 
             [Header("Sneak")]
             public float m_noiseModifier;
-
             public float m_stealthModifier;
 
             [Header("Carry weight")]
@@ -55,11 +54,19 @@ namespace Seasons
 
             [Header("Speed")]
             public float m_speedModifier;
+            public float m_swimSpeedModifier;
 
             [Header("Fall")]
             public float m_maxMaxFallSpeed;
 
             public float m_fallDamageModifier;
+
+            [Header("Adrenaline")]
+            public float m_adrenalineModifier;
+
+            [Header("Stagger")]
+            public float m_staggerModifier;
+            public float m_timedBlockBonus;
 
             public void SetStatusEffectStats(SE_Season statusEffect)
             {

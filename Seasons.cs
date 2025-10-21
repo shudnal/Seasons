@@ -24,7 +24,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.6.9";
+        public const string pluginVersion = "1.6.10";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -697,22 +697,24 @@ namespace Seasons
 
         public static bool IsIgnoredPosition(Vector3 position)
         {
-            if (position.y > 3000f)
+            if (Character.InInterior(position))
                 return true;
 
             if (WorldGenerator.instance == null)
                 return true;
 
-            Vector2 pos = new Vector2(position.x, position.z);
+            Vector2 pos = new(position.x, position.z);
             if (_cachedIgnoredPositions.TryGetValue(pos, out bool ignored))
                 return ignored;
 
             if (_cachedIgnoredPositions.Count > 15000)
                 InvalidatePositionsCache();
 
-            ignored = WorldGenerator.IsAshlands(position.x, position.z) || 
-                      WorldGenerator.IsDeepnorth(position.x, position.z) || 
-                      WorldGenerator.instance.GetBaseHeight(position.x, position.z, menuTerrain: false) > WorldGenerator.mountainBaseHeightMin + 0.05f;
+            Heightmap.Biome biome = WorldGenerator.instance.GetBiome(position);
+
+            ignored = biome == Heightmap.Biome.AshLands || 
+                      biome == Heightmap.Biome.DeepNorth ||
+                      biome == Heightmap.Biome.Mountain && WorldGenerator.instance.GetBaseHeight(position.x, position.z, menuTerrain: false) > WorldGenerator.mountainBaseHeightMin + 0.05f;
             
             _cachedIgnoredPositions[pos] = ignored;
             return ignored;

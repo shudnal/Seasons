@@ -1,6 +1,6 @@
 ﻿
-using HarmonyLib;
 using BepInEx;
+using HarmonyLib;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -61,6 +61,24 @@ namespace Seasons
 
             foreach (KeyValuePair<string, AudioClip> clip in audioClips)
                 (MusicMan.instance.m_music.Find(music => music.m_name == clip.Key) ?? GetNewMusic(clip.Key)).m_clips = new AudioClip[1] { clip.Value };
+
+            MusicMan.instance.m_musicHashes.Clear();
+            foreach (MusicMan.NamedMusic music in MusicMan.instance.m_music)
+            {
+                if (clipSettings.TryGetValue(music.m_name, out MusicSettings musicSettings))
+                {
+                    music.m_ambientMusic = musicSettings.m_ambientMusic;
+                    music.m_resume = musicSettings.m_resume;
+                    music.m_alwaysFadeout = musicSettings.m_alwaysFadeout;
+                    music.m_enabled = musicSettings.m_enabled;
+                    music.m_fadeInTime = musicSettings.m_fadeInTime;
+                    music.m_loop = musicSettings.m_loop;
+                    music.m_volume = musicSettings.m_volume;
+                }
+
+                if (music.m_enabled && music.m_clips.Length != 0 && music.m_clips[0] != null)
+                    MusicMan.instance.m_musicHashes.Add(music.m_name.GetStableHashCode(), music);
+            }
         }
 
         private static MusicMan.NamedMusic GetNewMusic(string name)
@@ -80,7 +98,7 @@ namespace Seasons
             };
             
             MusicMan.instance.m_music.Add(music);
-            
+
             return music;
         }
 

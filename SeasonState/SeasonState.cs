@@ -350,7 +350,7 @@ namespace Seasons
                             biomeEnvironment.m_environments.Add(add.m_environment);
 
                     foreach (SeasonBiomeEnvironments.SeasonBiomeEnvironment.EnvironmentRemove remove in biomeEnv.remove)
-                        biomeEnvironment.m_environments.DoIf(env => biomeEnvironment.m_name == remove.m_name && env.m_environment == remove.m_environment, env => biomeEnvironment.m_environments.Remove(env));
+                        biomeEnvironment.m_environments.RemoveAll(env => biomeEnvironment.m_name == remove.m_name && env.m_environment == remove.m_environment);
 
                     EnvMan.instance.AppendBiomeSetup(biomeEnvironment);
                 }
