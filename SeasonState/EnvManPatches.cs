@@ -151,7 +151,7 @@ namespace Seasons
                     return true;
 
                 double timeSeconds = ZNet.instance.GetTimeSeconds();
-                double startOfMorning = timeSeconds - timeSeconds % __instance.m_dayLengthSec + __instance.m_dayLengthSec * dayStart;
+                double startOfMorning = timeSeconds - __instance.m_dayLengthSec * dayStart;
 
                 int day = __instance.GetDay(startOfMorning);
                 double morningStartSec = __instance.GetMorningStartSec(day + 1);

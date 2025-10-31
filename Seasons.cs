@@ -3,11 +3,13 @@ using BepInEx.Configuration;
 using HarmonyLib;
 using UnityEngine;
 using ServerSync;
+using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
-using System;
-using System.IO;
+using UnityEngine;
 using UnityEngine.Rendering;
 using static Terminal;
 using System.Collections;
@@ -146,9 +148,9 @@ namespace Seasons
         public static Sprite iconFall;
         public static Sprite iconWinter;
 
-        public static Texture2D Minimap_Summer_ForestTex = new Texture2D(512, 512, TextureFormat.RGBA32, false);
-        public static Texture2D Minimap_Fall_ForestTex = new Texture2D(512, 512, TextureFormat.RGBA32, false);
-        public static Texture2D Minimap_Winter_ForestTex = new Texture2D(512, 512, TextureFormat.RGBA32, false);
+        public static Texture2D Minimap_Summer_ForestTex;
+        public static Texture2D Minimap_Fall_ForestTex;
+        public static Texture2D Minimap_Winter_ForestTex;
 
         public static string configDirectory;
         public static string cacheDirectory;
@@ -256,6 +258,7 @@ namespace Seasons
 
             Game.isModded = true;
 
+            if (UseTextureControllers())
             LoadIcons();
 
             seasonState = new SeasonState();
@@ -269,8 +272,6 @@ namespace Seasons
 
         private void OnDestroy()
         {
-            Config.Save();
-            instance = null;
             harmony?.UnpatchSelf();
         }
 
@@ -506,14 +507,17 @@ namespace Seasons
             LoadIcon("season_fall.png",     ref iconFall);
             LoadIcon("season_winter.png",   ref iconWinter);
 
+            Minimap_Summer_ForestTex = new Texture2D(512, 512, TextureFormat.RGBA32, false);
             LoadTexture("Minimap_Summer_ForestTex.png", ref Minimap_Summer_ForestTex);
             Minimap_Summer_ForestTex.wrapMode = TextureWrapMode.Repeat;
             Minimap_Summer_ForestTex.filterMode = FilterMode.Bilinear;
 
+            Minimap_Fall_ForestTex = new Texture2D(512, 512, TextureFormat.RGBA32, false);
             LoadTexture("Minimap_Fall_ForestTex.png", ref Minimap_Fall_ForestTex);
             Minimap_Fall_ForestTex.wrapMode = TextureWrapMode.Repeat;
             Minimap_Fall_ForestTex.filterMode = FilterMode.Bilinear;
 
+            Minimap_Winter_ForestTex = new Texture2D(512, 512, TextureFormat.RGBA32, false);
             LoadTexture("Minimap_Winter_ForestTex.png", ref Minimap_Winter_ForestTex);
             Minimap_Winter_ForestTex.wrapMode = TextureWrapMode.Repeat;
             Minimap_Winter_ForestTex.filterMode = FilterMode.Bilinear;
