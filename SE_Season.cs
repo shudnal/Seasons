@@ -39,7 +39,8 @@ namespace Seasons
                 Hud.instance.m_statusEffectTemplate.Find("TimeText").GetComponent<TMP_Text>().richText = true;
             
             m_season = seasonState.GetCurrentSeason();
-            m_indoors = m_character != null && m_character == Player.m_localPlayer && m_character.InInterior();
+            if (m_indoors != (m_indoors = m_character != null && m_character == Player.m_localPlayer && m_character.InInterior()))
+                seasonState.OnInteriorChanged(m_indoors);
 
             UpdateSeasonStatusEffect();
 

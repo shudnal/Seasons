@@ -153,6 +153,12 @@ namespace Seasons
                 UpdateTorchesFireWarmth();
         }
 
+        public void OnInteriorChanged(bool inInterior)
+        {
+            if (disableTorchWarmthInInterior.Value)
+                UpdateTorchesFireWarmth();
+        }
+
         private World GetCurrentWorld()
         {
             return ZNet.m_world ?? (WorldGenerator.instance?.m_world);
@@ -1222,7 +1228,20 @@ namespace Seasons
             if (component == null)
                 return;
 
-            component.m_type = seasonState.GetTorchAsFiresource() && (!Player.m_localPlayer || TorchHeatInBiome(Player.m_localPlayer.GetCurrentBiome())) ? EffectArea.Type.Heat | EffectArea.Type.Fire : EffectArea.Type.Fire;
+            bool heatEnabled =
+                seasonState.GetTorchAsFiresource() &&
+                (
+                    !Player.m_localPlayer ||
+                    (
+                        TorchHeatInBiome(Player.m_localPlayer.GetCurrentBiome()) &&
+                        (
+                            !disableTorchWarmthInInterior.Value ||
+                            !Player.m_localPlayer.InInterior()
+                        )
+                    )
+                );
+
+            component.m_type = heatEnabled ? EffectArea.Type.Heat | EffectArea.Type.Fire : EffectArea.Type.Fire;
             component.m_isHeatType = component.m_type.HasFlag(EffectArea.Type.Heat);
 
             ItemDrop item = prefab.GetComponent<ItemDrop>();

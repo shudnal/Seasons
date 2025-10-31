@@ -83,6 +83,7 @@ namespace Seasons
         public static ConfigEntry<bool> fireHeatProtectsFromPerish;
         public static ConfigEntry<bool> gettingWetInWinterCausesCold;
         public static ConfigEntry<bool> changeNightLengthGradually;
+        public static ConfigEntry<bool> disableTorchWarmthInInterior;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -346,6 +347,7 @@ namespace Seasons
                                                                                                                      "\nunless you have frost resistance mead or you are near a fire or in shelter");
             changeNightLengthGradually = config("Season", "Change night length gradually", defaultValue: true, "If enabled - night length from seasonal settings will peak at mid season and gradually change to the next season." + 
                                                                                                              "\nIf disabled - it will be fixed value for any day of a season.");
+            disableTorchWarmthInInterior = config("Season", "Disable torch warmth in dungeons in winter", defaultValue: true, "If enabled - torch will not provide heat .");
 
             seasonalStatsOutdoorsOnly.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
             cropsToSurviveInWinter.SettingChanged += (sender, args) => FillListsToControl();
