@@ -233,6 +233,8 @@ namespace Seasons
 
             Compatibility.EpicLootCompat.CheckForCompatibility();
             Compatibility.MarketplaceCompat.CheckForCompatibility();
+            Compatibility.EWDCompat.CheckForCompatibility();
+            Compatibility.HoneyPlusCompat.CheckForCompatibility();
 
             harmony.PatchAll();
 

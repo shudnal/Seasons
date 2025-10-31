@@ -543,6 +543,12 @@ namespace Seasons
                 yield return CheckIfShipBelowSurface(ship);
         }
 
+        public static IEnumerator CheckSingleFishPosition(Fish fish)
+        {
+            yield return waitForFixedUpdate;
+            CheckIfFishAboveSurface(fish);
+        }
+
         public static bool IsUnderwaterAI(Character character, out BaseAI ai)
         {
             return character.TryGetComponent(out ai) && (ai.m_pathAgentType == Pathfinding.AgentType.Fish || ai.m_pathAgentType == Pathfinding.AgentType.BigFish);
@@ -620,7 +626,7 @@ namespace Seasons
             if (fish.m_nview.HasOwner() && !fish.m_nview.IsOwner())
                 return;
 
-            float maximumLevel = WaterLevel - _winterWaterSurfaceOffset - fish.m_height - 0.5f;
+            float maximumLevel = WaterLevel - _winterWaterSurfaceOffset - fish.m_height - 1.5f;
             if (fish.transform.position.y > maximumLevel)
             {
                 fish.transform.position = new Vector3(fish.transform.position.x, maximumLevel, fish.transform.position.z);
@@ -1396,8 +1402,9 @@ namespace Seasons
                     frozenOcean.m_name = frozenOceanMusic;
                     frozenOcean.m_ambientMusic = true;
                     frozenOcean.m_loop = Settings.ContinousMusic;
-                    frozenOcean.m_volume = 0.1f;
+                    frozenOcean.m_volume = 0.2f;
                     frozenOcean.m_fadeInTime = 10f;
+
                     __instance.m_music.Add(frozenOcean);
                 }
             }
@@ -1514,21 +1521,21 @@ namespace Seasons
     [HarmonyPatch(typeof(Fish), nameof(Fish.ConsiderJump))]
     public static class Fish_ConsiderJump_FrozenOceanFishNoJumps
     {
-        private static void Prefix(ref float ___m_jumpChance, ref float __state)
+        private static void Prefix(ref float ___m_JumpHeightStrength, ref float __state)
         {
             if (!IsWaterSurfaceFrozen())
                 return;
 
-            __state = ___m_jumpChance;
-            ___m_jumpChance = 0f;
+            __state = ___m_JumpHeightStrength;
+            ___m_JumpHeightStrength = 0f;
         }
 
-        private static void Postfix(ref float ___m_jumpChance, float __state)
+        private static void Postfix(ref float ___m_JumpHeightStrength, float __state)
         {
             if (!IsWaterSurfaceFrozen())
                 return;
 
-            ___m_jumpChance = __state;
+            ___m_JumpHeightStrength = __state;
         }
     }
 
@@ -1561,7 +1568,21 @@ namespace Seasons
             if (!IsWaterSurfaceFrozen())
                 return;
 
-            CheckIfFishAboveSurface(__instance);
+            Instance?.StartCoroutine(CheckSingleFishPosition(__instance));
+        }
+    }
+
+    [HarmonyPatch(typeof(Fish), nameof(Fish.SetVisible))]
+    public static class Fish_SetVisible_CheckPositionIfBecameVisible
+    {
+        private static void Prefix(Fish __instance, ref bool __state) => __state = __instance.m_lodVisible;
+
+        private static void Postfix(Fish __instance, bool __state)
+        {
+            if (!IsWaterSurfaceFrozen() || __instance.m_lodGroup == null || __state == __instance.m_lodVisible || !__instance.m_lodVisible)
+                return;
+
+            Instance?.StartCoroutine(CheckSingleFishPosition(__instance));
         }
     }
 
