@@ -95,6 +95,7 @@ namespace Seasons
         public static ConfigEntry<bool> placeShipAboveFrozenOcean;
         public static ConfigEntry<bool> placeFloatingContainersAboveFrozenOcean;
         public static ConfigEntry<Vector2> iceFloesScale;
+        public static ConfigEntry<float> iceFloesHealth;
 
         public static ConfigEntry<float> grassDefaultPatchSize;
         public static ConfigEntry<float> grassDefaultAmountScale;
@@ -412,6 +413,7 @@ namespace Seasons
             iceFloesInWinterDays = config("Season - Winter ocean", "Fill the water with ice floes at given days from to", defaultValue: new Vector2(4f, 10f), "Ice floes will be spawned in the first set day of winter and will be removed after second set day");
             amountOfIceFloesInWinterDays = config("Season - Winter ocean", "Amount of ice floes in one zone", defaultValue: new Vector2(10f, 20f), "Game will take random value between set numbers and will try to spawn that amount of ice floes in one zone (square 64x64)");
             iceFloesScale = config("Season - Winter ocean", "Scale of ice floes", defaultValue: new Vector2(0.75f, 2f), "Size of spawned ice floe random to XYZ axes");
+            iceFloesHealth = config("Season - Winter ocean", "Health of ice floes", defaultValue: 20f, "Health of ice floe of average size. Health changes proportionally the volume of an ice floe.");
             enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
             frozenOceanSlipperiness = config("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1f, "Slipperiness factor of the frozen ocean surface");
             placeShipAboveFrozenOcean = config("Season - Winter ocean", "Place ship above frozen ocean surface", defaultValue: false, "Place ship above frozen ocean surface to move them without destroying");

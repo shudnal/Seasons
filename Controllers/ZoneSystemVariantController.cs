@@ -848,9 +848,12 @@ namespace Seasons
 
                 netView.SetLocalScale(new Vector3(scaleX, scaleY, scaleZ));
 
+                float health = iceFloesHealth.Value * scaleX * scaleY * scaleZ;
+
                 ZDO zdo = netView.GetZDO();
                 zdo.Set(s_iceFloeWatermark, true);
                 zdo.Set(s_iceFloeMass, netView.m_body.mass * PowSquash(Mathf.Sqrt(Mathf.Abs(scaleX * scaleY * scaleZ)), 0.6f));
+                zdo.Set(ZDOVars.s_health, health + Game.m_worldLevel * health * Game.instance.m_worldLevelMineHPMultiplier);
 
                 if (mode == ZoneSystem.SpawnMode.Ghost)
                     spawnedObjects.Add(gameObject);
