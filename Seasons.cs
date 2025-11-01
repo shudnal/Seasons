@@ -1,7 +1,6 @@
 ﻿using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
-using UnityEngine;
 using ServerSync;
 using System;
 using System.Collections;
@@ -12,7 +11,6 @@ using System.Reflection;
 using UnityEngine;
 using UnityEngine.Rendering;
 using static Terminal;
-using System.Collections;
 
 namespace Seasons
 {
@@ -84,6 +82,10 @@ namespace Seasons
         public static ConfigEntry<bool> gettingWetInWinterCausesCold;
         public static ConfigEntry<bool> changeNightLengthGradually;
         public static ConfigEntry<bool> disableTorchWarmthInInterior;
+        public static ConfigEntry<bool> summerHeatAddsExtraWarmCloth;
+        public static ConfigEntry<bool> gettingWetInMountainsCausesCold;
+        public static ConfigEntry<bool> wearing2WarmPiecesPreventsWetCold;
+        public static ConfigEntry<bool> mountainInWinterRequires2WarmPieces;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -348,7 +350,14 @@ namespace Seasons
                                                                                                                      "\nunless you have frost resistance mead or you are near a fire or in shelter");
             changeNightLengthGradually = config("Season", "Change night length gradually", defaultValue: true, "If enabled - night length from seasonal settings will peak at mid season and gradually change to the next season." + 
                                                                                                              "\nIf disabled - it will be fixed value for any day of a season.");
-            disableTorchWarmthInInterior = config("Season", "Disable torch warmth in dungeons in winter", defaultValue: true, "If enabled - torch will not provide heat .");
+            disableTorchWarmthInInterior = config("Season", "Disable torch warmth in dungeons in winter", defaultValue: true, "If enabled - torch will not provide heat in dungeons.");
+            summerHeatAddsExtraWarmCloth = config("Season", "Wearing warm armor piece in summer always causes Warm debuff", defaultValue: false, "If enabled - any frost-resistant armor piece will cause Warm debuff.");
+            gettingWetInMountainsCausesCold = config("Season", "Getting Wet in Mountains causes Cold", defaultValue: true, "If you get Wet status in Mountains in dungeon you will get Cold status in all seasons," +
+                                                                                                                        "\nunless you have frost resistance mead or you are near a fire or in shelter");
+            wearing2WarmPiecesPreventsWetCold = config("Season", "Wearing 2 warm armor pieces prevents Cold caused by Wet", defaultValue: true, "If you get Wet status in Mountains or in Winter you will not get Cold status caused by" +
+                "\nGetting Wet in winter causes Cold or Getting Wet in Mountains causes Cold configs");
+            mountainInWinterRequires2WarmPieces = config("Season", "Mountains in Winter require 2 warm armor pieces", defaultValue: true, "If enabled - you have to wear 2 armor pieces with frost resistance in Winter or get frost resistance mead.");
+
 
             seasonalStatsOutdoorsOnly.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
             cropsToSurviveInWinter.SettingChanged += (sender, args) => FillListsToControl();
@@ -357,6 +366,7 @@ namespace Seasons
             meatListToControlDrop.SettingChanged += (sender, args) => FillListsToControl();
             disableBloomInWinter.SettingChanged += (sender, args) => seasonState.UpdateWinterBloomEffect();
             reduceSnowStormInWinter.SettingChanged += (sender, args) => ZoneSystemVariantController.SnowStormReduceParticlesChanged();
+            summerHeatAddsExtraWarmCloth.SettingChanged += (sender, args) => seasonState.CheckOverheatStatus(Player.m_localPlayer);
 
             shieldGeneratorProtection.SettingChanged += (sender, args) => PrefabVariantController.UpdateShieldStateAfterConfigChange();
             shieldGeneratorOnlyWinter.SettingChanged += (sender, args) => PrefabVariantController.UpdateShieldStateAfterConfigChange();
@@ -413,7 +423,7 @@ namespace Seasons
             iceFloesInWinterDays = config("Season - Winter ocean", "Fill the water with ice floes at given days from to", defaultValue: new Vector2(4f, 10f), "Ice floes will be spawned in the first set day of winter and will be removed after second set day");
             amountOfIceFloesInWinterDays = config("Season - Winter ocean", "Amount of ice floes in one zone", defaultValue: new Vector2(10f, 20f), "Game will take random value between set numbers and will try to spawn that amount of ice floes in one zone (square 64x64)");
             iceFloesScale = config("Season - Winter ocean", "Scale of ice floes", defaultValue: new Vector2(0.75f, 2f), "Size of spawned ice floe random to XYZ axes");
-            iceFloesHealth = config("Season - Winter ocean", "Health of ice floes", defaultValue: 20f, "Health of ice floe of average size. Health changes proportionally the volume of an ice floe.");
+            iceFloesHealth = config("Season - Winter ocean", "Health of ice floes", defaultValue: 20f, "Health of ice floe of average size. Health changes proportionally the volume of an ice floe. Floes respawn is required to apply changes.");
             enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
             frozenOceanSlipperiness = config("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1f, "Slipperiness factor of the frozen ocean surface");
             placeShipAboveFrozenOcean = config("Season - Winter ocean", "Place ship above frozen ocean surface", defaultValue: false, "Place ship above frozen ocean surface to move them without destroying");

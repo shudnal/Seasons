@@ -778,32 +778,56 @@ namespace Seasons
         [HarmonyPatch(typeof(Player), nameof(Player.UpdateEnvStatusEffects))]
         public static class Player_UpdateEnvStatusEffects_ColdStatus
         {
-            public static bool isCalled = false;
+            public static bool removeFrostResistanceFromArmor = false;
+            
+            private static int warmPieces;
+            private static int GetWarmClothesCountCached(Player player) => warmPieces == -1 ? warmPieces = SeasonState.GetWarmClothesCount(player) : warmPieces;
+            private static void ClearWarmClothesCache() => warmPieces = -1;
 
             private static void Prefix(Player __instance)
             {
-                isCalled = gettingWetInWinterCausesCold.Value && seasonState.GetCurrentSeason() == Season.Winter && EnvMan.IsCold() && __instance.GetSEMan().HaveStatusEffect(SEMan.s_statusEffectWet);
+                ClearWarmClothesCache();
+
+                if (__instance.GetCurrentBiome() == Heightmap.Biome.Mountain ? gettingWetInMountainsCausesCold.Value : gettingWetInWinterCausesCold.Value && seasonState.GetCurrentSeason() == Season.Winter)
+                {
+                    bool isWetInColdEnv = EnvMan.IsCold() && __instance.GetSEMan().HaveStatusEffect(SEMan.s_statusEffectWet);
+
+                    bool isProtectedFromCold = wearing2WarmPiecesPreventsWetCold.Value && GetWarmClothesCountCached(__instance) > 1;
+
+                    removeFrostResistanceFromArmor = isWetInColdEnv && (!isProtectedFromCold || __instance.IsSwimming());
+                }
+
+                if (mountainInWinterRequires2WarmPieces.Value && __instance.GetCurrentBiome() == Heightmap.Biome.Mountain && seasonState.GetCurrentSeason() == Season.Winter && GetWarmClothesCountCached(__instance) < 2)
+                    removeFrostResistanceFromArmor = true;
             }
 
             private static void Postfix()
             {
-                isCalled = false;
+                removeFrostResistanceFromArmor = false;
             }
         }
 
         [HarmonyPatch(typeof(Player), nameof(Player.ApplyArmorDamageMods))]
         public static class Player_ApplyArmorDamageMods_ColdStatusWhenWet
         {
-            [HarmonyPriority(Priority.Last)]
-            private static void Postfix(ref HitData.DamageModifiers mods)
+            public static bool IsFrostResistant(HitData.DamageModifiers mods)
             {
-                if (!Player_UpdateEnvStatusEffects_ColdStatus.isCalled)
-                    return;
-
-                // Method is called in Winter when player is wet and environment is cold
                 HitData.DamageModifier modifier = mods.GetModifier(HitData.DamageType.Frost);
-                if (modifier == HitData.DamageModifier.Resistant || modifier == HitData.DamageModifier.VeryResistant || modifier == HitData.DamageModifier.SlightlyResistant)
+                return modifier == HitData.DamageModifier.Resistant || modifier == HitData.DamageModifier.VeryResistant || modifier == HitData.DamageModifier.SlightlyResistant;
+            }
+
+            private static void Prefix(HitData.DamageModifiers mods, ref bool __state) => __state = IsFrostResistant(mods); // Check for innate frost resistance
+
+            [HarmonyPriority(Priority.Last)]
+            private static void Postfix(ref HitData.DamageModifiers mods, bool __state)
+            {
+                if (!__state && Player_UpdateEnvStatusEffects_ColdStatus.removeFrostResistanceFromArmor && IsFrostResistant(mods))
                     mods.m_frost = HitData.DamageModifier.Normal;
+
+                // This is called if player is not innately frost resistant and:
+                // - when player is wet and environment is cold in Winter
+                // - when player is wet and in Mountains
+                // - when player is in Mountains in Winter and wears less than 2 clothes
             }
         }
 

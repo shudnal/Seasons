@@ -1,13 +1,13 @@
-﻿using System;
-using static Seasons.Seasons;
+﻿using BepInEx;
 using HarmonyLib;
 using Newtonsoft.Json;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
-using BepInEx;
+using static Seasons.Seasons;
 
 namespace Seasons
 {
@@ -1194,7 +1194,7 @@ namespace Seasons
             if (torch.m_shared.m_itemType != ItemDrop.ItemData.ItemType.Torch)
                 return;
 
-            if (seasonState.GetTorchAsFiresource() && IsActive && (EnvMan.IsWet() || EnvMan.IsCold() || EnvMan.IsFreezing()))
+            if (seasonState.GetTorchAsFiresource() && IsActive && (EnvMan.IsWet() || IsCold()))
                 torch.m_shared.m_durabilityDrain = seasonState.GetTorchDurabilityDrain();
             else
                 torch.m_shared.m_durabilityDrain = 0.0333f;
@@ -1296,7 +1296,7 @@ namespace Seasons
             if (player == null || player.m_isLoading || player.m_nview == null || !player.m_nview.IsValid())
                 return;
 
-            bool getOverheat = seasonState.GetOverheatIn2WarmClothes() && !EnvMan.IsFreezing() && !EnvMan.IsCold() && !player.GetFoods().Any(food => food.m_item.m_shared.m_name == "$item_eyescream");
+            bool getOverheat = seasonState.GetOverheatIn2WarmClothes() && !IsCold() && !player.GetFoods().Any(food => food.m_item.m_shared.m_name == "$item_eyescream");
             bool haveOverheat = player.GetSEMan().HaveStatusEffect(statusEffectOverheatHash);
             if (!getOverheat)
             {
@@ -1305,7 +1305,10 @@ namespace Seasons
             }
             else
             {
-                int warmClothCount = player.GetInventory().GetEquippedItems().Count(itemData => itemData.m_shared.m_damageModifiers.Any(IsFrostResistant));
+                int warmClothCount = GetWarmClothesCount(player);
+                if (summerHeatAddsExtraWarmCloth.Value && player == Player.m_localPlayer && seasonState.GetCurrentSeason() == Season.Summer)
+                    warmClothCount++;
+
                 if (!haveOverheat && warmClothCount > 1)
                     player.GetSEMan().AddStatusEffect(statusEffectOverheatHash);
                 else if (haveOverheat && warmClothCount <= 1)
@@ -1313,11 +1316,21 @@ namespace Seasons
             }
         }
 
+        public static int GetWarmClothesCount(Player player)
+        {
+            if (player == null || player.GetInventory() is not Inventory inventory)
+                return 0;
+
+            return inventory.GetEquippedItems().Count(itemData => itemData.m_shared.m_damageModifiers.Any(IsFrostResistant));
+        }
+
         public static bool IsFrostResistant(HitData.DamageModPair damageMod)
         {
             return damageMod.m_type == HitData.DamageType.Frost &&
                    (damageMod.m_modifier == HitData.DamageModifier.SlightlyResistant || damageMod.m_modifier == HitData.DamageModifier.Resistant || damageMod.m_modifier == HitData.DamageModifier.VeryResistant || damageMod.m_modifier == HitData.DamageModifier.Immune);
         }
+
+        public static bool IsCold() => EnvMan.IsFreezing() || EnvMan.IsCold();
 
         private void SetCurrentSeasonDay(Season season, int day)
         {

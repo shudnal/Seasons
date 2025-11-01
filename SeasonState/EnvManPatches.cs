@@ -170,15 +170,13 @@ namespace Seasons
         [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.FixedUpdate))]
         public static class EnvMan_FixedUpdate_UpdateWarmStatus
         {
-            private static bool IsCold() => EnvMan.IsFreezing() || EnvMan.IsCold();
-
             private static void Prefix(ref bool __state)
             {
-                __state = IsCold();
+                __state = SeasonState.IsCold();
             }
             private static void Postfix(bool __state)
             {
-                if (__state != IsCold())
+                if (__state != SeasonState.IsCold())
                     seasonState.CheckOverheatStatus(Player.m_localPlayer);
             }
         }
@@ -351,7 +349,7 @@ namespace Seasons
                 if (player == null)
                     return;
 
-                __result = __result || player.IsSwimming() && seasonState.GetCurrentSeason() == Season.Winter && EnvMan.IsCold();
+                __result = __result || player.IsSwimming() && seasonState.GetCurrentSeason() == Season.Winter && SeasonState.IsCold();
             }
         }
 
