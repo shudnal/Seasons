@@ -9,7 +9,8 @@ namespace Seasons
 
         public static bool ShouldBePickedInWinter(this Pickable pickable)
         {
-            return !pickable.GetPicked()
+            return pickable.CanBePicked()
+                && !pickable.GetPicked()
                 && pickable.IsVulnerableToWinter()
                 && seasonState.GetCurrentDay() >= cropsDiesAfterSetDayInWinter.Value
                 && !pickable.IsProtectedPosition()
@@ -20,14 +21,23 @@ namespace Seasons
         {
             return seasonState.GetPlantsGrowthMultiplier() == 0f &&
                     seasonState.GetCurrentSeason() == Season.Winter
-                    && !pickable.ShouldSurviveWinter();
+                    && !pickable.ShouldSurviveWinter()
+                    && !pickable.SurvivedCurrentWinter();
+        }
+
+        public static bool SurvivedCurrentWinter(this Pickable pickable)
+        {
+            return pickable.m_nview 
+                && pickable.m_nview.IsValid() 
+                && seasonState.GetCurrentSeason() == Season.Winter
+                && Mathf.Abs(pickable.m_nview.GetZDO().GetInt(SeasonState.cropSurvivedWinterDayHash, 0) - seasonState.GetCurrentWorldDay()) <= seasonState.GetDaysInSeason();
         }
 
         public static bool IsIgnored(this Pickable pickable)
         {
             return pickable.m_nview == null ||
                   !pickable.m_nview.IsValid() ||
-                  !pickable.m_nview.IsOwner() ||
+                  pickable.m_nview.HasOwner() && !pickable.m_nview.IsOwner() ||
                   !pickable.ControlPlantGrowth() ||
                   pickable.IsIgnoredPosition();
         }
@@ -38,6 +48,8 @@ namespace Seasons
                 return "$se_frostres_name";
             else if (pickable.ProtectedWithHeat())
                 return "$se_fire_tooltip";
+            else if (pickable.SurvivedCurrentWinter())
+                return "$item_mead_frostres_description";
             else
                 return "$piece_plant_toocold";
         }

@@ -9,7 +9,6 @@ using UnityEngine;
 
 namespace Seasons
 {
-
 #nullable enable
 
     internal class CustomConfigs
@@ -22,6 +21,8 @@ namespace Seasons
             /// </summary>
             [UsedImplicitly]
             public System.Action<BepInEx.Configuration.ConfigEntryBase>? CustomDrawer;
+            [UsedImplicitly]
+            public bool? ShowRangeAsPercent = false;
         }
 
         internal static object? configManager;

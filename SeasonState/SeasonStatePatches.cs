@@ -135,7 +135,7 @@ namespace Seasons
             [HarmonyPriority(Priority.Last)]
             private static void Postfix(Pickable __instance)
             {
-                if (__instance.m_nview?.HasOwner() == false)
+                if (__instance.m_nview?.IsValid() == true && !__instance.m_nview.HasOwner())
                     __instance.m_nview.ClaimOwnership();
 
                 if (__instance.IsIgnored())
@@ -156,7 +156,7 @@ namespace Seasons
 
                 if (__instance.ShouldBePickedInWinter())
                 {
-                    __instance.SetPicked(true);
+                    __instance.StartCoroutine(PickableSetPickedInWinter(__instance));
                     return false;
                 }
 

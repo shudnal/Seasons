@@ -36,6 +36,9 @@ namespace Seasons
         private static readonly List<ItemDrop.ItemData> _itemDataList = new List<ItemDrop.ItemData>();
         private static int _pendingSeasonChange = 0;
 
+        public const string cropSurvivedWinterDayName = "Seasons_Survived_Winter_Day";
+        public static int cropSurvivedWinterDayHash = cropSurvivedWinterDayName.GetStableHashCode();
+
         private SeasonSettings settings
         {
             get

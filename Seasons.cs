@@ -1,4 +1,5 @@
 ﻿using BepInEx;
+using BepInEx.Bootstrap;
 using BepInEx.Configuration;
 using HarmonyLib;
 using ServerSync;
@@ -86,6 +87,7 @@ namespace Seasons
         public static ConfigEntry<bool> gettingWetInMountainsCausesCold;
         public static ConfigEntry<bool> wearing2WarmPiecesPreventsWetCold;
         public static ConfigEntry<bool> mountainInWinterRequires2WarmPieces;
+        public static ConfigEntry<float> chanceToProduceACropInWinter;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -292,6 +294,11 @@ namespace Seasons
             instance.Logger.LogWarning(data);
         }
 
+        private ConfigDescription GetDescriptionSeparatedStrings(string description) =>
+            Chainloader.PluginInfos.ContainsKey("_shudnal.ConfigurationManager")
+                    ? new ConfigDescription(description)
+                    : new ConfigDescription(description, null, new CustomConfigs.ConfigurationManagerAttributes { CustomDrawer = CustomConfigs.DrawSeparatedStrings(",") });
+
         public void ConfigInit()
         {
             config("General", "NexusID", 2654, "Nexus mod ID for updates", false);
@@ -327,25 +334,21 @@ namespace Seasons
             changeSeasonOnlyAfterSleep = config("Season", "Change season only after sleep", defaultValue: false, "Season can be changed regular way only after sleep");
             cropsDiesAfterSetDayInWinter = config("Season", "Crops will die after set day in winter", defaultValue: 3, "Crops and pickables will perish after set day in winter");
             fireHeatProtectsFromPerish = config("Season", "Crops will survive if protected by fire", defaultValue: true, "Crops and pickables will not perish in winter if there are fire source nearby");
+            chanceToProduceACropInWinter = config("Season", "Crops will have a chance to survive winter", defaultValue: 0.33f, new ConfigDescription("Crops and pickables will have given chance to produce a harvest instead of complete perish.",
+                                                                                                                               new AcceptableValueRange<float>(0f, 1f),
+                                                                                                                               new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+
             cropsToSurviveInWinter = config("Season", "Crops will survive in winter", defaultValue: "Pickable_Carrot,Pickable_Barley,Pickable_Barley_Wild,Pickable_Flax,Pickable_Flax_Wild,Pickable_Thistle,Pickable_Mushroom_Magecap",
-                                                                                                new ConfigDescription("Crops and pickables from the list will not perish after set day in winter",
-                                                                                                null,
-                                                                                                new CustomConfigs.ConfigurationManagerAttributes { CustomDrawer = CustomConfigs.DrawSeparatedStrings(",") }));
+                                                                                                GetDescriptionSeparatedStrings("Crops and pickables from the list will not perish after set day in winter"));
             cropsToControlGrowth = config("Season", "Crops to control growth", defaultValue: "Pickable_Barley,Pickable_Barley_Wild,Pickable_Dandelion,Pickable_Flax,Pickable_Flax_Wild,Pickable_SeedCarrot,Pickable_SeedOnion,Pickable_SeedTurnip,Pickable_Thistle,Pickable_Turnip",
-                                                                                            new ConfigDescription("All consumable crops will be added automatically. Set only unconsumable crops here." +
-                                                                                            "Crops and pickables from the list will be controlled by growth multiplier in addition to consumable crops",
-                                                                                            null,
-                                                                                            new CustomConfigs.ConfigurationManagerAttributes { CustomDrawer = CustomConfigs.DrawSeparatedStrings(",") }));
+                                                                                            GetDescriptionSeparatedStrings("All consumable crops will be added automatically. Set only unconsumable crops here." +
+                                                                                            "Crops and pickables from the list will be controlled by growth multiplier in addition to consumable crops"));
 
 
             woodListToControlDrop = config("Season", "Wood to control drop", defaultValue: "Wood,FineWood,RoundLog,ElderBark,YggdrasilWood",
-                                                                                            new ConfigDescription("Wood item names to control drop from trees",
-                                                                                            null,
-                                                                                            new CustomConfigs.ConfigurationManagerAttributes { CustomDrawer = CustomConfigs.DrawSeparatedStrings(",") }));
+                                                                                            GetDescriptionSeparatedStrings("Wood item names to control drop from trees"));
             meatListToControlDrop = config("Season", "Meat to control drop", defaultValue: "RawMeat,DeerMeat,NeckTail,WolfMeat,LoxMeat,ChickenMeat,HareMeat,SerpentMeat",
-                                                                                            new ConfigDescription("Meat item names to control drop from characters",
-                                                                                            null,
-                                                                                            new CustomConfigs.ConfigurationManagerAttributes { CustomDrawer = CustomConfigs.DrawSeparatedStrings(",") }));
+                                                                                            GetDescriptionSeparatedStrings("Meat item names to control drop from characters"));
             shieldGeneratorProtection = config("Season", "Shield generator protects from weather", defaultValue: true, "If enabled - objects inside shield generator dome will be protected from seasonal effects both positive and negative.");
             shieldGeneratorOnlyWinter = config("Season", "Shield generator protects from Winter only", defaultValue: true, "If enabled - objects inside shield generator dome will be protected from Winter only. If disabled - protection will work through all seasons.");
             gettingWetInWinterCausesCold = config("Season", "Getting Wet in winter causes Cold", defaultValue: true, "If you get Wet status during winter you will get Cold status," +
@@ -378,9 +381,7 @@ namespace Seasons
                                                                                                      "Increase to make grass more sparse and decrease to make grass more tight");
             grassDefaultAmountScale = config("Season - Grass", "Default amount scale", defaultValue: 1.5f, "Default amount scale (grass density or how many grass patches created around you at once)");
             grassToControlSize = config("Season - Grass", "List of grass prefabs to control size", defaultValue: "instanced_meadows_grass,instanced_forest_groundcover_brown,instanced_forest_groundcover,instanced_swamp_grass,instanced_heathgrass,grasscross_heath_green,instanced_meadows_grass_short,instanced_heathflowers,instanced_mistlands_grass_short",
-                                                                                            new ConfigDescription("Grass with set prefabs to be hidden in winter and to change size in other seasons",
-                                                                                            null,
-                                                                                            new CustomConfigs.ConfigurationManagerAttributes { CustomDrawer = CustomConfigs.DrawSeparatedStrings(",") }));
+                                                                                            GetDescriptionSeparatedStrings("Grass with set prefabs to be hidden in winter and to change size in other seasons"));
 
             grassSizeDefaultScaleMin = config("Season - Grass", "Default minimum size multiplier", defaultValue: 1f, "Default minimum size of grass will be multiplier by given number");
             grassSizeDefaultScaleMax = config("Season - Grass", "Default maximum size multiplier", defaultValue: 1f, "Default maximum size of grass will be multiplier by given number");
@@ -793,9 +794,15 @@ namespace Seasons
             yield return waitFor1Second;
 
             if (!pickable.ShouldBePickedInWinter())
-                yield return null;
+                yield break;
 
-            pickable.m_nview?.InvokeRPC(ZNetView.Everybody, "RPC_SetPicked", true);
+            if (!pickable.m_nview || !pickable.m_nview.IsValid())
+                yield break;
+
+            if (UnityEngine.Random.Range(0f, 1f) < chanceToProduceACropInWinter.Value)
+                pickable.m_nview.GetZDO().Set(SeasonState.cropSurvivedWinterDayHash, seasonState.GetCurrentWorldDay());
+            else
+                pickable.m_nview.InvokeRPC(ZNetView.Everybody, "RPC_SetPicked", true);
         }
 
         public static IEnumerator ReplantTree(GameObject prefab, Vector3 position, Quaternion rotation, float scale)
