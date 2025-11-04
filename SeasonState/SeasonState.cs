@@ -929,7 +929,7 @@ namespace Seasons
         public double GetSecondsToGrowPlant(Plant plant)
         {
             if (!plant.m_nview.IsValid())
-                return 0f;
+                return 0d;
 
             double secondsLeft = plant.GetGrowTime() - plant.TimeSincePlanted();
 
@@ -942,11 +942,11 @@ namespace Seasons
         public double GetSecondsToRespawnPickable(Pickable pickable)
         {
             if (!pickable.m_nview.IsValid())
-                return 0f;
+                return 0d;
 
             double secondsLeft = pickable.m_respawnTimeMinutes * 60;
 
-            if (IsProtectedPosition(pickable.transform.position))
+            if (IsProtectedPosition(pickable.transform.position) || secondsLeft <= 0d)
                 return secondsLeft;
 
             double pickedTimeSeconds = TimeSpan.FromTicks(pickable.m_nview.GetZDO().GetLong(ZDOVars.s_pickedTime, 0L)).TotalSeconds;
@@ -982,7 +982,7 @@ namespace Seasons
         public double GetSecondsToBurnFire(Fireplace fireplace)
         {
             if (!fireplace.m_nview.IsValid())
-                return 0f;
+                return 0d;
 
             double secondsLeft = fireplace.m_nview.GetZDO().GetFloat(ZDOVars.s_fuel) * fireplace.m_secPerFuel;
             if (secondsLeft == 0 || IsProtectedPosition(fireplace.transform.position))
@@ -993,8 +993,8 @@ namespace Seasons
 
         public double GetSecondsToBurnFire(Smelter smelter)
         {
-            if (!smelter.m_nview.IsValid())
-                return 0f;
+            if (!smelter.m_nview.IsValid() || smelter.m_fuelPerProduct == 0)
+                return 0d;
 
             double secondsLeft = smelter.GetFuel() * smelter.m_secPerProduct / smelter.m_fuelPerProduct;
             if (secondsLeft == 0 || IsProtectedPosition(smelter.transform.position))
@@ -1006,7 +1006,7 @@ namespace Seasons
         public double GetSecondsToBurnFire(CookingStation cookingStation)
         {
             if (!cookingStation.m_nview.IsValid())
-                return 0f;
+                return 0d;
 
             double secondsLeft = cookingStation.GetFuel() * cookingStation.m_secPerFuel;
             if (secondsLeft == 0 || IsProtectedPosition(cookingStation.transform.position))
@@ -1018,7 +1018,7 @@ namespace Seasons
         public double GetSecondsToFillSap(SapCollector sapCollector)
         {
             if (!sapCollector.m_nview.IsValid())
-                return 0f;
+                return 0d;
 
             double secondsLeft = (sapCollector.m_maxLevel - sapCollector.GetLevel()) * sapCollector.m_secPerUnit - sapCollector.m_nview.GetZDO().GetFloat(ZDOVars.s_product);
             if (secondsLeft == 0 || IsProtectedPosition(sapCollector.transform.position))

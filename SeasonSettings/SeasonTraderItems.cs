@@ -149,7 +149,7 @@ namespace Seasons
                 Utils.GetPrefabName(trader.gameObject),
                 trader.m_name,
                 trader.m_name.ToLower().Replace("$npc_", ""),
-                Localization.instance.Localize(trader.m_name),
+                trader.m_name.Localize(),
             };
 
             Season season = seasonState.GetCurrentSeason();

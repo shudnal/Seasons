@@ -574,7 +574,6 @@ namespace Seasons
             if (!m_prefabVariants.TryGetValue(gameObject, out PrefabVariant prefabVariant))
                 return;
 
-            prefabVariant.RevertState();
             prefabVariant.RemoveFromPrefabList();
         }
 
@@ -762,9 +761,7 @@ namespace Seasons
         private static void Prefix(Dictionary<ZDO, ZNetView> ___m_instances, ZDO zdo)
         {
             if (___m_instances.TryGetValue(zdo, out var value))
-            {
                 PrefabVariantController.instance?.RemoveController(value.gameObject);
-            }
         }
     }
 

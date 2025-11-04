@@ -41,7 +41,7 @@ namespace Seasons
             if (!InUseDistance(Player.m_localPlayer))
                 return "";
 
-            return Localization.instance.Localize("[<color=yellow><b>$KEY_Use</b></color>] $piece_use");
+            return "[<color=yellow><b>$KEY_Use</b></color>] $piece_use".Localize();
         }
 
         public string GetHoverName()

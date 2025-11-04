@@ -186,12 +186,14 @@ namespace Seasons
         public static Color minimapBorderColor = Color.clear;
 
         public static WaitForFixedUpdate waitForFixedUpdate = new WaitForFixedUpdate();
+        public static WaitForSeconds waitFor1Second = new WaitForSeconds(1f);
+        public static WaitForSeconds waitFor5Seconds = new WaitForSeconds(5f);
 
-        private static HashSet<string> _PlantsToControlGrowth = new HashSet<string>();
-        private static HashSet<string> _PlantsToSurviveWinter = new HashSet<string>();
-        private static HashSet<string> _WoodToControlDrop = new HashSet<string>();
-        private static HashSet<string> _MeatToControlDrop = new HashSet<string>();
-        private static HashSet<string> _GrassToControlSize = new HashSet<string>();
+        internal static HashSet<string> _PlantsToControlGrowth = new HashSet<string>();
+        internal static HashSet<string> _PlantsToSurviveWinter = new HashSet<string>();
+        internal static HashSet<string> _WoodToControlDrop = new HashSet<string>();
+        internal static HashSet<string> _MeatToControlDrop = new HashSet<string>();
+        internal static HashSet<string> _GrassToControlSize = new HashSet<string>();
 
         private static int _instanceChangeIDShieldGeneratorCache;
         private static readonly Dictionary<Vector2, bool> _cachedIgnoredPositions = new Dictionary<Vector2, bool>();
@@ -600,7 +602,7 @@ namespace Seasons
         public static string FromSeconds(double seconds)
         {
             if (seconds <= 0)
-                return Localization.instance.Localize("$hud_ready");
+                return "$hud_ready".Localize();
 
             TimeSpan ts = TimeSpan.FromSeconds(seconds);
             return ts.ToString(ts.Hours > 0 ? @"h\:mm\:ss" : @"m\:ss");
@@ -786,16 +788,19 @@ namespace Seasons
             }
         }
 
-        public static IEnumerator PickableSetPicked(Pickable pickable)
+        public static IEnumerator PickableSetPickedInWinter(Pickable pickable)
         {
-            yield return waitForFixedUpdate;
+            yield return waitFor1Second;
+
+            if (!pickable.ShouldBePickedInWinter())
+                yield return null;
 
             pickable.m_nview?.InvokeRPC(ZNetView.Everybody, "RPC_SetPicked", true);
         }
 
         public static IEnumerator ReplantTree(GameObject prefab, Vector3 position, Quaternion rotation, float scale)
         {
-            yield return new WaitForSeconds(5f);
+            yield return waitFor5Seconds;
 
             if (ZoneSystem.instance.IsBlocked(position))
                 yield break;

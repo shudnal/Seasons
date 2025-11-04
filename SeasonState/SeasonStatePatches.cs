@@ -132,37 +132,17 @@ namespace Seasons
         [HarmonyPatch(typeof(Pickable), nameof(Pickable.Awake))]
         public static class Pickable_Awake_PlantsGrowthMultiplier
         {
-            public static bool ShouldBePicked(Pickable pickable)
-            {
-                return !pickable.GetPicked()
-                    && IsVulnerableToWinter(pickable)
-                    && seasonState.GetCurrentDay() >= cropsDiesAfterSetDayInWinter.Value
-                    && !IsProtectedPosition(pickable.transform.position);
-            }
-
-            public static bool IsVulnerableToWinter(Pickable pickable)
-            {
-                return seasonState.GetPlantsGrowthMultiplier() == 0f &&
-                        seasonState.GetCurrentSeason() == Season.Winter
-                        && !PlantWillSurviveWinter(pickable.gameObject);
-            }
-
-            public static bool IsIgnored(Pickable pickable)
-            {
-                return pickable.m_nview == null ||
-                      !pickable.m_nview.IsValid() ||
-                      !pickable.m_nview.IsOwner() ||
-                      !ControlPlantGrowth(pickable.gameObject) ||
-                      IsIgnoredPosition(pickable.transform.position);
-            }
-
+            [HarmonyPriority(Priority.Last)]
             private static void Postfix(Pickable __instance)
             {
-                if (IsIgnored(__instance))
+                if (__instance.m_nview?.HasOwner() == false)
+                    __instance.m_nview.ClaimOwnership();
+
+                if (__instance.IsIgnored())
                     return;
 
-                if (ShouldBePicked(__instance) && !ProtectedWithHeat(__instance.transform.position))
-                    __instance.StartCoroutine(PickableSetPicked(__instance));
+                if (__instance.ShouldBePickedInWinter())
+                    __instance.StartCoroutine(PickableSetPickedInWinter(__instance));
             }
         }
 
@@ -171,10 +151,10 @@ namespace Seasons
         {
             private static bool Prefix(Pickable __instance, ref float ___m_respawnTimeMinutes, ref float __state)
             {
-                if (Pickable_Awake_PlantsGrowthMultiplier.IsIgnored(__instance))
+                if (__instance.IsIgnored())
                     return true;
 
-                if (Pickable_Awake_PlantsGrowthMultiplier.ShouldBePicked(__instance) && !ProtectedWithHeat(__instance.transform.position))
+                if (__instance.ShouldBePickedInWinter())
                 {
                     __instance.SetPicked(true);
                     return false;
@@ -205,16 +185,6 @@ namespace Seasons
         [HarmonyPatch(typeof(Pickable), nameof(Pickable.GetHoverText))]
         public static class Pickable_GetHoverText_FireWarmthPerishProtection
         {
-            private static string GetPickableStatus(Pickable __instance)
-            {
-                if (!Pickable_Awake_PlantsGrowthMultiplier.IsVulnerableToWinter(__instance))
-                    return "$se_frostres_name";
-                else if (ProtectedWithHeat(__instance.transform.position))
-                    return "$se_fire_tooltip";
-                else
-                    return "$piece_plant_toocold";
-            }
-
             private static void Postfix(Pickable __instance, ref string __result)
             {
                 if (hoverPickable.Value != StationHover.Vanilla)
@@ -225,7 +195,7 @@ namespace Seasons
                         if (pickedTime > 1)
                         {
                             if (string.IsNullOrWhiteSpace(__result))
-                                __result = Localization.instance.Localize(__instance.GetHoverName());
+                                __result = __instance.GetHoverName().Localize();
 
                             TimeSpan timeSpan = ZNet.instance.GetTime() - new DateTime(pickedTime);
                             double respawnTimeSeconds = seasonState.GetSecondsToRespawnPickable(__instance);
@@ -240,13 +210,13 @@ namespace Seasons
                     }
                 }
 
-                if (Pickable_Awake_PlantsGrowthMultiplier.IsIgnored(__instance) || seasonState.GetCurrentSeason() != Season.Winter)
+                if (__instance.IsIgnored() || seasonState.GetCurrentSeason() != Season.Winter)
                     return;
 
                 if (string.IsNullOrWhiteSpace(__result))
-                    __result = Localization.instance.Localize(__instance.GetHoverName());
+                    __result = __instance.GetHoverName().Localize();
 
-                __result += Localization.instance.Localize($"\n<color=#ADD8E6>{GetPickableStatus(__instance)}</color>");
+                __result += $"\n<color=#ADD8E6>{__instance.GetColdStatus()}</color>".Localize();
             }
         }
 

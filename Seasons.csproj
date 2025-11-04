@@ -39,6 +39,7 @@
     <Compile Include="Compatibility\HoneyPlusCompat.cs" />
     <Compile Include="Compatibility\EWDCompat.cs" />
     <Compile Include="Compatibility\MarketplaceCompat.cs" />
+    <Compile Include="SeasonState\ControlledComponentsExtentions.cs" />
     <Compile Include="SeasonTextures\CachedData.cs" />
     <Compile Include="Compatibility\EpicLootCompat.cs" />
     <Compile Include="SeasonTextures\PrefabController.cs" />

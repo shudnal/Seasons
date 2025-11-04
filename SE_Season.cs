@@ -56,7 +56,7 @@ namespace Seasons
             _sb.AppendFormat("{0}\n", GetSeasonTooltip());
             
             if (seasonsTimerFormatInRaven.Value == TimerFormat.CurrentDay || seasonsTimerFormatInRaven.Value == TimerFormat.CurrentDayAndTimeToEnd)
-                _sb.AppendFormat("{0} / {1}\n", Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}"), seasonState.GetDaysInSeason());
+                _sb.AppendFormat("{0} / {1}\n", $"$hud_mapday {seasonState.GetCurrentDay()}".Localize(), seasonState.GetDaysInSeason());
 
             if (seasonsTimerFormatInRaven.Value == TimerFormat.TimeToEnd || seasonsTimerFormatInRaven.Value == TimerFormat.CurrentDayAndTimeToEnd)
                 _sb.AppendFormat("{0}: {1}\n", MessageNextSeason(), TimerString(seasonState.GetTimeToCurrentSeasonEnd()));
@@ -76,7 +76,7 @@ namespace Seasons
 
             static string SkillLocalized(Skills.SkillType skill)
             {
-                return Localization.instance.Localize(skill == Skills.SkillType.All ? "$inventory_skills" : "$skill_" + skill.ToString().ToLower());
+                return (skill == Skills.SkillType.All ? "$inventory_skills" : "$skill_" + skill.ToString().ToLower()).Localize();
             }
         }
 
@@ -88,7 +88,7 @@ namespace Seasons
             _sb.Clear();
             
             if (seasonsTimerFormat.Value == TimerFormat.CurrentDay || seasonsTimerFormat.Value == TimerFormat.CurrentDayAndTimeToEnd)
-                _sb.Append(seasonState.GetCurrentDay() >= seasonState.GetDaysInSeason() && !String.IsNullOrEmpty(MessageNextSeason()) ? MessageNextSeason() : Localization.instance.Localize($"$hud_mapday {seasonState.GetCurrentDay()}"));
+                _sb.Append(seasonState.GetCurrentDay() >= seasonState.GetDaysInSeason() && !string.IsNullOrEmpty(MessageNextSeason()) ? MessageNextSeason() : $"$hud_mapday {seasonState.GetCurrentDay()}".Localize());
 
             if (seasonsTimerFormat.Value == TimerFormat.CurrentDayAndTimeToEnd)
                 _sb.Append(" (");
