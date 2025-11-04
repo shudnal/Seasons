@@ -1,0 +1,19 @@
+{
+    "seasons_season_spring_name": "春",
+    "seasons_season_summer_name": "夏",
+    "seasons_season_fall_name": "秋",
+    "seasons_season_winter_name": "冬",
+    "seasons_season_spring_is_coming": "春が近づいている",
+    "seasons_season_summer_is_coming": "夏がやって来る",
+    "seasons_season_fall_is_coming": "秋が近づいている",
+    "seasons_season_winter_is_coming": "冬が近づいている",
+    "seasons_season_spring_has_come": "春が来た",
+    "seasons_season_summer_has_come": "夏が来た",
+    "seasons_season_fall_has_come": "秋が来た",
+    "seasons_season_winter_has_come": "冬が来た",
+    "seasons_plant_frost_resistant": "耐霜性がある",
+    "seasons_plant_heat_protected": "熱源で保護されている",
+    "seasons_plant_survived_winter": "この冬を生き延びた",
+    "seasons_plant_will_perish": "寒さにさらされている",
+    "seasons_ice_floe_climb": "よじ登る"
+}

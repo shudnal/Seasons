@@ -1,0 +1,19 @@
+{
+    "seasons_season_spring_name": "Primavera",
+    "seasons_season_summer_name": "Verão",
+    "seasons_season_fall_name": "Outono",
+    "seasons_season_winter_name": "Inverno",
+    "seasons_season_spring_is_coming": "A primavera se aproxima",
+    "seasons_season_summer_is_coming": "O verão se aproxima",
+    "seasons_season_fall_is_coming": "O outono se aproxima",
+    "seasons_season_winter_is_coming": "O inverno se aproxima",
+    "seasons_season_spring_has_come": "A primavera chegou",
+    "seasons_season_summer_has_come": "O verão chegou",
+    "seasons_season_fall_has_come": "O outono chegou",
+    "seasons_season_winter_has_come": "O inverno chegou",
+    "seasons_plant_frost_resistant": "Resistente à geada",
+    "seasons_plant_heat_protected": "Protegido por fonte de calor",
+    "seasons_plant_survived_winter": "Sobreviveu a este inverno",
+    "seasons_plant_will_perish": "Exposto ao frio",
+    "seasons_ice_floe_climb": "Escalar"
+}

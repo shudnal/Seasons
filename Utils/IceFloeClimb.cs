@@ -41,7 +41,7 @@ namespace Seasons
             if (!InUseDistance(Player.m_localPlayer))
                 return "";
 
-            return "[<color=yellow><b>$KEY_Use</b></color>] $piece_use".Localize();
+            return "[<color=yellow><b>$KEY_Use</b></color>] $seasons_ice_floe_climb".Localize();
         }
 
         public string GetHoverName()

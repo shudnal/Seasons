@@ -1,0 +1,19 @@
+{
+    "seasons_season_spring_name": "Jaro",
+    "seasons_season_summer_name": "Léto",
+    "seasons_season_fall_name": "Podzim",
+    "seasons_season_winter_name": "Zima",
+    "seasons_season_spring_is_coming": "Jaro se blíží",
+    "seasons_season_summer_is_coming": "Léto se blíží",
+    "seasons_season_fall_is_coming": "Podzim přichází",
+    "seasons_season_winter_is_coming": "Zima se blíží",
+    "seasons_season_spring_has_come": "Jaro přišlo",
+    "seasons_season_summer_has_come": "Léto začalo",
+    "seasons_season_fall_has_come": "Podzim nastal",
+    "seasons_season_winter_has_come": "Zima nastala",
+    "seasons_plant_frost_resistant": "Odolné vůči mrazu",
+    "seasons_plant_heat_protected": "Chráněno zdrojem tepla",
+    "seasons_plant_survived_winter": "Přežilo tuto zimu",
+    "seasons_plant_will_perish": "Vystaveno chladu",
+    "seasons_ice_floe_climb": "Vylézt"
+}

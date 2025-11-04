@@ -45,13 +45,13 @@ namespace Seasons
         public static string GetColdStatus(this Pickable pickable)
         {
             if (pickable.ShouldSurviveWinter())
-                return "$se_frostres_name";
+                return "$seasons_plant_frost_resistant";
             else if (pickable.ProtectedWithHeat())
-                return "$se_fire_tooltip";
+                return "$seasons_plant_heat_protected";
             else if (pickable.SurvivedCurrentWinter())
-                return "$item_mead_frostres_description";
+                return "$seasons_plant_survived_winter";
             else
-                return "$piece_plant_toocold";
+                return "$seasons_plant_will_perish";
         }
 
         public static bool ControlPlantGrowth(this MonoBehaviour behaviour) => Seasons.ControlPlantGrowth(behaviour.gameObject);

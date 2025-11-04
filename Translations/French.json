@@ -1,0 +1,19 @@
+{
+    "seasons_season_spring_name": "Printemps",
+    "seasons_season_summer_name": "Été",
+    "seasons_season_fall_name": "Automne",
+    "seasons_season_winter_name": "Hiver",
+    "seasons_season_spring_is_coming": "Le printemps s’annonce",
+    "seasons_season_summer_is_coming": "L’été arrive bientôt",
+    "seasons_season_fall_is_coming": "L’automne approche",
+    "seasons_season_winter_is_coming": "L’hiver approche",
+    "seasons_season_spring_has_come": "Le printemps est arrivé",
+    "seasons_season_summer_has_come": "L’été est arrivé",
+    "seasons_season_fall_has_come": "L’automne est arrivé",
+    "seasons_season_winter_has_come": "L’hiver est arrivé",
+    "seasons_plant_frost_resistant": "Résistant au gel",
+    "seasons_plant_heat_protected": "Protégé par une source de chaleur",
+    "seasons_plant_survived_winter": "A survécu à cet hiver",
+    "seasons_plant_will_perish": "Exposé au froid",
+    "seasons_ice_floe_climb": "Grimper"
+}

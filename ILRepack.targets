@@ -11,7 +11,15 @@
 		<Copy SourceFiles="$(TargetDir)\thunderstore\$(TargetFileName)" DestinationFolder="$(ProjectDir)package\thunderstore\$(SolutionName)\" />
 		<Message Text="Copied to thunderstore package folder." Importance="High" />
 	</Target>
-	<Target Name="RepackNexus" AfterTargets="CopyDLLThunderstore">
+	<Target Name="UpdateTranslations" AfterTargets="CopyDLLThunderstore">
+		<Exec Command="powershell -ExecutionPolicy Bypass -NoProfile -File &quot;UpdateTranslations.ps1&quot;" />
+		<Message Text="Updated embedded translations." Importance="High" />
+	</Target>
+	<Target Name="CopyLanguageFileThunderstore" AfterTargets="UpdateTranslations">
+		<Copy SourceFiles="$(ProjectDir)translations\English.json" DestinationFiles="$(ProjectDir)package\thunderstore\$(SolutionName)\$(SolutionName).English.json" />
+		<Message Text="Copied English.json to thunderstore package folder." Importance="High" />
+	</Target>
+	<Target Name="RepackNexus" AfterTargets="CopyLanguageFileThunderstore">
 		<ItemGroup>
 			<InputAssemblies Include="$(OutputPath)Newtonsoft.Json.dll" />
 		</ItemGroup>
