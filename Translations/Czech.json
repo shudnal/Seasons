@@ -14,6 +14,9 @@
     "seasons_plant_frost_resistant": "Odolné vůči mrazu",
     "seasons_plant_heat_protected": "Chráněno zdrojem tepla",
     "seasons_plant_survived_winter": "Přežilo tuto zimu",
-    "seasons_plant_will_perish": "Vystaveno chladu",
+    "seasons_plant_is_freezing": "Mrzne",
+    "seasons_plant_is_frozen": "Zamrzlý",
+    "seasons_plant_is_exposed": "Vystaveno chladu",
+    "seasons_plant_will_perish": "Brzy zahyne",
     "seasons_ice_floe_climb": "Vylézt"
 }

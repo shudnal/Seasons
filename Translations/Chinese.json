@@ -14,6 +14,9 @@
     "seasons_plant_frost_resistant": "耐霜",
     "seasons_plant_heat_protected": "受热源保护",
     "seasons_plant_survived_winter": "熬过了这个冬天",
-    "seasons_plant_will_perish": "暴露在寒冷中",
+    "seasons_plant_is_freezing": "正在结冰",
+    "seasons_plant_is_frozen": "冻结",
+    "seasons_plant_is_exposed": "暴露在寒冷中",
+    "seasons_plant_will_perish": "即将凋零",
     "seasons_ice_floe_climb": "攀上"
 }

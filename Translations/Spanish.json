@@ -14,6 +14,9 @@
     "seasons_plant_frost_resistant": "Resistente a las heladas",
     "seasons_plant_heat_protected": "Protegido por una fuente de calor",
     "seasons_plant_survived_winter": "Sobrevivió este invierno",
-    "seasons_plant_will_perish": "Expuesto al frío",
+    "seasons_plant_is_freezing": "Se está congelando",
+    "seasons_plant_is_frozen": "Congelado",
+    "seasons_plant_is_exposed": "Expuesto al frío",
+    "seasons_plant_will_perish": "Pronto perecerá",
     "seasons_ice_floe_climb": "Subir"
 }

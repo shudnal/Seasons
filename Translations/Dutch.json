@@ -14,6 +14,9 @@
     "seasons_plant_frost_resistant": "Vorstbestendig",
     "seasons_plant_heat_protected": "Beschermd door warmtebron",
     "seasons_plant_survived_winter": "Deze winter overleefd",
-    "seasons_plant_will_perish": "Blootgesteld aan kou",
+    "seasons_plant_is_freezing": "Bevriest",
+    "seasons_plant_is_frozen": "Bevroren",
+    "seasons_plant_is_exposed": "Blootgesteld aan kou",
+    "seasons_plant_will_perish": "Zal spoedig vergaan",
     "seasons_ice_floe_climb": "Klimmen"
 }

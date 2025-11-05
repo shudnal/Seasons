@@ -14,6 +14,9 @@
     "seasons_plant_frost_resistant": "耐霜性がある",
     "seasons_plant_heat_protected": "熱源で保護されている",
     "seasons_plant_survived_winter": "この冬を生き延びた",
-    "seasons_plant_will_perish": "寒さにさらされている",
+    "seasons_plant_is_freezing": "凍りついている",
+    "seasons_plant_is_frozen": "凍った",
+    "seasons_plant_is_exposed": "寒さにさらされている",
+    "seasons_plant_will_perish": "まもなく枯れる",
     "seasons_ice_floe_climb": "よじ登る"
 }

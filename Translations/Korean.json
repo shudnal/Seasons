@@ -14,6 +14,9 @@
     "seasons_plant_frost_resistant": "서리에 강하다",
     "seasons_plant_heat_protected": "열원으로 보호됨",
     "seasons_plant_survived_winter": "이번 겨울을 견뎌냈다",
-    "seasons_plant_will_perish": "추위에 노출됨",
+    "seasons_plant_is_freezing": "얼어가고 있다",
+    "seasons_plant_is_frozen": "얼어붙음",
+    "seasons_plant_is_exposed": "추위에 노출됨",
+    "seasons_plant_will_perish": "곧 시들 것이다",
     "seasons_ice_floe_climb": "기어오르기"
 }

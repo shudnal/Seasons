@@ -145,10 +145,7 @@ namespace Seasons
             (Player.m_localPlayer?.GetSEMan().GetStatusEffect(SeasonsVars.s_statusEffectSeasonHash) as SE_Season)?.Setup(Player.m_localPlayer);
         }
 
-        private static string MessageNextSeason()
-        {
-            return GetSeasonIsComing(seasonState.GetNextSeason());
-        }
+        private static string MessageNextSeason() => GetSeasonIsComing(seasonState.GetNextSeason()).Localize();
     
         private static string TimerString(double seconds, bool icon = false)
         {

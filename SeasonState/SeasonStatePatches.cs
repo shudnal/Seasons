@@ -141,8 +141,8 @@ namespace Seasons
                 if (__instance.IsIgnored())
                     return;
 
-                if (__instance.ShouldBePickedInWinter())
-                    __instance.StartCoroutine(PickableSetPickedInWinter(__instance));
+                if (!__instance.CheckForPerishInWinter() && !__instance.IsInvoking("UpdateRespawn"))
+                    __instance.InvokeRepeating("UpdateRespawn", UnityEngine.Random.Range(1f, 5f), repeatRate: 60f);
             }
         }
 
@@ -154,11 +154,8 @@ namespace Seasons
                 if (__instance.IsIgnored())
                     return true;
 
-                if (__instance.ShouldBePickedInWinter())
-                {
-                    __instance.StartCoroutine(PickableSetPickedInWinter(__instance));
+                if (__instance.CheckForPerishInWinter())
                     return false;
-                }
 
                 if (IsProtectedPosition(__instance.transform.position))
                     return true;
@@ -179,6 +176,16 @@ namespace Seasons
                     return;
 
                 ___m_respawnTimeMinutes = __state;
+            }
+        }
+
+        [HarmonyPatch(typeof(Pickable), nameof(Pickable.SetPicked))]
+        public static class Pickable_SetPicked_FreezingTime
+        {
+            private static void Prefix(Pickable __instance, bool picked)
+            {
+                if (!__instance.IsIgnored() && picked)
+                    __instance.SetFreezing(false);
             }
         }
 
@@ -214,7 +221,7 @@ namespace Seasons
                     return;
 
                 if (string.IsNullOrWhiteSpace(__result))
-                    __result = __instance.GetHoverName().Localize();
+                    __result = __instance.GetHoverName();
 
                 __result += $"\n<color=#ADD8E6>{__instance.GetColdStatus()}</color>".Localize();
             }

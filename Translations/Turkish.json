@@ -14,6 +14,9 @@
     "seasons_plant_frost_resistant": "Donmaya dayanıklı",
     "seasons_plant_heat_protected": "Isı kaynağı ile korunuyor",
     "seasons_plant_survived_winter": "Bu kışı atlattı",
-    "seasons_plant_will_perish": "Soğuğa maruz",
+    "seasons_plant_is_freezing": "Donuyor",
+    "seasons_plant_is_frozen": "Donmuş",
+    "seasons_plant_is_exposed": "Soğuğa maruz",
+    "seasons_plant_will_perish": "Yakında yok olacak",
     "seasons_ice_floe_climb": "Tırman"
 }

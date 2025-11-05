@@ -14,6 +14,9 @@
     "seasons_plant_frost_resistant": "Устойчиво к морозу",
     "seasons_plant_heat_protected": "Защищено источником тепла",
     "seasons_plant_survived_winter": "Пережило эту зиму",
-    "seasons_plant_will_perish": "Подвержено холоду",
+    "seasons_plant_is_freezing": "Замерзает",
+    "seasons_plant_is_frozen": "Замерзло",
+    "seasons_plant_is_exposed": "Подвержено холоду",
+    "seasons_plant_will_perish": "Скоро погибнет",
     "seasons_ice_floe_climb": "Залезть"
 }
