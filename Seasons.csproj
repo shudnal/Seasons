@@ -78,6 +78,7 @@
     <Compile Include="Controllers\PrefabVariantController.cs" />
     <Compile Include="Controllers\ZoneSystemVariantController.cs" />
     <Compile Include="Utils\LocalizationManager.cs" />
+    <Compile Include="SeasonsVars.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="0Harmony">

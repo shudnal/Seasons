@@ -603,7 +603,7 @@ namespace Seasons
                 if (___m_nview == null || !___m_nview.IsValid() || !___m_nview.IsOwner())
                     return true;
 
-                __result = __result || ___m_nview.GetZDO().GetBool(_treeRegrowthHaveGrowSpace, false);
+                __result = __result || ___m_nview.GetZDO().GetBool(SeasonsVars.s_treeRegrowthHaveGrowSpace, false);
                 return !__result;
             }
         }

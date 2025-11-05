@@ -128,12 +128,6 @@ namespace Seasons
         internal const int seasonsCount = 4;
         public const int seasonColorVariants = 4;
 
-        public const string statusEffectSeasonName = "Season";
-        public static int statusEffectSeasonHash = statusEffectSeasonName.GetStableHashCode();
-
-        public const string statusEffectOverheatName = "Overheat";
-        public static int statusEffectOverheatHash = statusEffectOverheatName.GetStableHashCode();
-
         public static Sprite iconSpring;
         public static Sprite iconSummer;
         public static Sprite iconFall;
@@ -186,7 +180,6 @@ namespace Seasons
         private static readonly Dictionary<Vector2, bool> _cachedIgnoredPositions = new Dictionary<Vector2, bool>();
 
         private static readonly Dictionary<string, GameObject> _treeRegrowthPrefabs = new Dictionary<string, GameObject>();
-        public static int _treeRegrowthHaveGrowSpace = "Seasons_HaveGrowSpace".GetStableHashCode();
 
         public enum Season
         {
@@ -261,8 +254,8 @@ namespace Seasons
 
         private void FixedUpdate()
         {
-            if (Player.m_localPlayer is Player player && player.GetSEMan() is SEMan seman && !seman.HaveStatusEffect(statusEffectSeasonHash) && player.IsOwner() && !player.IsDead())
-                seman.AddStatusEffect(statusEffectSeasonHash);
+            if (Player.m_localPlayer is Player player && player.GetSEMan() is SEMan seman && !seman.HaveStatusEffect(SeasonsVars.s_statusEffectSeasonHash) && player.IsOwner() && !player.IsDead())
+                seman.AddStatusEffect(SeasonsVars.s_statusEffectSeasonHash);
         }
 
         private void OnDestroy()
@@ -751,7 +744,7 @@ namespace Seasons
                 yield break;
 
             if (UnityEngine.Random.Range(0f, 1f) < chanceToProduceACropInWinter.Value)
-                pickable.m_nview.GetZDO().Set(SeasonState.cropSurvivedWinterDayHash, seasonState.GetCurrentWorldDay());
+                pickable.m_nview.GetZDO().Set(SeasonsVars.s_cropSurvivedWinterDayHash, seasonState.GetCurrentWorldDay());
             else
                 pickable.m_nview.InvokeRPC(ZNetView.Everybody, "RPC_SetPicked", true);
         }
@@ -772,7 +765,7 @@ namespace Seasons
 
             if (result != null && result.TryGetComponent(out ZNetView m_nview) && m_nview.IsValid())
             {
-                m_nview.GetZDO().Set(_treeRegrowthHaveGrowSpace, true);
+                m_nview.GetZDO().Set(SeasonsVars.s_treeRegrowthHaveGrowSpace, true);
 
                 if (scale != 0f && result.TryGetComponent(out Plant plant))
                 {

@@ -84,9 +84,6 @@ namespace Seasons
 
         public static GameObject s_iceSurface;
         public static ZoneSystem.ZoneVegetation s_iceFloe;
-        public static int s_iceFloeWatermark = "Seasons_IceFloe".GetStableHashCode();
-        public static int s_iceFloeMass = "Seasons_IceFloeMass".GetStableHashCode();
-        public static int s_iceFloesSpawned = "Seasons_IceFloesSpawned".GetStableHashCode();
         public static int s_zoneCtrlPrefab;
 
         private const float _FoamDepthFrozen = 10f;
@@ -707,15 +704,15 @@ namespace Seasons
             int floes = 0; int zones = 0;
             foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values)
             {
-                if (zdo.GetPrefab() == _iceFloePrefab && zdo.GetBool(s_iceFloeWatermark))
+                if (zdo.GetPrefab() == _iceFloePrefab && zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
                 {
                     RemoveObject(zdo, true);
                     floes++;
                 }
 
-                if (zdo.GetPrefab() == s_zoneCtrlPrefab && zdo.GetBool(s_iceFloesSpawned))
+                if (zdo.GetPrefab() == s_zoneCtrlPrefab && zdo.GetBool(SeasonsVars.s_iceFloesSpawned))
                 {
-                    zdo.Set(s_iceFloesSpawned, false);
+                    zdo.Set(SeasonsVars.s_iceFloesSpawned, false);
                     zones++;
                 }
             }
@@ -762,10 +759,10 @@ namespace Seasons
                 ZDO zoneZDO = spawnSystem.m_nview?.GetZDO();
                 if (zoneZDO != null)
                 {
-                    if (zoneZDO.GetBool(s_iceFloesSpawned) == true)
+                    if (zoneZDO.GetBool(SeasonsVars.s_iceFloesSpawned) == true)
                         return true;
 
-                    zoneZDO.Set(s_iceFloesSpawned, true);
+                    zoneZDO.Set(SeasonsVars.s_iceFloesSpawned, true);
                 }
 
                 ZoneSystem.SpawnMode mode = ZNetScene.instance.IsAreaReady(position) ? ZoneSystem.SpawnMode.Full : ZoneSystem.SpawnMode.Ghost;
@@ -851,8 +848,8 @@ namespace Seasons
                 float health = iceFloesHealth.Value * scaleX * scaleY * scaleZ;
 
                 ZDO zdo = netView.GetZDO();
-                zdo.Set(s_iceFloeWatermark, true);
-                zdo.Set(s_iceFloeMass, netView.m_body.mass * PowSquash(Mathf.Sqrt(Mathf.Abs(scaleX * scaleY * scaleZ)), 0.6f));
+                zdo.Set(SeasonsVars.s_iceFloeWatermark, true);
+                zdo.Set(SeasonsVars.s_iceFloeMass, netView.m_body.mass * PowSquash(Mathf.Sqrt(Mathf.Abs(scaleX * scaleY * scaleZ)), 0.6f));
                 zdo.Set(ZDOVars.s_health, health + Game.m_worldLevel * health * Game.instance.m_worldLevelMineHPMultiplier);
 
                 if (mode == ZoneSystem.SpawnMode.Ghost)

@@ -36,9 +36,6 @@ namespace Seasons
         private static readonly List<ItemDrop.ItemData> _itemDataList = new List<ItemDrop.ItemData>();
         private static int _pendingSeasonChange = 0;
 
-        public const string cropSurvivedWinterDayName = "Seasons_Survived_Winter_Day";
-        public static int cropSurvivedWinterDayHash = cropSurvivedWinterDayName.GetStableHashCode();
-
         private SeasonSettings settings
         {
             get
@@ -1300,11 +1297,11 @@ namespace Seasons
                 return;
 
             bool getOverheat = seasonState.GetOverheatIn2WarmClothes() && !IsCold() && !player.GetFoods().Any(food => food.m_item.m_shared.m_name == "$item_eyescream");
-            bool haveOverheat = player.GetSEMan().HaveStatusEffect(statusEffectOverheatHash);
+            bool haveOverheat = player.GetSEMan().HaveStatusEffect(SeasonsVars.s_statusEffectOverheatHash);
             if (!getOverheat)
             {
                 if (haveOverheat)
-                    player.GetSEMan().RemoveStatusEffect(statusEffectOverheatHash);
+                    player.GetSEMan().RemoveStatusEffect(SeasonsVars.s_statusEffectOverheatHash);
             }
             else
             {
@@ -1313,9 +1310,9 @@ namespace Seasons
                     warmClothCount++;
 
                 if (!haveOverheat && warmClothCount > 1)
-                    player.GetSEMan().AddStatusEffect(statusEffectOverheatHash);
+                    player.GetSEMan().AddStatusEffect(SeasonsVars.s_statusEffectOverheatHash);
                 else if (haveOverheat && warmClothCount <= 1)
-                    player.GetSEMan().RemoveStatusEffect(statusEffectOverheatHash);
+                    player.GetSEMan().RemoveStatusEffect(SeasonsVars.s_statusEffectOverheatHash);
             }
         }
 

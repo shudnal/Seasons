@@ -12,7 +12,7 @@ namespace Seasons
             ZNetView m_nview = GetComponent<ZNetView>();
             if (m_nview != null && m_nview.m_body != null)
             {
-                float mass = m_nview.GetZDO().GetFloat(ZoneSystemVariantController.s_iceFloeMass);
+                float mass = m_nview.GetZDO().GetFloat(SeasonsVars.s_iceFloeMass);
                 if (mass != 0f)
                     m_nview.m_body.mass = mass;
             }

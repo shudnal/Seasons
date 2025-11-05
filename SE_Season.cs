@@ -142,7 +142,7 @@ namespace Seasons
 
         public static void UpdateSeasonStatusEffectStats()
         {
-            (Player.m_localPlayer?.GetSEMan().GetStatusEffect(statusEffectSeasonHash) as SE_Season)?.Setup(Player.m_localPlayer);
+            (Player.m_localPlayer?.GetSEMan().GetStatusEffect(SeasonsVars.s_statusEffectSeasonHash) as SE_Season)?.Setup(Player.m_localPlayer);
         }
 
         private static string MessageNextSeason()
@@ -186,22 +186,22 @@ namespace Seasons
         {
             if (odb.m_StatusEffects.Count > 0)
             {
-                if (!odb.m_StatusEffects.Any(se => se.name == statusEffectSeasonName))
+                if (!odb.m_StatusEffects.Any(se => se.name == SeasonsVars.s_statusEffectSeasonName))
                 {
                     SE_Season seasonEffect = ScriptableObject.CreateInstance<SE_Season>();
-                    seasonEffect.name = statusEffectSeasonName;
-                    seasonEffect.m_nameHash = statusEffectSeasonHash;
+                    seasonEffect.name = SeasonsVars.s_statusEffectSeasonName;
+                    seasonEffect.m_nameHash = SeasonsVars.s_statusEffectSeasonHash;
                     seasonEffect.m_icon = iconSpring;
 
                     odb.m_StatusEffects.Add(seasonEffect);
                 }
 
                 SE_Stats warm = odb.m_StatusEffects.Find(se => se.name == "Warm") as SE_Stats;
-                if (warm != null && !odb.m_StatusEffects.Any(se => se.name == statusEffectOverheatName))
+                if (warm != null && !odb.m_StatusEffects.Any(se => se.name == SeasonsVars.s_statusEffectOverheatName))
                 {
                     SE_Stats overheat = ScriptableObject.CreateInstance<SE_Stats>();
-                    overheat.name = statusEffectOverheatName;
-                    overheat.m_nameHash = statusEffectOverheatHash;
+                    overheat.name = SeasonsVars.s_statusEffectOverheatName;
+                    overheat.m_nameHash = SeasonsVars.s_statusEffectOverheatHash;
                     overheat.m_icon = warm.m_icon;
                     overheat.m_name = warm.m_name;
                     overheat.m_tooltip = warm.m_tooltip;
