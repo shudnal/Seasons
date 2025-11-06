@@ -200,9 +200,10 @@ namespace Seasons
                     overheat.name = SeasonsVars.s_statusEffectOverheatName;
                     overheat.m_nameHash = SeasonsVars.s_statusEffectOverheatHash;
                     overheat.m_icon = warm.m_icon;
-                    overheat.m_name = warm.m_name;
-                    overheat.m_tooltip = warm.m_tooltip;
-                    overheat.m_startMessage = warm.m_startMessage;
+                    overheat.m_name = "$seasons_status_overheat_name";
+                    overheat.m_tooltip = "$seasons_status_overheat_description";
+                    overheat.m_startMessage = "$seasons_status_overheat_message";
+                    overheat.m_startMessageType = MessageHud.MessageType.Center;
                     overheat.m_staminaRegenMultiplier = 0.8f;
                     overheat.m_eitrRegenMultiplier = 0.8f;
 
