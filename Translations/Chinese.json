@@ -18,5 +18,17 @@
     "seasons_plant_is_frozen": "冻结",
     "seasons_plant_is_exposed": "暴露在寒冷中",
     "seasons_plant_will_perish": "即将凋零",
-    "seasons_ice_floe_climb": "攀上"
+    "seasons_ice_floe_climb": "攀上",
+    "seasons_loadscreen_tip_ice": "到冬季中期，大海被冰覆盖，船只将失去作用。",
+    "seasons_loadscreen_tip_torch": "火把能在冬天为你取暖，在暴风雪中救你一命。",
+    "seasons_loadscreen_tip_harvests": "春夏时节收成成熟得更快。为严酷的冬天做好准备。",
+    "seasons_loadscreen_tip_nights": "冬夜更长、更暗、更冷。",
+    "seasons_loadscreen_tip_overheat": "夏天带来炎热，穿太多会中暑。一份冰凉的甜点能救命。",
+    "seasons_loadscreen_tip_firewood": "秋冬木柴燃烧得更快，提前储备一些。",
+    "seasons_loadscreen_tip_perish": "冬天万物不生，大部分植物都会被冻死。附近的热源可以提供防寒保护。",
+    "seasons_loadscreen_tip_traders": "商人提供季节性商品——季节更替时去拜访他们，以免错过好交易。",
+    "seasons_loadscreen_tip_stats": "季节会影响体力和技能，注意自身状态并适应变化。",
+    "seasons_loadscreen_tip_wolves": "冬季的饥饿迫使狼群下山觅食，你可能在任何地方成为猎物。",
+    "seasons_loadscreen_tip_swimming": "冬天别想着游泳——你会被冻死的。",
+    "seasons_loadscreen_tip_clutter": "春天，草地、森林和沼泽焕发生机。"
 }

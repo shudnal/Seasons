@@ -398,6 +398,8 @@ namespace Seasons
 
             seasonState.UpdateTorchesFireWarmth();
 
+            LoadingTips.UpdateLoadingTips();
+
             EnvManPatches.settingsUpdated = true;
         }
 
@@ -845,7 +847,7 @@ namespace Seasons
             return settings.m_treesRegrowthChance;
         }
 
-        private SeasonSettings GetSeasonSettings(Season season)
+        public SeasonSettings GetSeasonSettings(Season season)
         {
             return seasonsSettings.ContainsKey(season) ? seasonsSettings[season] : new SeasonSettings(season);
         }

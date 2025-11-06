@@ -18,5 +18,17 @@
     "seasons_plant_is_frozen": "Bevroren",
     "seasons_plant_is_exposed": "Blootgesteld aan kou",
     "seasons_plant_will_perish": "Zal spoedig vergaan",
-    "seasons_ice_floe_climb": "Klimmen"
+    "seasons_ice_floe_climb": "Klimmen",
+    "seasons_loadscreen_tip_ice": "Halverwege de winter is de zee bedekt met ijs en zijn boten nutteloos.",
+    "seasons_loadscreen_tip_torch": "Een fakkel kan je in de winter verwarmen en je redden tijdens een sneeuwstorm.",
+    "seasons_loadscreen_tip_harvests": "Oogsten rijpen sneller in de lente en de zomer. Bereid je voor op de strenge winter.",
+    "seasons_loadscreen_tip_nights": "Winternachten zijn langer, donkerder en kouder.",
+    "seasons_loadscreen_tip_overheat": "De zomer brengt hitte: te veel warme kledinglagen kunnen oververhitting veroorzaken. Een koud, zoet lekkernij kan levensreddend zijn.",
+    "seasons_loadscreen_tip_firewood": "Brandhout verbrandt sneller in de herfst en winter, dus sla extra op.",
+    "seasons_loadscreen_tip_perish": "In de winter groeit niets en de meeste planten sterven van de kou. Een warmtebron in de buurt kan bescherming bieden.",
+    "seasons_loadscreen_tip_traders": "Handelaars bieden seizoensgebonden goederen aan – bezoek ze wanneer het seizoen verandert om geen goede deals te missen.",
+    "seasons_loadscreen_tip_stats": "De tijd van het jaar beïnvloedt je uithoudingsvermogen en vaardigheden: pas je aan.",
+    "seasons_loadscreen_tip_wolves": "Winterhonger dwingt wolven de bergen af te dalen op zoek naar voedsel.",
+    "seasons_loadscreen_tip_swimming": "Denk er niet aan om in de winter te zwemmen – je bevriest.",
+    "seasons_loadscreen_tip_clutter": "In de lente bloeien weiden, bossen en moerassen op."
 }

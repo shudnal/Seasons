@@ -18,5 +18,17 @@
     "seasons_plant_is_frozen": "Gefroren",
     "seasons_plant_is_exposed": "Kälte ausgesetzt",
     "seasons_plant_will_perish": "Wird bald vergehen",
-    "seasons_ice_floe_climb": "Hinaufklettern"
+    "seasons_ice_floe_climb": "Hinaufklettern",
+    "seasons_loadscreen_tip_ice": "Bis Mitte des Winters ist das Meer mit Eis bedeckt und Boote werden nutzlos.",
+    "seasons_loadscreen_tip_torch": "Eine Fackel kann dich im Winter wärmen und während eines Schneesturms das Leben retten.",
+    "seasons_loadscreen_tip_harvests": "Die Ernte reift im Frühling und Sommer schneller. Bereite dich auf den harten Winter vor.",
+    "seasons_loadscreen_tip_nights": "Winternächte sind länger, dunkler und kälter.",
+    "seasons_loadscreen_tip_overheat": "Der Sommer bringt Hitze: zu viele warme Kleidungsschichten führen zu Überhitzung. Eine kalte, süße Delikatesse kann Leben retten.",
+    "seasons_loadscreen_tip_firewood": "Brennholz brennt im Herbst und Winter schneller, also lege Vorräte an.",
+    "seasons_loadscreen_tip_perish": "Im Winter wächst nichts, und die meisten Pflanzen sterben an der Kälte. Eine Wärmequelle in der Nähe kann Schutz bieten.",
+    "seasons_loadscreen_tip_traders": "Händler bieten saisonale Waren an – besuche sie, wenn sich die Jahreszeit ändert, um keine guten Angebote zu verpassen.",
+    "seasons_loadscreen_tip_stats": "Die Jahreszeit beeinflusst Ausdauer und Fähigkeiten: Überwache deinen Zustand und passe dich an.",
+    "seasons_loadscreen_tip_wolves": "Winterhunger zwingt Wölfe, aus den Bergen herabzusteigen, um Nahrung zu suchen.",
+    "seasons_loadscreen_tip_swimming": "Denk gar nicht daran, im Winter zu schwimmen – du erfrierst.",
+    "seasons_loadscreen_tip_clutter": "Im Frühling blühen Wiesen, Wälder und Sümpfe auf."
 }

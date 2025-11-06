@@ -18,5 +18,17 @@
     "seasons_plant_is_frozen": "Frozen",
     "seasons_plant_is_exposed": "Exposed to cold",
     "seasons_plant_will_perish": "Will soon perish",
-    "seasons_ice_floe_climb": "Climb"
+    "seasons_ice_floe_climb": "Climb",
+    "seasons_loadscreen_tip_ice": "By mid-winter the sea is covered with ice and boats become useless.",
+    "seasons_loadscreen_tip_torch": "A torch can warm you in winter and can be a lifesaver during a snowstorm.",
+    "seasons_loadscreen_tip_harvests": "Harvests ripen faster in spring and summer. Prepare for the harsh winter ahead.",
+    "seasons_loadscreen_tip_nights": "Winter nights are longer, darker and colder.",
+    "seasons_loadscreen_tip_overheat": "Summer brings heat: layers of warm clothing can cause overheating. One cold and sweet delicacy is a lifesaver.",
+    "seasons_loadscreen_tip_firewood": "Firewood burns faster in autumn and winter, so stock up on extra firewood for the winter in advance.",
+    "seasons_loadscreen_tip_perish": "In winter, nothing grows, and most plants die from the cold. A nearby heat source can provide protection from frost.",
+    "seasons_loadscreen_tip_traders": "Merchants offer seasonal goods - visit them when the season changes to avoid missing out on great deals.",
+    "seasons_loadscreen_tip_stats": "The time of year affects your stamina and skills: monitor your condition and adapt to the season.",
+    "seasons_loadscreen_tip_wolves": "Winter hunger forces wolves to descend from the mountains in search of food. You can become hunted anywhere.",
+    "seasons_loadscreen_tip_swimming": "Don\u0027t even think about swimming in winter - you\u0027ll freeze to death.",
+    "seasons_loadscreen_tip_clutter": "In spring, meadows, forests and swamps blossom."
 }

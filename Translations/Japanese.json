@@ -18,5 +18,17 @@
     "seasons_plant_is_frozen": "凍った",
     "seasons_plant_is_exposed": "寒さにさらされている",
     "seasons_plant_will_perish": "まもなく枯れる",
-    "seasons_ice_floe_climb": "よじ登る"
+    "seasons_ice_floe_climb": "よじ登る",
+    "seasons_loadscreen_tip_ice": "冬の中頃には海が氷に覆われ、ボートは使えなくなる。",
+    "seasons_loadscreen_tip_torch": "松明は冬にあなたを温め、吹雪の中で命を救うことができる。",
+    "seasons_loadscreen_tip_harvests": "収穫物は春と夏に早く実る。厳しい冬に備えよう。",
+    "seasons_loadscreen_tip_nights": "冬の夜は長く、暗く、寒い。",
+    "seasons_loadscreen_tip_overheat": "夏は暑さをもたらす。厚着をしすぎると熱中症になるかも。冷たい甘味は命を救うことがある。",
+    "seasons_loadscreen_tip_firewood": "秋や冬は薪が早く燃える。冬に備えて薪を多めに準備しよう。",
+    "seasons_loadscreen_tip_perish": "冬には何も育たず、ほとんどの植物は寒さで枯れてしまう。近くの熱源が霜から守ってくれるかもしれない。",
+    "seasons_loadscreen_tip_traders": "商人は季節ごとの商品を販売しています。季節が変わるときに訪れて、お得な商品を見逃さないようにしましょう。",
+    "seasons_loadscreen_tip_stats": "季節はスタミナやスキルに影響する。自分の状態を確認し、季節に適応しよう。",
+    "seasons_loadscreen_tip_wolves": "冬の飢えにより、オオカミたちは食べ物を求めて山から降りてくる。",
+    "seasons_loadscreen_tip_swimming": "冬に泳ごうなんて思わないこと。凍え死ぬぞ。",
+    "seasons_loadscreen_tip_clutter": "春には草原や森、沼地が花開く。"
 }

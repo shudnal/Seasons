@@ -18,5 +18,17 @@
     "seasons_plant_is_frozen": "Zamarznięte",
     "seasons_plant_is_exposed": "Narażone na zimno",
     "seasons_plant_will_perish": "Wkrótce zginie",
-    "seasons_ice_floe_climb": "Wspiąć się"
+    "seasons_ice_floe_climb": "Wspiąć się",
+    "seasons_loadscreen_tip_ice": "W połowie zimy morze pokrywa się lodem, a łodzie stają się bezużyteczne.",
+    "seasons_loadscreen_tip_torch": "Pochodnia może ogrzać cię zimą i uratować życie podczas śnieżycy.",
+    "seasons_loadscreen_tip_harvests": "Plony dojrzewają szybciej wiosną i latem. Przygotuj się na surową zimę.",
+    "seasons_loadscreen_tip_nights": "Zimowe noce są dłuższe, ciemniejsze i zimniejsze.",
+    "seasons_loadscreen_tip_overheat": "Lato przynosi upały: zbyt wiele ciepłych ubrań może powodować przegrzanie. Zimny, słodki przysmak może uratować życie.",
+    "seasons_loadscreen_tip_firewood": "Drewno opałowe spala się szybciej jesienią i zimą, więc zaopatrz się zawczasu.",
+    "seasons_loadscreen_tip_perish": "Zimą nic nie rośnie, a większość roślin ginie od zimna. Źródło ciepła w pobliżu może chronić przed mrozem.",
+    "seasons_loadscreen_tip_traders": "Kupcy oferują sezonowe towary – odwiedzaj ich, gdy zmienia się pora roku, aby nie przegapić okazji.",
+    "seasons_loadscreen_tip_stats": "Pora roku wpływa na twoją wytrzymałość i umiejętności: obserwuj stan i dostosuj się do sezonu.",
+    "seasons_loadscreen_tip_wolves": "Zimowy głód zmusza wilki do schodzenia z gór w poszukiwaniu jedzenia.",
+    "seasons_loadscreen_tip_swimming": "Nie próbuj pływać zimą – zamarzniesz na śmierć.",
+    "seasons_loadscreen_tip_clutter": "Na wiosnę kwitną łąki, lasy i bagna."
 }

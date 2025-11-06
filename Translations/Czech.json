@@ -18,5 +18,17 @@
     "seasons_plant_is_frozen": "Zamrzlý",
     "seasons_plant_is_exposed": "Vystaveno chladu",
     "seasons_plant_will_perish": "Brzy zahyne",
-    "seasons_ice_floe_climb": "Vylézt"
+    "seasons_ice_floe_climb": "Vylézt",
+    "seasons_loadscreen_tip_ice": "Do poloviny zimy je moře pokryto ledem a lodě jsou k ničemu.",
+    "seasons_loadscreen_tip_torch": "Pochodeň tě v zimě zahřeje a může ti zachránit život během sněhové bouře.",
+    "seasons_loadscreen_tip_harvests": "Úroda dozrává rychleji na jaře a v létě. Připrav se na drsnou zimu.",
+    "seasons_loadscreen_tip_nights": "Zimní noci jsou delší, temnější a chladnější.",
+    "seasons_loadscreen_tip_overheat": "Léto přináší horko: příliš mnoho teplého oblečení způsobí přehřátí. Chladná sladkost může zachránit život.",
+    "seasons_loadscreen_tip_firewood": "Dřevo na topení hoří na podzim a v zimě rychleji, proto se předem zásob.",
+    "seasons_loadscreen_tip_perish": "V zimě nic neroste a většina rostlin umírá zimou. Zdroj tepla poblíž může poskytnout ochranu.",
+    "seasons_loadscreen_tip_traders": "Obchodníci nabízejí sezónní zboží – navštiv je, když se mění roční období, abys nepřišel o skvělé nabídky.",
+    "seasons_loadscreen_tip_stats": "Roční období ovlivňuje výdrž i dovednosti: sleduj svůj stav a přizpůsob se.",
+    "seasons_loadscreen_tip_wolves": "Zimní hlad nutí vlky sestupovat z hor hledat potravu.",
+    "seasons_loadscreen_tip_swimming": "Ani nepomýšlej na koupání v zimě – umrznul bys.",
+    "seasons_loadscreen_tip_clutter": "Na jaře rozkvétají louky, lesy a bažiny."
 }

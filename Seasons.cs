@@ -34,6 +34,7 @@ namespace Seasons
         private static ConfigEntry<bool> configLocked;
         private static ConfigEntry<bool> loggingEnabled;
         public static ConfigEntry<long> dayLengthSec;
+        public static ConfigEntry<bool> enableLoadingTips;
 
         public static ConfigEntry<CacheFormat> cacheStorageFormat;
         public static ConfigEntry<bool> logTime;
@@ -288,6 +289,9 @@ namespace Seasons
             configLocked = config("General", "Lock Configuration", defaultValue: true, "Configuration is locked and can be changed by server admins only.");
             loggingEnabled = config("General", "Logging enabled", defaultValue: false, "Enable logging. [Not Synced with Server]", synchronizedSetting: false);
             dayLengthSec = config("General", "Day length in seconds", defaultValue: 1800L, "Day length in seconds. Vanilla - 1800 seconds. Set to 0 to disable.");
+            enableLoadingTips = config("General", "Loading tips enabled", defaultValue: true, "Show seasonal tips on loading screen. [Not Synced with Server]", synchronizedSetting: false);
+
+            enableLoadingTips.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
 
             controlEnvironments = config("Season - Control", "Control environments", defaultValue: true, "Enables seasonal weathers");
             controlRandomEvents = config("Season - Control", "Control random events", defaultValue: true, "Enables seasonal random events");
@@ -299,8 +303,11 @@ namespace Seasons
             controlGrass = config("Season - Control", "Control grass", defaultValue: true, "Enables seasonal changes of grass thickness, size and sparseness");
             customTextures = config("Season - Control", "Custom textures", defaultValue: true, "Enables custom textures");
 
-            controlStats.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
-            controlGrass.SettingChanged += (sender, args) => ClutterVariantController.Instance.UpdateGrass();
+            controlRandomEvents.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
+            controlLightings.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
+            controlStats.SettingChanged += (sender, args) => { SE_Season.UpdateSeasonStatusEffectStats(); LoadingTips.UpdateLoadingTips(); };
+            controlGrass.SettingChanged += (sender, args) => { ClutterVariantController.Instance.UpdateGrass(); LoadingTips.UpdateLoadingTips(); };
+            controlTraders.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
             customTextures.SettingChanged += (sender, args) => CustomTextures.UpdateTexturesOnChange();
 
             disableBloomInWinter = config("Season", "Disable Bloom in Winter", defaultValue: true, "Force disables Bloom graphics setting while in Winter and restores it in other seasons (it will not change Graphics setting, only disables posteffect)." +
@@ -348,7 +355,9 @@ namespace Seasons
             mountainInWinterRequires2WarmPieces = config("Season", "Mountains in Winter require 2 warm armor pieces", defaultValue: true, "If enabled - you have to wear 2 armor pieces with frost resistance in Winter or get frost resistance mead.");
 
 
+            cropsDiesAfterSetDayInWinter.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
             seasonalStatsOutdoorsOnly.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
+            freezingSwimmingInWinter.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
             cropsToSurviveInWinter.SettingChanged += (sender, args) => FillListsToControl();
             cropsToControlGrowth.SettingChanged += (sender, args) => FillListsToControl();
             woodListToControlDrop.SettingChanged += (sender, args) => FillListsToControl();
@@ -416,7 +425,7 @@ namespace Seasons
             placeShipAboveFrozenOcean = config("Season - Winter ocean", "Place ship above frozen ocean surface", defaultValue: false, "Place ship above frozen ocean surface to move them without destroying");
             placeFloatingContainersAboveFrozenOcean = config("Season - Winter ocean", "Place floating containers above frozen ocean surface", defaultValue: false, "Place floating containers above frozen ocean surface");
 
-            enableFrozenWater.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
+            enableFrozenWater.SettingChanged += (sender, args) => { ZoneSystemVariantController.UpdateWaterState(); LoadingTips.UpdateLoadingTips(); };
             enableIceFloes.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             waterFreezesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             iceFloesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();

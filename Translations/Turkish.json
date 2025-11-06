@@ -18,5 +18,17 @@
     "seasons_plant_is_frozen": "Donmuş",
     "seasons_plant_is_exposed": "Soğuğa maruz",
     "seasons_plant_will_perish": "Yakında yok olacak",
-    "seasons_ice_floe_climb": "Tırman"
+    "seasons_ice_floe_climb": "Tırman",
+    "seasons_loadscreen_tip_ice": "Kış ortasında deniz buzla kaplanır ve tekneler işe yaramaz hale gelir.",
+    "seasons_loadscreen_tip_torch": "Kışın bir meşale seni ısıtabilir ve kar fırtınasında hayatını kurtarabilir.",
+    "seasons_loadscreen_tip_harvests": "Ürünler ilkbahar ve yazın daha hızlı olgunlaşır. Sert kışa hazırlan.",
+    "seasons_loadscreen_tip_nights": "Kış geceleri daha uzun, karanlık ve soğuktur.",
+    "seasons_loadscreen_tip_overheat": "Yaz sıcaklık getirir: fazla sıcak giysi tabakaları aşırı ısınmaya neden olabilir. Soğuk, tatlı bir lezzet hayat kurtarabilir.",
+    "seasons_loadscreen_tip_firewood": "Odun sonbahar ve kışın daha hızlı yanar, bu yüzden önceden stok yap.",
+    "seasons_loadscreen_tip_perish": "Kışın hiçbir şey büyümez ve çoğu bitki soğuktan ölür. Yakındaki bir ısı kaynağı koruma sağlayabilir.",
+    "seasons_loadscreen_tip_traders": "Tüccarlar mevsimlik ürünler sunar – iyi fırsatları kaçırmamak için mevsim değiştiğinde onları ziyaret edin.",
+    "seasons_loadscreen_tip_stats": "Mevsim yılı dayanıklılığını ve yeteneklerini etkiler: durumunu izle ve mevsime uyum sağla.",
+    "seasons_loadscreen_tip_wolves": "Kış açlığı kurtları yiyecek aramak için dağlardan inmeye zorlar.",
+    "seasons_loadscreen_tip_swimming": "Kışın yüzmeyi aklından bile geçirme – donarak ölürsün.",
+    "seasons_loadscreen_tip_clutter": "İlkbaharda çayırlar, ormanlar ve bataklıklar çiçek açar."
 }

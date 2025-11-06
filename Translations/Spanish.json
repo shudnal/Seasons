@@ -18,5 +18,17 @@
     "seasons_plant_is_frozen": "Congelado",
     "seasons_plant_is_exposed": "Expuesto al frío",
     "seasons_plant_will_perish": "Pronto perecerá",
-    "seasons_ice_floe_climb": "Subir"
+    "seasons_ice_floe_climb": "Subir",
+    "seasons_loadscreen_tip_ice": "A mediados del invierno, el mar se cubre de hielo y los barcos se vuelven inútiles.",
+    "seasons_loadscreen_tip_torch": "Una antorcha puede calentarte en invierno y salvarte la vida durante una tormenta de nieve.",
+    "seasons_loadscreen_tip_harvests": "Las cosechas maduran más rápido en primavera y verano. Prepárate para el duro invierno.",
+    "seasons_loadscreen_tip_nights": "Las noches de invierno son más largas, oscuras y frías.",
+    "seasons_loadscreen_tip_overheat": "El verano trae calor: demasiadas capas de ropa cálida pueden causar sobrecalentamiento. Un dulce frío puede salvarte la vida.",
+    "seasons_loadscreen_tip_firewood": "La leña se quema más rápido en otoño e invierno, así que haz acopio con antelación.",
+    "seasons_loadscreen_tip_perish": "En invierno nada crece y la mayoría de las plantas mueren por el frío. Una fuente de calor cercana puede proteger del hielo.",
+    "seasons_loadscreen_tip_traders": "Los comerciantes ofrecen productos de temporada: visítalos cuando cambie la estación para no perderte grandes ofertas.",
+    "seasons_loadscreen_tip_stats": "La época del año afecta tu resistencia y habilidades: controla tu estado y adáptate a la temporada.",
+    "seasons_loadscreen_tip_wolves": "El hambre invernal obliga a los lobos a bajar de las montañas en busca de comida.",
+    "seasons_loadscreen_tip_swimming": "Ni se te ocurra nadar en invierno: morirás congelado.",
+    "seasons_loadscreen_tip_clutter": "En primavera, prados, bosques y pantanos florecen."
 }

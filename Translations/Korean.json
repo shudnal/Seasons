@@ -18,5 +18,17 @@
     "seasons_plant_is_frozen": "얼어붙음",
     "seasons_plant_is_exposed": "추위에 노출됨",
     "seasons_plant_will_perish": "곧 시들 것이다",
-    "seasons_ice_floe_climb": "기어오르기"
+    "seasons_ice_floe_climb": "기어오르기",
+    "seasons_loadscreen_tip_ice": "한겨울이 되면 바다는 얼음으로 덮이고 배는 쓸모없어진다.",
+    "seasons_loadscreen_tip_torch": "겨울에는 횃불이 당신을 따뜻하게 해주며, 눈보라 속에서는 생명을 구할 수 있다.",
+    "seasons_loadscreen_tip_harvests": "수확물은 봄과 여름에 더 빨리 익습니다. 혹독한 겨울에 대비하세요.",
+    "seasons_loadscreen_tip_nights": "겨울밤은 더 길고, 더 어둡고, 더 춥습니다.",
+    "seasons_loadscreen_tip_overheat": "여름은 더위를 가져옵니다. 너무 많은 옷을 입으면 과열될 수 있습니다. 차가운 달콤한 간식은 생명을 구할 수 있습니다.",
+    "seasons_loadscreen_tip_firewood": "가을과 겨울에는 장작이 더 빨리 탑니다. 미리 충분히 비축하세요.",
+    "seasons_loadscreen_tip_perish": "겨울에는 아무것도 자라지 않으며 대부분의 식물이 추위로 죽습니다. 근처의 열원이 서리로부터 보호해 줄 수 있습니다.",
+    "seasons_loadscreen_tip_traders": "상인은 계절 상품을 판매합니다. 계절이 바뀔 때 방문하여 좋은 기회를 놓치지 마세요.",
+    "seasons_loadscreen_tip_stats": "계절은 지구력과 기술에 영향을 미칩니다. 상태를 확인하고 계절에 맞춰 적응하세요.",
+    "seasons_loadscreen_tip_wolves": "겨울의 굶주림은 늑대들이 먹이를 찾아 산에서 내려오게 만듭니다.",
+    "seasons_loadscreen_tip_swimming": "겨울에 수영할 생각은 하지 마세요. 얼어 죽을 겁니다.",
+    "seasons_loadscreen_tip_clutter": "봄에는 초원, 숲, 늪지가 활짝 핍니다."
 }

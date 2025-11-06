@@ -18,5 +18,17 @@
     "seasons_plant_is_frozen": "Gelé",
     "seasons_plant_is_exposed": "Exposé au froid",
     "seasons_plant_will_perish": "Va bientôt périr",
-    "seasons_ice_floe_climb": "Grimper"
+    "seasons_ice_floe_climb": "Grimper",
+    "seasons_loadscreen_tip_ice": "À la mi-hiver, la mer est couverte de glace et les bateaux deviennent inutiles.",
+    "seasons_loadscreen_tip_torch": "Une torche peut vous réchauffer en hiver et vous sauver la vie pendant une tempête de neige.",
+    "seasons_loadscreen_tip_harvests": "Les récoltes mûrissent plus vite au printemps et en été. Préparez-vous à l\u0027hiver rigoureux.",
+    "seasons_loadscreen_tip_nights": "Les nuits d\u0027hiver sont plus longues, plus sombres et plus froides.",
+    "seasons_loadscreen_tip_overheat": "L\u0027été apporte la chaleur : trop de couches de vêtements chauds peuvent provoquer une surchauffe. Une friandise froide et sucrée peut sauver la vie.",
+    "seasons_loadscreen_tip_firewood": "Le bois de chauffage brûle plus vite en automne et en hiver, alors faites des réserves à l\u0027avance.",
+    "seasons_loadscreen_tip_perish": "En hiver, rien ne pousse et la plupart des plantes meurent du froid. Une source de chaleur à proximité peut offrir une protection.",
+    "seasons_loadscreen_tip_traders": "Les marchands proposent des produits saisonniers – rends-leur visite lorsque la saison change pour ne pas manquer de bonnes affaires.",
+    "seasons_loadscreen_tip_stats": "La période de l\u0027année influence votre endurance et vos compétences : adaptez-vous à la saison.",
+    "seasons_loadscreen_tip_wolves": "La faim hivernale pousse les loups à descendre des montagnes à la recherche de nourriture.",
+    "seasons_loadscreen_tip_swimming": "N\u0027essayez pas de nager en hiver – vous mourrez gelé.",
+    "seasons_loadscreen_tip_clutter": "Au printemps, prairies, forêts et marais s\u0027épanouissent."
 }
