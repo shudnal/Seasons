@@ -522,6 +522,18 @@ Default seasonal keys:
 * season_summer
 * season_winter
 
+## Localization
+To add your own localization create a file with the name **Seasons.LanguageName.yml** or **Seasons.LanguageName.json** anywhere inside of the Bepinex folder.
+For example, to add a French translation you could create a **Seasons.French.yml** file inside of the config folder and add French translations there.
+
+Localization file will be loaded on the next game launch or on the next language change.
+
+You can send me a file with your localization at [Discord](https://discord.gg/e3UtQB8GFK), [GitHub](https://github.com/shudnal/Seasons/issues) or [Nexus](https://www.nexusmods.com/valheim/mods/2654?tab=posts) so I can add it to mod's bundle.
+
+[Language list](https://valheim-modding.github.io/Jotunn/data/localization/language-list.html).
+
+English localization example is located in `Seasons.English.json` file next to plugin dll.
+
 ## Installation (manual)
 extract Seasons folder to your BepInEx\Plugins\ folder
 
