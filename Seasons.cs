@@ -89,6 +89,7 @@ namespace Seasons
         public static ConfigEntry<bool> mountainInWinterRequires2WarmPieces;
         public static ConfigEntry<float> chanceToProduceACropInWinter;
         public static ConfigEntry<float> secondsToFreezeForCropInWinter;
+        public static ConfigEntry<bool> cultivatedGroundTurnsIntoDirtInWinter;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -319,6 +320,7 @@ namespace Seasons
                                                                                                                                new AcceptableValueRange<float>(0f, 1f),
                                                                                                                                new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
             secondsToFreezeForCropInWinter = config("Season", "Crops will be freezing for seconds until perish", defaultValue: 120f, "After crop is hit by winter it will not perish immediately but will start to gradually freeze to death.");
+            cultivatedGroundTurnsIntoDirtInWinter = config("Season", "Cultivated ground turns into regular Dirt in Winter", defaultValue: false, "With the onset of winter, any ground cultivated by player turns into ordinary dirt and has to be recultivated. It happens once per year.");
 
             cropsToSurviveInWinter = config("Season", "Crops will survive in winter", defaultValue: "Pickable_Carrot,Pickable_Barley,Pickable_Barley_Wild,Pickable_Flax,Pickable_Flax_Wild,Pickable_Thistle,Pickable_Mushroom_Magecap",
                                                                                                 GetDescriptionSeparatedStrings("Crops and pickables from the list will not perish after set day in winter"));

@@ -1173,7 +1173,7 @@ namespace Seasons
                 CameraEffects.instance.SetBloom((!disableBloomInWinter.Value || GetCurrentSeason() != Season.Winter) && PlatformPrefs.GetInt("Bloom", 1) == 1);
         }
 
-        private int GetYearLengthInDays()
+        public int GetYearLengthInDays()
         {
             int days = 0;
             foreach (Season season in Enum.GetValues(typeof(Season)))

@@ -79,12 +79,15 @@ namespace Seasons
         public const string _iceSurfaceName = "IceSurface";
 
         public const string _iceFloeName = "ice1";
-        public static int _iceFloePrefab = _iceFloeName.GetStableHashCode();
+        public static int s_iceFloePrefab = _iceFloeName.GetStableHashCode();
         public static Vector2 s_floeSize = new Vector2(8.36f, 8.0f) / 2;
 
         public static GameObject s_iceSurface;
         public static ZoneSystem.ZoneVegetation s_iceFloe;
         public static int s_zoneCtrlPrefab;
+        
+        public static int s_terrainCompilerPrefab;
+        public const int s_terrainCompVersion = 1;
 
         private const float _FoamDepthFrozen = 10f;
         private const float _WaveVel = 0f;
@@ -120,6 +123,8 @@ namespace Seasons
         public static bool IsWaterSurfaceFrozen() => s_freezeStatus == 1f;
         
         public static bool IsTimeForIceFloes() => enableIceFloes.Value && !IsWaterSurfaceFrozen() && seasonState.GetCurrentSeason() == Season.Winter && (int)iceFloesInWinterDays.Value.x <= seasonState.GetCurrentDay() && seasonState.GetCurrentDay() <= (int)iceFloesInWinterDays.Value.y;
+
+        public static bool IsTimeToDecultivateGround() => cultivatedGroundTurnsIntoDirtInWinter.Value && seasonState.GetCurrentSeason() == Season.Winter;
 
         public static float WaterLevel => s_colliderHeight == 0f || !IsWaterSurfaceFrozen() ? ZoneSystem.instance.m_waterLevel : s_colliderHeight;
 
@@ -440,7 +445,7 @@ namespace Seasons
 
             waterStateInitialized = true;
 
-            CheckToRemoveIceFloes();
+            CheckZDODatabase();
 
             foreach (KeyValuePair<WaterVolume, WaterState> waterState in waterStates)
                 UpdateWater(waterState.Key, waterState.Value);
@@ -693,31 +698,57 @@ namespace Seasons
             floating.m_body.linearVelocity = Vector3.zero;
         }
 
-        public static void CheckToRemoveIceFloes()
+        public static void CheckZDODatabase()
         {
-            if (IsTimeForIceFloes() || !ZNet.instance.IsServer())
+            if (!ZNet.instance.IsServer())
                 return;
 
             if (s_zoneCtrlPrefab == 0)
                 s_zoneCtrlPrefab = (ZoneSystem.instance == null ? "_ZoneCtrl" : Utils.GetPrefabName(ZoneSystem.instance.m_zoneCtrlPrefab)).GetStableHashCode();
 
-            int floes = 0; int zones = 0;
+            if (s_terrainCompilerPrefab == 0)
+                s_terrainCompilerPrefab = "_TerrainCompiler".GetStableHashCode();
+
+            bool removeIceFloes = !IsTimeForIceFloes();
+            bool removeCultivatedGround = IsTimeToDecultivateGround();
+
+            if (!removeIceFloes && !removeCultivatedGround)
+                return;
+
+            int yearLength = seasonState.GetYearLengthInDays();
+            int worldDay = seasonState.GetCurrentWorldDay();
+
+            int floes = 0; int zones = 0; int terrains = 0;
             foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values)
             {
-                if (zdo.GetPrefab() == _iceFloePrefab && zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
+                if (removeIceFloes)
                 {
-                    RemoveObject(zdo, true);
-                    floes++;
+                    if (zdo.GetPrefab() == s_iceFloePrefab && zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
+                    {
+                        RemoveObject(zdo, true);
+                        floes++;
+                    }
+
+                    if (zdo.GetPrefab() == s_zoneCtrlPrefab && zdo.GetBool(SeasonsVars.s_iceFloesSpawned))
+                    {
+                        zdo.Set(SeasonsVars.s_iceFloesSpawned, false);
+                        zones++;
+                    }
                 }
 
-                if (zdo.GetPrefab() == s_zoneCtrlPrefab && zdo.GetBool(SeasonsVars.s_iceFloesSpawned))
+                if (removeCultivatedGround)
                 {
-                    zdo.Set(SeasonsVars.s_iceFloesSpawned, false);
-                    zones++;
+                    if (zdo.GetPrefab() == s_terrainCompilerPrefab && Mathf.Abs(worldDay - zdo.GetInt(SeasonsVars.s_terrainDecultivated, 0)) >= yearLength)
+                    {
+                        zdo.Set(SeasonsVars.s_terrainDecultivated, worldDay);
+                        if (TerrainDecultivation.DecultivateGround(zdo))
+                            terrains++;
+                    }
                 }
             }
 
             LogFloeState($"Removed overworld floes:{floes}, Zones refreshed:{zones}");
+            LogInfo($"Terrains decultivated:{terrains}");
         }
 
         public bool CheckWaterVolumeForIceFloes(WaterVolume waterVolume)
@@ -736,7 +767,7 @@ namespace Seasons
 
             m_tempZDOList.Clear();
             ZDOMan.instance.FindObjects(zoneID, m_tempZDOList);
-            m_tempZDOList.RemoveAll(zdo => zdo.GetPrefab() != _iceFloePrefab);
+            m_tempZDOList.RemoveAll(zdo => zdo.GetPrefab() != s_iceFloePrefab);
             
             if (IsTimeForIceFloes() && m_tempZDOList.Count > 0)
                 return true;
@@ -788,7 +819,7 @@ namespace Seasons
             int seed = WorldGenerator.instance.GetSeed();
             float num = ZoneSystem.instance.m_zoneSize / 2f;
 
-            UnityEngine.Random.InitState(seed + zoneID.x * 4271 + zoneID.y * 9187 + _iceFloePrefab + (SeasonState.IsActive ? seasonState.GetCurrentWorldDay() : 0));
+            UnityEngine.Random.InitState(seed + zoneID.x * 4271 + zoneID.y * 9187 + s_iceFloePrefab + (SeasonState.IsActive ? seasonState.GetCurrentWorldDay() : 0));
             int spawnCount = UnityEngine.Random.Range((int)amountOfIceFloesInWinterDays.Value.x, (int)amountOfIceFloesInWinterDays.Value.y + 1);
             for (int i = 0; i < spawnCount; i++)
             {
@@ -1658,7 +1689,7 @@ namespace Seasons
 
         private static bool Prefix(Floating __instance, float fixedDeltaTime)
         {
-            if (!GameCamera.instance || __instance.m_nview is not ZNetView nview || !nview.IsValid() || nview.GetZDO()?.GetPrefab() != _iceFloePrefab || !__instance.m_body)
+            if (!GameCamera.instance || __instance.m_nview is not ZNetView nview || !nview.IsValid() || nview.GetZDO()?.GetPrefab() != s_iceFloePrefab || !__instance.m_body)
                 return true;
 
             ZSyncTransform syncTransform = __instance.GetComponent<ZSyncTransform>();
