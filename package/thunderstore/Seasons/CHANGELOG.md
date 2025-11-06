@@ -1,3 +1,19 @@
+# 1.7.0
+* proper localization on most popular languages (corrections are welcomed)
+* new seasonal loading tips (The composition of the tips depends on the seasonal settings and configs)
+* compatibility with Apiary from HoneyPlus (bees sleep in Winter)
+* fixed occasional issue with unintended day skip after sleep
+* another attempt on fish position with frozen ocean
+* new config option to disable torch warmth in interior (enabled by default)
+* Ice floes health changes proportionally its volume (initial health value is configurable)
+* new config in Season section to make Warm debuff appear even on single frost-resistant armor piece
+* new config in Season section to make Mountains in Winter require 2 warm armor piece to prevent freezing
+* new config in Season section to get Cold status along Wet status in Mountains if not protected with mead (in dungeons mostly)
+* new config in Season section to ignore getting Cold on Wet if wearing 2 warm armor pieces
+* new config in Season section to set a chance for crop to survive winter cold (it checks once per every winter)
+* new config in Season section for crops to not perish immediately but gradually freeze to death in set amount of seconds
+* new config in Season section for cultivated ground to become regular dirt in Winter. This way you will have to cultivate your farming grounds every Spring (disabled by default, needs testing for balance)
+
 # 1.6.10
 * better compatibility with worlds stretched by EWS
 * some new modifiers available in custom seasonal stats (for stamina, swim, adrenaline and stagger)

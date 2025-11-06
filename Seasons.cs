@@ -25,7 +25,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.6.10";
+        public const string pluginVersion = "1.7.0";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -248,7 +248,7 @@ namespace Seasons
             Game.isModded = true;
 
             if (UseTextureControllers())
-            LoadIcons();
+                LoadIcons();
 
             seasonState = new SeasonState();
 
@@ -546,9 +546,9 @@ namespace Seasons
 
             return tex.LoadImage(data, true);
         }
-
-        private Sprite GetSpriteConfig(string fieldName) => GetType().GetField(fieldName).GetValue(this) as Sprite;
         
+        private Sprite GetSpriteConfig(string fieldName) => GetType().GetField(fieldName).GetValue(this) as Sprite;
+
         public static string GetSeasonTooltip(Season season) => $"$seasons_season_{season.ToString().ToLower()}_has_come";
 
         public static string GetSeasonName(Season season) => $"$seasons_season_{season.ToString().ToLower()}_name";
@@ -643,7 +643,7 @@ namespace Seasons
         public static bool ControlPlantGrowth(GameObject gameObject)
         {
             return _PlantsToControlGrowth.Contains(PrefabVariantController.GetPrefabName(gameObject).ToLower());
-        }
+            }
 
         public static bool PlantWillSurviveWinter(GameObject gameObject)
         {
