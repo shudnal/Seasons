@@ -33,5 +33,7 @@
     "seasons_loadscreen_tip_stats": "Время года влияет на выносливость и навыки: следите за своим состоянием и адаптируйтесь к сезону.",
     "seasons_loadscreen_tip_wolves": "Зимний голод заставляет волков спускаться с гор в поисках пищи. Вы можете стать добычей где угодно.",
     "seasons_loadscreen_tip_swimming": "Даже не думайте купаться зимой - вы замерзнете насмерть.",
-    "seasons_loadscreen_tip_clutter": "Весной луга, леса и болота расцветают."
+    "seasons_loadscreen_tip_clutter": "Весной луга, леса и болота расцветают.",
+    "seasons_loadscreen_preparing": "Подготовка сезонных текстур…",
+    "seasons_loadscreen_saving": "Сохранение сезонных текстур…"
 }

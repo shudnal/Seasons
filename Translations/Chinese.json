@@ -33,5 +33,7 @@
     "seasons_loadscreen_tip_stats": "季节会影响体力和技能，注意自身状态并适应变化。",
     "seasons_loadscreen_tip_wolves": "冬季的饥饿迫使狼群下山觅食，你可能在任何地方成为猎物。",
     "seasons_loadscreen_tip_swimming": "冬天别想着游泳——你会被冻死的。",
-    "seasons_loadscreen_tip_clutter": "春天，草地、森林和沼泽焕发生机。"
+    "seasons_loadscreen_tip_clutter": "春天，草地、森林和沼泽焕发生机。",
+    "seasons_loadscreen_preparing": "正在准备季节性纹理…",
+    "seasons_loadscreen_saving": "正在保存季节性纹理…"
 }

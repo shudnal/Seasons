@@ -33,5 +33,7 @@
     "seasons_loadscreen_tip_stats": "The time of year affects your stamina and skills: monitor your condition and adapt to the season.",
     "seasons_loadscreen_tip_wolves": "Winter hunger forces wolves to descend from the mountains in search of food. You can become hunted anywhere.",
     "seasons_loadscreen_tip_swimming": "Don\u0027t even think about swimming in winter - you\u0027ll freeze to death.",
-    "seasons_loadscreen_tip_clutter": "In spring, meadows, forests and swamps blossom."
+    "seasons_loadscreen_tip_clutter": "In spring, meadows, forests and swamps blossom.",
+    "seasons_loadscreen_preparing": "Preparing seasonal textures…",
+    "seasons_loadscreen_saving": "Saving seasonal textures…"
 }

@@ -33,5 +33,7 @@
     "seasons_loadscreen_tip_stats": "La période de l\u0027année influence votre endurance et vos compétences : adaptez-vous à la saison.",
     "seasons_loadscreen_tip_wolves": "La faim hivernale pousse les loups à descendre des montagnes à la recherche de nourriture.",
     "seasons_loadscreen_tip_swimming": "N\u0027essayez pas de nager en hiver – vous mourrez gelé.",
-    "seasons_loadscreen_tip_clutter": "Au printemps, prairies, forêts et marais s\u0027épanouissent."
+    "seasons_loadscreen_tip_clutter": "Au printemps, prairies, forêts et marais s\u0027épanouissent.",
+    "seasons_loadscreen_preparing": "Préparation des textures saisonnières…",
+    "seasons_loadscreen_saving": "Enregistrement des textures saisonnières…"
 }

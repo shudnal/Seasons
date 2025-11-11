@@ -33,5 +33,7 @@
     "seasons_loadscreen_tip_stats": "계절은 지구력과 기술에 영향을 미칩니다. 상태를 확인하고 계절에 맞춰 적응하세요.",
     "seasons_loadscreen_tip_wolves": "겨울의 굶주림은 늑대들이 먹이를 찾아 산에서 내려오게 만듭니다.",
     "seasons_loadscreen_tip_swimming": "겨울에 수영할 생각은 하지 마세요. 얼어 죽을 겁니다.",
-    "seasons_loadscreen_tip_clutter": "봄에는 초원, 숲, 늪지가 활짝 핍니다."
+    "seasons_loadscreen_tip_clutter": "봄에는 초원, 숲, 늪지가 활짝 핍니다.",
+    "seasons_loadscreen_preparing": "계절 텍스처 준비 중…",
+    "seasons_loadscreen_saving": "계절 텍스처 저장 중…"
 }

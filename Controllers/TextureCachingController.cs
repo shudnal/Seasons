@@ -29,7 +29,6 @@ namespace Seasons.Controllers
         private static float _indicatorProgress;
         private static float _indicatorMaxProgress;
 
-
         public void Awake()
         {
             _instance = this;
@@ -81,7 +80,7 @@ namespace Seasons.Controllers
             Seasons.LogInfo("Setting up loading indicator");
             
             _indicatorProgress = 0;
-            _indicatorText = "Preparing seasonal textures...";
+            _indicatorText = "$seasons_loadscreen_preparing";
 
             yield return new WaitForSeconds(0.5f);
 
@@ -92,7 +91,7 @@ namespace Seasons.Controllers
             if (!LoadingIndicator.IsCompletelyInvisible)
             {
                 LoadingIndicator.SetProgress(1f);
-                LoadingIndicator.SetText("Saving seasonal textures...");
+                LoadingIndicator.SetText("$seasons_loadscreen_saving");
             }
 
             yield return new WaitForFixedUpdate();

@@ -33,5 +33,7 @@
     "seasons_loadscreen_tip_stats": "Пора року впливає на витривалість і навички: слідкуй за станом і пристосовуйся.",
     "seasons_loadscreen_tip_wolves": "Зимовий голод змушує вовків спускатися з гір у пошуках їжі. Ви можете стати здобиччю будь-де.",
     "seasons_loadscreen_tip_swimming": "Навіть не думай купатися взимку — замерзнеш до смерті.",
-    "seasons_loadscreen_tip_clutter": "Навесні розквітають луки, ліси та болота."
+    "seasons_loadscreen_tip_clutter": "Навесні розквітають луки, ліси та болота.",
+    "seasons_loadscreen_preparing": "Підготовка сезонних текстур…",
+    "seasons_loadscreen_saving": "Збереження сезонних текстур…"
 }

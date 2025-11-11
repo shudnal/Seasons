@@ -33,5 +33,7 @@
     "seasons_loadscreen_tip_stats": "季節會影響體力和技能，注意自身狀態並適應變化。",
     "seasons_loadscreen_tip_wolves": "冬季的飢餓迫使狼群下山覓食，你可能在任何地方成為獵物。",
     "seasons_loadscreen_tip_swimming": "冬天別想著游泳——你會被凍死的。",
-    "seasons_loadscreen_tip_clutter": "春天，草地、森林和沼澤煥發生機。"
+    "seasons_loadscreen_tip_clutter": "春天，草地、森林和沼澤煥發生機。",
+    "seasons_loadscreen_preparing": "正在準備季節性紋理…",
+    "seasons_loadscreen_saving": "正在保存季節性紋理…"
 }

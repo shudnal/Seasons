@@ -33,5 +33,7 @@
     "seasons_loadscreen_tip_stats": "Pora roku wpływa na twoją wytrzymałość i umiejętności: obserwuj stan i dostosuj się do sezonu.",
     "seasons_loadscreen_tip_wolves": "Zimowy głód zmusza wilki do schodzenia z gór w poszukiwaniu jedzenia.",
     "seasons_loadscreen_tip_swimming": "Nie próbuj pływać zimą – zamarzniesz na śmierć.",
-    "seasons_loadscreen_tip_clutter": "Na wiosnę kwitną łąki, lasy i bagna."
+    "seasons_loadscreen_tip_clutter": "Na wiosnę kwitną łąki, lasy i bagna.",
+    "seasons_loadscreen_preparing": "Przygotowywanie tekstur sezonowych…",
+    "seasons_loadscreen_saving": "Zapisywanie tekstur sezonowych…"
 }

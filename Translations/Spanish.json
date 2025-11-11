@@ -33,5 +33,7 @@
     "seasons_loadscreen_tip_stats": "La época del año afecta tu resistencia y habilidades: controla tu estado y adáptate a la temporada.",
     "seasons_loadscreen_tip_wolves": "El hambre invernal obliga a los lobos a bajar de las montañas en busca de comida.",
     "seasons_loadscreen_tip_swimming": "Ni se te ocurra nadar en invierno: morirás congelado.",
-    "seasons_loadscreen_tip_clutter": "En primavera, prados, bosques y pantanos florecen."
+    "seasons_loadscreen_tip_clutter": "En primavera, prados, bosques y pantanos florecen.",
+    "seasons_loadscreen_preparing": "Preparando texturas estacionales…",
+    "seasons_loadscreen_saving": "Guardando texturas estacionales…"
 }

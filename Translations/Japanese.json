@@ -33,5 +33,7 @@
     "seasons_loadscreen_tip_stats": "季節はスタミナやスキルに影響する。自分の状態を確認し、季節に適応しよう。",
     "seasons_loadscreen_tip_wolves": "冬の飢えにより、オオカミたちは食べ物を求めて山から降りてくる。",
     "seasons_loadscreen_tip_swimming": "冬に泳ごうなんて思わないこと。凍え死ぬぞ。",
-    "seasons_loadscreen_tip_clutter": "春には草原や森、沼地が花開く。"
+    "seasons_loadscreen_tip_clutter": "春には草原や森、沼地が花開く。",
+    "seasons_loadscreen_preparing": "季節のテクスチャを準備中…",
+    "seasons_loadscreen_saving": "季節のテクスチャを保存中…"
 }
