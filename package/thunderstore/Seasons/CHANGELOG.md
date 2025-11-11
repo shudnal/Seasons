@@ -1,3 +1,7 @@
+# 1.7.1
+* fixed nonlocalized name of some pickables in winter
+* indicator of seasonal textures creation process
+
 # 1.7.0
 * proper localization on most popular languages (corrections are welcomed)
 * new seasonal loading tips (The composition of the tips depends on the seasonal settings and configs)

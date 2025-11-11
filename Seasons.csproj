@@ -39,6 +39,7 @@
     <Compile Include="Compatibility\HoneyPlusCompat.cs" />
     <Compile Include="Compatibility\EWDCompat.cs" />
     <Compile Include="Compatibility\MarketplaceCompat.cs" />
+    <Compile Include="Controllers\TextureCachingController.cs" />
     <Compile Include="LoadingTips.cs" />
     <Compile Include="SeasonState\ControlledComponentsExtentions.cs" />
     <Compile Include="SeasonState\TerrainDecultivation.cs" />

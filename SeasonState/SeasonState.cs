@@ -301,6 +301,18 @@ namespace Seasons
             return currentNightLength;
         }
 
+        public static void InitializeTextureControllers()
+        {
+            ZoneSystem.instance.gameObject.AddComponent<PrefabVariantController>();
+            PrefabVariantController.AddControllerToPrefabs();
+            ClutterVariantController.Initialize();
+            ZoneSystem.instance.gameObject.AddComponent<ZoneSystemVariantController>().Initialize(ZoneSystem.instance);
+            FillListsToControl();
+            InvalidatePositionsCache();
+            CustomTextures.SetupConfigWatcher();
+            CustomMusic.SetupConfigWatcher();
+        }
+
         public static void ClearBiomesDefault() => biomesDefault.Clear();
 
         public static void RefreshBiomesDefault(bool forceUpdate)

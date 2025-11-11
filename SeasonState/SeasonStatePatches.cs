@@ -221,7 +221,7 @@ namespace Seasons
                     return;
 
                 if (string.IsNullOrWhiteSpace(__result))
-                    __result = __instance.GetHoverName();
+                    __result = __instance.GetHoverName().Localize();
 
                 __result += $"\n<color=#ADD8E6>{__instance.GetColdStatus()}</color>".Localize();
             }

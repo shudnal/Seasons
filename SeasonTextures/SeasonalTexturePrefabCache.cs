@@ -34,18 +34,7 @@ namespace Seasons
             ClutterVariantController.AddSeasonalClutter();
 
             if (texturesVariants.Initialize())
-            {
-                __instance.gameObject.AddComponent<PrefabVariantController>();
-                PrefabVariantController.AddControllerToPrefabs();
-                ClutterVariantController.Initialize();
-                __instance.gameObject.AddComponent<ZoneSystemVariantController>().Initialize(__instance);
-                FillListsToControl();
-                InvalidatePositionsCache();
-                CustomTextures.SetupConfigWatcher();
-                CustomMusic.SetupConfigWatcher();
-            }
-            else
-                LogInfo("Missing textures variants");
+                SeasonState.InitializeTextureControllers();
         }
     }
 
@@ -1546,6 +1535,10 @@ namespace Seasons
         public static ColorPositionsSettings colorPositions = new ColorPositionsSettings(loadDefaults: true);
 
         private static SeasonalTextureVariants currentTextureVariants = Seasons.texturesVariants;
+        
+        private const float locationWeight = 15f;
+        private const float branchWeight = 20f;
+        private const float clutterWeight = 15f;
 
         public static void SetCurrentTextureVariants(SeasonalTextureVariants texturesVariants)
         {
@@ -1928,10 +1921,21 @@ namespace Seasons
         public static IEnumerator FillWithGameData()
         {
             Stopwatch stopwatch = Stopwatch.StartNew();
+            
+            Controllers.TextureCachingController.SetupLoadingIndicator(branchWeight + 
+                                                                       ClutterSystem.instance.m_clutter.Count * clutterWeight + 
+                                                                       ZNetScene.instance.m_prefabs.Count + 
+                                                                       ZoneSystem.instance.m_locations.Count * locationWeight);
 
             LogInfo("Initializing cache settings");
             currentTextureVariants.revision = GetRevision();
             LogInfo($"Cache settings revision {currentTextureVariants.revision}");
+
+            LogInfo("Caching yggdrasil branch");
+            yield return AddYggdrasilBranch();
+
+            LogInfo("Caching locations");
+            yield return AddLocations();
 
             LogInfo("Caching clutters");
             yield return AddClutters();
@@ -1939,31 +1943,33 @@ namespace Seasons
             LogInfo("Caching prefabs");
             yield return AddZNetScenePrefabs();
 
-            LogInfo("Caching locations");
-            yield return AddLocations();
-
-            LogInfo("Caching yggdrasil branch");
-            yield return AddYggdrasilBranch();
-
             stopwatch.Stop();
 
             LogInfo($"Created cache revision {currentTextureVariants.revision} with {currentTextureVariants.controllers.Count} controllers, {currentTextureVariants.textures.Count} textures in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds.");
         }
 
+        private static void UpdateLoadingIndicator(float counter = 1f) => Controllers.TextureCachingController.UpdateLoadingIndicator(counter);
+
         private static IEnumerator AddYggdrasilBranch()
         {
+            UpdateLoadingIndicator(branchWeight);
+
             Transform yggdrasilBranch = EnvMan.instance.transform.Find("YggdrasilBranch");
             if (yggdrasilBranch == null)
                 yield break;
 
             foreach (MeshRenderer mrenderer in yggdrasilBranch.GetComponentsInChildren<MeshRenderer>())
                 CacheMaterials(mrenderer.sharedMaterials, "YggdrasilBranch", mrenderer.name, mrenderer.GetType().Name, mrenderer.transform.GetPath(), isPlant: true);
+
+            yield return waitForFixedUpdate;
         }
 
         private static IEnumerator AddLocations()
         {
             foreach (ZoneSystem.ZoneLocation loc in ZoneSystem.instance.m_locations)
             {
+                UpdateLoadingIndicator(locationWeight);
+
                 if (!loc.m_prefab.IsValid)
                     continue;
 
@@ -1985,7 +1991,7 @@ namespace Seasons
 
                 loc.m_prefab.Release();
 
-                yield return null;
+                yield return waitForFixedUpdate;
             }
         }
 
@@ -1993,6 +1999,8 @@ namespace Seasons
         {
             foreach (ClutterSystem.Clutter clutter in ClutterSystem.instance.m_clutter)
             {
+                UpdateLoadingIndicator(clutterWeight);
+
                 if (clutter.m_prefab == null)
                     continue;
 
@@ -2155,6 +2163,11 @@ namespace Seasons
             int i = 0;
             foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
             {
+                UpdateLoadingIndicator();
+
+                if (i++ % 5 == 0)
+                    yield return null;
+
                 if (materialSettings.ignorePrefab.Contains(prefab.name) || (prefab.layer == 12 && !prefab.name.StartsWith("BH_Pickable")))
                     continue;
 
@@ -2278,9 +2291,6 @@ namespace Seasons
                         CacheParticleSystemStartColor(ps, prefab.name);
                     }
                 }
-
-                if (i++ % 5 == 0)
-                    yield return null;
             }
         }
 

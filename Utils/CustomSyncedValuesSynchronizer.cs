@@ -10,6 +10,7 @@ namespace Seasons
     {
         private static readonly Queue<IEnumerator> coroutines = new Queue<IEnumerator>();
         private static readonly WaitWhile waitForServerUpdate = new WaitWhile(() => ConfigSync.ProcessingServerUpdate);
+        private static readonly WaitWhile waitForTextureCaching = new WaitWhile(() => Controllers.TextureCachingController.InProcess);
 
         public static void AssignValueSafe<T>(this CustomSyncedValue<T> syncedValue, T value)
         {
@@ -42,6 +43,9 @@ namespace Seasons
                 yield break;
 
             yield return waitForServerUpdate;
+
+            yield return waitForTextureCaching;
+
             syncedValue.AssignLocalValue(value);
         }
 

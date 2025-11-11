@@ -50,11 +50,7 @@ namespace Seasons
             }
             else
             {
-                SeasonalTexturePrefabCache.SetCurrentTextureVariants(this);
-
-                StartCoroutineSync(SeasonalTexturePrefabCache.FillWithGameData());
-
-                StartCoroutineSync(SaveCacheOnDisk());
+                Controllers.TextureCachingController.StartCaching(this);
             }
 
             return Initialized();
