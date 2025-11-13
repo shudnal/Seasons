@@ -1,3 +1,8 @@
+# 1.7.2
+* fixed incorrect textures on internal parts of large breakable rocks and boulders
+* fixed dandelion being always green despite season
+* pickable status will only be seen on not yet picked plants to prevent misinformation (compatibility with other mods hovers)
+
 # 1.7.1
 * fixed nonlocalized name of some pickables in winter
 * indicator of seasonal textures creation process

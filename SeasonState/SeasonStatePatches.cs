@@ -217,13 +217,13 @@ namespace Seasons
                     }
                 }
 
-                if (__instance.IsIgnored() || seasonState.GetCurrentSeason() != Season.Winter)
+                if (__instance.IsIgnored() || seasonState.GetCurrentSeason() != Season.Winter || !__instance.CanBePicked())
                     return;
 
                 if (string.IsNullOrWhiteSpace(__result))
                     __result = __instance.GetHoverName().Localize();
 
-                __result += $"\n<color=#ADD8E6>{__instance.GetColdStatus()}</color>".Localize();
+                __result += $"\n<color=#ADD8E6>{__instance.GetColdStatus().Localize()}</color>";
             }
         }
 

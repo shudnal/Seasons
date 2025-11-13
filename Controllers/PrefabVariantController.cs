@@ -86,8 +86,11 @@ namespace Seasons
 
             public void RevertSharedMaterial(Renderer renderer, int materialIndex) => ApplySharedMaterial(renderer, materialIndex, m_originalMaterial);
 
-            private void ApplySharedMaterial(Renderer renderer, int materialIndex, Material material)
+            public static void ApplySharedMaterial(Renderer renderer, int materialIndex, Material material)
             {
+                if (renderer == null || material == null)
+                    return;
+
                 s_tempMaterials.Clear();
                 renderer.GetSharedMaterials(s_tempMaterials);
 
@@ -169,7 +172,7 @@ namespace Seasons
                             AddLODGroupMaterialVariants(lodGroupTransform, rendererPath.Value);
                     }
 
-                    if (controller.lodLevelMaterials.Count > 0 && m_gameObject.TryGetComponent(out LODGroup lodGroup))
+                    if (controller.lodLevelMaterials.Count > 0 && m_gameObject.GetComponentInChildren<LODGroup>(includeInactive: true) is LODGroup lodGroup)
                         AddLODGroupMaterialVariants(lodGroup, controller.lodLevelMaterials);
 
                     foreach (KeyValuePair<string, CachedRenderer> rendererPath in controller.renderersInHierarchy)
@@ -296,6 +299,21 @@ namespace Seasons
                     instance.m_pieceControllers.Remove(m_wnt);
 
                 instance.m_prefabVariants.Remove(m_gameObject);
+            }
+
+            public Material GetOriginalMaterial(Renderer renderer, Material material)
+            {
+                int index = Array.IndexOf(renderer.sharedMaterials, material);
+                if (index < 0)
+                    return null;
+
+                if (!m_materialVariants.TryGetValue(renderer, out var materialVariants))
+                    return null;
+
+                if (materialVariants.Count <= index)
+                    return null;
+
+                return materialVariants[index].m_originalMaterial;
             }
 
             private void UpdateFactors(float m_mx, float m_my)
@@ -553,7 +571,7 @@ namespace Seasons
             AddControllerTo(wnt.gameObject, checkLocation: true, wnt.m_nview, wnt);
         }
 
-        public void AddControllerTo(MineRock5 mineRock, MeshRenderer meshRenderer)
+        public void AddControllerTo(MineRock5 mineRock)
         {
             if (mineRock.m_nview == null || !mineRock.m_nview.IsValid())
                 return;
@@ -566,7 +584,7 @@ namespace Seasons
             if (gameObject == null)
                 return;
 
-            AddControllerTo(mineRock.gameObject, checkLocation: true, mineRock.m_nview, wnt: null, gameObject.name, meshRenderer);
+            AddControllerTo(mineRock.gameObject, checkLocation: true, mineRock.m_nview, wnt: null, gameObject.name, mineRock.m_meshRenderer);
         }
 
         public void RemoveController(GameObject gameObject)
@@ -786,14 +804,45 @@ namespace Seasons
     }
 
     [HarmonyPatch(typeof(MineRock5), nameof(MineRock5.Awake))]
-    public static class MineRock5_Start_AddPrefabVariantController
+    public static class MineRock5_Awake_AddPrefabVariantController
     {
-        private static void Postfix(MineRock5 __instance, MeshRenderer ___m_meshRenderer)
+        private static void Postfix(MineRock5 __instance)
         {
-            if (___m_meshRenderer == null)
+            if (__instance.m_meshRenderer == null)
                 return;
 
-            PrefabVariantController.instance?.AddControllerTo(__instance, ___m_meshRenderer);
+            PrefabVariantController.instance?.AddControllerTo(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(MineRock5), nameof(MineRock5.UpdateMesh))]
+    public static class MineRock5_UpdateMesh_FallbackToDefaultMaterial
+    {
+        const int materialIndex = 0;
+
+        private static void Prefix(MineRock5 __instance, ref Material __state)
+        {
+            if (__instance.m_meshRenderer == null)
+                return;
+
+            if (!PrefabVariantController.instance.m_prefabVariants.TryGetValue(__instance.gameObject, out PrefabVariant prefabVariant))
+                return;
+
+            Material originalMat = prefabVariant.GetOriginalMaterial(__instance.m_meshRenderer, __instance.m_meshRenderer.sharedMaterials[materialIndex]);
+            if (originalMat == null)
+                return;
+
+            __state = __instance.m_meshRenderer.sharedMaterials[materialIndex];
+
+            MaterialVariants.ApplySharedMaterial(__instance.m_meshRenderer, materialIndex, originalMat);
+        }
+
+        private static void Postfix(MineRock5 __instance, Material __state)
+        {
+            if (__state == null)
+                return;
+
+            MaterialVariants.ApplySharedMaterial(__instance.m_meshRenderer, materialIndex, __state);
         }
     }
 

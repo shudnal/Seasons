@@ -218,6 +218,8 @@ namespace Seasons
 
             PrefabVariantController.UpdatePrefabColors();
             ClutterVariantController.Instance?.UpdateColors();
+
+            LogInfo($"Cache rebuild ended");
         }
     }
 
