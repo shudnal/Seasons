@@ -1,3 +1,6 @@
+# 1.7.3
+* fixed occasional error in main menu
+
 # 1.7.2
 * fixed incorrect textures on internal parts of large breakable rocks and boulders
 * fixed dandelion being always green despite season

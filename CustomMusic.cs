@@ -77,7 +77,7 @@ namespace Seasons
                 }
 
                 if (music.m_enabled && music.m_clips.Length != 0 && music.m_clips[0] != null)
-                    MusicMan.instance.m_musicHashes.Add(music.m_name.GetStableHashCode(), music);
+                    MusicMan.instance.m_musicHashes[music.m_name.GetStableHashCode()] = music;
             }
         }
 
