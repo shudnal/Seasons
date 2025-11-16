@@ -230,7 +230,10 @@ namespace Seasons
         [HarmonyPatch(typeof(Vine), nameof(Vine.UpdateGrow))]
         public static class Vine_UpdateGrow_VinesGrowthWinterStop
         {
-            private static bool Prefix(Vine __instance, ref Tuple<float, float> __state)
+            private static float m_growTime;
+            private static float m_growTimePerBranch;
+
+            private static bool Prefix(Vine __instance, ref bool __state)
             {
                 if (IsProtectedPosition(__instance.transform.position) || __instance.m_initialGrowItterations > 0 || __instance.IsDoneGrowing)
                     return true;
@@ -239,7 +242,10 @@ namespace Seasons
                 if (multiplier == 0f)
                     return false;
 
-                __state = Tuple.Create(__instance.m_growTime, __instance.m_growTimePerBranch);
+                m_growTime = __instance.m_growTime;
+                m_growTimePerBranch = __instance.m_growTimePerBranch;
+
+                __state = true;
 
                 __instance.m_growTime *= multiplier;
                 __instance.m_growTimePerBranch *= multiplier;
@@ -247,26 +253,37 @@ namespace Seasons
                 return true;
             }
 
-            private static void Postfix(Vine __instance, Tuple<float, float> __state)
+            private static void Postfix(Vine __instance, bool __state)
             {
-                if (__state == null)
+                if (!__state)
                     return;
 
-                __instance.m_growTime = __state.Item1;
-                __instance.m_growTimePerBranch = __state.Item2;
+                __instance.m_growTime = m_growTime;
+                __instance.m_growTimePerBranch = m_growTimePerBranch;
             }
         }
 
         [HarmonyPatch(typeof(Plant), nameof(Plant.UpdateHealth))]
         public static class Pickable_UpdateHealth_PlantsPerishInWinter
         {
+            private static bool isProtected;
+
+            private static void Prefix(Plant __instance, ref double timeSincePlanted)
+            {
+                if (isProtected = IsProtectedPosition(__instance.transform.position))
+                    return;
+
+                if (timeSincePlanted == 0d && seasonState.GetPlantsGrowthMultiplier() == 0f && seasonState.GetCurrentSeason() == Season.Winter)
+                    timeSincePlanted = 11d;
+            }
+
             private static void Postfix(Plant __instance, ref Plant.Status ___m_status)
             {
-                if (IsProtectedPosition(__instance.transform.position))
+                if (isProtected)
                     return;
 
                 if (___m_status == Plant.Status.Healthy && seasonState.GetPlantsGrowthMultiplier() == 0f && seasonState.GetCurrentSeason() == Season.Winter
-                                                        && !PlantWillSurviveWinter(__instance.gameObject) && !ProtectedWithHeat(__instance.transform.position))
+                                                        && !__instance.ShouldSurviveWinter() && !__instance.ProtectedWithHeat())
                     ___m_status = Plant.Status.TooCold;
             }
         }

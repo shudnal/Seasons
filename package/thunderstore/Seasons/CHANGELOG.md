@@ -1,3 +1,8 @@
+# 1.7.4
+* optimized preparing texture process
+* crop planted currently in Winter will have proper health status instead of Healthy
+* added test config to disable loading indicator
+
 # 1.7.3
 * fixed occasional error in main menu
 

@@ -172,7 +172,7 @@ namespace Seasons
                             AddLODGroupMaterialVariants(lodGroupTransform, rendererPath.Value);
                     }
 
-                    if (controller.lodLevelMaterials.Count > 0 && m_gameObject.GetComponentInChildren<LODGroup>(includeInactive: true) is LODGroup lodGroup)
+                    if (controller.lodLevelMaterials.Count > 0 && m_gameObject.TryGetComponent(out LODGroup lodGroup))
                         AddLODGroupMaterialVariants(lodGroup, controller.lodLevelMaterials);
 
                     foreach (KeyValuePair<string, CachedRenderer> rendererPath in controller.renderersInHierarchy)

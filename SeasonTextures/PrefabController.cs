@@ -1,8 +1,9 @@
-﻿using System;
+﻿using HarmonyLib;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using UnityEngine;
-using HarmonyLib;
 
 namespace Seasons
 {
@@ -99,6 +100,9 @@ namespace Seasons
         public CachedRenderer cachedRenderer;
         public Dictionary<string, string[]> particleSystemStartColors;
 
+        [NonSerialized]
+        public long elapsedTicks = 0;
+
         public bool Initialized()
         {
             return lodsInHierarchy.Count > 0 || lodLevelMaterials.Count > 0 || renderersInHierarchy.Count > 0 || cachedRenderer != null || particleSystemStartColors != null;
@@ -109,8 +113,8 @@ namespace Seasons
             return $"{(cachedRenderer == null ? "" : " 1 main renderer")}{(particleSystemStartColors == null ? "" : " 1 particles start color")} " +
                         $"{(lodsInHierarchy.Count > 0 ? $" {lodsInHierarchy.Count} LOD groups" : "")}" +
                         $"{(lodLevelMaterials.Count > 0 ? $" {lodLevelMaterials.Count} LODs" : "")}" +
-                        $"{(renderersInHierarchy.Count > 0 ? $" {renderersInHierarchy.Count} renderersInHierarchy" : "")}";
+                        $"{(renderersInHierarchy.Count > 0 ? $" {renderersInHierarchy.Count} renderersInHierarchy" : "")}" +
+                        $"{(elapsedTicks > 0 ? $" in {(double)elapsedTicks / Stopwatch.Frequency * 1000d:F2} ms" : "")}";
         }
     }
-
 }

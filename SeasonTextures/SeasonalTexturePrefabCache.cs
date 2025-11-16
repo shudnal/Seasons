@@ -1,28 +1,28 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using static Seasons.Seasons;
-using UnityEngine;
-using System.IO;
+﻿using BepInEx;
 using HarmonyLib;
-using Object = UnityEngine.Object;
 using Newtonsoft.Json;
-using static Seasons.PrefabController;
-using static Seasons.SeasonalTexturePrefabCache.ColorsCacheSettings;
-using static Seasons.SeasonalTexturePrefabCache.ColorReplacementSpecifications;
-using static Seasons.SeasonalTexturePrefabCache.ColorPositionsSettings;
-using System.Diagnostics;
-using BepInEx;
-using System.Text;
-using System.Collections;
 using ServerSync;
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Text;
+using UnityEngine;
+using static Seasons.PrefabController;
+using static Seasons.SeasonalTexturePrefabCache.ColorPositionsSettings;
+using static Seasons.SeasonalTexturePrefabCache.ColorReplacementSpecifications;
+using static Seasons.SeasonalTexturePrefabCache.ColorsCacheSettings;
+using static Seasons.Seasons;
+using Object = UnityEngine.Object;
 
 namespace Seasons
 {
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Start))]
     public static class ZoneSystem_Start_SeasonsCache
     {
-        private static void Postfix(ZoneSystem __instance)
+        private static void Postfix()
         {
             SeasonalTexturePrefabCache.SetupConfigWatcher();
             SeasonalTexturePrefabCache.SaveDefaults();
@@ -298,6 +298,7 @@ namespace Seasons
                     "DevCombatRange",
                     "DevCombatRing",
                     "rock4_ashlands_frac",
+                    "Runestone_Ashlands",
                     ClutterVariantController.c_meadowsFlowersPrefabName,
                     ClutterVariantController.c_forestBloomPrefabName,
                     ClutterVariantController.c_swampGrassBloomPrefabName
@@ -340,6 +341,7 @@ namespace Seasons
                     "AshlandsBranch",
                     "Ashlands_rock",
                     "instanced_ashlands_grass",
+                    "MWL_AshlandsFort",
                     ClutterVariantController.c_shieldedGrassSuffix
                 };
 
@@ -1568,7 +1570,9 @@ namespace Seasons
         
         private const float locationWeight = 15f;
         private const float branchWeight = 20f;
-        private const float clutterWeight = 15f;
+        private const float clutterWeight = 30f;
+
+        private static readonly Stopwatch stopwatchController = new Stopwatch();
 
         public static void SetCurrentTextureVariants(SeasonalTextureVariants texturesVariants)
         {
@@ -1951,10 +1955,10 @@ namespace Seasons
         public static IEnumerator FillWithGameData()
         {
             Stopwatch stopwatch = Stopwatch.StartNew();
-            
-            Controllers.TextureCachingController.SetupLoadingIndicator(branchWeight + 
-                                                                       ClutterSystem.instance.m_clutter.Count * clutterWeight + 
-                                                                       ZNetScene.instance.m_prefabs.Count + 
+
+            Controllers.TextureCachingController.SetupLoadingIndicator(branchWeight +
+                                                                       ClutterSystem.instance.m_clutter.Count * clutterWeight +
+                                                                       ZNetScene.instance.m_prefabs.Count +
                                                                        ZoneSystem.instance.m_locations.Count * locationWeight);
 
             LogInfo("Initializing cache settings");
@@ -1964,11 +1968,11 @@ namespace Seasons
             LogInfo("Caching yggdrasil branch");
             yield return AddYggdrasilBranch();
 
-            LogInfo("Caching locations");
-            yield return AddLocations();
-
             LogInfo("Caching clutters");
             yield return AddClutters();
+
+            LogInfo("Caching locations");
+            yield return AddLocations();
 
             LogInfo("Caching prefabs");
             yield return AddZNetScenePrefabs();
@@ -1976,20 +1980,66 @@ namespace Seasons
             stopwatch.Stop();
 
             LogInfo($"Created cache revision {currentTextureVariants.revision} with {currentTextureVariants.controllers.Count} controllers, {currentTextureVariants.textures.Count} textures in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds.");
+
+            if (logControllersTime.Value)
+            {
+                LogInfo("");
+                LogInfo($"Prefab caching time in descending order. Combined time: {new TimeSpan(currentTextureVariants.controllers.Values.Sum(c => c.elapsedTicks)).TotalSeconds,-4:F2} seconds");
+                currentTextureVariants.controllers.OrderByDescending(x => x.Value.elapsedTicks).Select(x => x.Key).Do(LogPrefabController);
+            }
         }
 
         private static void UpdateLoadingIndicator(float counter = 1f) => Controllers.TextureCachingController.UpdateLoadingIndicator(counter);
+
+        private static void LogPrefabController(string prefabName)
+        {
+            if (currentTextureVariants.controllers.TryGetValue(prefabName, out PrefabController controller))
+                LogInfo($"Processed {prefabName} {controller}");
+        }
+
+        private static readonly List<MeshRenderer> mrenderers = new();
+        private static readonly List<SkinnedMeshRenderer> srenderers = new();
+        private static readonly List<ParticleSystemRenderer> psrenderers = new();
+        private static readonly List<ParticleSystem> psystems = new();
+
+        private static List<MeshRenderer> GetMeshRenderers(this GameObject root)
+        {
+            root.GetComponentsInChildren(includeInactive: false, mrenderers);
+            return mrenderers;
+        }
+
+        private static List<SkinnedMeshRenderer> GetSkinnedMeshRenderers(this GameObject root)
+        {
+            root.GetComponentsInChildren(includeInactive: false, srenderers);
+            return srenderers;
+        }
+
+        private static List<ParticleSystemRenderer> GetParticleSystemRenderers(this GameObject root)
+        {
+            root.GetComponentsInChildren(includeInactive: false, psrenderers);
+            return psrenderers;
+        }
+
+        private static List<ParticleSystem> GetParticleSystems(this GameObject root)
+        {
+            root.GetComponentsInChildren(includeInactive: false, psystems);
+            return psystems;
+        }
 
         private static IEnumerator AddYggdrasilBranch()
         {
             UpdateLoadingIndicator(branchWeight);
 
-            Transform yggdrasilBranch = EnvMan.instance.transform.Find("YggdrasilBranch");
+            string prefabName = "YggdrasilBranch";
+
+            Transform yggdrasilBranch = EnvMan.instance.transform.Find(prefabName);
             if (yggdrasilBranch == null)
                 yield break;
 
-            foreach (MeshRenderer mrenderer in yggdrasilBranch.GetComponentsInChildren<MeshRenderer>(includeInactive: true))
-                CacheMaterials(mrenderer.sharedMaterials, "YggdrasilBranch", mrenderer.name, mrenderer.GetType().Name, mrenderer.transform.GetPath(), isPlant: true);
+            foreach (Renderer renderer in yggdrasilBranch.gameObject.GetMeshRenderers())
+                CacheMaterials(renderer.sharedMaterials, prefabName, renderer.name, renderer.GetType().Name, renderer.transform.GetPath(), isPlant: true);
+
+            LogPrefabController(prefabName);
 
             yield return waitForFixedUpdate;
         }
@@ -2013,13 +2063,15 @@ namespace Seasons
 
                 Transform root = loc.m_prefab.Asset.transform.Find("exterior") ?? loc.m_prefab.Asset.transform;
 
-                foreach (MeshRenderer mrenderer in root.GetComponentsInChildren<MeshRenderer>(includeInactive: true))
-                    CacheMaterials(mrenderer.sharedMaterials, loc.m_prefabName, mrenderer.name, mrenderer.GetType().Name, mrenderer.transform.GetPath());
+                foreach (MeshRenderer renderer in root.gameObject.GetMeshRenderers())
+                    CacheMaterials(renderer.sharedMaterials, loc.m_prefabName, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
 
-                foreach (SkinnedMeshRenderer smrenderer in root.GetComponentsInChildren<SkinnedMeshRenderer>(includeInactive: true))
-                    CacheMaterials(smrenderer.sharedMaterials, loc.m_prefabName, smrenderer.name, smrenderer.GetType().Name, smrenderer.transform.GetPath());
+                foreach (SkinnedMeshRenderer renderer in root.gameObject.GetSkinnedMeshRenderers())
+                    CacheMaterials(renderer.sharedMaterials, loc.m_prefabName, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
 
                 loc.m_prefab.Release();
+
+                LogPrefabController(loc.m_prefabName);
 
                 yield return waitForFixedUpdate;
             }
@@ -2040,11 +2092,13 @@ namespace Seasons
                 if (materialSettings.ignorePrefabPartialName.Any(namepart => clutter.m_prefab.name.Contains(namepart)))
                     continue;
 
-                if (clutter.m_prefab.TryGetComponent(out InstanceRenderer renderer))
-                    CacheMaterials(new Material[1] { renderer.m_material }, clutter.m_prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
+                if (clutter.m_prefab.TryGetComponent(out InstanceRenderer irenderer))
+                    CacheMaterials(new Material[1] { irenderer.m_material }, clutter.m_prefab.name, irenderer.name, irenderer.GetType().Name, irenderer.transform.GetPath());
                 else
-                    foreach (MeshRenderer mrenderer in clutter.m_prefab.GetComponentsInChildren<MeshRenderer>(includeInactive: true))
-                        CacheMaterials(mrenderer.sharedMaterials, clutter.m_prefab.name, mrenderer.name, mrenderer.GetType().Name, mrenderer.transform.GetPath());
+                    foreach (MeshRenderer renderer in clutter.m_prefab.GetMeshRenderers())
+                        CacheMaterials(renderer.sharedMaterials, clutter.m_prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
+
+                LogPrefabController(clutter.m_prefab.name);
 
                 yield return waitForFixedUpdate;
             }
@@ -2052,6 +2106,9 @@ namespace Seasons
 
         private static void CacheMaterials(Material[] materials, string prefabName, string rendererName, string rendererType, string transformPath, int lodLevel = -1, bool isSingleRenderer = false, bool isLodInHierarchy = false, bool isPlant = false)
         {
+            stopwatchController.Restart();
+            PrefabController controller = null;
+
             for (int m = 0; m < materials.Length; m++)
             {
                 Material material = materials[m];
@@ -2067,7 +2124,7 @@ namespace Seasons
                        || materialSettings.shaderOnlyMaterial.TryGetValue(material.shader.name, out string[] onlyMaterial) && !onlyMaterial.Any(onlymat => material.name.IndexOf(onlymat, StringComparison.OrdinalIgnoreCase) >= 0))
                     continue;
 
-                bool isNew = !currentTextureVariants.controllers.TryGetValue(prefabName, out PrefabController controller);
+                bool isNew = !currentTextureVariants.controllers.TryGetValue(prefabName, out controller);
 
                 if (isNew)
                     controller = new PrefabController();
@@ -2180,12 +2237,16 @@ namespace Seasons
                     if (isNew)
                         currentTextureVariants.controllers.Add(prefabName, controller);
 
-                    LogInfo($"Caching {prefabName}{controller}");
 
                     if (isSingleRenderer)
-                        return;
+                        break;
                 }
             }
+
+            stopwatchController.Stop();
+
+            if (controller != null)
+                controller.elapsedTicks += stopwatchController.ElapsedTicks;
         }
 
         private static IEnumerator AddZNetScenePrefabs()
@@ -2232,12 +2293,13 @@ namespace Seasons
                         continue;
 
                     CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath(), isSingleRenderer: true);
+                    LogPrefabController(prefab.name);
                     continue;
                 }
 
                 if (prefab.TryGetComponent<TimedDestruction>(out _))
                 {
-                    foreach (ParticleSystemRenderer renderer in prefab.GetComponentsInChildren<ParticleSystemRenderer>(includeInactive: true))
+                    foreach (ParticleSystemRenderer renderer in prefab.GetParticleSystemRenderers())
                     {
                         if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
                             continue;
@@ -2245,7 +2307,7 @@ namespace Seasons
                         CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
                     }
 
-                    foreach (ParticleSystem ps in prefab.GetComponentsInChildren<ParticleSystem>(includeInactive: true))
+                    foreach (ParticleSystem ps in prefab.GetParticleSystems())
                     {
                         CacheParticleSystemStartColor(ps, prefab.name);
                     }
@@ -2256,8 +2318,7 @@ namespace Seasons
                     LODGroup lodGroup = prefab.GetComponentInChildren<LODGroup>();
                     if (lodGroup == null || !CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: true))
                     {
-                        SkinnedMeshRenderer[] renderers = prefab.GetComponentsInChildren<SkinnedMeshRenderer>(includeInactive: true);
-                        foreach (SkinnedMeshRenderer renderer in renderers)
+                        foreach (Renderer renderer in prefab.gameObject.GetSkinnedMeshRenderers())
                         {
                             if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
                                 continue;
@@ -2268,7 +2329,29 @@ namespace Seasons
                 }
                 else if (prefab.layer != 9)
                 {
-                    bool isPlant = prefab.TryGetComponent<Pickable>(out _) || prefab.TryGetComponent<Plant>(out _);
+                    bool isPlant = prefab.TryGetComponent(out Plant plant);
+                    if (isPlant)
+                    {
+                        List<Renderer> plantRenderers = new List<Renderer>();
+                        if (plant.m_healthy != null)
+                            plantRenderers.AddRange(plant.m_healthy.GetMeshRenderers());
+                        if (plant.m_healthyGrown != null)
+                            plantRenderers.AddRange(plant.m_healthyGrown.GetMeshRenderers());
+                        if (plant.m_unhealthy != null)
+                            plantRenderers.AddRange(plant.m_unhealthy.GetMeshRenderers());
+                        if (plant.m_unhealthyGrown != null)
+                            plantRenderers.AddRange(plant.m_unhealthyGrown.GetMeshRenderers());
+
+                        foreach (Renderer renderer in plantRenderers)
+                        {
+                            if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
+                                continue;
+
+                            CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath(), isPlant: isPlant);
+                        }
+                    }
+                    else
+                        isPlant = prefab.TryGetComponent<Pickable>(out _);
 
                     if (prefab.TryGetComponent(out WearNTear wnt))
                     {
@@ -2282,9 +2365,9 @@ namespace Seasons
                             CachePrefabLODGroup(wntLodGroupWet, prefab.name, isLodInHierarchy: true);
                     }
 
-                    if (prefab.GetComponentInChildren<LODGroup>(includeInactive: true) is not LODGroup lodGroup || lodGroup.lodCount < 2 || !CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: lodGroup.gameObject != prefab, isPlant: isPlant))
+                    if (prefab.GetComponentInChildren<LODGroup>() is not LODGroup lodGroup || lodGroup.lodCount < 2 || !CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: lodGroup.gameObject != prefab, isPlant: isPlant))
                     {
-                        foreach (MeshRenderer renderer in prefab.GetComponentsInChildren<MeshRenderer>(includeInactive: true))
+                        foreach (Renderer renderer in prefab.GetMeshRenderers())
                         {
                             if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
                                 continue;
@@ -2298,8 +2381,7 @@ namespace Seasons
                     LODGroup lodGroup = prefab.GetComponentInChildren<LODGroup>();
                     if (lodGroup == null || !CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: true))
                     {
-                        SkinnedMeshRenderer[] renderers = prefab.GetComponentsInChildren<SkinnedMeshRenderer>(includeInactive: true);
-                        foreach (SkinnedMeshRenderer renderer in renderers)
+                        foreach (Renderer renderer in prefab.GetSkinnedMeshRenderers())
                         {
                             if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
                                 continue;
@@ -2311,7 +2393,7 @@ namespace Seasons
 
                 if (prefab.TryGetComponent<TreeBase>(out _) || prefab.TryGetComponent<Destructible>(out _))
                 {
-                    foreach (ParticleSystemRenderer renderer in prefab.GetComponentsInChildren<ParticleSystemRenderer>(includeInactive: true))
+                    foreach (ParticleSystemRenderer renderer in prefab.GetParticleSystemRenderers())
                     {
                         if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
                             continue;
@@ -2319,11 +2401,13 @@ namespace Seasons
                         CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
                     }
 
-                    foreach (ParticleSystem ps in prefab.GetComponentsInChildren<ParticleSystem>(includeInactive: true))
+                    foreach (ParticleSystem ps in prefab.GetParticleSystems())
                     {
                         CacheParticleSystemStartColor(ps, prefab.name);
                     }
                 }
+
+                LogPrefabController(prefab.name);
             }
         }
 
@@ -2390,7 +2474,7 @@ namespace Seasons
                 if (isNew)
                     currentTextureVariants.controllers.Add(prefabName, controller);
 
-                LogInfo($"Caching {prefabName}{controller}");
+                LogInfo($"Processed {prefabName}{controller}");
             }
         }
     }

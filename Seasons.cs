@@ -25,7 +25,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.7.3";
+        public const string pluginVersion = "1.7.4";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -39,10 +39,12 @@ namespace Seasons
         public static ConfigEntry<CacheFormat> cacheStorageFormat;
         public static ConfigEntry<bool> logTime;
         public static ConfigEntry<bool> logFloes;
+        public static ConfigEntry<bool> logControllersTime;
         public static ConfigEntry<bool> plainsSwampBorderFix;
         public static ConfigEntry<bool> frozenKarvePositionFix;
         public static ConfigEntry<float> lastDayTerrainFactor;
         public static ConfigEntry<float> firstDayTerrainFactor;
+        public static ConfigEntry<bool> runTextureCachingSync;
 
         public static ConfigEntry<bool> overrideSeason;
         public static ConfigEntry<Season> seasonOverrided;
@@ -450,10 +452,12 @@ namespace Seasons
             cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
             logTime = config("Test", "Log time", defaultValue: false, "Log time info on state update");
             logFloes = config("Test", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying");
+            logControllersTime = config("Test", "Log prefab caching time", defaultValue: false, "Log elapsed time of prefabs caching process in descending order");
             plainsSwampBorderFix = config("Test", "Plains Swamp border fix", defaultValue: true, "Fix clipping into ground on Plains - Swamp border");
             frozenKarvePositionFix = config("Test", "Fix position for frozen Karve", defaultValue: false, "Make Karve storage always available if frozen. If Karve is below certain level it will be pushed to the surface.");
             lastDayTerrainFactor = config("Test", "Last day terrain factor", defaultValue: 0.0f, "Last day");
             firstDayTerrainFactor = config("Test", "First day terrain factor", defaultValue: 0.0f, "First day");
+            runTextureCachingSync = config("Test", "Run texture caching without indicator", defaultValue: false, "It is significantly faster than running with loading indicator but lacks visual progress");
 
             plainsSwampBorderFix.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateTerrainColors();
             lastDayTerrainFactor.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateTerrainColors();
@@ -610,7 +614,7 @@ namespace Seasons
                     if (plant.m_grownPrefabs.Any(prefab => ControlPlantGrowth(prefab)))
                         _PlantsToControlGrowth.Add(plant.gameObject.name.ToLower());
 
-                    if (plant.m_grownPrefabs.Any(prefab => PlantWillSurviveWinter(prefab)))
+                    if (plant.m_tolerateCold || plant.m_grownPrefabs.Any(prefab => PlantWillSurviveWinter(prefab)))
                         _PlantsToSurviveWinter.Add(plant.gameObject.name.ToLower());
 
                     foreach (GameObject grown in plant.m_grownPrefabs.Where(grown => stubs.ContainsKey(grown)))

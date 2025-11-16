@@ -48,9 +48,17 @@ namespace Seasons
 
                 LogInfo($"Loaded from cache revision:{revision} controllers:{controllers.Count} textures:{textures.Count}");
             }
-            else
+            else if (!runTextureCachingSync.Value)
             {
                 Controllers.TextureCachingController.StartCaching(this);
+            }
+            else
+            {
+                SeasonalTexturePrefabCache.SetCurrentTextureVariants(this);
+
+                StartCoroutineSync(SeasonalTexturePrefabCache.FillWithGameData());
+
+                StartCoroutineSync(SaveCacheOnDisk());
             }
 
             return Initialized();
