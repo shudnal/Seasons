@@ -1,3 +1,6 @@
+# 1.7.5
+* added protection from prefab collection changes when preparing seasonal textures
+
 # 1.7.4
 * optimized preparing texture process
 * crop planted currently in Winter will have proper health status instead of Healthy

@@ -1997,6 +1997,7 @@ namespace Seasons
                 LogInfo($"Processed {prefabName} {controller}");
         }
 
+        private static readonly List<Renderer> renderers = new();
         private static readonly List<MeshRenderer> mrenderers = new();
         private static readonly List<SkinnedMeshRenderer> srenderers = new();
         private static readonly List<ParticleSystemRenderer> psrenderers = new();
@@ -2004,24 +2005,28 @@ namespace Seasons
 
         private static List<MeshRenderer> GetMeshRenderers(this GameObject root)
         {
+            mrenderers.Clear();
             root.GetComponentsInChildren(includeInactive: false, mrenderers);
             return mrenderers;
         }
 
         private static List<SkinnedMeshRenderer> GetSkinnedMeshRenderers(this GameObject root)
         {
+            srenderers.Clear();
             root.GetComponentsInChildren(includeInactive: false, srenderers);
             return srenderers;
         }
 
         private static List<ParticleSystemRenderer> GetParticleSystemRenderers(this GameObject root)
         {
+            psrenderers.Clear();
             root.GetComponentsInChildren(includeInactive: false, psrenderers);
             return psrenderers;
         }
 
         private static List<ParticleSystem> GetParticleSystems(this GameObject root)
         {
+            psystems.Clear();
             root.GetComponentsInChildren(includeInactive: false, psystems);
             return psystems;
         }
@@ -2036,8 +2041,7 @@ namespace Seasons
             if (yggdrasilBranch == null)
                 yield break;
 
-            foreach (Renderer renderer in yggdrasilBranch.gameObject.GetMeshRenderers())
-                CacheMaterials(renderer.sharedMaterials, prefabName, renderer.name, renderer.GetType().Name, renderer.transform.GetPath(), isPlant: true);
+            yggdrasilBranch.gameObject.GetMeshRenderers().Do(renderer => CacheMaterials(renderer, prefabName, isPlant: true));
 
             LogPrefabController(prefabName);
 
@@ -2063,11 +2067,8 @@ namespace Seasons
 
                 Transform root = loc.m_prefab.Asset.transform.Find("exterior") ?? loc.m_prefab.Asset.transform;
 
-                foreach (MeshRenderer renderer in root.gameObject.GetMeshRenderers())
-                    CacheMaterials(renderer.sharedMaterials, loc.m_prefabName, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
-
-                foreach (SkinnedMeshRenderer renderer in root.gameObject.GetSkinnedMeshRenderers())
-                    CacheMaterials(renderer.sharedMaterials, loc.m_prefabName, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
+                root.gameObject.GetMeshRenderers().Do(renderer => CacheMaterials(renderer, loc.m_prefabName));
+                root.gameObject.GetSkinnedMeshRenderers().Do(renderer => CacheMaterials(renderer, loc.m_prefabName));
 
                 loc.m_prefab.Release();
 
@@ -2095,13 +2096,20 @@ namespace Seasons
                 if (clutter.m_prefab.TryGetComponent(out InstanceRenderer irenderer))
                     CacheMaterials(new Material[1] { irenderer.m_material }, clutter.m_prefab.name, irenderer.name, irenderer.GetType().Name, irenderer.transform.GetPath());
                 else
-                    foreach (MeshRenderer renderer in clutter.m_prefab.GetMeshRenderers())
-                        CacheMaterials(renderer.sharedMaterials, clutter.m_prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
+                    clutter.m_prefab.GetMeshRenderers().Do(renderer => CacheMaterials(renderer, clutter.m_prefab.name));
 
                 LogPrefabController(clutter.m_prefab.name);
 
                 yield return waitForFixedUpdate;
             }
+        }
+
+        private static void CacheMaterials(Renderer renderer, string prefabName, int lodLevel = -1, bool isSingleRenderer = false, bool isLodInHierarchy = false, bool isPlant = false)
+        {
+            if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
+                return;
+
+            CacheMaterials(renderer.sharedMaterials, prefabName, renderer.name, renderer.GetType().Name, renderer.transform.GetPath(), lodLevel, isSingleRenderer, isLodInHierarchy, isPlant);
         }
 
         private static void CacheMaterials(Material[] materials, string prefabName, string rendererName, string rendererType, string transformPath, int lodLevel = -1, bool isSingleRenderer = false, bool isLodInHierarchy = false, bool isPlant = false)
@@ -2252,7 +2260,7 @@ namespace Seasons
         private static IEnumerator AddZNetScenePrefabs()
         {
             int i = 0;
-            foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
+            foreach (GameObject prefab in ZNetScene.instance.m_prefabs.ToArray())
             {
                 UpdateLoadingIndicator();
 
@@ -2292,63 +2300,39 @@ namespace Seasons
                     if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
                         continue;
 
-                    CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath(), isSingleRenderer: true);
+                    CacheMaterials(renderer, prefab.name, isSingleRenderer: true);
                     LogPrefabController(prefab.name);
                     continue;
                 }
 
                 if (prefab.TryGetComponent<TimedDestruction>(out _))
                 {
-                    foreach (ParticleSystemRenderer renderer in prefab.GetParticleSystemRenderers())
-                    {
-                        if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
-                            continue;
-
-                        CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
-                    }
-
-                    foreach (ParticleSystem ps in prefab.GetParticleSystems())
-                    {
-                        CacheParticleSystemStartColor(ps, prefab.name);
-                    }
+                    prefab.GetParticleSystemRenderers().Do(renderer => CacheMaterials(renderer, prefab.name));
+                    prefab.GetParticleSystems().Do(ps => CacheParticleSystemStartColor(ps, prefab.name));
                 }
 
                 if (prefab.layer == 8)
                 {
                     LODGroup lodGroup = prefab.GetComponentInChildren<LODGroup>();
                     if (lodGroup == null || !CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: true))
-                    {
-                        foreach (Renderer renderer in prefab.gameObject.GetSkinnedMeshRenderers())
-                        {
-                            if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
-                                continue;
-
-                            CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
-                        }
-                    }
+                        prefab.gameObject.GetSkinnedMeshRenderers().Do(renderer => CacheMaterials(renderer, prefab.name));
                 }
                 else if (prefab.layer != 9)
                 {
                     bool isPlant = prefab.TryGetComponent(out Plant plant);
                     if (isPlant)
                     {
-                        List<Renderer> plantRenderers = new List<Renderer>();
+                        renderers.Clear();
                         if (plant.m_healthy != null)
-                            plantRenderers.AddRange(plant.m_healthy.GetMeshRenderers());
+                            renderers.AddRange(plant.m_healthy.GetMeshRenderers());
                         if (plant.m_healthyGrown != null)
-                            plantRenderers.AddRange(plant.m_healthyGrown.GetMeshRenderers());
+                            renderers.AddRange(plant.m_healthyGrown.GetMeshRenderers());
                         if (plant.m_unhealthy != null)
-                            plantRenderers.AddRange(plant.m_unhealthy.GetMeshRenderers());
+                            renderers.AddRange(plant.m_unhealthy.GetMeshRenderers());
                         if (plant.m_unhealthyGrown != null)
-                            plantRenderers.AddRange(plant.m_unhealthyGrown.GetMeshRenderers());
+                            renderers.AddRange(plant.m_unhealthyGrown.GetMeshRenderers());
 
-                        foreach (Renderer renderer in plantRenderers)
-                        {
-                            if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
-                                continue;
-
-                            CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath(), isPlant: isPlant);
-                        }
+                        renderers.Do(renderer => CacheMaterials(renderer, prefab.name, isPlant: isPlant));
                     }
                     else
                         isPlant = prefab.TryGetComponent<Pickable>(out _);
@@ -2366,45 +2350,19 @@ namespace Seasons
                     }
 
                     if (prefab.GetComponentInChildren<LODGroup>() is not LODGroup lodGroup || lodGroup.lodCount < 2 || !CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: lodGroup.gameObject != prefab, isPlant: isPlant))
-                    {
-                        foreach (Renderer renderer in prefab.GetMeshRenderers())
-                        {
-                            if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
-                                continue;
-
-                            CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath(), isPlant: isPlant);
-                        }
-                    }
+                        prefab.GetMeshRenderers().Do(renderer => CacheMaterials(renderer, prefab.name, isPlant: isPlant));
                 }
                 else
                 {
                     LODGroup lodGroup = prefab.GetComponentInChildren<LODGroup>();
                     if (lodGroup == null || !CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: true))
-                    {
-                        foreach (Renderer renderer in prefab.GetSkinnedMeshRenderers())
-                        {
-                            if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
-                                continue;
-
-                            CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
-                        }
-                    }
+                        prefab.GetSkinnedMeshRenderers().Do(renderer => CacheMaterials(renderer, prefab.name));
                 }
 
                 if (prefab.TryGetComponent<TreeBase>(out _) || prefab.TryGetComponent<Destructible>(out _))
                 {
-                    foreach (ParticleSystemRenderer renderer in prefab.GetParticleSystemRenderers())
-                    {
-                        if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
-                            continue;
-
-                        CacheMaterials(renderer.sharedMaterials, prefab.name, renderer.name, renderer.GetType().Name, renderer.transform.GetPath());
-                    }
-
-                    foreach (ParticleSystem ps in prefab.GetParticleSystems())
-                    {
-                        CacheParticleSystemStartColor(ps, prefab.name);
-                    }
+                    prefab.GetParticleSystemRenderers().Do(renderer => CacheMaterials(renderer, prefab.name));
+                    prefab.GetParticleSystems().Do(ps => CacheParticleSystemStartColor(ps, prefab.name));
                 }
 
                 LogPrefabController(prefab.name);
