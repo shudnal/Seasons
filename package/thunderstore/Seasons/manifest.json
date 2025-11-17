@@ -1,6 +1,6 @@
 {
   "name": "Seasons",
-  "version_number": "1.7.5",
+  "version_number": "1.7.6",
   "website_url": "https://github.com/shudnal/Seasons",
   "description": "Four customizable seasons. Different visual flavor for every season, seasonal impact on gameplay. Frozen water and ice floes in Winter. Different weather, raids, lightings and trader items. New special spring grass. Minimal impact on fps.",
   "dependencies": [

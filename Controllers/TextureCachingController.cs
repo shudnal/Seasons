@@ -75,7 +75,9 @@ namespace Seasons.Controllers
 
         public IEnumerator GenerateTextures()
         {
-            yield return null;
+            var wait = new WaitForFixedUpdate();
+
+            yield return wait;
 
             Seasons.LogInfo("Setting up loading indicator");
             
@@ -86,7 +88,7 @@ namespace Seasons.Controllers
 
             yield return StartCoroutine(SeasonalTexturePrefabCache.FillWithGameData());
             
-            yield return new WaitForFixedUpdate();
+            yield return wait;
 
             if (!LoadingIndicator.IsCompletelyInvisible)
             {
@@ -94,16 +96,16 @@ namespace Seasons.Controllers
                 LoadingIndicator.SetText("$seasons_loadscreen_saving");
             }
 
-            yield return new WaitForFixedUpdate();
+            yield return wait;
 
             yield return StartCoroutine(_texturesVariants.SaveCacheOnDisk());
 
-            yield return new WaitForFixedUpdate();
+            yield return wait;
 
             if (!LoadingIndicator.IsCompletelyInvisible)
                 LoadingIndicator.SetProgressVisibility(visible: false);
             
-            yield return new WaitForFixedUpdate();
+            yield return wait;
 
             if (_texturesVariants.Initialized())
                 SeasonState.InitializeTextureControllers();

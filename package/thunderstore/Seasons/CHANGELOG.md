@@ -1,3 +1,7 @@
+# 1.7.6
+* added protection from errors on location load when preparing seasonal textures
+* preparing seasonal textures optimized further
+
 # 1.7.5
 * added protection from prefab collection changes when preparing seasonal textures
 

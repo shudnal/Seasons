@@ -2045,7 +2045,7 @@ namespace Seasons
 
             LogPrefabController(prefabName);
 
-            yield return waitForFixedUpdate;
+            yield return null;
         }
 
         private static IEnumerator AddLocations()
@@ -2063,18 +2063,25 @@ namespace Seasons
                 if (materialSettings.ignorePrefabPartialName.Any(namepart => loc.m_prefabName.Contains(namepart)))
                     continue;
 
-                loc.m_prefab.Load();
+                try
+                {
+                    loc.m_prefab.Load();
 
-                Transform root = loc.m_prefab.Asset.transform.Find("exterior") ?? loc.m_prefab.Asset.transform;
+                    Transform root = loc.m_prefab.Asset.transform.Find("exterior") ?? loc.m_prefab.Asset.transform;
 
-                root.gameObject.GetMeshRenderers().Do(renderer => CacheMaterials(renderer, loc.m_prefabName));
-                root.gameObject.GetSkinnedMeshRenderers().Do(renderer => CacheMaterials(renderer, loc.m_prefabName));
+                    root.gameObject.GetMeshRenderers().Do(renderer => CacheMaterials(renderer, loc.m_prefabName));
+                    root.gameObject.GetSkinnedMeshRenderers().Do(renderer => CacheMaterials(renderer, loc.m_prefabName));
 
-                loc.m_prefab.Release();
+                    loc.m_prefab.Release();
 
-                LogPrefabController(loc.m_prefabName);
+                    LogPrefabController(loc.m_prefabName);
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Skipped processing location {loc.m_prefabName}. Error:\n{e}");
+                }
 
-                yield return waitForFixedUpdate;
+                yield return null;
             }
         }
 
@@ -2100,7 +2107,7 @@ namespace Seasons
 
                 LogPrefabController(clutter.m_prefab.name);
 
-                yield return waitForFixedUpdate;
+                yield return null;
             }
         }
 
@@ -2259,12 +2266,12 @@ namespace Seasons
 
         private static IEnumerator AddZNetScenePrefabs()
         {
-            int i = 0;
+            int i = 0; int percent = ZNetScene.instance.m_prefabs.Count / 100;
             foreach (GameObject prefab in ZNetScene.instance.m_prefabs.ToArray())
             {
                 UpdateLoadingIndicator();
 
-                if (i++ % 5 == 0)
+                if (i++ % percent == 0)
                     yield return null;
 
                 if (materialSettings.ignorePrefab.Contains(prefab.name))
