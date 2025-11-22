@@ -822,10 +822,13 @@ namespace Seasons
 
         private static void Prefix(MineRock5 __instance, ref Material __state)
         {
-            if (__instance.m_meshRenderer == null)
+            if (__instance.m_meshRenderer == null || !PrefabVariantController.instance)
                 return;
 
             if (!PrefabVariantController.instance.m_prefabVariants.TryGetValue(__instance.gameObject, out PrefabVariant prefabVariant))
+                return;
+
+            if (__instance.m_meshRenderer.sharedMaterials == null || __instance.m_meshRenderer.sharedMaterials.Length == 0)
                 return;
 
             Material originalMat = prefabVariant.GetOriginalMaterial(__instance.m_meshRenderer, __instance.m_meshRenderer.sharedMaterials[materialIndex]);

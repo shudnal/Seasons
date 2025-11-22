@@ -1,3 +1,6 @@
+# 1.7.7
+* fixed issue when mining with Serverside Simulations
+
 # 1.7.6
 * added protection from errors on location load when preparing seasonal textures
 * preparing seasonal textures optimized further

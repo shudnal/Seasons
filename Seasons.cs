@@ -25,7 +25,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.7.6";
+        public const string pluginVersion = "1.7.7";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -574,7 +574,7 @@ namespace Seasons
 
         public static bool UseTextureControllers()
         {
-            return SystemInfo.graphicsDeviceType != GraphicsDeviceType.Null;
+            return (SystemInfo.graphicsDeviceType != GraphicsDeviceType.Null) && (ZNet.instance?.IsDedicated() != true);
         }
 
         public static void FillListsToControl()

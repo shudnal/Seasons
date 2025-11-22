@@ -181,8 +181,8 @@ namespace Seasons
 
             SeasonalTexturePrefabCache.SetCurrentTextureVariants(newTexturesVariants);
 
-            PrefabVariantController.instance.RevertPrefabsState();
-            ClutterVariantController.Instance.RevertColors();
+            PrefabVariantController.instance?.RevertPrefabsState();
+            ClutterVariantController.Instance?.RevertColors();
 
             yield return waitForFixedUpdate;
 
