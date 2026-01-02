@@ -1358,6 +1358,12 @@ namespace Seasons
 
         private void UpdateCurrentSeasonDay(int newValue)
         {
+            if (cacheRevision.Value == 0)
+            {
+                LogInfo("Season update pending prevented: cache revision 0");
+                return;
+            }
+
             if (_pendingSeasonChange == newValue)
                 return;
 
@@ -1365,7 +1371,7 @@ namespace Seasons
 
             currentSeasonDay.AssignValueSafe(GetPendingSeasonDayChange);
 
-            LogInfo($"Season update pending: {m_season} -> {GetPendingSeasonDay().Item1}{(overrideSeason.Value ? "(override)" : "")}, Day: {m_day} -> {GetPendingSeasonDay().Item2}{(overrideSeasonDay.Value ? "(override)" : "")}");
+            LogInfo($"Season update pending: {m_season} -> {GetPendingSeasonDay().Item1}{(overrideSeason.Value ? "(override)" : "")}, Day: {m_day} -> {GetPendingSeasonDay().Item2}{(overrideSeasonDay.Value ? "(override)" : "")}, World Day: {m_worldDay}");
         }
 
         internal static float GetDayFractionForSeasonChange()
@@ -1387,6 +1393,7 @@ namespace Seasons
         public static void ResetCurrentSeasonDay()
         {
             _pendingSeasonChange = 0;
+            cacheRevision.AssignValueSafe(0u);
             currentSeasonDay.AssignValueSafe(0);
         }
 
