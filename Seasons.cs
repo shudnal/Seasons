@@ -25,7 +25,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.7.7";
+        public const string pluginVersion = "1.7.8";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -105,6 +105,20 @@ namespace Seasons
         public static ConfigEntry<bool> placeFloatingContainersAboveFrozenOcean;
         public static ConfigEntry<Vector2> iceFloesScale;
         public static ConfigEntry<float> iceFloesHealth;
+
+        /*public static ConfigEntry<bool> summerHeatEnabled;
+        public static ConfigEntry<Vector2> summerHeatDays;
+        public static ConfigEntry<float> summerHeatTimeToMax;
+        public static ConfigEntry<float> summerHeatDamageTickInterval;
+        public static ConfigEntry<float> summerHeatDamageНealthPerTickMinHealthPercentage;
+        public static ConfigEntry<float> summerHeatDamageНealthPerTick;
+        public static ConfigEntry<HitData.HitType> summerHeatDamageHitType;
+        public static ConfigEntry<bool> summerHeatDamageMaxOnly;
+        public static ConfigEntry<float> summerHeatStaminaUseMultiplier;
+        public static ConfigEntry<float> summerHeatAdrenalineMultiplier;
+        public static ConfigEntry<float> summerHeatHealthRegenMultiplier;
+        public static ConfigEntry<float> summerHeatStaminaRegenMultiplier;
+        public static ConfigEntry<float> summerHeatEitrRegenMultiplier;*/
 
         public static ConfigEntry<float> grassDefaultPatchSize;
         public static ConfigEntry<float> grassDefaultAmountScale;
@@ -434,6 +448,22 @@ namespace Seasons
             amountOfIceFloesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             placeShipAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateShipsPositions();
             placeFloatingContainersAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateFloatingPositions();
+
+            /*summerHeatEnabled = config("Season - Summer heat", "Enable summer heat", defaultValue: true, "Enable summer heat mechanic");
+            summerHeatDays = config("Season - Summer heat", "Days of summer heat from to", defaultValue: new Vector2(5f, 8f), "Summer heat will be active in these days inclusive");
+            summerHeatTimeToMax = config("Season - Summer heat", "Time in seconds to max effect", defaultValue: 60f, "Summer heat will take time to get max effect");
+            summerHeatDamageTickInterval = config("Season - Summer heat", "Damage tick interval", defaultValue: 1f, "Interval in seconds to apply damage");
+            summerHeatDamageНealthPerTickMinHealthPercentage = config("Season - Summer heat", "Damage HP threshold", defaultValue: 0.2f, new ConfigDescription("Player HP will not be damaged if it is below set threshold.",
+                                                                                                                               new AcceptableValueRange<float>(0f, 1f),
+                                                                                                                               new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatDamageНealthPerTick = config("Season - Summer heat", "Damage tick amount", defaultValue: 1f, "Amount of damage to be done per tick");
+            summerHeatDamageHitType = config("Season - Summer heat", "Damage type", defaultValue: HitData.HitType.CinderFire, "Damage type");
+            summerHeatDamageMaxOnly = config("Season - Summer heat", "Damage only on max effect", defaultValue: true, "Should damage only be done when effect is at max");
+            summerHeatStaminaUseMultiplier = config("Season - Summer heat", "Multiplier of stamina use", defaultValue: 1.25f, "Multiplier for stamina use on actions");
+            summerHeatAdrenalineMultiplier = config("Season - Summer heat", "Multiplier of adrenaline gain", defaultValue: 1.25f, "Multiplier for adrenaline gain on actions");
+            summerHeatHealthRegenMultiplier = config("Season - Summer heat", "Multiplier of health regen", defaultValue: 0.75f, "Multiplier for health regeneration");
+            summerHeatStaminaRegenMultiplier = config("Season - Summer heat", "Multiplier of stamina regen", defaultValue: 0.75f, "Multiplier for stamina regeneration");
+            summerHeatEitrRegenMultiplier = config("Season - Summer heat", "Multiplier of eitr regen", defaultValue: 0.75f, "Multiplier for eitr regeneration");*/
 
             enableSeasonalGlobalKeys = config("Seasons - Global keys", "Enable setting seasonal Global Keys", defaultValue: false, "Enables setting seasonal global key");
             seasonalGlobalKeyFall = config("Seasons - Global keys", "Fall", defaultValue: "Season_Fall", "Seasonal global key for autumn. You can set config value like \"Season Fall\" space separated and it will be treated as key value pair.");

@@ -1,3 +1,6 @@
+# 1.7.8
+* fixed rare issue with season and day stucking
+
 # 1.7.7
 * fixed issue when mining with Serverside Simulations
 
