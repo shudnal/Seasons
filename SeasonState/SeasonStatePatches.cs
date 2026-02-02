@@ -971,8 +971,8 @@ namespace Seasons
             }
         }
 
-        [HarmonyPatch(typeof(Settings), nameof(Settings.SaveTabSettings))]
-        public static class Settings_SaveTabSettings_ForceUpdateState
+        [HarmonyPatch(typeof(Settings), nameof(Settings.ApplyAndClose))]
+        public static class Settings_ApplyAndClose_ForceUpdateState
         {
             private static void Postfix()
             {

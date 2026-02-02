@@ -5,7 +5,9 @@ using BepInEx.Configuration;
 using HarmonyLib;
 using JetBrains.Annotations;
 using Newtonsoft.Json;
+using Splatform;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -102,12 +104,14 @@ public class Localizer
             localizationObjects.Remove(reference);
     }
 
-    public static void Load()
+    public static IEnumerator Load()
     {
+        yield return new WaitUntil(() => PlatformManager.DistributionPlatform != null && PlatformInitializer.PreferencesInitialized);
+
         // Prevent NRE if language has not been set explicitly yet
         // It will fall into English anyway
-        if (string.IsNullOrEmpty(PlayerPrefs.GetString("language", "")))
-            PlayerPrefs.SetString("language", defaultLanguage);
+        if (string.IsNullOrEmpty(PlatformPrefs.GetString("language", "")))
+            PlatformPrefs.SetString("language", defaultLanguage);
 
         LoadLocalization(Localization.instance, Localization.instance.GetSelectedLanguage());
     }
@@ -119,21 +123,51 @@ public class Localizer
 
         localizationLanguage.Add(__instance, language);
 
-        Dictionary<string, string> localizationFiles = new();
-        foreach (string file in Directory.GetFiles(Path.GetDirectoryName(Paths.PluginPath)!, $"{Plugin.Info.Metadata.Name}.*", SearchOption.AllDirectories).Where(f => fileExtensions.IndexOf(Path.GetExtension(f)) >= 0))
+        var localizationFiles = new Dictionary<string, string>();
+
+        string[] prefixes =
         {
-            string key = Path.GetFileNameWithoutExtension(file).Split('.')[1];
-            if (localizationFiles.ContainsKey(key))
+            Plugin.Info.Metadata.Name + ".",
+            Plugin.Info.Metadata.Name.Replace(" ", "") + "."
+        };
+
+        void Scan(string root, bool warn)
+        {
+            foreach (string file in Directory
+                .GetFiles(root, "*.*", SearchOption.AllDirectories)
+                .Where(f => fileExtensions.Contains(Path.GetExtension(f))))
             {
-                // Handle duplicate key
-                UnityEngine.Debug.LogWarning($"Duplicate key {key} found for {Plugin.Info.Metadata.Name}. The duplicate file found at {file} will be skipped.");
+                string name = Path.GetFileNameWithoutExtension(file);
+
+                foreach (string prefix in prefixes)
+                {
+                    if (!name.StartsWith(prefix))
+                        continue;
+
+                    string key = name.Substring(prefix.Length);
+                    if (string.IsNullOrWhiteSpace(key))
+                        break;
+
+                    if (localizationFiles.ContainsKey(key))
+                    {
+                        if (warn)
+                            Seasons.Seasons.LogWarning(
+                                $"Duplicate localization '{key}' for {Plugin.Info.Metadata.Name}. Skipping {file}"
+                            );
+                        break;
+                    }
+
+                    localizationFiles[key] = file;
+                    break;
+                }
             }
-            else
-                localizationFiles[key] = file;
         }
 
+        Scan(Paths.ConfigPath, true);
+        Scan(Paths.PluginPath, false);
+
         if (LoadTranslationFromAssembly(defaultLanguage) is not { } englishAssemblyData)
-            throw new Exception($"Found no English localizations in mod {Plugin.Info.Metadata.Name}. Expected an embedded resource translations/English.json or translations/English.yml.");
+            throw new Exception($"Found no English localizations in mod {Plugin.Info.Metadata.Name}. Expected an embedded resource Translations/English.json or Translations/English.yml.");
 
         Dictionary<string, string>? localizationTexts = JsonConvert.DeserializeObject<Dictionary<string, string>?>(System.Text.Encoding.UTF8.GetString(englishAssemblyData)) ?? throw new Exception($"Localization for mod {Plugin.Info.Metadata.Name} failed: Localization file was empty.");
         string? localizationData = null;

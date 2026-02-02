@@ -1,3 +1,6 @@
+# 1.7.9
+* patch 0.221.10
+
 # 1.7.8
 * fixed rare issue with season and day stucking
 

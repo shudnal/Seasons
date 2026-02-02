@@ -18,6 +18,8 @@ namespace Seasons.Controllers
 
         public static bool InProcess => instance != null && instance._worker != null;
 
+        public static LoadingIndicator LoadingIndicator => Hud.instance?.m_loadingIndicator;
+
         internal static void StartCaching(SeasonalTextureVariants texturesVariants) => ZoneSystem.instance.gameObject.AddComponent<TextureCachingController>().Initialize(texturesVariants);
 
         private SeasonalTextureVariants _texturesVariants;
@@ -57,13 +59,13 @@ namespace Seasons.Controllers
 
             _indicatorProgress += counter;
 
-            if (LoadingIndicator.s_instance == null)
+            if (LoadingIndicator == null)
                 return;
 
-            if (!_indicatorInitialized)
+            if (!_indicatorInitialized) 
             {
                 LoadingIndicator.SetProgress(0f);
-                LoadingIndicator.SetProgressVisibility(visible: true);
+                LoadingIndicator.SetShowProgress(true);
                 LoadingIndicator.SetText(_indicatorText);
 
                 _indicatorInitialized = true;
@@ -90,7 +92,7 @@ namespace Seasons.Controllers
             
             yield return wait;
 
-            if (!LoadingIndicator.IsCompletelyInvisible)
+            if (LoadingIndicator?.IsVisible == true)
             {
                 LoadingIndicator.SetProgress(1f);
                 LoadingIndicator.SetText("$seasons_loadscreen_saving");
@@ -102,8 +104,8 @@ namespace Seasons.Controllers
 
             yield return wait;
 
-            if (!LoadingIndicator.IsCompletelyInvisible)
-                LoadingIndicator.SetProgressVisibility(visible: false);
+            if (LoadingIndicator?.IsVisible == true)
+                LoadingIndicator.SetShowProgress(false);
             
             yield return wait;
 

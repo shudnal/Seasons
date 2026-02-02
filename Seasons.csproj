@@ -114,6 +114,10 @@
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\Assemblies\stable\SoftReferenceableAssets.dll</HintPath>
     </Reference>
+    <Reference Include="Splatform, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\Assemblies\stable\Splatform.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="Unity.TextMeshPro, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
