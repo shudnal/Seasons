@@ -370,6 +370,14 @@ namespace Seasons
             UpdateGrass();
         }
 
+        public static void UpdateGrassOnSettingChanged()
+        {
+            if (Instance == null || ClutterSystem.instance == null)
+                return;
+
+            Instance.UpdateGrass();
+        }
+
         public void UpdateGrass()
         {
             if (!controlGrass.Value)

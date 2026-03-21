@@ -322,7 +322,7 @@ namespace Seasons
             controlRandomEvents.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
             controlLightings.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
             controlStats.SettingChanged += (sender, args) => { SE_Season.UpdateSeasonStatusEffectStats(); LoadingTips.UpdateLoadingTips(); };
-            controlGrass.SettingChanged += (sender, args) => { ClutterVariantController.Instance.UpdateGrass(); LoadingTips.UpdateLoadingTips(); };
+            controlGrass.SettingChanged += (sender, args) => { ClutterVariantController.UpdateGrassOnSettingChanged(); LoadingTips.UpdateLoadingTips(); };
             controlTraders.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
             customTextures.SettingChanged += (sender, args) => CustomTextures.UpdateTexturesOnChange();
 
@@ -343,7 +343,7 @@ namespace Seasons
                                                                                                                                new AcceptableValueRange<float>(0f, 1f),
                                                                                                                                new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
             secondsToFreezeForCropInWinter = config("Season", "Crops will be freezing for seconds until perish", defaultValue: 120f, "After crop is hit by winter it will not perish immediately but will start to gradually freeze to death.");
-            cultivatedGroundTurnsIntoDirtInWinter = config("Season", "Cultivated ground turns into regular Dirt in Winter", defaultValue: false, "With the onset of winter, any ground cultivated by player turns into ordinary dirt and has to be recultivated. It happens once per year.");
+            cultivatedGroundTurnsIntoDirtInWinter = config("Season", "Cultivated ground turns into regular Dirt in Winter", defaultValue: true, "With the onset of winter, any ground cultivated by player turns into ordinary dirt and has to be recultivated. It happens once per year.");
 
             cropsToSurviveInWinter = config("Season", "Crops will survive in winter", defaultValue: "Pickable_Carrot,Pickable_Barley,Pickable_Barley_Wild,Pickable_Flax,Pickable_Flax_Wild,Pickable_Thistle,Pickable_Mushroom_Magecap",
                                                                                                 GetDescriptionSeparatedStrings("Crops and pickables from the list will not perish after set day in winter"));
@@ -378,9 +378,9 @@ namespace Seasons
             cropsToControlGrowth.SettingChanged += (sender, args) => FillListsToControl();
             woodListToControlDrop.SettingChanged += (sender, args) => FillListsToControl();
             meatListToControlDrop.SettingChanged += (sender, args) => FillListsToControl();
-            disableBloomInWinter.SettingChanged += (sender, args) => seasonState.UpdateWinterBloomEffect();
+            disableBloomInWinter.SettingChanged += (sender, args) => seasonState?.UpdateWinterBloomEffect();
             reduceSnowStormInWinter.SettingChanged += (sender, args) => ZoneSystemVariantController.SnowStormReduceParticlesChanged();
-            summerHeatAddsExtraWarmCloth.SettingChanged += (sender, args) => seasonState.CheckOverheatStatus(Player.m_localPlayer);
+            summerHeatAddsExtraWarmCloth.SettingChanged += (sender, args) => seasonState?.CheckOverheatStatus(Player.m_localPlayer);
 
             shieldGeneratorProtection.SettingChanged += (sender, args) => PrefabVariantController.UpdateShieldStateAfterConfigChange();
             shieldGeneratorOnlyWinter.SettingChanged += (sender, args) => PrefabVariantController.UpdateShieldStateAfterConfigChange();
@@ -395,11 +395,11 @@ namespace Seasons
             grassSizeDefaultScaleMin = config("Season - Grass", "Default minimum size multiplier", defaultValue: 1f, "Default minimum size of grass will be multiplier by given number");
             grassSizeDefaultScaleMax = config("Season - Grass", "Default maximum size multiplier", defaultValue: 1f, "Default maximum size of grass will be multiplier by given number");
 
-            grassDefaultPatchSize.SettingChanged += (sender, args) => ClutterVariantController.Instance.UpdateGrass();
-            grassDefaultAmountScale.SettingChanged += (sender, args) => ClutterVariantController.Instance.UpdateGrass();
-            grassToControlSize.SettingChanged += (sender, args) => ClutterVariantController.Instance.UpdateGrass();
-            grassSizeDefaultScaleMin.SettingChanged += (sender, args) => ClutterVariantController.Instance.UpdateGrass();
-            grassSizeDefaultScaleMax.SettingChanged += (sender, args) => ClutterVariantController.Instance.UpdateGrass();
+            grassDefaultPatchSize.SettingChanged += (sender, args) => ClutterVariantController.UpdateGrassOnSettingChanged();
+            grassDefaultAmountScale.SettingChanged += (sender, args) => ClutterVariantController.UpdateGrassOnSettingChanged();
+            grassToControlSize.SettingChanged += (sender, args) => ClutterVariantController.UpdateGrassOnSettingChanged();
+            grassSizeDefaultScaleMin.SettingChanged += (sender, args) => ClutterVariantController.UpdateGrassOnSettingChanged();
+            grassSizeDefaultScaleMax.SettingChanged += (sender, args) => ClutterVariantController.UpdateGrassOnSettingChanged();
 
             showCurrentSeasonBuff = config("Season - Buff", "Show current season buff", defaultValue: true, "Show current season buff.");
             seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
@@ -472,12 +472,12 @@ namespace Seasons
             seasonalGlobalKeyWinter = config("Seasons - Global keys", "Winter", defaultValue: "Season_Winter", "Seasonal global key for winter. You can set config value like \"Season Winter\" space separated and it will be treated as key value pair.");
             seasonalGlobalKeyDay = config("Seasons - Global keys", "Day number", defaultValue: "SeasonDay_{0}", "Seasonal global key for current day number. You can set config value like \"SeasonDay {0}\" space separated and it will be treated as key value pair.");
 
-            enableSeasonalGlobalKeys.SettingChanged += (sender, args) => seasonState.UpdateGlobalKeys();
-            seasonalGlobalKeyFall.SettingChanged += (sender, args) => seasonState.UpdateGlobalKeys();
-            seasonalGlobalKeySpring.SettingChanged += (sender, args) => seasonState.UpdateGlobalKeys();
-            seasonalGlobalKeySummer.SettingChanged += (sender, args) => seasonState.UpdateGlobalKeys();
-            seasonalGlobalKeyWinter.SettingChanged += (sender, args) => seasonState.UpdateGlobalKeys();
-            seasonalGlobalKeyDay.SettingChanged += (sender, args) => seasonState.UpdateGlobalKeys();
+            enableSeasonalGlobalKeys.SettingChanged += (sender, args) => seasonState?.UpdateGlobalKeys();
+            seasonalGlobalKeyFall.SettingChanged += (sender, args) => seasonState?.UpdateGlobalKeys();
+            seasonalGlobalKeySpring.SettingChanged += (sender, args) => seasonState?.UpdateGlobalKeys();
+            seasonalGlobalKeySummer.SettingChanged += (sender, args) => seasonState?.UpdateGlobalKeys();
+            seasonalGlobalKeyWinter.SettingChanged += (sender, args) => seasonState?.UpdateGlobalKeys();
+            seasonalGlobalKeyDay.SettingChanged += (sender, args) => seasonState?.UpdateGlobalKeys();
 
             cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
             logTime = config("Test", "Log time", defaultValue: false, "Log time info on state update");

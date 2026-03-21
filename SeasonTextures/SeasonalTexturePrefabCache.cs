@@ -2266,63 +2266,92 @@ namespace Seasons
 
         private static IEnumerator AddZNetScenePrefabs()
         {
-            int i = 0; int percent = ZNetScene.instance.m_prefabs.Count / 100;
-            foreach (GameObject prefab in ZNetScene.instance.m_prefabs.ToArray())
+            HashSet<GameObject> cachedPrefab = new HashSet<GameObject>();
+
+            bool foundNewPrefabs;
+            do
             {
-                UpdateLoadingIndicator();
+                foundNewPrefabs = false;
 
-                if (i++ % percent == 0)
-                    yield return null;
+                List<GameObject> prefabs = ZNetScene.instance.m_prefabs;
+                int count = prefabs.Count;
+                int step = Math.Max(1, count / 100);
 
-                if (materialSettings.ignorePrefab.Contains(prefab.name))
-                    continue;
+                for (int i = 0; i < prefabs.Count; i++)
+                {
+                    UpdateLoadingIndicator();
 
-                if (materialSettings.ignorePrefabPartialName.Any(namepart => prefab.name.Contains(namepart)))
-                    continue;
+                    if (i % step == 0)
+                        yield return null;
 
-                if (prefab.layer == 12 && !materialSettings.itemsPrefab.Contains(prefab.name))
-                    continue;
+                    GameObject prefab = prefabs[i];
+                    if (prefab == null || cachedPrefab.Contains(prefab))
+                        continue;
 
-                if (prefab.layer == 8 && !materialSettings.effectPrefab.Contains(prefab.name))
-                    continue;
+                    foundNewPrefabs = true;
+                    CacheZNetScenePrefab(prefab);
+                }
+            }
+            while (foundNewPrefabs);
+
+            void CacheZNetScenePrefab(GameObject prefab)
+            {
+                if (prefab == null)
+                    return;
+
+                cachedPrefab.Add(prefab);
+
+                string prefabName = prefab.name;
+
+                if (materialSettings.ignorePrefab.Contains(prefabName))
+                    return;
+
+                if (materialSettings.ignorePrefabPartialName.Any(namepart => prefabName.Contains(namepart)))
+                    return;
+
+                if (prefab.layer == 12 && !materialSettings.itemsPrefab.Contains(prefabName))
+                    return;
+
+                if (prefab.layer == 8 && !materialSettings.effectPrefab.Contains(prefabName))
+                    return;
 
                 if (prefab.layer == 0 && prefab.TryGetComponent<Ship>(out _))
-                    continue;
+                    return;
 
                 if (prefab.layer == 16 && !prefab.TryGetComponent<Pickable>(out _) && !prefab.TryGetComponent<Plant>(out _))
-                    continue;
+                    return;
 
-                if (prefab.layer == 10 
-                   && !(materialSettings.piecePrefab.Contains(prefab.name) || materialSettings.piecePrefabPartialName.Any(namepart => prefab.name.IndexOf(namepart, StringComparison.OrdinalIgnoreCase) >= 0))
+                if (prefab.layer == 10
+                   && !(materialSettings.piecePrefab.Contains(prefabName) || materialSettings.piecePrefabPartialName.Any(namepart => prefabName.IndexOf(namepart, StringComparison.OrdinalIgnoreCase) >= 0))
                    && !prefab.TryGetComponent<Pickable>(out _) && !prefab.TryGetComponent<Plant>(out _))
-                    continue;
-                
+                    return;
+
                 if (prefab.layer == 15 && (prefab.TryGetComponent<MineRock5>(out _) || prefab.TryGetComponent<MineRock>(out _)))
                 {
                     MeshRenderer renderer = prefab.GetComponentInChildren<MeshRenderer>();
 
                     if (renderer == null)
-                        continue;
+                        return;
 
                     if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
-                        continue;
+                        return;
 
-                    CacheMaterials(renderer, prefab.name, isSingleRenderer: true);
-                    LogPrefabController(prefab.name);
-                    continue;
+                    CacheMaterials(renderer, prefabName, isSingleRenderer: true);
+                    LogPrefabController(prefabName);
+                    return;
                 }
 
                 if (prefab.TryGetComponent<TimedDestruction>(out _))
                 {
-                    prefab.GetParticleSystemRenderers().Do(renderer => CacheMaterials(renderer, prefab.name));
-                    prefab.GetParticleSystems().Do(ps => CacheParticleSystemStartColor(ps, prefab.name));
+                    prefab.GetParticleSystemRenderers().Do(renderer => CacheMaterials(renderer, prefabName));
+                    prefab.GetParticleSystems().Do(ps => CacheParticleSystemStartColor(ps, prefabName));
                 }
 
                 if (prefab.layer == 8)
                 {
                     LODGroup lodGroup = prefab.GetComponentInChildren<LODGroup>();
-                    if (lodGroup == null || !CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: true))
-                        prefab.gameObject.GetSkinnedMeshRenderers().Do(renderer => CacheMaterials(renderer, prefab.name));
+                    if (lodGroup == null || !CachePrefabLODGroup(lodGroup, prefabName, isLodInHierarchy: true))
+                        prefab.gameObject.GetSkinnedMeshRenderers().Do(renderer => CacheMaterials(renderer, prefabName));
                 }
                 else if (prefab.layer != 9)
                 {
@@ -2339,7 +2368,7 @@ namespace Seasons
                         if (plant.m_unhealthyGrown != null)
                             renderers.AddRange(plant.m_unhealthyGrown.GetMeshRenderers());
 
-                        renderers.Do(renderer => CacheMaterials(renderer, prefab.name, isPlant: isPlant));
+                        renderers.Do(renderer => CacheMaterials(renderer, prefabName, isPlant: isPlant));
                     }
                     else
                         isPlant = prefab.TryGetComponent<Pickable>(out _);
@@ -2347,35 +2376,34 @@ namespace Seasons
                     if (prefab.TryGetComponent(out WearNTear wnt))
                     {
                         if (wnt.m_new != null && wnt.m_new.TryGetComponent(out LODGroup wntLodGroupNew))
-                            CachePrefabLODGroup(wntLodGroupNew, prefab.name, isLodInHierarchy: true);
+                            CachePrefabLODGroup(wntLodGroupNew, prefabName, isLodInHierarchy: true);
                         if (wnt.m_worn != null && wnt.m_worn.TryGetComponent(out LODGroup wntLodGroupWorn))
-                            CachePrefabLODGroup(wntLodGroupWorn, prefab.name, isLodInHierarchy: true);
+                            CachePrefabLODGroup(wntLodGroupWorn, prefabName, isLodInHierarchy: true);
                         if (wnt.m_broken != null && wnt.m_broken.TryGetComponent(out LODGroup wntLodGroupBroken))
-                            CachePrefabLODGroup(wntLodGroupBroken, prefab.name, isLodInHierarchy: true);
+                            CachePrefabLODGroup(wntLodGroupBroken, prefabName, isLodInHierarchy: true);
                         if (wnt.m_wet != null && wnt.m_wet.TryGetComponent(out LODGroup wntLodGroupWet))
-                            CachePrefabLODGroup(wntLodGroupWet, prefab.name, isLodInHierarchy: true);
+                            CachePrefabLODGroup(wntLodGroupWet, prefabName, isLodInHierarchy: true);
                     }
 
-                    if (prefab.GetComponentInChildren<LODGroup>() is not LODGroup lodGroup || lodGroup.lodCount < 2 || !CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: lodGroup.gameObject != prefab, isPlant: isPlant))
-                        prefab.GetMeshRenderers().Do(renderer => CacheMaterials(renderer, prefab.name, isPlant: isPlant));
+                    if (prefab.GetComponentInChildren<LODGroup>() is not LODGroup lodGroup || lodGroup.lodCount < 2 || !CachePrefabLODGroup(lodGroup, prefabName, isLodInHierarchy: lodGroup.gameObject != prefab, isPlant: isPlant))
+                        prefab.GetMeshRenderers().Do(renderer => CacheMaterials(renderer, prefabName, isPlant: isPlant));
                 }
                 else
                 {
                     LODGroup lodGroup = prefab.GetComponentInChildren<LODGroup>();
-                    if (lodGroup == null || !CachePrefabLODGroup(lodGroup, prefab.name, isLodInHierarchy: true))
-                        prefab.GetSkinnedMeshRenderers().Do(renderer => CacheMaterials(renderer, prefab.name));
+                    if (lodGroup == null || !CachePrefabLODGroup(lodGroup, prefabName, isLodInHierarchy: true))
+                        prefab.GetSkinnedMeshRenderers().Do(renderer => CacheMaterials(renderer, prefabName));
                 }
 
                 if (prefab.TryGetComponent<TreeBase>(out _) || prefab.TryGetComponent<Destructible>(out _))
                 {
-                    prefab.GetParticleSystemRenderers().Do(renderer => CacheMaterials(renderer, prefab.name));
-                    prefab.GetParticleSystems().Do(ps => CacheParticleSystemStartColor(ps, prefab.name));
+                    prefab.GetParticleSystemRenderers().Do(renderer => CacheMaterials(renderer, prefabName));
+                    prefab.GetParticleSystems().Do(ps => CacheParticleSystemStartColor(ps, prefabName));
                 }
 
-                LogPrefabController(prefab.name);
+                LogPrefabController(prefabName);
             }
         }
-
         private static bool CachePrefabLODGroup(LODGroup lodGroup, string prefabName, bool isLodInHierarchy, bool isPlant = false)
         {
             bool result = false;

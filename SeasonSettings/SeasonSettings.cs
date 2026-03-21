@@ -352,7 +352,7 @@ namespace Seasons
         public static void SaveDefaultEnvironments(string folder)
         {
             List<SeasonEnvironment> list = new List<SeasonEnvironment>();
-            EnvMan.instance.m_environments.Do(env => list.Add(new SeasonEnvironment(env)));
+            EnvMan.instance?.m_environments.Do(env => list.Add(new SeasonEnvironment(env)));
 
             LogInfo($"Saving default environments settings");
             File.WriteAllText(Path.Combine(folder, "Default environments.json"), JsonConvert.SerializeObject(list, Formatting.Indented));
@@ -367,7 +367,7 @@ namespace Seasons
             File.WriteAllText(Path.Combine(folder, customEnvironmentsFileName), JsonConvert.SerializeObject(SeasonEnvironment.GetDefaultCustomEnvironments(), Formatting.Indented, jsonSerializerSettings));
 
             LogInfo($"Saving default biome environments settings");
-            File.WriteAllText(Path.Combine(folder, "Default biome environments.json"), JsonConvert.SerializeObject(EnvMan.instance.m_biomes.ToList(), Formatting.Indented));
+            File.WriteAllText(Path.Combine(folder, "Default biome environments.json"), JsonConvert.SerializeObject(EnvMan.instance?.m_biomes.ToList(), Formatting.Indented));
 
             LogInfo($"Saving default custom biome environments settings");
             File.WriteAllText(Path.Combine(folder, customBiomeEnvironmentsFileName), JsonConvert.SerializeObject(new SeasonBiomeEnvironments(loadDefaults: true), Formatting.Indented));
@@ -376,7 +376,7 @@ namespace Seasons
         public static void SaveDefaultEvents(string folder)
         {
             List<SeasonRandomEvents.SeasonRandomEvent> list = new List<SeasonRandomEvents.SeasonRandomEvent>();
-            RandEventSystem.instance.m_events.DoIf(randevent => randevent.m_random, randevent => list.Add(new SeasonRandomEvents.SeasonRandomEvent(randevent)));
+            RandEventSystem.instance?.m_events.DoIf(randevent => randevent.m_random, randevent => list.Add(new SeasonRandomEvents.SeasonRandomEvent(randevent)));
 
             JsonSerializerSettings jsonSerializerSettings = new JsonSerializerSettings
             {
