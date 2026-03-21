@@ -2050,65 +2050,125 @@ namespace Seasons
 
         private static IEnumerator AddLocations()
         {
-            foreach (ZoneSystem.ZoneLocation loc in ZoneSystem.instance.m_locations)
+            HashSet<ZoneSystem.ZoneLocation> cachedLocations = new HashSet<ZoneSystem.ZoneLocation>();
+
+            bool foundNewLocations;
+            do
             {
-                UpdateLoadingIndicator(locationWeight);
+                foundNewLocations = false;
 
-                if (!loc.m_prefab.IsValid)
-                    continue;
+                List<ZoneSystem.ZoneLocation> locations = ZoneSystem.instance.m_locations;
 
-                if (materialSettings.ignorePrefab.Contains(loc.m_prefabName))
-                    continue;
-
-                if (materialSettings.ignorePrefabPartialName.Any(namepart => loc.m_prefabName.Contains(namepart)))
-                    continue;
-
-                try
+                for (int i = 0; i < locations.Count; i++)
                 {
-                    loc.m_prefab.Load();
+                    ZoneSystem.ZoneLocation loc = locations[i];
+                    if (loc == null || !cachedLocations.Add(loc))
+                        continue;
 
-                    Transform root = loc.m_prefab.Asset.transform.Find("exterior") ?? loc.m_prefab.Asset.transform;
+                    foundNewLocations = true;
 
-                    root.gameObject.GetMeshRenderers().Do(renderer => CacheMaterials(renderer, loc.m_prefabName));
-                    root.gameObject.GetSkinnedMeshRenderers().Do(renderer => CacheMaterials(renderer, loc.m_prefabName));
+                    UpdateLoadingIndicator(locationWeight);
 
-                    loc.m_prefab.Release();
+                    if (!loc.m_prefab.IsValid)
+                    {
+                        yield return null;
+                        continue;
+                    }
 
-                    LogPrefabController(loc.m_prefabName);
+                    string prefabName = loc.m_prefabName;
+
+                    if (materialSettings.ignorePrefab.Contains(prefabName))
+                    {
+                        yield return null;
+                        continue;
+                    }
+
+                    if (materialSettings.ignorePrefabPartialName.Any(namepart => prefabName.Contains(namepart)))
+                    {
+                        yield return null;
+                        continue;
+                    }
+
+                    try
+                    {
+                        loc.m_prefab.Load();
+
+                        Transform root = loc.m_prefab.Asset.transform.Find("exterior") ?? loc.m_prefab.Asset.transform;
+
+                        root.gameObject.GetMeshRenderers().Do(renderer => CacheMaterials(renderer, prefabName));
+                        root.gameObject.GetSkinnedMeshRenderers().Do(renderer => CacheMaterials(renderer, prefabName));
+
+                        LogPrefabController(prefabName);
+                    }
+                    catch (Exception e)
+                    {
+                        LogWarning($"Skipped processing location {prefabName}. Error:\n{e}");
+                    }
+                    finally
+                    {
+                        if (loc.m_prefab.IsValid)
+                            loc.m_prefab.Release();
+                    }
+
+                    yield return null;
                 }
-                catch (Exception e)
-                {
-                    LogWarning($"Skipped processing location {loc.m_prefabName}. Error:\n{e}");
-                }
-
-                yield return null;
             }
+            while (foundNewLocations);
         }
 
         private static IEnumerator AddClutters()
         {
-            foreach (ClutterSystem.Clutter clutter in ClutterSystem.instance.m_clutter)
+            HashSet<ClutterSystem.Clutter> cachedClutters = new HashSet<ClutterSystem.Clutter>();
+
+            bool foundNewClutters;
+            do
             {
-                UpdateLoadingIndicator(clutterWeight);
+                foundNewClutters = false;
 
-                if (clutter.m_prefab == null)
-                    continue;
+                List<ClutterSystem.Clutter> clutters = ClutterSystem.instance.m_clutter;
 
-                if (materialSettings.ignorePrefab.Contains(clutter.m_prefab.name))
-                    continue;
+                for (int i = 0; i < clutters.Count; i++)
+                {
+                    ClutterSystem.Clutter clutter = clutters[i];
+                    if (clutter == null || !cachedClutters.Add(clutter))
+                        continue;
 
-                if (materialSettings.ignorePrefabPartialName.Any(namepart => clutter.m_prefab.name.Contains(namepart)))
-                    continue;
+                    foundNewClutters = true;
 
-                if (clutter.m_prefab.TryGetComponent(out InstanceRenderer irenderer))
-                    CacheMaterials(new Material[1] { irenderer.m_material }, clutter.m_prefab.name, irenderer.name, irenderer.GetType().Name, irenderer.transform.GetPath());
-                else
-                    clutter.m_prefab.GetMeshRenderers().Do(renderer => CacheMaterials(renderer, clutter.m_prefab.name));
+                    UpdateLoadingIndicator(clutterWeight);
 
-                LogPrefabController(clutter.m_prefab.name);
+                    GameObject prefab = clutter.m_prefab;
+                    if (prefab == null)
+                    {
+                        yield return null;
+                        continue;
+                    }
 
-                yield return null;
+                    string prefabName = prefab.name;
+
+                    if (materialSettings.ignorePrefab.Contains(prefabName))
+                    {
+                        yield return null;
+                        continue;
+                    }
+
+                    if (materialSettings.ignorePrefabPartialName.Any(namepart => prefabName.Contains(namepart)))
+                    {
+                        yield return null;
+                        continue;
+                    }
+
+                    if (prefab.TryGetComponent(out InstanceRenderer irenderer))
+                        CacheMaterials(new Material[1] { irenderer.m_material }, prefabName, irenderer.name, irenderer.GetType().Name, irenderer.transform.GetPath());
+                    else
+                        prefab.GetMeshRenderers().Do(renderer => CacheMaterials(renderer, prefabName));
+
+                    LogPrefabController(prefabName);
+
+                    yield return null;
+                }
             }
+            while (foundNewClutters);
         }
 
         private static void CacheMaterials(Renderer renderer, string prefabName, int lodLevel = -1, bool isSingleRenderer = false, bool isLodInHierarchy = false, bool isPlant = false)

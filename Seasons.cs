@@ -627,11 +627,11 @@ namespace Seasons
             // At first fill all grown state pickables and stubs prefabs
             foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
             {
-                if (prefab.TryGetComponent(out Pickable pickable) && pickable.m_itemPrefab != null && 
+                if (prefab?.TryGetComponent(out Pickable pickable) == true && pickable.m_itemPrefab != null && 
                     pickable.m_itemPrefab.TryGetComponent(out ItemDrop itemDrop) && itemDrop.m_itemData.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Consumable)
                     _PlantsToControlGrowth.Add(pickable.gameObject.name.ToLower());
 
-                if (prefab.TryGetComponent(out TreeBase tree) && tree.m_stubPrefab != null &&
+                if (prefab?.TryGetComponent(out TreeBase tree) == true && tree.m_stubPrefab != null &&
                     tree.m_stubPrefab.TryGetComponent(out Destructible destructible) && IsTree(destructible))
                     stubs.Add(prefab, tree.m_stubPrefab);
             }
@@ -639,7 +639,7 @@ namespace Seasons
             // Add Plant that will later have Pickable in grown state and a stub of grown prefab
             foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
             {
-                if (prefab.TryGetComponent(out Plant plant) && plant.m_grownPrefabs != null)
+                if (prefab?.TryGetComponent(out Plant plant) == true && plant.m_grownPrefabs != null)
                 {
                     if (plant.m_grownPrefabs.Any(prefab => ControlPlantGrowth(prefab)))
                         _PlantsToControlGrowth.Add(plant.gameObject.name.ToLower());
