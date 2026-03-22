@@ -16,6 +16,9 @@
         public const string s_statusEffectOverheatName = "Overheat";
         public static int s_statusEffectOverheatHash = s_statusEffectOverheatName.GetStableHashCode();
 
+        public const string s_statusEffectSummerHeatName = "SummerHeat";
+        public static int s_statusEffectSummerHeatHash = s_statusEffectSummerHeatName.GetStableHashCode();
+
         public static int s_iceFloeWatermark = "Seasons_IceFloe".GetStableHashCode();
         public static int s_iceFloeMass = "Seasons_IceFloeMass".GetStableHashCode();
         public static int s_iceFloesSpawned = "Seasons_IceFloesSpawned".GetStableHashCode();

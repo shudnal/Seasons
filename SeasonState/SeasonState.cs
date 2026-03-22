@@ -34,8 +34,9 @@ namespace Seasons
 
         private static readonly Dictionary<Heightmap.Biome, string> biomesDefault = new Dictionary<Heightmap.Biome, string>();
         private static readonly List<ItemDrop.ItemData> _itemDataList = new List<ItemDrop.ItemData>();
+        private static readonly HashSet<string> _coolingFoodNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static int _pendingSeasonChange = 0;
-
+        private static string _coolingFoodNamesValue = string.Empty;
         private SeasonSettings settings
         {
             get
@@ -1310,24 +1311,30 @@ namespace Seasons
             if (player == null || player.m_isLoading || player.m_nview == null || !player.m_nview.IsValid())
                 return;
 
-            bool getOverheat = seasonState.GetOverheatIn2WarmClothes() && !IsCold() && !player.GetFoods().Any(food => food.m_item.m_shared.m_name == "$item_eyescream");
             bool haveOverheat = player.GetSEMan().HaveStatusEffect(SeasonsVars.s_statusEffectOverheatHash);
+            bool useLegacyWarm = !summerHeatEnabled.Value
+                && summerHeatAddsExtraWarmCloth.Value
+                && player == Player.m_localPlayer
+                && seasonState.GetCurrentSeason() == Season.Summer;
+
+            bool getOverheat = useLegacyWarm
+                && seasonState.GetOverheatIn2WarmClothes()
+                && !IsCold()
+                && !HasCoolingFood(player);
+
             if (!getOverheat)
             {
                 if (haveOverheat)
                     player.GetSEMan().RemoveStatusEffect(SeasonsVars.s_statusEffectOverheatHash);
-            }
-            else
-            {
-                int warmClothCount = GetWarmClothesCount(player);
-                if (summerHeatAddsExtraWarmCloth.Value && player == Player.m_localPlayer && seasonState.GetCurrentSeason() == Season.Summer)
-                    warmClothCount++;
 
-                if (!haveOverheat && warmClothCount > 1)
-                    player.GetSEMan().AddStatusEffect(SeasonsVars.s_statusEffectOverheatHash);
-                else if (haveOverheat && warmClothCount <= 1)
-                    player.GetSEMan().RemoveStatusEffect(SeasonsVars.s_statusEffectOverheatHash);
+                return;
             }
+
+            int warmClothCount = GetWarmClothesCount(player);
+            if (!haveOverheat && warmClothCount > 1)
+                player.GetSEMan().AddStatusEffect(SeasonsVars.s_statusEffectOverheatHash);
+            else if (haveOverheat && warmClothCount <= 1)
+                player.GetSEMan().RemoveStatusEffect(SeasonsVars.s_statusEffectOverheatHash);
         }
 
         public static int GetWarmClothesCount(Player player)
@@ -1342,6 +1349,38 @@ namespace Seasons
         {
             return damageMod.m_type == HitData.DamageType.Frost &&
                    (damageMod.m_modifier == HitData.DamageModifier.SlightlyResistant || damageMod.m_modifier == HitData.DamageModifier.Resistant || damageMod.m_modifier == HitData.DamageModifier.VeryResistant || damageMod.m_modifier == HitData.DamageModifier.Immune);
+        }
+
+        public static bool HasCoolingFood(Player player)
+        {
+            return player != null && player.GetFoods().Any(food => IsCoolingFood(food.m_item));
+        }
+
+        public static bool IsCoolingFood(ItemDrop.ItemData item)
+        {
+            if (item == null)
+                return false;
+
+            return GetCoolingFoodNames().Contains(item.m_shared?.m_name);
+        }
+
+        private static HashSet<string> GetCoolingFoodNames()
+        {
+            string configuredFoods = summerHeatCoolingFoods?.Value ?? string.Empty;
+            if (_coolingFoodNamesValue == configuredFoods)
+                return _coolingFoodNames;
+
+            _coolingFoodNamesValue = configuredFoods;
+            _coolingFoodNames.Clear();
+
+            foreach (string value in configuredFoods.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string normalized = value.GetItemName();
+                if (!string.IsNullOrEmpty(normalized))
+                    _coolingFoodNames.Add(normalized);
+            }
+
+            return _coolingFoodNames;
         }
 
         public static bool IsCold() => EnvMan.IsFreezing() || EnvMan.IsCold();

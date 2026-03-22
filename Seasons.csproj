@@ -49,6 +49,9 @@
     <Compile Include="SeasonTextures\SeasonalTextureVariants.cs" />
     <Compile Include="SeasonTextures\TextureVariants.cs" />
     <Compile Include="SeasonTextures\TextureProperties.cs" />
+    <Compile Include="SummerHeat\SE_SummerHeat.cs" />
+    <Compile Include="SummerHeat\SummerHeatComponent.cs" />
+    <Compile Include="SummerHeat\SummerHeatState.cs" />
     <Compile Include="Utils\CustomConfigs.cs" />
     <Compile Include="CustomMusic.cs" />
     <Compile Include="Utils\CustomPrefabs.cs" />
@@ -80,6 +83,7 @@
     <Compile Include="SE_Season.cs" />
     <Compile Include="Controllers\PrefabVariantController.cs" />
     <Compile Include="Controllers\ZoneSystemVariantController.cs" />
+    <Compile Include="Utils\ItemNameTokens.cs" />
     <Compile Include="Utils\LocalizationManager.cs" />
     <Compile Include="SeasonsVars.cs" />
   </ItemGroup>
@@ -273,7 +277,9 @@
       <Version>13.0.3</Version>
     </PackageReference>
   </ItemGroup>
-  <ItemGroup />
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\valheim_warm.png" />
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
     <PostBuildEvent>

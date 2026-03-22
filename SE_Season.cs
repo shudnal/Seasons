@@ -193,13 +193,22 @@ namespace Seasons
                     odb.m_StatusEffects.Add(seasonEffect);
                 }
 
-                SE_Stats warm = odb.m_StatusEffects.Find(se => se.name == "Warm") as SE_Stats;
-                if (warm != null && !odb.m_StatusEffects.Any(se => se.name == SeasonsVars.s_statusEffectOverheatName))
+                if (!odb.m_StatusEffects.Any(se => se.name == SeasonsVars.s_statusEffectSummerHeatName))
+                {
+                    SE_SummerHeat summerHeat = ScriptableObject.CreateInstance<SE_SummerHeat>();
+                    summerHeat.name = SeasonsVars.s_statusEffectSummerHeatName;
+                    summerHeat.m_nameHash = SeasonsVars.s_statusEffectSummerHeatHash;
+                    summerHeat.m_icon = iconWarm;
+
+                    odb.m_StatusEffects.Add(summerHeat);
+                }
+
+                if (!odb.m_StatusEffects.Any(se => se.name == SeasonsVars.s_statusEffectOverheatName))
                 {
                     SE_Stats overheat = ScriptableObject.CreateInstance<SE_Stats>();
                     overheat.name = SeasonsVars.s_statusEffectOverheatName;
                     overheat.m_nameHash = SeasonsVars.s_statusEffectOverheatHash;
-                    overheat.m_icon = warm.m_icon;
+                    overheat.m_icon = iconWarm;
                     overheat.m_name = "$seasons_status_overheat_name";
                     overheat.m_tooltip = "$seasons_status_overheat_description";
                     overheat.m_startMessage = "$seasons_status_overheat_message";
