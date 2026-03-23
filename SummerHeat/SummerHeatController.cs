@@ -6,34 +6,34 @@ using UnityEngine;
 
 namespace Seasons
 {
-    internal class SummerHeatComponent : MonoBehaviour
+    internal class SummerHeatController : MonoBehaviour
     {
-        private const float EvaluationInterval = 1f;
-        private const float DaytimeHeatCap = 100f;
-        private const float ShadowRayDistance = 100f;
-        private const float StableEpsilon = 0.01f;
-        private const float WetCoolingPerSecond = 5f;
-        private const float ShelterCoolingPerSecond = 2f;
-        private const float BurningHeatPerSecond = 5f;
-        private const float RunningHeatPerSecond = 0.5f;
-        private const float WalkingCoolingPerSecond = 0.5f;
-        private const float StandingCoolingPerSecond = 1f;
-        private const float WarmClothesHeatPerSecond = 0.5f;
-        private const float CoolingFoodHeatPerSecond = 5f;
-        private const float CampFireHeatPerSecond = 0.5f;
-        private const float EncumberedHeatPerSecond = 0.5f;
-        private const float MovementThreshold = 0.1f;
-        private const float NoonPeak = 0.5f;
-        private const float NoonStart = 0.42f;
-        private const float NoonEnd = 0.58f;
-        private const float SecondaryAttackHeat = 1f;
-        private const float PrimaryAttackHeat = 0.5f;
-        private const float DodgeHeat = 0.5f;
-        private const float JumpHeat = 0.25f;
-        private const float BlockHeat = 1f;
-        private const float PerfectBlockHeat = 0.5f;
-        private const float FireDamageHeat = 10f;
-        private const float FrostDamageCooling = 10f;
+        internal const float EvaluationInterval = 1f;
+        internal const float DaytimeHeatCap = 100f;
+        internal const float ShadowRayDistance = 100f;
+        internal const float StableEpsilon = 0.01f;
+        internal const float WetCoolingPerSecond = 5f;
+        internal const float ShelterCoolingPerSecond = 2f;
+        internal const float BurningHeatPerSecond = 5f;
+        internal const float RunningHeatPerSecond = 0.5f;
+        internal const float WalkingCoolingPerSecond = 0.5f;
+        internal const float StandingCoolingPerSecond = 1f;
+        internal const float WarmClothesHeatPerSecond = 0.5f;
+        internal const float CoolingFoodHeatPerSecond = 5f;
+        internal const float CampFireHeatPerSecond = 0.5f;
+        internal const float EncumberedHeatPerSecond = 0.5f;
+        internal const float MovementThreshold = 0.1f;
+        internal const float NoonPeak = 0.5f;
+        internal const float NoonStart = 0.42f;
+        internal const float NoonEnd = 0.58f;
+        internal const float SecondaryAttackHeat = 1f;
+        internal const float PrimaryAttackHeat = 0.5f;
+        internal const float DodgeHeat = 0.5f;
+        internal const float JumpHeat = 0.25f;
+        internal const float BlockHeat = 1f;
+        internal const float PerfectBlockHeat = 0.5f;
+        internal const float FireDamageHeat = 10f;
+        internal const float FrostDamageHeat = -10f;
 
         private static readonly HashSet<string> s_configuredNonSunnySystems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static string s_configuredNonSunnySystemsValue = string.Empty;
@@ -53,7 +53,7 @@ namespace Seasons
         private bool _biomeAllowsSummerHeat = true;
         private Heightmap.Biome _currentBiome = Heightmap.Biome.None;
 
-        internal static SummerHeatComponent Instance { get; private set; }
+        internal static SummerHeatController Instance { get; private set; }
 
         internal Player Player { get; private set; }
 
@@ -76,6 +76,8 @@ namespace Seasons
         {
             if (Instance == this)
                 Instance = null;
+
+            SummerHeatVisuals.UpdateHazeState();
         }
 
         private void Update()
@@ -92,6 +94,8 @@ namespace Seasons
             }
 
             UpdateHeat(dt);
+
+            SummerHeatVisuals.UpdateHazeState();
         }
 
         internal static void EnsureForPlayer(Player player)
@@ -99,8 +103,8 @@ namespace Seasons
             if (player == null || player != Player.m_localPlayer)
                 return;
 
-            if (!player.TryGetComponent(out SummerHeatComponent _))
-                player.gameObject.AddComponent<SummerHeatComponent>();
+            if (!player.TryGetComponent(out SummerHeatController _))
+                player.gameObject.AddComponent<SummerHeatController>();
         }
 
         internal static HeatZone GetZoneForHeat(float heatPercent, HeatZone previousZone, bool biomeSupported, bool isDaytime, float overflowHeat)
@@ -531,10 +535,7 @@ namespace Seasons
             return currentDay >= dayFrom && currentDay <= dayTo;
         }
 
-        private static string GetEnvironmentName(EnvSetup env)
-        {
-            return env?.m_name ?? string.Empty;
-        }
+        private static string GetEnvironmentName(EnvSetup env) => env?.m_name ?? string.Empty;
 
         private static bool IsPlayerCoolingByWater(Player player)
         {
@@ -613,7 +614,7 @@ namespace Seasons
 
         internal static bool IsSecondaryAttack(Humanoid humanoid) => humanoid.m_currentAttackIsSecondary;
 
-        internal static bool WasPerfectBlock(Humanoid humanoid) => humanoid.m_blockTimer > 0f && humanoid.m_blockTimer <= 0.25f;
+        internal static bool WasPerfectBlock(Humanoid humanoid) => humanoid.m_blockTimer > 0f && humanoid.m_blockTimer <= Humanoid.m_perfectBlockInterval;
     }
 
     [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.StartAttack))]
@@ -624,7 +625,8 @@ namespace Seasons
             if (!__result || __instance != Player.m_localPlayer)
                 return;
 
-            SummerHeatComponent.Instance?.AddInstantHeat(SummerHeatComponent.IsSecondaryAttack(__instance) ? 1f : 0.5f, useConfigGate: true);
+            float attackHeat = SummerHeatController.IsSecondaryAttack(__instance) ? SummerHeatController.SecondaryAttackHeat : SummerHeatController.PrimaryAttackHeat;
+            SummerHeatController.Instance?.AddInstantHeat(attackHeat, useConfigGate: true);
         }
     }
 
@@ -639,7 +641,7 @@ namespace Seasons
         private static void Postfix(Player __instance, bool ___m_inDodge, bool __state)
         {
             if (!__state && ___m_inDodge && __instance == Player.m_localPlayer)
-                SummerHeatComponent.Instance?.AddInstantHeat(0.5f, useConfigGate: true);
+                SummerHeatController.Instance?.AddInstantHeat(SummerHeatController.DodgeHeat, useConfigGate: true);
         }
     }
 
@@ -649,7 +651,7 @@ namespace Seasons
         private static void Postfix(Character __instance)
         {
             if (__instance == Player.m_localPlayer)
-                SummerHeatComponent.Instance?.AddInstantHeat(0.25f, useConfigGate: true);
+                SummerHeatController.Instance?.AddInstantHeat(SummerHeatController.JumpHeat, useConfigGate: true);
         }
     }
 
@@ -661,7 +663,7 @@ namespace Seasons
             if (!__result || __instance != Player.m_localPlayer)
                 return;
 
-            SummerHeatComponent.Instance?.AddInstantHeat(SummerHeatComponent.WasPerfectBlock(__instance) ? 0.5f : 1f, useConfigGate: true);
+            SummerHeatController.Instance?.AddInstantHeat(SummerHeatController.WasPerfectBlock(__instance) ? SummerHeatController.PerfectBlockHeat : SummerHeatController.BlockHeat, useConfigGate: true);
         }
     }
 
@@ -674,9 +676,9 @@ namespace Seasons
                 return;
 
             if (hit.m_damage.m_fire > 0f)
-                SummerHeatComponent.Instance?.AddInstantHeat(10f);
+                SummerHeatController.Instance?.AddInstantHeat(SummerHeatController.FireDamageHeat);
             else if (hit.m_damage.m_frost > 0f)
-                SummerHeatComponent.Instance?.AddInstantHeat(-10f);
+                SummerHeatController.Instance?.AddInstantHeat(SummerHeatController.FrostDamageHeat);
         }
     }
 
@@ -685,7 +687,7 @@ namespace Seasons
     {
         private static void Postfix(Player __instance)
         {
-            SummerHeatComponent.EnsureForPlayer(__instance);
+            SummerHeatController.EnsureForPlayer(__instance);
         }
     }
 }

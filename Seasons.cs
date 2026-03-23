@@ -299,7 +299,7 @@ namespace Seasons
         {
             if (Player.m_localPlayer is Player player && player.IsOwner() && !player.IsDead())
             {
-                SummerHeatComponent.EnsureForPlayer(player);
+                SummerHeatController.EnsureForPlayer(player);
 
                 if (player.GetSEMan() is SEMan seman && !seman.HaveStatusEffect(SeasonsVars.s_statusEffectSeasonHash))
                     seman.AddStatusEffect(SeasonsVars.s_statusEffectSeasonHash);
@@ -510,7 +510,7 @@ namespace Seasons
             EventHandler summerHeatRefreshHandler = (sender, args) =>
             {
                 seasonState?.CheckOverheatStatus(Player.m_localPlayer);
-                SummerHeatComponent.Instance?.RefreshState();
+                SummerHeatController.Instance?.RefreshState();
             };
             summerHeatEnabled.SettingChanged += summerHeatRefreshHandler;
             summerHeatAddsExtraWarmCloth.SettingChanged += summerHeatRefreshHandler;

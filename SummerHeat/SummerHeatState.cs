@@ -53,7 +53,7 @@ namespace Seasons
 
     internal static class SummerHeat
     {
-        public static SummerHeatComponent Instance => SummerHeatComponent.Instance;
+        public static SummerHeatController Instance => SummerHeatController.Instance;
         public static bool IsReady => Instance != null && Instance.Player != null;
         public static bool IsMechanicActive => Instance != null && Instance.State.MechanicActive;
         public static bool IsSeasonHeatWindowActive => Instance != null && Instance.State.SeasonHeatWindowActive;
