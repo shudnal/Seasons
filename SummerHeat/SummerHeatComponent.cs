@@ -553,7 +553,15 @@ namespace Seasons
             if (player.InInterior() || player.InShelter())
                 return true;
 
-            Vector3 origin = Vector3.Lerp(player.transform.position, player.GetEyePoint(), 0.5f);
+            float factor = 0.5f;
+            if (player.InEmote())
+                if (player.m_emoteState == "rest")
+                    factor = 0.1f;
+                else if (player.m_emoteState == "sit")
+                    factor = 0.25f;
+
+            Vector3 origin = Vector3.Lerp(player.transform.position, player.GetEyePoint(), factor);
+
             Vector3 direction = -EnvMan.instance.m_dirLight.transform.forward;
             return Physics.Raycast(origin, direction, ShadowRayDistance, StealthSystem.instance.m_shadowTestMask);
         }
@@ -595,32 +603,17 @@ namespace Seasons
                 || env.m_psystems != null && env.m_psystems.Any(ps => ps != null && ps.name != null && environmentSystems.Contains(ps.name));
         }
 
-        private static bool AllowsSummerHeatBiome(Heightmap.Biome biome)
-        {
-            return biome != Heightmap.Biome.AshLands && biome != Heightmap.Biome.DeepNorth && biome != Heightmap.Biome.Mountain;
-        }
+        private static bool AllowsSummerHeatBiome(Heightmap.Biome biome) => biome != Heightmap.Biome.AshLands && biome != Heightmap.Biome.DeepNorth && biome != Heightmap.Biome.Mountain;
 
         internal bool HasCoolingFood() => _hasCoolingFood;
 
-        internal bool HasCampFireHeat()
-        {
-            return _state.SeasonHeatWindowActive && Seasons.summerHeatCampFireAddsHeat.Value && _hasCampFireStatus && GetLiveTotalHeat() < GetGreenThreshold(_isDaytime);
-        }
+        internal bool HasCampFireHeat() => _state.SeasonHeatWindowActive && Seasons.summerHeatCampFireAddsHeat.Value && _hasCampFireStatus && GetLiveTotalHeat() < GetGreenThreshold(_isDaytime);
 
-        internal bool HasEncumberedHeat()
-        {
-            return _state.SeasonHeatWindowActive && Seasons.summerHeatEncumberedAddsHeat.Value && Player.IsEncumbered() && GetLiveTotalHeat() < GetNeutralThreshold(_isDaytime);
-        }
+        internal bool HasEncumberedHeat() => _state.SeasonHeatWindowActive && Seasons.summerHeatEncumberedAddsHeat.Value && Player.IsEncumbered() && GetLiveTotalHeat() < GetNeutralThreshold(_isDaytime);
 
-        internal static bool IsSecondaryAttack(Humanoid humanoid)
-        {
-            return humanoid.m_currentAttackIsSecondary;
-        }
+        internal static bool IsSecondaryAttack(Humanoid humanoid) => humanoid.m_currentAttackIsSecondary;
 
-        internal static bool WasPerfectBlock(Humanoid humanoid)
-        {
-            return humanoid.m_blockTimer > 0f && humanoid.m_blockTimer <= 0.25f;
-        }
+        internal static bool WasPerfectBlock(Humanoid humanoid) => humanoid.m_blockTimer > 0f && humanoid.m_blockTimer <= 0.25f;
     }
 
     [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.StartAttack))]
