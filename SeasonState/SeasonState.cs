@@ -160,10 +160,7 @@ namespace Seasons
                 UpdateTorchesFireWarmth();
         }
 
-        private World GetCurrentWorld()
-        {
-            return ZNet.m_world ?? (WorldGenerator.instance?.m_world);
-        }
+        private World GetCurrentWorld() => ZNet.m_world ?? (WorldGenerator.instance?.m_world);
 
         private void UpdateUsingOfIngameDays()
         {

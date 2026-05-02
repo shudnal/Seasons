@@ -1065,32 +1065,60 @@ namespace Seasons
         [HarmonyPatch(typeof(Character), nameof(Character.UpdateGroundContact))]
         public static class Character_UpdateGroundContact_FrozenOceanSlippery
         {
-            private static readonly Dictionary<Character, Vector3> m_characterSlideVelocity = new Dictionary<Character, Vector3>();
+            private struct SlideState
+            {
+                public bool HasValue;
+                public float AirAltitude;
+                public Vector3 BodyVelocity;
+            }
+
+            private static readonly Dictionary<Character, Vector3> m_characterSlideVelocity = new Dictionary<Character, Vector3>(64);
 
             public static void CheckForSlide(Character characterSyncVelocity)
             {
+                if (characterSyncVelocity == null || m_characterSlideVelocity.Count == 0)
+                    return;
+
                 if (m_characterSlideVelocity.TryGetValue(characterSyncVelocity, out Vector3 bodyVelocity))
                 {
-                    characterSyncVelocity.StartIceSliding(bodyVelocity, checkMagnitude: true);
                     m_characterSlideVelocity.Remove(characterSyncVelocity);
+                    characterSyncVelocity.StartIceSliding(bodyVelocity, checkMagnitude: true);
                 }
             }
 
-            private static void Prefix(Character __instance, ZNetView ___m_nview, float ___m_maxAirAltitude, ref Tuple<float, Vector3> __state)
+            private static void Prefix(
+                Character __instance,
+                ZNetView ___m_nview,
+                float ___m_maxAirAltitude,
+                ref SlideState __state)
             {
-                if (frozenOceanSlipperiness.Value == 0 || !___m_nview.IsValid() || !___m_nview.IsOwner())
+                __state = default;
+
+                if (frozenOceanSlipperiness.Value == 0f || ___m_nview == null || !___m_nview.IsValid() || !___m_nview.IsOwner())
                     return;
 
-                __state = new Tuple<float, Vector3>(Mathf.Max(0f, ___m_maxAirAltitude - __instance.transform.position.y), __instance.m_body.linearVelocity);
+                Vector3 position = __instance.transform.position;
+
+                __state.HasValue = true;
+                __state.AirAltitude = Mathf.Max(0f, ___m_maxAirAltitude - position.y);
+                __state.BodyVelocity = __instance.m_body.linearVelocity;
             }
 
-            private static void Postfix(Character __instance, float ___m_maxAirAltitude, Tuple<float, Vector3> __state)
+            private static void Postfix(
+                Character __instance,
+                float ___m_maxAirAltitude,
+                SlideState __state)
             {
-                if (__state == null)
+                if (!__state.HasValue)
                     return;
 
-                if (__state.Item1 > 1f && frozenOceanSlipperiness.Value > 0 && (___m_maxAirAltitude == __instance.transform.position.y) && __instance.IsOnIce())
-                    m_characterSlideVelocity[__instance] = __state.Item2;
+                if (__state.AirAltitude <= 1f || frozenOceanSlipperiness.Value <= 0f)
+                    return;
+
+                float positionY = __instance.transform.position.y;
+
+                if (___m_maxAirAltitude == positionY && __instance.IsOnIce())
+                    m_characterSlideVelocity[__instance] = __state.BodyVelocity;
             }
 
             [HarmonyPatch(typeof(Character), nameof(Character.SyncVelocity))]

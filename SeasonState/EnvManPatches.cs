@@ -104,27 +104,25 @@ namespace Seasons
             public static bool Prefix(float fraction, ref float __result)
             {
                 float dayStart = seasonState.DayStartFraction();
+
                 if (dayStart == EnvMan.c_MorningL)
                     return true;
 
-                float nightStart = 1.0f - dayStart;
+                float nightStart = 1f - dayStart;
 
-                if (dayStart <= fraction && fraction <= nightStart)
+                if (fraction >= dayStart && fraction <= nightStart)
                 {
-                    float num = (fraction - dayStart) / (nightStart - dayStart);
-                    fraction = 0.25f + num * 0.5f;
-                }
-                else if (fraction < 0.5f)
-                {
-                    fraction = fraction / dayStart * 0.25f;
-                }
-                else
-                {
-                    float num2 = (fraction - nightStart) / dayStart;
-                    fraction = 0.75f + num2 * 0.25f;
+                    __result = 0.25f + (fraction - dayStart) / (nightStart - dayStart) * 0.5f;
+                    return false;
                 }
 
-                __result = fraction;
+                if (fraction < 0.5f)
+                {
+                    __result = fraction / dayStart * 0.25f;
+                    return false;
+                }
+
+                __result = 0.75f + (fraction - nightStart) / dayStart * 0.25f;
                 return false;
             }
         }
