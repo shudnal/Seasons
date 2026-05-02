@@ -379,18 +379,21 @@ namespace Seasons
         [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.GetWindForce))]
         public static class EnvMan_GetWindForce_WindIntensityMultiplier
         {
+            private static float s_multiplier;
+
             private static void Prefix(ref Vector4 ___m_wind, ref float __state)
             {
-                if (seasonState.GetWindIntensityMultiplier() == 1.0f)
+                s_multiplier = seasonState.GetWindIntensityMultiplier();
+                if (s_multiplier == 1.0f)
                     return;
 
                 __state = ___m_wind.w;
-                ___m_wind.w *= seasonState.GetWindIntensityMultiplier();
+                ___m_wind.w *= s_multiplier;
             }
 
             private static void Postfix(ref Vector4 ___m_wind, float __state)
             {
-                if (seasonState.GetWindIntensityMultiplier() == 1.0f)
+                if (s_multiplier == 1.0f)
                     return;
 
                 ___m_wind.w = __state;

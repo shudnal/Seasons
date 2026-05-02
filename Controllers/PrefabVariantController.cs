@@ -137,6 +137,8 @@ namespace Seasons
 
             private bool m_isVines = false;
             private bool m_covered = true;
+            private float m_nextCoveredStatusCheckTime = -1f;
+            private const float CoveredStatusCheckInterval = 5f;
 
             private readonly Dictionary<Renderer, Dictionary<int, MaterialVariants>> m_materialVariants = new Dictionary<Renderer, Dictionary<int, MaterialVariants>>();
             private readonly Dictionary<ParticleSystem, Color[]> m_startColors = new Dictionary<ParticleSystem, Color[]>();
@@ -247,6 +249,11 @@ namespace Seasons
 
             public void CheckCoveredStatus()
             {
+                if (Time.time < m_nextCoveredStatusCheckTime)
+                    return;
+
+                m_nextCoveredStatusCheckTime = Time.time + CoveredStatusCheckInterval;
+
                 bool haveRoof = HaveRoof();
                 if (m_covered == haveRoof)
                     return;
@@ -459,7 +466,22 @@ namespace Seasons
                         continue;
 
                     GameObject go = s_raycastHits[i].collider.gameObject;
-                    if (go != null && go != m_wnt && !go.CompareTag("leaky") && (m_wnt.m_colliders == null || !m_wnt.m_colliders.Any(coll => coll.gameObject == go)))
+                    if (go != null && go != m_wnt && !go.CompareTag("leaky") && !IsWearNTearCollider(go))
+                        return true;
+                }
+
+                return false;
+            }
+
+            private bool IsWearNTearCollider(GameObject go)
+            {
+                if (m_wnt.m_colliders == null)
+                    return false;
+
+                for (int i = 0; i < m_wnt.m_colliders.Length; i++)
+                {
+                    Collider collider = m_wnt.m_colliders[i];
+                    if (collider != null && collider.gameObject == go)
                         return true;
                 }
 
@@ -748,10 +770,13 @@ namespace Seasons
     [HarmonyPatch(typeof(ZNetView), nameof(ZNetView.Awake))]
     public static class ZNetView_Awake_AddPrefabVariantController
     {
+        private static PrefabVariantController CachedController => PrefabVariantController.instance;
+
         private static void Postfix(ZNetView __instance)
         {
-            if (__instance != null && !__instance.m_ghost && __instance.IsValid())
-                PrefabVariantController.instance?.AddControllerTo(__instance.gameObject, checkLocation: true, __instance);
+            PrefabVariantController controller = CachedController;
+            if (controller != null && __instance != null && !__instance.m_ghost && __instance.IsValid())
+                controller.AddControllerTo(__instance.gameObject, checkLocation: true, __instance);
         }
     }
 
@@ -863,7 +888,8 @@ namespace Seasons
     {
         private static void Postfix(WearNTear __instance)
         {
-            if (PrefabVariantController.instance != null && PrefabVariantController.instance.m_pieceControllers.TryGetValue(__instance, out PrefabVariant controller))
+            PrefabVariantController instance = PrefabVariantController.instance;
+            if (instance != null && instance.m_pieceControllers.TryGetValue(__instance, out PrefabVariant controller))
                 controller.CheckCoveredStatus();
         }
     }

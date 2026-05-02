@@ -1182,14 +1182,17 @@ namespace Seasons
                 if (!__instance.IsOnIce())
                     return true;
 
-                ___m_collider.material.staticFriction = 0.1f;
-                ___m_collider.material.dynamicFriction = 0.1f;
-                ___m_collider.material.frictionCombine = PhysicsMaterialCombine.Minimum;
+                PhysicsMaterial material = ___m_collider.material;
+                if (material.staticFriction != 0.1f)
+                    material.staticFriction = 0.1f;
+                if (material.dynamicFriction != 0.1f)
+                    material.dynamicFriction = 0.1f;
+                if (material.frictionCombine != PhysicsMaterialCombine.Minimum)
+                    material.frictionCombine = PhysicsMaterialCombine.Minimum;
 
                 return false;
             }
         }
-
     }
 
     [HarmonyPatch(typeof(Heightmap), nameof(Heightmap.GetBiomeColor), new[] { typeof(Biome) })]
@@ -1200,11 +1203,12 @@ namespace Seasons
         public static bool overrideSeason = false;
         public static Season seasonOverride;
 
-        private static Color GetColorWithoutOverride(Func<Color> getColorFunction)
+        private static Color GetColorWithoutOverride(Heightmap heightmap, float ix, float iy)
         {
-            bool wasOverridden = overrideColor != (overrideColor = false);
+            bool wasOverridden = overrideColor;
+            overrideColor = false;
 
-            Color result = getColorFunction();
+            Color result = heightmap.GetBiomeColor(ix, iy);
 
             if (wasOverridden)
                 overrideColor = true;
@@ -1212,49 +1216,69 @@ namespace Seasons
             return result;
         }
 
-        private static Color GetColorWithSeasonOverride(Season season, Func<Color> getColorFunction)
+        private static Color GetColorWithoutOverride(Biome biome)
         {
-            bool wasDefaultColor = overrideColor != (overrideColor = true);
-            
-            bool wasDefaultSeason = overrideSeason != (overrideSeason = true);
+            bool wasOverridden = overrideColor;
+            overrideColor = false;
 
-            seasonOverride = season;
+            Color result = Heightmap.GetBiomeColor(biome);
 
-            Color result = getColorFunction();
-
-            if (wasDefaultSeason)
-                overrideSeason = false;
-
-            if (wasDefaultColor)
-                overrideColor = false;
+            if (wasOverridden)
+                overrideColor = true;
 
             return result;
         }
 
-        public static Color GetOriginalColor(Heightmap heightmap, float ix, float iy)
+        private static Color GetColorWithSeasonOverride(Season season, Heightmap heightmap, float ix, float iy)
         {
-            return GetColorWithoutOverride(() => heightmap.GetBiomeColor(ix, iy));
+            bool wasOverriddenColor = overrideColor;
+            bool wasOverriddenSeason = overrideSeason;
+            Season previousSeason = seasonOverride;
+
+            overrideColor = true;
+            overrideSeason = true;
+            seasonOverride = season;
+
+            Color result = heightmap.GetBiomeColor(ix, iy);
+
+            overrideSeason = wasOverriddenSeason;
+            seasonOverride = previousSeason;
+            overrideColor = wasOverriddenColor;
+
+            return result;
         }
 
-        public static Color GetOriginalColor(Biome biome)
+        private static Color GetColorWithSeasonOverride(Season season, Biome biome)
         {
-            return GetColorWithoutOverride(() => Heightmap.GetBiomeColor(biome));
+            bool wasOverriddenColor = overrideColor;
+            bool wasOverriddenSeason = overrideSeason;
+            Season previousSeason = seasonOverride;
+
+            overrideColor = true;
+            overrideSeason = true;
+            seasonOverride = season;
+
+            Color result = Heightmap.GetBiomeColor(biome);
+
+            overrideSeason = wasOverriddenSeason;
+            seasonOverride = previousSeason;
+            overrideColor = wasOverriddenColor;
+
+            return result;
         }
 
-        public static Color GetSeasonalColor(Season season, Biome biome)
-        {
-            return GetColorWithSeasonOverride(season, () => Heightmap.GetBiomeColor(biome));
-        }
+        public static Color GetOriginalColor(Heightmap heightmap, float ix, float iy) => GetColorWithoutOverride(heightmap, ix, iy);
 
-        public static Color GetSeasonalColor(Season season, Heightmap heightmap, float ix, float iy)
-        {
-            return GetColorWithSeasonOverride(season, () => heightmap.GetBiomeColor(ix, iy));
-        }
+        public static Color GetOriginalColor(Biome biome) => GetColorWithoutOverride(biome);
+
+        public static Color GetSeasonalColor(Season season, Biome biome) => GetColorWithSeasonOverride(season, biome);
+
+        public static Color GetSeasonalColor(Season season, Heightmap heightmap, float ix, float iy) => GetColorWithSeasonOverride(season, heightmap, ix, iy);
 
         public static bool HasBiomeOverride(Biome biome, Season season, out Biome overridedBiome)
         {
             overridedBiome = Biome.None;
-            return SeasonState.seasonBiomeSettings.SeasonalBiomeColorOverride.TryGetValue(biome, out Dictionary<Season, Biome> overrideBiome) 
+            return SeasonState.seasonBiomeSettings.SeasonalBiomeColorOverride.TryGetValue(biome, out Dictionary<Season, Biome> overrideBiome)
                     && overrideBiome.TryGetValue(season, out overridedBiome);
         }
 
@@ -1263,7 +1287,7 @@ namespace Seasons
         {
             __state = Biome.None;
 
-            if (!overrideColor|| !SeasonState.IsActive || !UseTextureControllers())
+            if (!overrideColor || !SeasonState.IsActive || !UseTextureControllers())
                 return;
 
             if (HasBiomeOverride(biome, overrideSeason ? seasonOverride : seasonState.GetCurrentSeason(), out Biome overridedBiome))
@@ -1276,7 +1300,7 @@ namespace Seasons
         [HarmonyPriority(Priority.First)]
         private static void Postfix(ref Biome biome, Biome __state)
         {
-            if (!overrideColor || !SeasonState.IsActive || !UseTextureControllers())
+            if (__state == Biome.None || !overrideColor || !SeasonState.IsActive || !UseTextureControllers())
                 return;
 
             biome = __state;
@@ -1559,9 +1583,12 @@ namespace Seasons
     [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.CalcWave), new Type[] { typeof(Vector3), typeof(float), typeof(float), typeof(float) })]
     public static class WaterVolume_CalcWave_FrozenOceanNoWaves
     {
+        private static bool s_isFrozenOcean;
+
         private static void Prefix(ref float __state)
         {
-            if (!IsWaterSurfaceFrozen())
+            s_isFrozenOcean = IsWaterSurfaceFrozen();
+            if (!s_isFrozenOcean)
                 return;
 
             __state = WaterVolume.s_globalWindAlpha;
@@ -1570,7 +1597,7 @@ namespace Seasons
 
         private static void Postfix(float __state)
         {
-            if (!IsWaterSurfaceFrozen())
+            if (!s_isFrozenOcean)
                 return;
 
             WaterVolume.s_globalWindAlpha = __state;

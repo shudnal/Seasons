@@ -720,6 +720,19 @@ namespace Seasons
         [HarmonyPatch]
         public static class InstanceRenderer_AddInstance_PreventInProtectedArea
         {
+            private static readonly Dictionary<string, bool> s_isShieldedGrassByRendererName = new Dictionary<string, bool>(StringComparer.Ordinal);
+
+            private static bool IsShieldedGrass(InstanceRenderer instance)
+            {
+                string rendererName = instance.name;
+                if (s_isShieldedGrassByRendererName.TryGetValue(rendererName, out bool isShieldedGrass))
+                    return isShieldedGrass;
+
+                isShieldedGrass = s_shieldedPrefabs.ContainsKey(Utils.GetPrefabName(rendererName));
+                s_isShieldedGrassByRendererName[rendererName] = isShieldedGrass;
+                return isShieldedGrass;
+            }
+
             private static IEnumerable<MethodBase> TargetMethods()
             {
                 yield return AccessTools.Method(typeof(InstanceRenderer), nameof(InstanceRenderer.AddInstance), new Type[3] { typeof(Vector3), typeof(Quaternion), typeof(float) });
@@ -732,7 +745,7 @@ namespace Seasons
                 if (!isAnyShieldActive)
                     return true;
 
-                bool isShieldedGrass = s_shieldedPrefabs.ContainsKey(Utils.GetPrefabName(__instance.name));
+                bool isShieldedGrass = IsShieldedGrass(__instance);
                 if (SeasonState.IsActive && IsShieldedPosition(pos))
                     return isShieldedGrass && ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.IsCoveredByShield(pos);
 

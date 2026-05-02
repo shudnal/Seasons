@@ -151,6 +151,7 @@ namespace Seasons
         {
             private static bool Prefix(Pickable __instance, ref float ___m_respawnTimeMinutes, ref float __state)
             {
+                __state = 0f;
                 if (__instance.IsIgnored())
                     return true;
 
@@ -770,10 +771,11 @@ namespace Seasons
         public static class Player_UpdateEnvStatusEffects_ColdStatus
         {
             public static bool removeFrostResistanceFromArmor = false;
-            
+
             private static int warmPieces;
             private static int GetWarmClothesCountCached(Player player) => warmPieces == -1 ? warmPieces = SeasonState.GetWarmClothesCount(player) : warmPieces;
             private static void ClearWarmClothesCache() => warmPieces = -1;
+            private static readonly int s_wetStatusHash = SEMan.s_statusEffectWet;
 
             private static void Prefix(Player __instance)
             {
@@ -781,7 +783,7 @@ namespace Seasons
 
                 if (__instance.GetCurrentBiome() == Heightmap.Biome.Mountain ? gettingWetInMountainsCausesCold.Value : gettingWetInWinterCausesCold.Value && seasonState.GetCurrentSeason() == Season.Winter)
                 {
-                    bool isWetInColdEnv = EnvMan.IsCold() && __instance.GetSEMan().HaveStatusEffect(SEMan.s_statusEffectWet);
+                    bool isWetInColdEnv = EnvMan.IsCold() && __instance.GetSEMan().HaveStatusEffect(s_wetStatusHash);
 
                     bool isProtectedFromCold = wearing2WarmPiecesPreventsWetCold.Value && GetWarmClothesCountCached(__instance) > 1;
 
