@@ -19,6 +19,8 @@ namespace Seasons
         private int m_dayInSeasonGlobal = 0;
         private bool m_seasonIsChanging = false;
         private bool m_isUsingIngameDays = true;
+        private int m_dayStartFractionCacheWorldDay = int.MinValue;
+        private float m_dayStartFractionCached = EnvMan.c_MorningL;
 
         public static readonly Dictionary<Season, SeasonSettings> seasonsSettings = new Dictionary<Season, SeasonSettings>();
         public static List<SeasonEnvironment> seasonEnvironments = SeasonEnvironment.GetDefaultCustomEnvironments();
@@ -32,6 +34,7 @@ namespace Seasons
         public static SeasonClutterSettings seasonClutterSettings = new SeasonClutterSettings(loadDefaults: true);
         public static SeasonBiomeSettings seasonBiomeSettings = new SeasonBiomeSettings(loadDefaults: true);
 
+        private static readonly Season[] _seasons = (Season[])Enum.GetValues(typeof(Season));
         private static readonly Dictionary<Heightmap.Biome, string> biomesDefault = new Dictionary<Heightmap.Biome, string>();
         private static readonly List<ItemDrop.ItemData> _itemDataList = new List<ItemDrop.ItemData>();
         private static readonly HashSet<string> _coolingFoodNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -55,7 +58,7 @@ namespace Seasons
 
             ClearBiomesDefault();
 
-            foreach (Season season in Enum.GetValues(typeof(Season)))
+            foreach (Season season in _seasons)
                 if (!seasonsSettings.ContainsKey(season))
                     seasonsSettings.Add(season, new SeasonSettings(season));
 
@@ -703,7 +706,7 @@ namespace Seasons
             if (!IsActive)
                 return;
 
-            foreach (Season season in Enum.GetValues(typeof(Season)))
+            foreach (Season season in _seasons)
                 ZoneSystem.instance.RemoveGlobalKey(GetSeasonalGlobalKey(season));
 
             string globalKey = GetSeasonalGlobalKey(GetCurrentSeason());
@@ -758,8 +761,13 @@ namespace Seasons
 
         public float DayStartFraction()
         {
-            int day = GetCurrentWorldDay();
-            return DayStartFraction(GetSeason(day), GetDayInSeason(day));
+            int worldDay = GetCurrentWorldDay();
+            if (m_dayStartFractionCacheWorldDay == worldDay)
+                return m_dayStartFractionCached;
+
+            m_dayStartFractionCacheWorldDay = worldDay;
+            m_dayStartFractionCached = DayStartFraction(GetSeason(worldDay), GetDayInSeason(worldDay));
+            return m_dayStartFractionCached;
         }
 
         public float DayStartFraction(Season season, int dayInSeason)
@@ -866,7 +874,7 @@ namespace Seasons
         {
             int dayOfYear = GetDayOfYear(day);
             int days = 0;
-            foreach (Season season in Enum.GetValues(typeof(Season)))
+            foreach (Season season in _seasons)
             {
                 days += GetDaysInSeason(season);
                 if (dayOfYear <= days)
@@ -881,7 +889,7 @@ namespace Seasons
             int dayOfYear = GetDayOfYear(day);
             int days = 0;
             int daysInSeason = 0;
-            foreach (Season season in Enum.GetValues(typeof(Season)))
+            foreach (Season season in _seasons)
             {
                 daysInSeason = GetDaysInSeason(season);
                 if (dayOfYear <= days + daysInSeason)
@@ -969,7 +977,8 @@ namespace Seasons
             double seasonStart = startOfDay - (GetDayInSeason(worldDay) - (worldDay == GetCurrentWorldDay() && IsPendingSeasonChange() ? 0 : 1)) * GetDayLengthInSeconds();
             double seasonEnd = seasonStart + GetSecondsInSeason(season);
 
-            float dayStartFractionLength = DayStartFraction() * (1f - ((0.25f - GetDayFractionForSeasonChange()) * DayStartFraction() / 0.25f)) * GetDayLengthInSeconds();
+            float dayStartFraction = DayStartFraction();
+            float dayStartFractionLength = dayStartFraction * (1f - ((0.25f - GetDayFractionForSeasonChange()) * dayStartFraction / 0.25f)) * GetDayLengthInSeconds();
 
             double secondsToSeasonEnd = seasonEnd + dayStartFractionLength - pickedTimeSeconds;
             double secondsToGrow = 0d;
@@ -1188,7 +1197,7 @@ namespace Seasons
         public int GetYearLengthInDays()
         {
             int days = 0;
-            foreach (Season season in Enum.GetValues(typeof(Season)))
+            foreach (Season season in _seasons)
                 days += GetDaysInSeason(season);
             return days;
         }

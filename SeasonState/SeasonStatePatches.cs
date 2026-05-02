@@ -157,9 +157,6 @@ namespace Seasons
                 if (__instance.CheckForPerishInWinter())
                     return false;
 
-                if (IsProtectedPosition(__instance.transform.position))
-                    return true;
-
                 if (seasonState.GetPlantsGrowthMultiplier() == 0f)
                     return false;
 
