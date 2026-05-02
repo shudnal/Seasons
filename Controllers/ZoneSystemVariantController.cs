@@ -1177,10 +1177,10 @@ namespace Seasons
         [HarmonyPatch(typeof(Character), nameof(Character.UpdateBodyFriction))]
         public static class Character_UpdateBodyFriction_FrozenOceanSurface
         {
-            private static bool Prefix(Character __instance, CapsuleCollider ___m_collider)
+            private static void Postfix(Character __instance, CapsuleCollider ___m_collider)
             {
                 if (!__instance.IsOnIce())
-                    return true;
+                    return;
 
                 PhysicsMaterial material = ___m_collider.material;
                 if (material.staticFriction != 0.1f)
@@ -1189,8 +1189,6 @@ namespace Seasons
                     material.dynamicFriction = 0.1f;
                 if (material.frictionCombine != PhysicsMaterialCombine.Minimum)
                     material.frictionCombine = PhysicsMaterialCombine.Minimum;
-
-                return false;
             }
         }
     }

@@ -214,6 +214,8 @@ namespace Seasons
 
         private static int _instanceChangeIDShieldGeneratorCache;
         private static readonly Dictionary<Vector2, bool> _cachedIgnoredPositions = new Dictionary<Vector2, bool>();
+        private static readonly Dictionary<Vector2, bool> _cachedShieldedPositions = new Dictionary<Vector2, bool>();
+        private static int _cachedShieldedPositionsChangeID;
 
         private static readonly Dictionary<string, GameObject> _treeRegrowthPrefabs = new Dictionary<string, GameObject>();
 
@@ -774,6 +776,8 @@ namespace Seasons
         public static void InvalidatePositionsCache()
         {
             _cachedIgnoredPositions.Clear();
+            _cachedShieldedPositions.Clear();
+            _cachedShieldedPositionsChangeID = ShieldGenerator.m_instanceChangeID;
         }
 
         public static bool IsIgnoredPosition(Vector3 position)
@@ -808,7 +812,27 @@ namespace Seasons
 
         public static bool IsShieldedPosition(Vector3 position)
         {
-            return IsShieldProtectionActive() && ShieldGenerator.IsInsideShieldCached(position, ref _instanceChangeIDShieldGeneratorCache);
+            if (!IsShieldProtectionActive())
+                return false;
+
+            int shieldChangeID = ShieldGenerator.m_instanceChangeID;
+            if (_cachedShieldedPositionsChangeID != shieldChangeID)
+            {
+                _cachedShieldedPositions.Clear();
+                _cachedShieldedPositionsChangeID = shieldChangeID;
+            }
+
+            Vector2 pos = new(position.x, position.z);
+            if (_cachedShieldedPositions.TryGetValue(pos, out bool shielded))
+                return shielded;
+
+            if (_cachedShieldedPositions.Count > 15000)
+                _cachedShieldedPositions.Clear();
+
+            shielded = ShieldGenerator.IsInsideShieldCached(position, ref _instanceChangeIDShieldGeneratorCache);
+            _cachedShieldedPositions[pos] = shielded;
+
+            return shielded;
         }
 
         public static bool IsProtectedPosition(Vector3 position)

@@ -920,10 +920,49 @@ namespace Seasons
     public static class ShieldDomeImageEffect_SetShieldData_ProtectedStateChange
     {
         public static readonly Dictionary<ShieldGenerator, int> shieldRadius = new Dictionary<ShieldGenerator, int>();
+        private static readonly Dictionary<Vector2, bool> _cachedShieldCoverPositions = new Dictionary<Vector2, bool>();
 
-        public static bool IsThereAnyActiveShieldedArea() => shieldRadius.Count > 0 && IsShieldProtectionActive() && shieldRadius.Any(shield => !IsIgnoredPosition(shield.Key.GetShieldPosition()) && shield.Value > 0f);
+        public static bool IsThereAnyActiveShieldedArea()
+        {
+            if (shieldRadius.Count == 0 || !IsShieldProtectionActive())
+                return false;
 
-        public static bool IsCoveredByShield(Vector3 position) => shieldRadius.Any(kvp => Vector3.Distance(kvp.Key.GetShieldPosition(), position) < kvp.Value - 2);
+            foreach (KeyValuePair<ShieldGenerator, int> shield in shieldRadius)
+            {
+                if (shield.Value <= 0)
+                    continue;
+
+                if (!IsIgnoredPosition(shield.Key.GetShieldPosition()))
+                    return true;
+            }
+
+            return false;
+        }
+
+        public static bool IsCoveredByShield(Vector3 position)
+        {
+            Vector2 pos = new(position.x, position.z);
+            if (_cachedShieldCoverPositions.TryGetValue(pos, out bool covered))
+                return covered;
+
+            if (_cachedShieldCoverPositions.Count > 15000)
+                _cachedShieldCoverPositions.Clear();
+
+            covered = false;
+            foreach (KeyValuePair<ShieldGenerator, int> shield in shieldRadius)
+            {
+                if (Vector3.Distance(shield.Key.GetShieldPosition(), position) < shield.Value - 2)
+                {
+                    covered = true;
+                    break;
+                }
+            }
+
+            _cachedShieldCoverPositions[pos] = covered;
+            return covered;
+        }
+
+        public static void InvalidateShieldCoverCache() => _cachedShieldCoverPositions.Clear();
 
         [HarmonyPriority(Priority.First)]
         private static void Prefix(ShieldGenerator shield, Vector3 position, float radius)
@@ -931,8 +970,10 @@ namespace Seasons
             if (!shieldRadius.TryGetValue(shield, out int currentRadius) || ((currentRadius / 3) != ((int)radius / 3)) || (currentRadius != radius && (radius == 0f || currentRadius == 0f)))
             {
                 shieldRadius[shield] = (int)radius;
+                InvalidateShieldCoverCache();
                 if (IsShieldProtectionActive())
                 {
+                    ShieldGenerator.m_instanceChangeID++;
                     UpdatePrefabColorsAroundPosition(position, shield.m_maxShieldRadius);
                     ZoneSystemVariantController.UpdateTerrainColorsAroundPosition(position, radius);
                 }
@@ -951,9 +992,9 @@ namespace Seasons
         [HarmonyPriority(Priority.First)]
         private static void Prefix(ShieldGenerator shield)
         {
-            if (ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.shieldRadius.ContainsKey(shield))
+            if (ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.shieldRadius.Remove(shield))
             {
-                ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.shieldRadius.Remove(shield);
+                ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.InvalidateShieldCoverCache();
                 if (IsShieldProtectionActive())
                 {
                     Vector3 position = shield.GetShieldPosition();
@@ -963,5 +1004,4 @@ namespace Seasons
             }
         }
     }
-
 }
