@@ -362,7 +362,7 @@ namespace Seasons
             reduceSnowStormInWinter = config("Season", "Reduce SnowStorm particles in Winter", defaultValue: new Vector2(250, 1000), "Reduce SnowStorm particles emission rate and maximum amount. Vanilla values is 500:2000" +
                                                                                                    "\nFirst parameter is emission rate and second is max particles amount." +
                                                                                                    "\nHelps fps in Winter. Doesn't affect Mountains, Ashlands and DeepNorth." +
-                                                                                                   "\nSet to 0:0 to return Vanilla behaviour. [Not Synced with Server]", synchronizedSetting: false);
+                                                                                                   "\nSet to 0:0 to return Vanilla behaviour.");
             enableSeasonalItems = config("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
             preventDeathFromFreezing = config("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
             seasonalStatsOutdoorsOnly = config("Season", "Seasonal stats works only outdoors", defaultValue: true, "Make seasonal stats works only outdoors");
@@ -442,17 +442,17 @@ namespace Seasons
             showFadeOnSeasonChange = config("Season - Fade", "Show fade effect on season change", defaultValue: true, "Show black fade loading screen when season is changed.");
             fadeOnSeasonChangeDuration = config("Season - Fade", "Duration of fade effect", defaultValue: 0.5f, "Fade duration");
 
-            hoverBeeHive = config("Season - UI", "Bee Hive Hover", defaultValue: StationHover.Vanilla, "Hover text for bee hive. [Not Synced with Server]", synchronizedSetting:false);
-            hoverBeeHiveTotal = config("Season - UI", "Bee Hive Show total", defaultValue: true, "Show total needed time/percent for bee hive. [Not Synced with Server]", synchronizedSetting: false);
-            hoverPlant = config("Season - UI", "Plants Hover", defaultValue: StationHover.Vanilla, "Hover text for plants. [Not Synced with Server]", synchronizedSetting: false);
-            hoverPickable = config("Season - UI", "Pickables Hover", defaultValue: StationHover.Vanilla, "Hover text for pickables. [Not Synced with Server]", synchronizedSetting: false);
-            seasonalMinimapBorderColor = config("Season - UI", "Seasonal colored minimap border", defaultValue: true, "Change minimap border color according to current season. [Not Synced with Server]", synchronizedSetting: false);
+            hoverBeeHive = config("Season - UI", "Bee Hive Hover", defaultValue: StationHover.Vanilla, "Hover text for bee hive.");
+            hoverBeeHiveTotal = config("Season - UI", "Bee Hive Show total", defaultValue: true, "Show total needed time/percent for bee hive.");
+            hoverPlant = config("Season - UI", "Plants Hover", defaultValue: StationHover.Vanilla, "Hover text for plants.");
+            hoverPickable = config("Season - UI", "Pickables Hover", defaultValue: StationHover.Vanilla, "Hover text for pickables.");
+            seasonalMinimapBorderColor = config("Season - UI", "Seasonal colored minimap border", defaultValue: true, "Change minimap border color according to current season.");
 
             overrideSeason = config("Season - Override", "Override", defaultValue: false, "The season will be overridden by set season.");
             seasonOverrided = config("Season - Override", "Season", defaultValue: Season.Spring, "The season to set.");
             overrideSeasonDay = config("Season - Override", "Day override", defaultValue: false, "The season day will be overridden by set day.");
             seasonDayOverrided = config("Season - Override", "Day", defaultValue: 1, "The season day to set.");
-
+            
             overrideSeason.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
             seasonOverrided.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
             overrideSeasonDay.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
