@@ -45,7 +45,7 @@ namespace Seasons
 
             T value = function();
 
-            if (assignIfChanged && syncedValue.Value.Equals(value))
+            if (assignIfChanged && EqualityComparer<T>.Default.Equals(syncedValue.Value, value))
                 yield break;
 
             syncedValue.AssignLocalValue(value);
@@ -56,7 +56,7 @@ namespace Seasons
             yield return waitForServerUpdate;
             yield return waitForTextureCaching;
 
-            if (assignIfChanged && syncedValue.Value.Equals(value))
+            if (assignIfChanged && EqualityComparer<T>.Default.Equals(syncedValue.Value, value))
                 yield break;
 
             syncedValue.AssignLocalValue(value);

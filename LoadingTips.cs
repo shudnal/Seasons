@@ -16,7 +16,7 @@ namespace Seasons
 
         public static void UpdateLoadingTips()
         {
-            if (Hud.instance == null)
+            if (!UseTextureControllers() || Hud.instance == null || !SeasonState.IsActive)
                 return;
 
             UpdateTipBasedOnValue("$seasons_loadscreen_tip_ice", enableFrozenWater.Value);

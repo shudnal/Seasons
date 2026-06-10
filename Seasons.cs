@@ -691,6 +691,9 @@ namespace Seasons
 
             _treeRegrowthPrefabs.Clear();
 
+            if (ZNetScene.instance?.m_prefabs == null)
+                return;
+
             Dictionary<GameObject, GameObject> stubs = new Dictionary<GameObject, GameObject>();
 
             // At first fill all grown state pickables and stubs prefabs
