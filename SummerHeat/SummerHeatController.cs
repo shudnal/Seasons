@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using static Seasons.SummerHeatUtils;
 
 namespace Seasons
 {
@@ -579,9 +580,6 @@ namespace Seasons
             return cache;
         }
 
-        private static float ClampEffect(float value) => Mathf.Clamp01(value);
-
-        internal static float ClampPercent(float value) => Mathf.Clamp(value, 0f, 100f);
 
         private static float GetActivityHeatDelta(Player player, float dt)
         {
@@ -672,7 +670,7 @@ namespace Seasons
 
         private float GetCurrentHeatCap()
         {
-            float nightFactor = Mathf.Clamp(Seasons.summerHeatNightFactor.Value, 0.1f, 1f);
+            float nightFactor = GetNightFactor();
             return _isDaytime ? DaytimeHeatCap : DaytimeHeatCap * nightFactor;
         }
 
@@ -696,10 +694,6 @@ namespace Seasons
             return ScaleHeatPercentForTime(ClampPercent(Seasons.summerHeatZoneHysteresis.Value), isDaytime);
         }
 
-        private static float ScaleHeatPercentForTime(float value, bool isDaytime)
-        {
-            return isDaytime ? value : value * Mathf.Clamp(Seasons.summerHeatNightFactor.Value, 0.1f, 1f);
-        }
 
         private static float CalculateGreenFactor(float heat)
         {

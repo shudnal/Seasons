@@ -69,21 +69,21 @@ namespace Seasons
             bool hasOutfitSpecificRules = HasText(summerHeatOpenHelmetItems.Value) || HasText(summerHeatOpenChestItems.Value) || HasText(summerHeatOpenLegItems.Value) || HasText(summerHeatLightCloakItems.Value) || HasColdWeatherArmorHeatRules();
 
             if (armorHeatEnabled)
-                yield return "$seasons_loadscreen_tip_summer_heat_clothing".Localize();
+                yield return "$seasons_loadscreen_tip_summer_heat_clothing";
             if (armorHeatEnabled && hasOutfitSpecificRules)
-                yield return "$seasons_loadscreen_tip_summer_heat_cold_clothing".Localize();
+                yield return "$seasons_loadscreen_tip_summer_heat_cold_clothing";
             if (armorHeatEnabled && HasText(summerHeatBareHeadHairItems.Value))
-                yield return "$seasons_loadscreen_tip_summer_heat_hairstyle".Localize();
+                yield return "$seasons_loadscreen_tip_summer_heat_hairstyle";
         }
 
         private static IEnumerable<string> BuildSummerHeatBehaviorTipParts()
         {
             if (summerHeatInstantHeatSources.Value || summerHeatEncumberedAddsHeat.Value)
-                yield return "$seasons_loadscreen_tip_summer_heat_activity".Localize();
+                yield return "$seasons_loadscreen_tip_summer_heat_activity";
             if (summerHeatCampFireAddsHeat.Value)
-                yield return "$seasons_loadscreen_tip_summer_heat_campfire".Localize();
+                yield return "$seasons_loadscreen_tip_summer_heat_campfire";
             if (summerHeatNoonEffectPercent.Value > 0f || summerHeatNightFactor.Value < 1f)
-                yield return "$seasons_loadscreen_tip_summer_heat_day_night".Localize();
+                yield return "$seasons_loadscreen_tip_summer_heat_day_night";
         }
 
         private static void AddSummerHeatCombinedTips(IEnumerable<string> parts)
@@ -92,7 +92,7 @@ namespace Seasons
             if (filteredParts.Count == 0)
                 return;
 
-            string prefix = "$seasons_loadscreen_tip_summer_heat_prefix".Localize();
+            string prefix = "$seasons_loadscreen_tip_summer_heat_prefix";
             for (int i = 0; i < filteredParts.Count; i += 3)
             {
                 string tip = $"{prefix} {string.Join(" ", filteredParts.Skip(i).Take(3))}";

@@ -1,5 +1,6 @@
 ﻿using System.Text;
 using UnityEngine;
+using static Seasons.SummerHeatUtils;
 
 namespace Seasons
 {
@@ -274,7 +275,7 @@ namespace Seasons
                 return;
 
             bool isDaytime = SummerHeat.Instance == null || SummerHeat.Instance.IsDaytime();
-            float nightFactor = Mathf.Clamp(Seasons.summerHeatNightFactor.Value, 0.1f, 1f);
+            float nightFactor = GetNightFactor();
             GetThresholds(isDaytime, nightFactor, out float greenThreshold, out float neutralThreshold, out float maxThreshold);
             float greenFadeWidth = Mathf.Max(0.1f, ScaleHeatPercentForTime(ClampPercent(Seasons.summerHeatGreenFadeWidth.Value), isDaytime, nightFactor));
             float redRampWidth = Mathf.Max(0.1f, ScaleHeatPercentForTime(ClampPercent(Seasons.summerHeatRedRampWidth.Value), isDaytime, nightFactor));
@@ -336,9 +337,6 @@ namespace Seasons
             maxThreshold = ScaleHeatPercentForTime(maxValue, isDaytime, nightFactor);
         }
 
-        private static float ClampPercent(float value) => Mathf.Clamp(value, 0f, 100f);
-
-        private static float ScaleHeatPercentForTime(float value, bool isDaytime, float nightFactor) => isDaytime ? value : value * nightFactor;
 
         private static string FormatPercent(float value, Color color) => ColorizeText($"{value:0.#}%", color);
 
@@ -400,7 +398,7 @@ namespace Seasons
 
         private static Color GetHeatDisplayColorForValue(float heatPercent, bool isDaytime)
         {
-            float nightFactor = Mathf.Clamp(Seasons.summerHeatNightFactor.Value, 0.1f, 1f);
+            float nightFactor = GetNightFactor();
             GetThresholds(isDaytime, nightFactor, out float greenThreshold, out float neutralThreshold, out float maxThreshold);
             float greenFadeWidth = Mathf.Max(0.1f, ScaleHeatPercentForTime(ClampPercent(Seasons.summerHeatGreenFadeWidth.Value), isDaytime, nightFactor));
             float redRampWidth = Mathf.Max(0.1f, ScaleHeatPercentForTime(ClampPercent(Seasons.summerHeatRedRampWidth.Value), isDaytime, nightFactor));
@@ -427,7 +425,7 @@ namespace Seasons
                 float greenFactor = heatPercent <= greenThreshold
                     ? Mathf.InverseLerp(greenStart, greenThreshold, heatPercent)
                     : 1f - Mathf.InverseLerp(greenThreshold, greenEnd, heatPercent);
-                float greenScaleBlendFactor = Mathf.Lerp(0.3f, 1f, greenFactor);
+                float greenScaleBlendFactor = Mathf.Lerp(0.25f, 1f, greenFactor);
                 return Color.Lerp(neutralColor, bonusColor, greenScaleBlendFactor);
             }
 

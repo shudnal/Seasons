@@ -1301,7 +1301,7 @@ namespace Seasons
                     image.color = new Color(0.44f, 0.56f, 0.03f, minimapBorderColor.a / 2f);
                     break;
                 case Season.Summer:
-                    image.color = new Color(0.69f, 0.73f, 0.05f, minimapBorderColor.a / 2f);
+                    image.color = new Color(0.82f, 0.72f, 0.04f, minimapBorderColor.a / 2f);
                     break;
                 case Season.Fall:
                     image.color = new Color(0.79f, 0.32f, 0f, minimapBorderColor.a / 2f);

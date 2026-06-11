@@ -87,6 +87,7 @@
     <Compile Include="Utils\ItemNameTokens.cs" />
     <Compile Include="Utils\LocalizationManager.cs" />
     <Compile Include="Utils\StatusEffectHud.cs" />
+    <Compile Include="Utils\SummerHeatUtils.cs" />
     <Compile Include="SeasonsVars.cs" />
   </ItemGroup>
   <ItemGroup>

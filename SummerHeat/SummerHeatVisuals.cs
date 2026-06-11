@@ -1,6 +1,7 @@
 ﻿using HarmonyLib;
 using System.Linq;
 using UnityEngine;
+using static Seasons.SummerHeatUtils;
 
 namespace Seasons
 {
@@ -94,7 +95,7 @@ namespace Seasons
 
         internal static bool IsWorldHazeActive()
         {
-            if (!Seasons.summerHeatEnabled.Value || !SummerHeat.IsReady || !SummerHeat.IsSeasonHeatWindowActive || !SummerHeat.IsSunny || !SummerHeat.IsBiomeSupported)
+            if (!Seasons.summerHeatEnabled.Value || !Seasons.summerHeatWorldHazeEnabled.Value || !SummerHeat.IsReady || !SummerHeat.IsSeasonHeatWindowActive || !SummerHeat.IsSunny || !SummerHeat.IsBiomeSupported)
                 return false;
 
             if (SummerHeat.Instance == null || !SummerHeat.Instance.IsDaytime())
@@ -113,14 +114,16 @@ namespace Seasons
                 return 0f;
 
             bool isDaytime = SummerHeat.Instance == null || SummerHeat.Instance.IsDaytime();
-            float nightFactor = Mathf.Clamp(Seasons.summerHeatNightFactor.Value, 0.1f, 1f);
+            float nightFactor = GetNightFactor();
             float timeScale = isDaytime ? 1f : nightFactor;
             float heatCap = SummerHeatController.DaytimeHeatCap * timeScale;
-            float greenThreshold = Mathf.Clamp(Seasons.summerHeatGreenThreshold.Value, 0f, 100f) * timeScale;
-            float greenFadeWidth = Mathf.Max(0.1f, Mathf.Clamp(Seasons.summerHeatGreenFadeWidth.Value, 0f, 100f) * timeScale);
+            float greenThreshold = ClampPercent(Seasons.summerHeatGreenThreshold.Value) * timeScale;
+            float greenFadeWidth = Mathf.Max(0.1f, ClampPercent(Seasons.summerHeatGreenFadeWidth.Value) * timeScale);
             float visualStart = Mathf.Min(heatCap, greenThreshold + greenFadeWidth);
 
-            if (SummerHeat.HeatPercent <= visualStart || heatCap <= visualStart)
+            if (heatCap <= visualStart)
+                return SummerHeat.HeatPercent >= heatCap ? 1f : 0f;
+            if (SummerHeat.HeatPercent <= visualStart)
                 return 0f;
 
             return Mathf.InverseLerp(visualStart, heatCap, SummerHeat.HeatPercent);
@@ -151,7 +154,7 @@ namespace Seasons
             heatDistortImageEffect.enabled = true;
             heatDistortImageEffect.m_intensity = Mathf.Max(heatDistortImageEffect.m_intensity, summerHeatIntensity);
 
-            float maxOverflow = Mathf.Max(1f, SummerHeatController.ClampPercent(Seasons.summerHeatMaxOverflow.Value));
+            float maxOverflow = Mathf.Max(1f, ClampPercent(Seasons.summerHeatMaxOverflow.Value));
             float overflowFactor = Mathf.Clamp01(SummerHeat.OverflowHeatPercent / maxOverflow);
             Color color = _defaultHeatDistortionColor;
             color.a = Mathf.Lerp(_defaultHeatDistortionColor.a, 0.85f, overflowFactor);
@@ -159,7 +162,7 @@ namespace Seasons
             _summerHeatColorApplied = true;
         }
 
-        private static bool IsPersonalVisualStateActive() => Seasons.summerHeatEnabled.Value && SummerHeat.IsReady && SummerHeat.IsMechanicActive && SummerHeat.HeatFactor > 0f;
+        private static bool IsPersonalVisualStateActive() => Seasons.summerHeatEnabled.Value && Seasons.summerHeatPersonalDistortionEnabled.Value && SummerHeat.IsReady && SummerHeat.IsMechanicActive && SummerHeat.HeatFactor > 0f;
 
         private static GameObject FindAshlandsHaze()
         {

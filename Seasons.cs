@@ -118,6 +118,8 @@ namespace Seasons
         public static ConfigEntry<float> summerHeatGreenFadeWidth;
         public static ConfigEntry<float> summerHeatRedRampWidth;
         public static ConfigEntry<float> summerHeatMaxOverflow;
+        public static ConfigEntry<bool> summerHeatWorldHazeEnabled;
+        public static ConfigEntry<bool> summerHeatPersonalDistortionEnabled;
         public static ConfigEntry<float> summerHeatDamageTickInterval;
         public static ConfigEntry<float> summerHeatDamageНealthPerTickMinHealthPercentage;
         public static ConfigEntry<float> summerHeatDamageНealthPerTick;
@@ -550,6 +552,8 @@ namespace Seasons
             summerHeatGreenFadeWidth = config("Season - Summer heat", "Comfortable heat range", defaultValue: 20f, new ConfigDescription("How wide the bonus area is around comfortable heat, in percentage points. With the default 25% threshold and 20% range, the bonus starts at 5%, reaches full strength at 25%, then fades out by 45%.", new AcceptableValueRange<float>(0f, 100f)));
             summerHeatRedRampWidth = config("Season - Summer heat", "Penalty buildup range", defaultValue: 20f, new ConfigDescription("How gradually penalties build after you become too hot, in percentage points. With the default 60% threshold and 20% range, negative effects start at 60% and reach full strength at 80%.", new AcceptableValueRange<float>(0f, 100f)));
             summerHeatMaxOverflow = config("Season - Summer heat", "Overheat buffer", defaultValue: 5f, new ConfigDescription("Small hidden heat reserve above 100%, in percentage points. It makes full overheating take a little time to cool off instead of disappearing instantly.", new AcceptableValueRange<float>(0f, 100f)));
+            summerHeatWorldHazeEnabled = config("Season - Summer heat", "World heat haze", defaultValue: true, "Shows a subtle world haze during hot sunny summer days. This is only visual and does not change heat buildup.");
+            summerHeatPersonalDistortionEnabled = config("Season - Summer heat", "Personal heat distortion", defaultValue: true, "Shows the personal camera heat distortion when your own heat rises above the comfortable range. This is only visual and does not change heat buildup.");
             summerHeatNonSunnyEnvironments = config("Season - Summer heat", "Weather without direct sun", defaultValue: "Rain,LightRain,MistlandsRain,SlimeRain,SnowStorm,Thunder,MistlandsThunder,AshlandsThunder,Ashlands_SeaStorm,Mist,Ashlands_Misty,Ashlands_RainCinder,Ashlands_CinderRain", GetDescriptionSeparatedStrings("Technical weather list. Use internal EnvMan weather object names or particle system names, separated by commas. If the current weather matches one of these names, Summer Heat treats the sky as not sunny and direct sunlight heat stops."));
             summerHeatInstantHeatSources = config("Season - Summer heat", "Actions add heat", defaultValue: true, "If enabled, jumps, attacks, dodges and blocks add small heat bursts during Summer Heat.");
             summerHeatCampFireAddsHeat = config("Season - Summer heat", "Campfire adds heat", defaultValue: true, "If enabled, standing near a campfire can warm you up even during summer.");
@@ -628,6 +632,8 @@ namespace Seasons
             summerHeatGreenFadeWidth.SettingChanged += summerHeatRefreshHandler;
             summerHeatRedRampWidth.SettingChanged += summerHeatRefreshHandler;
             summerHeatMaxOverflow.SettingChanged += summerHeatRefreshHandler;
+            summerHeatWorldHazeEnabled.SettingChanged += summerHeatRefreshHandler;
+            summerHeatPersonalDistortionEnabled.SettingChanged += summerHeatRefreshHandler;
             summerHeatNonSunnyEnvironments.SettingChanged += summerHeatRefreshHandler;
             summerHeatDamageTickInterval.SettingChanged += summerHeatRefreshHandler;
             summerHeatDamageНealthPerTickMinHealthPercentage.SettingChanged += summerHeatRefreshHandler;
