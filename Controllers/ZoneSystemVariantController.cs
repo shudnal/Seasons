@@ -58,6 +58,11 @@ namespace Seasons
             }
         }
 
+        private class FrozenOceanFishPositionGuard : MonoBehaviour
+        {
+            public float m_nextCheckTime;
+        }
+
         private static MeshRenderer s_waterPlane;
         private static WaterState s_waterPlaneState;
         public static float s_waterEdge;
@@ -77,6 +82,13 @@ namespace Seasons
         public const float _winterWaterSurfaceOffset = 2f;
         public const float _colliderOffset = 0.01f;
         public const string _iceSurfaceName = "IceSurface";
+        public static readonly int s_playerDroppedFish = "Seasons_PlayerDroppedFish".GetStableHashCode();
+
+        private const float FishIceCheckInterval = 5f;
+        private const float FishIceRayStartAboveWater = 0.5f;
+        private const float FishIceRayEndBelowTarget = 0.25f;
+        private const float FishIceCheckRandomJitter = 1f;
+        private static readonly RaycastHit[] s_fishIceHits = new RaycastHit[8];
 
         public const string _iceFloeName = "ice1";
         public static int s_iceFloePrefab = _iceFloeName.GetStableHashCode();
@@ -625,19 +637,106 @@ namespace Seasons
             if (fish == null || fish.m_nview == null || !fish.m_nview.IsValid())
                 return;
 
+            if (IsPlayerDroppedFish(fish))
+                return;
+
             if (fish.m_nview.HasOwner() && !fish.m_nview.IsOwner())
                 return;
 
             float maximumLevel = WaterLevel - _winterWaterSurfaceOffset - fish.m_height - 1.5f;
-            if (fish.transform.position.y > maximumLevel)
-            {
-                fish.transform.position = new Vector3(fish.transform.position.x, maximumLevel, fish.transform.position.z);
-                fish.m_nview.GetZDO().SetPosition(fish.transform.position);
-            }
+            if (fish.transform.position.y <= maximumLevel)
+                return;
 
-            fish.m_body.linearVelocity = Vector3.zero;
+            if (!IsFishAboveFrozenSurface(fish, maximumLevel))
+                return;
+
+            fish.transform.position = new Vector3(fish.transform.position.x, maximumLevel, fish.transform.position.z);
+            fish.m_nview.GetZDO().SetPosition(fish.transform.position);
+
+            if (fish.m_body != null)
+                fish.m_body.linearVelocity = Vector3.zero;
+
             fish.m_haveWaypoint = false;
             fish.m_isJumping = false;
+        }
+
+        private static bool IsFishAboveFrozenSurface(Fish fish, float maximumLevel)
+        {
+            ZoneSystem zoneSystem = ZoneSystem.instance;
+            if (zoneSystem == null)
+                return false;
+
+            Vector3 origin = fish.transform.position;
+            origin.y = Mathf.Max(fish.transform.position.y + 0.25f, WaterLevel + FishIceRayStartAboveWater);
+
+            float distance = origin.y - (maximumLevel - FishIceRayEndBelowTarget);
+            if (distance <= 0f)
+                return false;
+
+            int hitCount = Physics.RaycastNonAlloc(origin, Vector3.down, s_fishIceHits, distance, zoneSystem.m_solidRayMask, QueryTriggerInteraction.Ignore);
+            if (hitCount <= 0)
+                return false;
+
+            RaycastHit nearestHit = default;
+            float nearestDistance = float.MaxValue;
+            bool hasNearest = false;
+
+            for (int i = 0; i < hitCount; ++i)
+            {
+                RaycastHit hit = s_fishIceHits[i];
+                if (hit.collider == null)
+                    continue;
+
+                if (hit.collider.transform.IsChildOf(fish.transform))
+                    continue;
+
+                if (hit.distance >= nearestDistance)
+                    continue;
+
+                nearestHit = hit;
+                nearestDistance = hit.distance;
+                hasNearest = true;
+            }
+
+            return hasNearest && IsIceSurfaceCollider(nearestHit.collider);
+        }
+
+        private static bool IsIceSurfaceCollider(Collider collider)
+        {
+            if (collider == null)
+                return false;
+
+            for (Transform current = collider.transform; current != null; current = current.parent)
+                if (Utils.GetPrefabName(current.name) == _iceSurfaceName)
+                    return true;
+
+            return false;
+        }
+
+        public static bool IsPlayerDroppedFish(Fish fish)
+        {
+            return fish != null && fish.m_nview != null && fish.m_nview.IsValid() && fish.m_nview.GetZDO().GetBool(s_playerDroppedFish);
+        }
+
+        public static void MarkPlayerDroppedFish(ItemDrop itemDrop)
+        {
+            if (itemDrop == null || !itemDrop.TryGetComponent(out Fish fish) || fish.m_nview == null || !fish.m_nview.IsValid())
+                return;
+
+            fish.m_nview.GetZDO().Set(s_playerDroppedFish, true);
+        }
+
+        internal static bool ShouldThrottleFishIceCheck(Fish fish)
+        {
+            if (fish == null)
+                return true;
+
+            FrozenOceanFishPositionGuard guard = fish.GetComponent<FrozenOceanFishPositionGuard>() ?? fish.gameObject.AddComponent<FrozenOceanFishPositionGuard>();
+            if (Time.time < guard.m_nextCheckTime)
+                return true;
+
+            guard.m_nextCheckTime = Time.time + FishIceCheckInterval + UnityEngine.Random.Range(0f, FishIceCheckRandomJitter);
+            return false;
         }
 
         public static void CheckIfCharacterBelowSurface(Character character)
@@ -1602,27 +1701,6 @@ namespace Seasons
         }
     }
 
-    [HarmonyPatch(typeof(Fish), nameof(Fish.ConsiderJump))]
-    public static class Fish_ConsiderJump_FrozenOceanFishNoJumps
-    {
-        private static void Prefix(ref float ___m_JumpHeightStrength, ref float __state)
-        {
-            if (!IsWaterSurfaceFrozen())
-                return;
-
-            __state = ___m_JumpHeightStrength;
-            ___m_JumpHeightStrength = 0f;
-        }
-
-        private static void Postfix(ref float ___m_JumpHeightStrength, float __state)
-        {
-            if (!IsWaterSurfaceFrozen())
-                return;
-
-            ___m_JumpHeightStrength = __state;
-        }
-    }
-
     [HarmonyPatch(typeof(Ship), nameof(Ship.Start))]
     public static class Ship_Start_FrozenOceanShip
     {
@@ -1641,6 +1719,15 @@ namespace Seasons
                 return;
 
             CheckIfCharacterBelowSurface(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(ItemDrop), nameof(ItemDrop.OnPlayerDrop))]
+    public static class ItemDrop_OnPlayerDrop_FrozenOceanFish
+    {
+        private static void Postfix(ItemDrop __instance)
+        {
+            MarkPlayerDroppedFish(__instance);
         }
     }
 
@@ -1667,6 +1754,45 @@ namespace Seasons
                 return;
 
             Instance?.StartCoroutine(CheckSingleFishPosition(__instance));
+        }
+    }
+
+    [HarmonyPatch(typeof(Fish), nameof(Fish.ConsiderJump))]
+    public static class Fish_ConsiderJump_FrozenOceanFishNoJumps
+    {
+        private static void Prefix(ref float ___m_JumpHeightStrength, ref float __state)
+        {
+            if (!IsWaterSurfaceFrozen())
+                return;
+
+            __state = ___m_JumpHeightStrength;
+            ___m_JumpHeightStrength = 0f;
+        }
+
+        private static void Postfix(ref float ___m_JumpHeightStrength, float __state)
+        {
+            if (!IsWaterSurfaceFrozen())
+                return;
+
+            ___m_JumpHeightStrength = __state;
+        }
+    }
+
+    [HarmonyPatch(typeof(Fish), nameof(Fish.CustomFixedUpdate))]
+    public static class Fish_CustomFixedUpdate_CheckPosition
+    {
+        private static void Postfix(Fish __instance)
+        {
+            if (!IsWaterSurfaceFrozen())
+                return;
+
+            if (__instance.m_lodVisible)
+                return;
+
+            if (ShouldThrottleFishIceCheck(__instance))
+                return;
+
+            CheckIfFishAboveSurface(__instance);
         }
     }
 
