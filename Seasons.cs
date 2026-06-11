@@ -21,6 +21,7 @@ namespace Seasons
     [BepInDependency(Compatibility.EpicLootCompat.GUID, BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency(Compatibility.MarketplaceCompat.GUID, BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency(Compatibility.EWDCompat.GUID, BepInDependency.DependencyFlags.SoftDependency)]
+    [BepInDependency(Compatibility.MyLittleUICompat.GUID, BepInDependency.DependencyFlags.SoftDependency)]
     public class Seasons : BaseUnityPlugin
     {
         public const string pluginID = "shudnal.Seasons";
@@ -313,6 +314,8 @@ namespace Seasons
         {
             instance = this;
 
+            Compatibility.MyLittleUICompat.CheckForCompatibility();
+
             ConfigInit();
             _ = configSync.AddLockingConfigEntry(configLocked);
 
@@ -599,11 +602,15 @@ namespace Seasons
             summerHeatStaminaRegenMultiplier = config("Season - Summer heat - Multipliers", "Stamina regen effect", defaultValue: 0.15f, new ConfigDescription("How strongly heat changes stamina regeneration. With 15%, red heat can reduce regeneration by up to 15%, while comfortable heat can increase it by up to 15%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
             summerHeatEitrRegenMultiplier = config("Season - Summer heat - Multipliers", "Eitr regen effect", defaultValue: 0.1f, new ConfigDescription("How strongly heat changes eitr regeneration. With 10%, red heat can reduce regeneration by up to 10%, while comfortable heat can increase it by up to 10%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
 
+            bool myLittleUiStatusElementEnabled = Compatibility.MyLittleUICompat.IsMapStatusEffectListElementEnabled();
+            SummerHeatBarTagMode defaultSummerHeatBarTagMode = myLittleUiStatusElementEnabled ? SummerHeatBarTagMode.Sup : SummerHeatBarTagMode.None;
+            int defaultSummerHeatBarSegments = myLittleUiStatusElementEnabled ? 12 : 10;
+
             summerHeatStatusEffectDisplay = config("Season - Summer heat - Status", "Status effect visibility", defaultValue: SummerHeatStatusEffectDisplay.StatusList, "Where to show the Summer Heat status effect. StatusList shows it normally, RavenMenuOnly hides it from the status list but keeps it in the Raven active effects menu, None hides it everywhere.");
             summerHeatRavenTechnicalInfo = config("Season - Summer heat - Status", "Raven menu technical info", defaultValue: false, "Show extra heat numbers in the Raven active effects menu. Useful for server admins while tuning the mechanic.");
             summerHeatDisplayMode = config("Season - Summer heat - Status", "Value display mode", defaultValue: SummerHeatDisplayMode.Bar, "How the status icon shows current heat: bar, percent, or nothing.");
-            summerHeatBarTagMode = config("Season - Summer heat - Status", "Bar vertical tag", defaultValue: SummerHeatBarTagMode.Sup, "Optional rich-text tag around the heat bar. Sup makes compact raised blocks, Sub lowers them, None draws the bar without vertical adjustment.");
-            summerHeatBarSegments = config("Season - Summer heat - Status", "Bar segments", defaultValue: 12, new ConfigDescription("Number of blocks in the heat bar.", new AcceptableValueRange<int>(1, 32)));
+            summerHeatBarTagMode = config("Season - Summer heat - Status", "Bar vertical tag", defaultValue: defaultSummerHeatBarTagMode, "Optional rich-text tag around the heat bar. Sup makes compact raised blocks, Sub lowers them, None draws the bar without vertical adjustment. Defaults to None when My Little UI custom map status-effect elements are enabled.");
+            summerHeatBarSegments = config("Season - Summer heat - Status", "Bar segments", defaultValue: defaultSummerHeatBarSegments, new ConfigDescription("Number of blocks in the heat bar. Defaults to 10 when My Little UI custom map status-effect elements are enabled.", new AcceptableValueRange<int>(1, 32)));
             summerHeatBarSymbol = config("Season - Summer heat - Status", "Bar symbol", defaultValue: "▄", "Character used for each heat bar block. Use one character, for example ▄, ▀, ■ or ▬.");
             summerHeatBarMinBrightness = config("Season - Summer heat - Status", "Bar minimum brightness", defaultValue: 0.2f, new ConfigDescription("Brightness of empty bar blocks. Higher values make the empty part easier to see.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
             summerHeatBarMaxBrightness = config("Season - Summer heat - Status", "Bar maximum brightness", defaultValue: 1f, new ConfigDescription("Brightness of filled bar blocks. Lower values make the whole bar less bright.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));

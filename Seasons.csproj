@@ -37,6 +37,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Compatibility\HoneyPlusCompat.cs" />
+    <Compile Include="Compatibility\MyLittleUICompat.cs" />
     <Compile Include="Compatibility\EWDCompat.cs" />
     <Compile Include="Compatibility\MarketplaceCompat.cs" />
     <Compile Include="Controllers\TextureCachingController.cs" />
