@@ -1,4 +1,5 @@
 ﻿using HarmonyLib;
+using System.Collections.Generic;
 using System.Linq;
 using static Seasons.Seasons;
 
@@ -6,7 +7,7 @@ namespace Seasons
 {
     public static class LoadingTips
     {
-        private static string summerHeatCombinedTip = string.Empty;
+        private static readonly List<string> summerHeatCombinedTips = new List<string>();
 
         [HarmonyPatch(typeof(Hud), nameof(Hud.Awake))]
         public static class Hud_Awake_LoadingTips
@@ -34,7 +35,7 @@ namespace Seasons
             UpdateTipBasedOnValue("$seasons_loadscreen_tip_wolves", controlRandomEvents.Value);
             UpdateTipBasedOnValue("$seasons_loadscreen_tip_swimming", freezingSwimmingInWinter.Value);
             UpdateTipBasedOnValue("$seasons_loadscreen_tip_clutter", controlGrass.Value);
-            UpdateSummerHeatCombinedTip();
+            UpdateSummerHeatCombinedTips();
 
             Hud.instance.m_haveSetupLoadScreen = false;
 
@@ -49,20 +50,66 @@ namespace Seasons
                 Hud.instance.m_loadingTips.Remove(tip);
         }
 
-        private static void UpdateSummerHeatCombinedTip()
+        private static void UpdateSummerHeatCombinedTips()
         {
-            if (!string.IsNullOrEmpty(summerHeatCombinedTip) && Hud.instance.m_loadingTips.Contains(summerHeatCombinedTip))
-                Hud.instance.m_loadingTips.Remove(summerHeatCombinedTip);
+            foreach (string tip in summerHeatCombinedTips)
+                Hud.instance.m_loadingTips.Remove(tip);
+            summerHeatCombinedTips.Clear();
 
-            string[] parts =
+            if (!enableLoadingTips.Value || !summerHeatEnabled.Value)
+                return;
+
+            AddSummerHeatCombinedTips(BuildSummerHeatOutfitTipParts());
+            AddSummerHeatCombinedTips(BuildSummerHeatBehaviorTipParts());
+        }
+
+        private static IEnumerable<string> BuildSummerHeatOutfitTipParts()
+        {
+            bool armorHeatEnabled = summerHeatArmorHeatEnabled.Value;
+            bool hasOutfitSpecificRules = HasText(summerHeatOpenHelmetItems.Value) || HasText(summerHeatOpenChestItems.Value) || HasText(summerHeatOpenLegItems.Value) || HasText(summerHeatLightCloakItems.Value) || HasColdWeatherArmorHeatRules();
+
+            if (armorHeatEnabled)
+                yield return "$seasons_loadscreen_tip_summer_heat_clothing".Localize();
+            if (armorHeatEnabled && hasOutfitSpecificRules)
+                yield return "$seasons_loadscreen_tip_summer_heat_cold_clothing".Localize();
+            if (armorHeatEnabled && HasText(summerHeatBareHeadHairItems.Value))
+                yield return "$seasons_loadscreen_tip_summer_heat_hairstyle".Localize();
+        }
+
+        private static IEnumerable<string> BuildSummerHeatBehaviorTipParts()
+        {
+            if (summerHeatInstantHeatSources.Value || summerHeatEncumberedAddsHeat.Value)
+                yield return "$seasons_loadscreen_tip_summer_heat_activity".Localize();
+            if (summerHeatCampFireAddsHeat.Value)
+                yield return "$seasons_loadscreen_tip_summer_heat_campfire".Localize();
+            if (summerHeatNoonEffectPercent.Value > 0f || summerHeatNightFactor.Value < 1f)
+                yield return "$seasons_loadscreen_tip_summer_heat_day_night".Localize();
+        }
+
+        private static void AddSummerHeatCombinedTips(IEnumerable<string> parts)
+        {
+            List<string> filteredParts = parts.Where(part => !string.IsNullOrWhiteSpace(part)).ToList();
+            if (filteredParts.Count == 0)
+                return;
+
+            string prefix = "$seasons_loadscreen_tip_summer_heat_prefix".Localize();
+            for (int i = 0; i < filteredParts.Count; i += 3)
             {
-                summerHeatEnabled.Value && summerHeatInstantHeatSources.Value ? "$seasons_loadscreen_tip_summer_heat_activity".Localize() : string.Empty,
-                summerHeatEnabled.Value && summerHeatCampFireAddsHeat.Value ? "$seasons_loadscreen_tip_summer_heat_campfire".Localize() : string.Empty
-            };
+                string tip = $"{prefix} {string.Join(" ", filteredParts.Skip(i).Take(3))}";
+                summerHeatCombinedTips.Add(tip);
+                if (!Hud.instance.m_loadingTips.Contains(tip))
+                    Hud.instance.m_loadingTips.Add(tip);
+            }
+        }
 
-            summerHeatCombinedTip = enableLoadingTips.Value ? string.Join(" ", parts.Where(part => !string.IsNullOrWhiteSpace(part))) : string.Empty;
-            if (!string.IsNullOrEmpty(summerHeatCombinedTip) && !Hud.instance.m_loadingTips.Contains(summerHeatCombinedTip))
-                Hud.instance.m_loadingTips.Add(summerHeatCombinedTip);
+        private static bool HasText(string value) => !string.IsNullOrWhiteSpace(value);
+
+        private static bool HasColdWeatherArmorHeatRules()
+        {
+            return summerHeatColdArmorHeating.Value > 0f
+                || summerHeatColdArmorCoolingPenalty.Value > 0f
+                || summerHeatColdCloakHeating.Value > 0f
+                || summerHeatColdCloakCoolingPenalty.Value > 0f;
         }
     }
 }

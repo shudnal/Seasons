@@ -275,16 +275,14 @@ namespace Seasons
 
             bool isDaytime = SummerHeat.Instance == null || SummerHeat.Instance.IsDaytime();
             float nightFactor = Mathf.Clamp(Seasons.summerHeatNightFactor.Value, 0.1f, 1f);
-            float greenThreshold = GetThresholdForTime(Mathf.Max(1f, Seasons.summerHeatGreenThreshold.Value), isDaytime, nightFactor);
-            float neutralThreshold = GetThresholdForTime(Mathf.Max(Mathf.Max(1f, Seasons.summerHeatGreenThreshold.Value) + 1f, Seasons.summerHeatNeutralThreshold.Value), isDaytime, nightFactor);
-            float maxThreshold = GetThresholdForTime(Mathf.Max(Mathf.Max(Mathf.Max(1f, Seasons.summerHeatGreenThreshold.Value) + 1f, Seasons.summerHeatNeutralThreshold.Value) + 1f, Seasons.summerHeatMaxThreshold.Value), isDaytime, nightFactor);
-            float greenFadeWidth = Mathf.Max(0.1f, GetThresholdForTime(Seasons.summerHeatGreenFadeWidth.Value, isDaytime, nightFactor));
-            float redRampWidth = Mathf.Max(0.1f, GetThresholdForTime(Seasons.summerHeatRedRampWidth.Value, isDaytime, nightFactor));
+            GetThresholds(isDaytime, nightFactor, out float greenThreshold, out float neutralThreshold, out float maxThreshold);
+            float greenFadeWidth = Mathf.Max(0.1f, ScaleHeatPercentForTime(ClampPercent(Seasons.summerHeatGreenFadeWidth.Value), isDaytime, nightFactor));
+            float redRampWidth = Mathf.Max(0.1f, ScaleHeatPercentForTime(ClampPercent(Seasons.summerHeatRedRampWidth.Value), isDaytime, nightFactor));
             float greenStart = Mathf.Max(0f, greenThreshold - greenFadeWidth);
             float greenEnd = greenThreshold + greenFadeWidth;
             float redFullThreshold = Mathf.Min(maxThreshold, neutralThreshold + redRampWidth);
             float heatCap = isDaytime ? SummerHeatController.DaytimeHeatCap : SummerHeatController.DaytimeHeatCap * nightFactor;
-            float overheatBuffer = Mathf.Max(0f, Seasons.summerHeatMaxOverflow.Value);
+            float overheatBuffer = ClampPercent(Seasons.summerHeatMaxOverflow.Value);
 
             Color currentColor = GetHeatDisplayColor();
             Color bonusColor = Seasons.summerHeatBarBonusColor.Value;
@@ -309,6 +307,7 @@ namespace Seasons
                 FormatBool(SummerHeat.IsSunny),
                 FormatBool(SummerHeat.IsInShade),
                 FormatBool(SummerHeatVisuals.IsWorldHazeActive()));
+            AppendArmorTechnicalInfo(builder);
             builder.AppendFormat("{0}: {1}\n", "$seasons_status_summer_heat_technical_heat_scale".Localize(), BuildTechnicalHeatScale(isDaytime));
             builder.AppendFormat("{0}: {1} / {2} / {3}\n",
                 "$seasons_status_summer_heat_technical_comfort_range".Localize(),
@@ -326,7 +325,20 @@ namespace Seasons
                 FormatPercent(overheatBuffer, maxColor));
         }
 
-        private static float GetThresholdForTime(float value, bool isDaytime, float nightFactor) => isDaytime ? value : value * nightFactor;
+        private static void GetThresholds(bool isDaytime, float nightFactor, out float greenThreshold, out float neutralThreshold, out float maxThreshold)
+        {
+            float greenValue = ClampPercent(Seasons.summerHeatGreenThreshold.Value);
+            float neutralValue = ClampPercent(Mathf.Max(greenValue + 1f, Seasons.summerHeatNeutralThreshold.Value));
+            float maxValue = ClampPercent(Mathf.Max(neutralValue + 1f, Seasons.summerHeatMaxThreshold.Value));
+
+            greenThreshold = ScaleHeatPercentForTime(greenValue, isDaytime, nightFactor);
+            neutralThreshold = ScaleHeatPercentForTime(neutralValue, isDaytime, nightFactor);
+            maxThreshold = ScaleHeatPercentForTime(maxValue, isDaytime, nightFactor);
+        }
+
+        private static float ClampPercent(float value) => Mathf.Clamp(value, 0f, 100f);
+
+        private static float ScaleHeatPercentForTime(float value, bool isDaytime, float nightFactor) => isDaytime ? value : value * nightFactor;
 
         private static string FormatPercent(float value, Color color) => ColorizeText($"{value:0.#}%", color);
 
@@ -339,6 +351,37 @@ namespace Seasons
             string text = FormatBool(value);
             return value ? ColorizeText(text, yesColor) : text;
         }
+
+        private static void AppendArmorTechnicalInfo(StringBuilder builder)
+        {
+            if (!Seasons.summerHeatArmorHeatEnabled.Value || SummerHeat.Instance == null)
+                return;
+
+            SummerHeatArmorState armor = SummerHeat.Instance.ArmorState;
+            builder.AppendFormat("{0}: {1} / {2}\n",
+                "$seasons_status_summer_heat_technical_armor".Localize(),
+                FormatArmorModifier(armor.HeatingModifier, positiveIsGood: false),
+                FormatArmorModifier(armor.CoolingModifier, positiveIsGood: true));
+            builder.AppendFormat("{0}: <color=orange>{1}</color> / <color=orange>{2}</color> / <color=orange>{3}</color> / <color=orange>{4}</color>\n",
+                "$seasons_status_summer_heat_technical_armor_slots".Localize(),
+                LocalizeState(armor.HeadState),
+                LocalizeState(armor.CloakState),
+                LocalizeState(armor.ChestState),
+                LocalizeState(armor.LegsState));
+        }
+
+        private static string FormatArmorModifier(float value, bool positiveIsGood)
+        {
+            Color bonusColor = Seasons.summerHeatBarBonusColor.Value;
+            Color neutralColor = Seasons.summerHeatBarNeutralColor.Value;
+            Color penaltyColor = Seasons.summerHeatBarPenaltyColor.Value;
+            Color color = Mathf.Approximately(value, 0f)
+                ? neutralColor
+                : value > 0f == positiveIsGood ? bonusColor : penaltyColor;
+            return ColorizeText($"{value * 100f:+0;-0;0}%", color);
+        }
+
+        private static string LocalizeState(string token) => string.IsNullOrEmpty(token) ? string.Empty : token.Localize();
 
         private static string BuildTechnicalHeatScale(bool isDaytime)
         {
@@ -358,11 +401,9 @@ namespace Seasons
         private static Color GetHeatDisplayColorForValue(float heatPercent, bool isDaytime)
         {
             float nightFactor = Mathf.Clamp(Seasons.summerHeatNightFactor.Value, 0.1f, 1f);
-            float greenThreshold = GetThresholdForTime(Mathf.Max(1f, Seasons.summerHeatGreenThreshold.Value), isDaytime, nightFactor);
-            float neutralThreshold = GetThresholdForTime(Mathf.Max(Mathf.Max(1f, Seasons.summerHeatGreenThreshold.Value) + 1f, Seasons.summerHeatNeutralThreshold.Value), isDaytime, nightFactor);
-            float maxThreshold = GetThresholdForTime(Mathf.Max(Mathf.Max(Mathf.Max(1f, Seasons.summerHeatGreenThreshold.Value) + 1f, Seasons.summerHeatNeutralThreshold.Value) + 1f, Seasons.summerHeatMaxThreshold.Value), isDaytime, nightFactor);
-            float greenFadeWidth = Mathf.Max(0.1f, GetThresholdForTime(Seasons.summerHeatGreenFadeWidth.Value, isDaytime, nightFactor));
-            float redRampWidth = Mathf.Max(0.1f, GetThresholdForTime(Seasons.summerHeatRedRampWidth.Value, isDaytime, nightFactor));
+            GetThresholds(isDaytime, nightFactor, out float greenThreshold, out float neutralThreshold, out float maxThreshold);
+            float greenFadeWidth = Mathf.Max(0.1f, ScaleHeatPercentForTime(ClampPercent(Seasons.summerHeatGreenFadeWidth.Value), isDaytime, nightFactor));
+            float redRampWidth = Mathf.Max(0.1f, ScaleHeatPercentForTime(ClampPercent(Seasons.summerHeatRedRampWidth.Value), isDaytime, nightFactor));
 
             Color bonusColor = Seasons.summerHeatBarBonusColor.Value;
             Color neutralColor = Seasons.summerHeatBarNeutralColor.Value;
@@ -381,12 +422,13 @@ namespace Seasons
 
             float greenStart = Mathf.Max(0f, greenThreshold - greenFadeWidth);
             float greenEnd = greenThreshold + greenFadeWidth;
-            if (heatPercent > greenStart && heatPercent < greenEnd)
+            if (heatPercent >= greenStart && heatPercent <= greenEnd)
             {
                 float greenFactor = heatPercent <= greenThreshold
                     ? Mathf.InverseLerp(greenStart, greenThreshold, heatPercent)
                     : 1f - Mathf.InverseLerp(greenThreshold, greenEnd, heatPercent);
-                return Color.Lerp(neutralColor, bonusColor, greenFactor);
+                float greenScaleBlendFactor = Mathf.Lerp(0.3f, 1f, greenFactor);
+                return Color.Lerp(neutralColor, bonusColor, greenScaleBlendFactor);
             }
 
             return neutralColor;
