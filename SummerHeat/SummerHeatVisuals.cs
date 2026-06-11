@@ -9,6 +9,9 @@ namespace Seasons
         public const string SummerHeatHazeObjectName = "SummerHeatHaze";
 
         private static GameObject _hazeObject;
+        private static bool _summerHeatColorApplied;
+        private static bool _hasDefaultHeatDistortionColor;
+        private static Color _defaultHeatDistortionColor;
 
         internal static void Initialize()
         {
@@ -18,8 +21,7 @@ namespace Seasons
                 return;
 
             GameObject hazeObject = FindAshlandsHaze();
-
-            Transform parent = Game.instance?.transform?.Find("_Environment/FollowPlayer");
+            Transform parent = Game.instance?.gameObject?.transform?.Find("_Environment/FollowPlayer");
 
             if (hazeObject && parent)
             {
@@ -36,7 +38,7 @@ namespace Seasons
                         case "zinder":
                         case "fx_ember_rain":
                             child.parent = null;
-                            UnityEngine.Object.Destroy(child.gameObject);
+                            Object.Destroy(child.gameObject);
                             continue;
                         case "mist":
                             child.gameObject.SetActive(false);
@@ -53,24 +55,31 @@ namespace Seasons
 
         private static void AdaptAshlandsHeatDistortion(ParticleSystem ps, ParticleSystemRenderer psRenderer)
         {
-            var main = ps.main;
-            main.simulationSpeed = 1;
+            if (ps == null)
+                return;
+
+            ParticleSystem.MainModule main = ps.main;
+            main.simulationSpeed = 1f;
             main.maxParticles = 200;
-            
-            var startColor = main.startColor;
+
+            ParticleSystem.MinMaxGradient startColor = main.startColor;
             startColor.colorMax = new Color(1f, 1f, 1f, 0.75f);
             main.startColor = startColor;
 
-            var emission = ps.emission;
-            emission.rateOverTime = 100;
+            ParticleSystem.EmissionModule emission = ps.emission;
+            emission.rateOverTime = 100f;
 
-            ps.transform.parent.localScale = new Vector3(3f, 1.5f, 3f);
+            if (ps.transform.parent != null)
+                ps.transform.parent.localScale = new Vector3(3f, 1.5f, 3f);
+
             ps.transform.localPosition = new Vector3(0f, -5f, 0f);
         }
 
         internal static void Reset()
         {
             DestroyHazeObject();
+            _summerHeatColorApplied = false;
+            _hasDefaultHeatDistortionColor = false;
         }
 
         internal static void UpdateHazeState()
@@ -78,21 +87,68 @@ namespace Seasons
             if (_hazeObject == null)
                 return;
 
-            if (_hazeObject.activeSelf != IsMechanicActive())
-                _hazeObject.SetActive(!_hazeObject.activeSelf);
+            bool active = IsWorldHazeActive();
+            if (_hazeObject.activeSelf != active)
+                _hazeObject.SetActive(active);
+        }
+
+        internal static bool IsWorldHazeActive()
+        {
+            if (!Seasons.summerHeatEnabled.Value || !SummerHeat.IsReady || !SummerHeat.IsSeasonHeatWindowActive || !SummerHeat.IsSunny || !SummerHeat.IsBiomeSupported)
+                return false;
+
+            if (SummerHeat.Instance == null || !SummerHeat.Instance.IsDaytime())
+                return false;
+
+            Player player = Player.m_localPlayer;
+            if (player != null && player.GetCurrentBiome() == Heightmap.Biome.Mistlands)
+                return false;
+
+            return true;
         }
 
         internal static float GetVisualIntensity()
         {
-            if (!IsVisualStateActive())
+            if (!IsPersonalVisualStateActive())
                 return 0f;
 
             return Mathf.Clamp01(SummerHeat.HeatFactor);
         }
 
-        private static bool IsMechanicActive() => SummerHeat.IsReady && SummerHeat.IsMechanicActive;
+        internal static void ApplyCameraDistortion(HeatDistortImageEffect heatDistortImageEffect)
+        {
+            if (heatDistortImageEffect == null)
+                return;
 
-        private static bool IsVisualStateActive() => IsMechanicActive() && SummerHeat.HeatFactor > 0f;
+            if (!_hasDefaultHeatDistortionColor)
+            {
+                _defaultHeatDistortionColor = heatDistortImageEffect.m_color;
+                _hasDefaultHeatDistortionColor = true;
+            }
+
+            float summerHeatIntensity = GetVisualIntensity();
+            if (summerHeatIntensity <= 0f)
+            {
+                if (_summerHeatColorApplied)
+                {
+                    heatDistortImageEffect.m_color = _defaultHeatDistortionColor;
+                    _summerHeatColorApplied = false;
+                }
+                return;
+            }
+
+            heatDistortImageEffect.enabled = true;
+            heatDistortImageEffect.m_intensity = Mathf.Max(heatDistortImageEffect.m_intensity, summerHeatIntensity);
+
+            float maxOverflow = Mathf.Max(1f, Seasons.summerHeatMaxOverflow.Value);
+            float overflowFactor = Mathf.Clamp01(SummerHeat.OverflowHeatPercent / maxOverflow);
+            Color color = _defaultHeatDistortionColor;
+            color.a = Mathf.Lerp(_defaultHeatDistortionColor.a, 0.85f, overflowFactor);
+            heatDistortImageEffect.m_color = color;
+            _summerHeatColorApplied = true;
+        }
+
+        private static bool IsPersonalVisualStateActive() => Seasons.summerHeatEnabled.Value && SummerHeat.IsReady && SummerHeat.IsMechanicActive && SummerHeat.HeatFactor > 0f;
 
         private static GameObject FindAshlandsHaze()
         {
@@ -132,30 +188,13 @@ namespace Seasons
     [HarmonyPatch(typeof(Character), nameof(Character.UpdateHeatEffects))]
     internal static class Character_UpdateHeatEffects_SummerHeatVisuals
     {
-        private static float _defaultHeatDistortionAlpha = 0;
-
         private static void Postfix(Character __instance)
         {
             if (__instance != Player.m_localPlayer)
                 return;
 
             SummerHeatVisuals.UpdateHazeState();
-
-            float summerHeatIntensity = SummerHeatVisuals.GetVisualIntensity();
-            if (summerHeatIntensity <= 0f)
-                return;
-
-            HeatDistortImageEffect heatDistortImageEffect = GameCamera.instance?.m_heatDistortImageEffect;
-            if (heatDistortImageEffect == null)
-                return;
-
-            heatDistortImageEffect.enabled = true;
-            heatDistortImageEffect.m_intensity = Mathf.Max(heatDistortImageEffect.m_intensity, summerHeatIntensity * 1.5f);
-
-            if (_defaultHeatDistortionAlpha == 0f)
-                _defaultHeatDistortionAlpha = heatDistortImageEffect.m_color.a;
-
-            heatDistortImageEffect.m_color.a = Mathf.Lerp(_defaultHeatDistortionAlpha, 0.85f, SummerHeat.OverflowHeatPercent / Seasons.summerHeatMaxOverflow.Value);
+            SummerHeatVisuals.ApplyCameraDistortion(GameCamera.instance?.m_heatDistortImageEffect);
         }
     }
 }

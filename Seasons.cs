@@ -129,7 +129,18 @@ namespace Seasons
         public static ConfigEntry<float> summerHeatStaminaRegenMultiplier;
         public static ConfigEntry<float> summerHeatEitrRegenMultiplier;
         public static ConfigEntry<string> summerHeatNonSunnyEnvironments;
+        public static ConfigEntry<SummerHeatStatusEffectDisplay> summerHeatStatusEffectDisplay;
+        public static ConfigEntry<bool> summerHeatRavenTechnicalInfo;
         public static ConfigEntry<SummerHeatDisplayMode> summerHeatDisplayMode;
+        public static ConfigEntry<SummerHeatBarTagMode> summerHeatBarTagMode;
+        public static ConfigEntry<int> summerHeatBarSegments;
+        public static ConfigEntry<string> summerHeatBarSymbol;
+        public static ConfigEntry<float> summerHeatBarMinBrightness;
+        public static ConfigEntry<float> summerHeatBarMaxBrightness;
+        public static ConfigEntry<Color> summerHeatBarBonusColor;
+        public static ConfigEntry<Color> summerHeatBarNeutralColor;
+        public static ConfigEntry<Color> summerHeatBarPenaltyColor;
+        public static ConfigEntry<Color> summerHeatBarMaxColor;
         public static ConfigEntry<bool> summerHeatInstantHeatSources;
         public static ConfigEntry<bool> summerHeatCampFireAddsHeat;
         public static ConfigEntry<bool> summerHeatEncumberedAddsHeat;
@@ -250,11 +261,25 @@ namespace Seasons
             Bar
         }
 
+        public enum SummerHeatStatusEffectDisplay
+        {
+            StatusList,
+            RavenMenuOnly,
+            None
+        }
+
         public enum SummerHeatDisplayMode
         {
             Bar,
             Percent,
             None
+        }
+
+        public enum SummerHeatBarTagMode
+        {
+            Sup,
+            None,
+            Sub
         }
 
         private void Awake()
@@ -437,7 +462,16 @@ namespace Seasons
             seasonsTimerFormatInRaven = config("Season - Buff", "Raven menu Timer format", defaultValue: TimerFormat.CurrentDayAndTimeToEnd, "What to show at season buff timer in Raven menu");
             overrideNewDayMessagesOnSeasonStartEnd = config("Season - Buff", "Show seasonal messages on morning", defaultValue: true, "Show messages \"Season is coming\" on last day and \"Season has come\" on first day of season");
 
-            showCurrentSeasonBuff.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
+            EventHandler seasonStatusDisplayHandler = (sender, args) =>
+            {
+                StatusEffectHud.EnsureTimeTextRichText();
+                SE_Season.UpdateSeasonStatusEffectStats();
+            };
+            showCurrentSeasonBuff.SettingChanged += seasonStatusDisplayHandler;
+            seasonsTimerFormat.SettingChanged += seasonStatusDisplayHandler;
+            hideSecondsInTimer.SettingChanged += seasonStatusDisplayHandler;
+            showCurrentSeasonInRaven.SettingChanged += seasonStatusDisplayHandler;
+            seasonsTimerFormatInRaven.SettingChanged += seasonStatusDisplayHandler;
 
             showFadeOnSeasonChange = config("Season - Fade", "Show fade effect on season change", defaultValue: true, "Show black fade loading screen when season is changed.");
             fadeOnSeasonChangeDuration = config("Season - Fade", "Duration of fade effect", defaultValue: 0.5f, "Fade duration");
@@ -478,45 +512,63 @@ namespace Seasons
             placeShipAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateShipsPositions();
             placeFloatingContainersAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateFloatingPositions();
 
-            summerHeatEnabled = config("Season - Summer heat", "Enabled", defaultValue: true, "Enable the local summer heat mechanic.");
-            summerHeatAddsExtraWarmCloth = config("Season - Summer heat", "Two warm armor pieces affect summer heat", defaultValue: true, "If enabled, summer heat mechanic gains extra heat when two warm armor pieces are equipped.");
-            summerHeatCoolingFoods = config("Season - Summer heat", "Cooling foods", defaultValue: "Eyescream", GetDescriptionSeparatedStrings("Foods that count as cold treats for summer heat and legacy overheat protection. Supports both prefab names and localization keys."));
-            summerHeatDays = config("Season - Summer heat", "Active days", defaultValue: new Vector2(3f, 8f), "Summer days range when the heat mechanic is active.");
-            summerHeatTimeToMax = config("Season - Summer heat", "Seconds to max heat", defaultValue: 180f, "Seconds of sustained direct sun exposure required to reach maximum heat.");
-            summerHeatGreenThreshold = config("Season - Summer heat", "Green threshold", defaultValue: 25f, "Heat value where the green bonus reaches its peak.");
-            summerHeatNeutralThreshold = config("Season - Summer heat", "Red threshold", defaultValue: 60f, "Heat value where the red debuff starts.");
-            summerHeatMaxThreshold = config("Season - Summer heat", "Max threshold", defaultValue: 95f, "Heat value where the max-heat damage ramp begins.");
-            summerHeatNightFactor = config("Season - Summer heat", "Night threshold factor", defaultValue: 0.5f, new ConfigDescription("Multiplier applied to summer heat thresholds and cap at night.", new AcceptableValueRange<float>(0.1f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatZoneHysteresis = config("Season - Summer heat", "Zone hysteresis", defaultValue: 10f, "Additional heat band used to avoid rapid zone toggling.");
-            summerHeatGreenFadeWidth = config("Season - Summer heat", "Green fade width", defaultValue: 10f, "Heat width used to fade the green bonus back to neutral after the green threshold.");
-            summerHeatRedRampWidth = config("Season - Summer heat", "Red ramp width", defaultValue: 15f, "Heat width used to ramp the red debuff from zero to full strength.");
-            summerHeatMaxOverflow = config("Season - Summer heat", "Max overflow", defaultValue: 5f, "Hidden extra heat stored above the visible cap to keep max heat from dropping instantly.");
-            summerHeatDamageTickInterval = config("Season - Summer heat", "Damage tick interval", defaultValue: 2f, "Interval between soft HP cap damage ticks at max heat.");
-            summerHeatDamageНealthPerTickMinHealthPercentage = config("Season - Summer heat", "Soft HP cap percentage", defaultValue: 0.8f, new ConfigDescription("Health percentage soft cap applied at max heat.", new AcceptableValueRange<float>(0.05f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatDamageНealthPerTick = config("Season - Summer heat", "Damage per tick", defaultValue: 2f, "Damage applied when current health is above the summer heat soft cap.");
-            summerHeatDamageHitType = config("Season - Summer heat", "Damage type", defaultValue: HitData.HitType.Self, "Hit type used for soft HP cap damage at max heat.");
-            summerHeatDamageMaxOnly = config("Season - Summer heat", "Damage only at max heat", defaultValue: true, "If enabled, summer heat damage only applies in the max heat zone.");
-            summerHeatStaminaUseMultiplier = config("Season - Summer heat", "Stamina use multiplier", defaultValue: 0.2f, new ConfigDescription("Percent modifier applied to stamina use in red/max zones and mirrored as a reduction in the green zone.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatAdrenalineMultiplier = config("Season - Summer heat", "Adrenaline multiplier", defaultValue: 0.15f, new ConfigDescription("Percent modifier applied to adrenaline use in red/max zones and mirrored as a reduction in the green zone.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatHealthRegenMultiplier = config("Season - Summer heat", "Health regen multiplier", defaultValue: 0.85f, new ConfigDescription("Multiplier applied to health regeneration in hot zones and mirrored in the green zone.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatStaminaRegenMultiplier = config("Season - Summer heat", "Stamina regen multiplier", defaultValue: 0.85f, new ConfigDescription("Multiplier applied to stamina regeneration in hot zones and mirrored in the green zone.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatEitrRegenMultiplier = config("Season - Summer heat", "Eitr regen multiplier", defaultValue: 0.9f, new ConfigDescription("Multiplier applied to eitr regeneration in hot zones and mirrored in the green zone.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatNonSunnyEnvironments = config("Season - Summer heat", "Non-sunny weather systems", defaultValue: "Rain,LightRain,MistlandsRain,SlimeRain,SnowStorm,Thunder,MistlandsThunder,AshlandsThunder,Mist,Ashlands_Misty,Ashlands_RainCinder,Ashlands_CinderRain", GetDescriptionSeparatedStrings("Comma separated list of m_psystems or m_envObject names treated as non-sunny for summer heat classification."));
-            summerHeatDisplayMode = config("Season - Summer heat", "HUD display mode", defaultValue: SummerHeatDisplayMode.Bar, "How the summer heat status effect displays its live value in the HUD (none, percent, or bar).");
-            summerHeatInstantHeatSources = config("Season - Summer heat", "Instant heat sources", defaultValue: true, "Allow jumps, attacks, dodges and blocks to add instant heat.");
-            summerHeatCampFireAddsHeat = config("Season - Summer heat", "CampFire adds heat", defaultValue: true, "If enabled, CampFire status slowly heats the player up to the green threshold.");
-            summerHeatEncumberedAddsHeat = config("Season - Summer heat", "Encumbered adds heat", defaultValue: true, "If enabled, being encumbered slowly heats the player up to the start of the red zone.");
-            summerHeatWindEffectPercent = config("Season - Summer heat", "Wind effect percent", defaultValue: 0.25f, new ConfigDescription("At wind 0 heat gain is faster and cooling is slower by this percent; at wind 1 the effect is inverted.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatNoonEffectPercent = config("Season - Summer heat", "Noon effect percent", defaultValue: 0.25f, new ConfigDescription("Additional heating/cooling speed influence near noon.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatCoolingFoods = config("Season - Summer heat", "Cooling foods", defaultValue: "Eyescream,$item_eyescream", GetDescriptionSeparatedStrings("Foods that help cool you down in summer. Use prefab names or localization keys. While a cooling food is active, new heat bursts are blocked. It also protects from the older warm-clothes overheat status when the main Summer Heat mechanic is disabled."));
+            summerHeatEnabled = config("Season - Summer heat", "Enabled", defaultValue: true, "Turns the new Summer Heat mechanic on or off. When disabled, the heat meter, status effect, bonuses, penalties and visual heat effects are removed. The older warm-clothes overheat status can still work if 'Warm clothes add heat' is enabled.");
+            summerHeatAddsExtraWarmCloth = config("Season - Summer heat", "Warm clothes add heat", defaultValue: true, "If enabled, two or more warm armor pieces add extra heat while the new Summer Heat mechanic is active. If the new mechanic is disabled, this also keeps the older warm-clothes overheat status working in summer.");
+            summerHeatDays = config("Season - Summer heat", "Heat days from to", defaultValue: new Vector2(4f, 7f), "Which summer days can become dangerously hot. The first number starts the hot period, the second number ends it.");
+            summerHeatTimeToMax = config("Season - Summer heat", "Time to max heat", defaultValue: 180f, "How long it takes to reach 100% heat while standing in direct sun with no shade, water or other cooling help.");
+            summerHeatGreenThreshold = config("Season - Summer heat", "Comfortable heat", defaultValue: 30f, "Heat percent where the warm-weather bonus is strongest. With the default 30% threshold and 15% bonus range, the bonus starts at 15%, reaches full strength at 30%, then fades out by 45%.");
+            summerHeatNeutralThreshold = config("Season - Summer heat", "Too hot threshold", defaultValue: 60f, "Heat percent where penalties begin. With the default 60% threshold and 15% penalty range, negative effects start at 60% and reach full strength at 75%.");
+            summerHeatMaxThreshold = config("Season - Summer heat", "Overheated threshold", defaultValue: 95f, "Heat percent where the worst heat state begins. This is where the soft HP cap damage can become active.");
+            summerHeatNightFactor = config("Season - Summer heat", "Night warmth factor", defaultValue: 0.5f, new ConfigDescription("How warm summer nights remain compared to daytime. At 50%, night can only hold about half of the daytime heat: the air is still warm, but without direct sun you should cool down toward a safer level instead of building up to full overheating.", new AcceptableValueRange<float>(0.1f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatZoneHysteresis = config("Season - Summer heat", "State switch buffer", defaultValue: 10f, "Small buffer around heat states. It prevents the status from rapidly switching back and forth when your heat is close to a boundary.");
+            summerHeatGreenFadeWidth = config("Season - Summer heat", "Comfortable heat range", defaultValue: 15f, "How wide the bonus area is around comfortable heat. With the default 30% threshold and 15% range, the bonus starts at 15%, reaches full strength at 30%, then fades out by 45%.");
+            summerHeatRedRampWidth = config("Season - Summer heat", "Penalty buildup range", defaultValue: 15f, "How gradually penalties build after you become too hot. With the default 60% threshold and 15% range, negative effects start at 60% and reach full strength at 75%.");
+            summerHeatMaxOverflow = config("Season - Summer heat", "Overheat buffer", defaultValue: 5f, "Small hidden heat reserve above 100%. It makes full overheating take a little time to cool off instead of disappearing instantly.");
+            summerHeatNonSunnyEnvironments = config("Season - Summer heat", "Weather without direct sun", defaultValue: "Rain,LightRain,MistlandsRain,SlimeRain,SnowStorm,Thunder,MistlandsThunder,AshlandsThunder,Ashlands_SeaStorm,Mist,Ashlands_Misty,Ashlands_RainCinder,Ashlands_CinderRain", GetDescriptionSeparatedStrings("Technical weather list. Use internal EnvMan weather object names or particle system names, separated by commas. If the current weather matches one of these names, Summer Heat treats the sky as not sunny and direct sunlight heat stops."));
+            summerHeatInstantHeatSources = config("Season - Summer heat", "Actions add heat", defaultValue: true, "If enabled, jumps, attacks, dodges and blocks add small heat bursts during Summer Heat.");
+            summerHeatCampFireAddsHeat = config("Season - Summer heat", "Campfire adds heat", defaultValue: true, "If enabled, standing near a campfire can warm you up even during summer.");
+            summerHeatEncumberedAddsHeat = config("Season - Summer heat", "Heavy load adds heat", defaultValue: true, "If enabled, carrying too much weight makes you heat up slowly.");
+            summerHeatWindEffectPercent = config("Season - Summer heat", "Wind effect", defaultValue: 0.25f, new ConfigDescription("How strongly wind changes heating and cooling. With 25%, still air makes heating faster and cooling slower; strong wind does the opposite.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatNoonEffectPercent = config("Season - Summer heat", "Midday effect", defaultValue: 0.25f, new ConfigDescription("How much stronger the sun feels around midday. With 25%, heat builds faster and cools slower near noon.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+
+            summerHeatDamageTickInterval = config("Season - Summer heat - Damage in red zone", "Damage tick interval", defaultValue: 2f, "Seconds between damage ticks while heat is forcing your health down.");
+            summerHeatDamageНealthPerTickMinHealthPercentage = config("Season - Summer heat - Damage in red zone", "Soft HP cap percentage", defaultValue: 0.8f, new ConfigDescription("Lowest health percentage that Summer Heat can push you toward. You will take constant damage when your HP is higher than this percent. This damage only lowers current HP toward the set mark; it does not reduce your real maximum HP.", new AcceptableValueRange<float>(0.05f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatDamageНealthPerTick = config("Season - Summer heat - Damage in red zone", "Damage per tick", defaultValue: 2f, "How much damage is dealt each tick while Summer Heat is pushing your HP down toward the soft cap.");
+            summerHeatDamageHitType = config("Season - Summer heat - Damage in red zone", "Damage hit type", defaultValue: HitData.HitType.Self, "How the game should mark this damage. Most players can leave this unchanged.");
+            summerHeatDamageMaxOnly = config("Season - Summer heat - Damage in red zone", "Damage only when overheated", defaultValue: true, "If enabled, HP cap damage waits until the status reaches Overheated. If disabled, the damage can start as soon as the top heat damage ramp begins near the end of the red zone.");
+
+            summerHeatStaminaUseMultiplier = config("Season - Summer heat - Multipliers", "Stamina use effect", defaultValue: 0.2f, new ConfigDescription("How strongly heat changes running stamina cost. With 20%, red heat can make running cost up to 20% more, while comfortable heat can make it cost up to 20% less.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatAdrenalineMultiplier = config("Season - Summer heat - Multipliers", "Adrenaline effect", defaultValue: 0.15f, new ConfigDescription("How strongly heat changes adrenaline use. With 15%, red heat can cost up to 15% more, while comfortable heat can cost up to 15% less.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatHealthRegenMultiplier = config("Season - Summer heat - Multipliers", "Health regen effect", defaultValue: 0.15f, new ConfigDescription("How strongly heat changes health regeneration. With 15%, red heat can reduce regeneration by up to 15%, while comfortable heat can increase it by up to 15%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatStaminaRegenMultiplier = config("Season - Summer heat - Multipliers", "Stamina regen effect", defaultValue: 0.15f, new ConfigDescription("How strongly heat changes stamina regeneration. With 15%, red heat can reduce regeneration by up to 15%, while comfortable heat can increase it by up to 15%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatEitrRegenMultiplier = config("Season - Summer heat - Multipliers", "Eitr regen effect", defaultValue: 0.1f, new ConfigDescription("How strongly heat changes eitr regeneration. With 10%, red heat can reduce regeneration by up to 10%, while comfortable heat can increase it by up to 10%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+
+            summerHeatStatusEffectDisplay = config("Season - Summer heat - Status", "Status effect visibility", defaultValue: SummerHeatStatusEffectDisplay.StatusList, "Where to show the Summer Heat status effect. StatusList shows it normally, RavenMenuOnly hides it from the status list but keeps it in the Raven active effects menu, None hides it everywhere.");
+            summerHeatRavenTechnicalInfo = config("Season - Summer heat - Status", "Raven menu technical info", defaultValue: false, "Show extra heat numbers in the Raven active effects menu. Useful for server admins while tuning the mechanic.");
+            summerHeatDisplayMode = config("Season - Summer heat - Status", "Value display mode", defaultValue: SummerHeatDisplayMode.Bar, "How the status icon shows current heat: bar, percent, or nothing.");
+            summerHeatBarTagMode = config("Season - Summer heat - Status", "Bar vertical tag", defaultValue: SummerHeatBarTagMode.Sup, "Optional rich-text tag around the heat bar. Sup makes compact raised blocks, Sub lowers them, None draws the bar without vertical adjustment.");
+            summerHeatBarSegments = config("Season - Summer heat - Status", "Bar segments", defaultValue: 12, new ConfigDescription("Number of blocks in the heat bar.", new AcceptableValueRange<int>(1, 32)));
+            summerHeatBarSymbol = config("Season - Summer heat - Status", "Bar symbol", defaultValue: "▄", "Character used for each heat bar block. Use one character, for example ▄, ▀, ■ or ▬.");
+            summerHeatBarMinBrightness = config("Season - Summer heat - Status", "Bar minimum brightness", defaultValue: 0.2f, new ConfigDescription("Brightness of empty bar blocks. Higher values make the empty part easier to see.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatBarMaxBrightness = config("Season - Summer heat - Status", "Bar maximum brightness", defaultValue: 1f, new ConfigDescription("Brightness of filled bar blocks. Lower values make the whole bar less bright.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatBarBonusColor = config("Season - Summer heat - Status", "Bar color bonus", defaultValue: new Color(0.49804f, 0.72941f, 0.03529f, 1f), "Color used when current heat gives bonuses.");
+            summerHeatBarNeutralColor = config("Season - Summer heat - Status", "Bar color neutral", defaultValue: new Color(0.84314f, 0.72941f, 0.03529f, 1f), "Color used when current heat is safe but gives no bonus.");
+            summerHeatBarPenaltyColor = config("Season - Summer heat - Status", "Bar color penalty", defaultValue: new Color(0.69020f, 0.34902f, 0.03529f, 1f), "Color used when current heat applies penalties.");
+            summerHeatBarMaxColor = config("Season - Summer heat - Status", "Bar color overheat", defaultValue: new Color(0.72941f, 0.03529f, 0.03529f, 1f), "Color used when current heat reaches the most dangerous state.");
 
             EventHandler summerHeatRefreshHandler = (sender, args) =>
             {
                 seasonState?.CheckOverheatStatus(Player.m_localPlayer);
                 SummerHeatController.Instance?.RefreshState();
+                SummerHeatVisuals.UpdateHazeState();
+                LoadingTips.UpdateLoadingTips();
             };
             summerHeatEnabled.SettingChanged += summerHeatRefreshHandler;
             summerHeatAddsExtraWarmCloth.SettingChanged += summerHeatRefreshHandler;
             summerHeatCoolingFoods.SettingChanged += summerHeatRefreshHandler;
+            summerHeatDays.SettingChanged += summerHeatRefreshHandler;
+            summerHeatTimeToMax.SettingChanged += summerHeatRefreshHandler;
             summerHeatGreenThreshold.SettingChanged += summerHeatRefreshHandler;
             summerHeatNeutralThreshold.SettingChanged += summerHeatRefreshHandler;
             summerHeatMaxThreshold.SettingChanged += summerHeatRefreshHandler;
@@ -525,11 +577,36 @@ namespace Seasons
             summerHeatGreenFadeWidth.SettingChanged += summerHeatRefreshHandler;
             summerHeatRedRampWidth.SettingChanged += summerHeatRefreshHandler;
             summerHeatMaxOverflow.SettingChanged += summerHeatRefreshHandler;
+            summerHeatNonSunnyEnvironments.SettingChanged += summerHeatRefreshHandler;
+            summerHeatDamageTickInterval.SettingChanged += summerHeatRefreshHandler;
+            summerHeatDamageНealthPerTickMinHealthPercentage.SettingChanged += summerHeatRefreshHandler;
+            summerHeatDamageНealthPerTick.SettingChanged += summerHeatRefreshHandler;
+            summerHeatDamageHitType.SettingChanged += summerHeatRefreshHandler;
+            summerHeatDamageMaxOnly.SettingChanged += summerHeatRefreshHandler;
+            summerHeatStaminaUseMultiplier.SettingChanged += summerHeatRefreshHandler;
+            summerHeatAdrenalineMultiplier.SettingChanged += summerHeatRefreshHandler;
+            summerHeatHealthRegenMultiplier.SettingChanged += summerHeatRefreshHandler;
+            summerHeatStaminaRegenMultiplier.SettingChanged += summerHeatRefreshHandler;
+            summerHeatEitrRegenMultiplier.SettingChanged += summerHeatRefreshHandler;
             summerHeatInstantHeatSources.SettingChanged += summerHeatRefreshHandler;
             summerHeatCampFireAddsHeat.SettingChanged += summerHeatRefreshHandler;
             summerHeatEncumberedAddsHeat.SettingChanged += summerHeatRefreshHandler;
             summerHeatWindEffectPercent.SettingChanged += summerHeatRefreshHandler;
             summerHeatNoonEffectPercent.SettingChanged += summerHeatRefreshHandler;
+
+            EventHandler summerHeatStatusDisplayHandler = (sender, args) => StatusEffectHud.EnsureTimeTextRichText();
+            summerHeatStatusEffectDisplay.SettingChanged += summerHeatStatusDisplayHandler;
+            summerHeatRavenTechnicalInfo.SettingChanged += summerHeatStatusDisplayHandler;
+            summerHeatDisplayMode.SettingChanged += summerHeatStatusDisplayHandler;
+            summerHeatBarTagMode.SettingChanged += summerHeatStatusDisplayHandler;
+            summerHeatBarSegments.SettingChanged += summerHeatStatusDisplayHandler;
+            summerHeatBarSymbol.SettingChanged += summerHeatStatusDisplayHandler;
+            summerHeatBarMinBrightness.SettingChanged += summerHeatStatusDisplayHandler;
+            summerHeatBarMaxBrightness.SettingChanged += summerHeatStatusDisplayHandler;
+            summerHeatBarBonusColor.SettingChanged += summerHeatStatusDisplayHandler;
+            summerHeatBarNeutralColor.SettingChanged += summerHeatStatusDisplayHandler;
+            summerHeatBarPenaltyColor.SettingChanged += summerHeatStatusDisplayHandler;
+            summerHeatBarMaxColor.SettingChanged += summerHeatStatusDisplayHandler;
 
             enableSeasonalGlobalKeys = config("Seasons - Global keys", "Enable setting seasonal Global Keys", defaultValue: false, "Enables setting seasonal global key");
             seasonalGlobalKeyFall = config("Seasons - Global keys", "Fall", defaultValue: "Season_Fall", "Seasonal global key for autumn. You can set config value like \"Season Fall\" space separated and it will be treated as key value pair.");

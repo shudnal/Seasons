@@ -1,9 +1,8 @@
-﻿using HarmonyLib;
+using HarmonyLib;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using TMPro;
 using UnityEngine;
 using static Seasons.Seasons;
 using static Seasons.SeasonStats;
@@ -35,8 +34,7 @@ namespace Seasons
 
         public override void Setup(Character character)
         {
-            if (Hud.instance.m_statusEffectTemplate?.Find("TimeText")?.GetComponent<TMP_Text>())
-                Hud.instance.m_statusEffectTemplate.Find("TimeText").GetComponent<TMP_Text>().richText = true;
+            StatusEffectHud.EnsureTimeTextRichText();
             
             m_season = seasonState.GetCurrentSeason();
             if (m_indoors != (m_indoors = m_character != null && m_character == Player.m_localPlayer && m_character.InInterior()))
@@ -253,15 +251,38 @@ namespace Seasons
     }
 
     [HarmonyPatch(typeof(SEMan), nameof(SEMan.GetHUDStatusEffects))]
-    public static class SEMan_GetHUDStatusEffects_SeasonTooltipWhenBuffDisabled
+    public static class SEMan_GetHUDStatusEffects_CustomStatusEffectVisibility
     {
         private static void Postfix(Character ___m_character, List<StatusEffect> ___m_statusEffects, List<StatusEffect> effects)
         {
-            if (TextsDialog_AddActiveEffects_SeasonTooltipWhenBuffDisabled.isActiveEffectsListCall && Player.m_localPlayer != null && ___m_character == Player.m_localPlayer && !effects.Any(effect => effect is SE_Season))
+            if (Player.m_localPlayer == null || ___m_character != Player.m_localPlayer)
+                return;
+
+            bool ravenActiveEffectsList = TextsDialog_AddActiveEffects_SeasonTooltipWhenBuffDisabled.isActiveEffectsListCall;
+
+            if (ravenActiveEffectsList && !effects.Any(effect => effect is SE_Season))
             {
                 StatusEffect seasonStatusEffect = ___m_statusEffects.Find(se => se is SE_Season);
                 if (seasonStatusEffect != null)
                     effects.Insert(0, seasonStatusEffect);
+            }
+
+            StatusEffect summerHeatStatusEffect = ___m_statusEffects.Find(se => se is SE_SummerHeat);
+            if (summerHeatStatusEffect == null)
+                return;
+
+            switch (summerHeatStatusEffectDisplay.Value)
+            {
+                case SummerHeatStatusEffectDisplay.StatusList:
+                    break;
+                case SummerHeatStatusEffectDisplay.RavenMenuOnly:
+                    effects.RemoveAll(effect => effect is SE_SummerHeat);
+                    if (ravenActiveEffectsList)
+                        effects.Insert(Math.Min(1, effects.Count), summerHeatStatusEffect);
+                    break;
+                case SummerHeatStatusEffectDisplay.None:
+                    effects.RemoveAll(effect => effect is SE_SummerHeat);
+                    break;
             }
         }
     }

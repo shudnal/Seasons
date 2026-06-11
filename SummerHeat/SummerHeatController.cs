@@ -143,7 +143,7 @@ namespace Seasons
 
         internal void AddInstantHeat(float amount, bool useConfigGate = false)
         {
-            if (Mathf.Approximately(amount, 0f))
+            if (!Seasons.summerHeatEnabled.Value || Mathf.Approximately(amount, 0f))
                 return;
 
             if (useConfigGate && !Seasons.summerHeatInstantHeatSources.Value)
@@ -178,6 +178,12 @@ namespace Seasons
 
         private void EvaluateState(bool forceStatusRefresh)
         {
+            if (!Seasons.summerHeatEnabled.Value)
+            {
+                ClearHeatState(forceStatusRefresh);
+                return;
+            }
+
             _isDaytime = !EnvMan.IsNight();
             _currentBiome = Player != null ? Player.GetCurrentBiome() : Heightmap.Biome.None;
             _biomeAllowsSummerHeat = AllowsSummerHeatBiome(_currentBiome);
@@ -223,9 +229,44 @@ namespace Seasons
             RefreshDerivedState(_state.TotalHeatPercent, forceStatusRefresh);
         }
 
+        private void ClearHeatState(bool forceStatusRefresh)
+        {
+            float previousTotal = _state.TotalHeatPercent;
+            _overflowHeat = 0f;
+            _mode = SummerHeatMode.Stable;
+            _currentEnvironmentName = string.Empty;
+            _isDaytime = !EnvMan.IsNight();
+            _hasWetStatus = false;
+            _hasShelterStatus = false;
+            _hasBurningStatus = false;
+            _hasColdStatus = false;
+            _hasCoolingFood = false;
+            _hasCampFireStatus = false;
+            _biomeAllowsSummerHeat = false;
+            _state.SetHeat(0f, 0f, 0f, DaytimeHeatCap, HeatZone.Neutral, 0f, 0f, 0f);
+            _state.Direction = previousTotal > 0f ? -1 : 0;
+            _state.IsCooling = false;
+            _state.IsSunny = false;
+            _state.IsInSun = false;
+            _state.IsInShade = true;
+            _state.SeasonHeatWindowActive = false;
+            _state.BiomeSupported = false;
+            _state.MechanicActive = false;
+
+            EnsureStatusEffect(shouldHaveEffect: false);
+
+            SummerHeatVisuals.UpdateHazeState();
+        }
+
         private void UpdateHeat(float dt)
         {
             float previousTotal = _state.TotalHeatPercent;
+
+            if (!Seasons.summerHeatEnabled.Value)
+            {
+                ClearHeatState(forceStatusRefresh: true);
+                return;
+            }
 
             if (!_biomeAllowsSummerHeat)
             {
@@ -433,15 +474,17 @@ namespace Seasons
 
         private static float CalculateGreenFactor(float heat)
         {
-            float greenThreshold = GetGreenThreshold(Instance == null || Instance._isDaytime);
-            float greenFadeWidth = Mathf.Max(0.1f, GetThresholdForTime(Seasons.summerHeatGreenFadeWidth.Value, Instance == null || Instance._isDaytime));
-            if (heat <= 0f)
+            bool isDaytime = Instance == null || Instance._isDaytime;
+            float greenThreshold = GetGreenThreshold(isDaytime);
+            float greenFadeWidth = Mathf.Max(0.1f, GetThresholdForTime(Seasons.summerHeatGreenFadeWidth.Value, isDaytime));
+            float greenStart = Mathf.Max(0f, greenThreshold - greenFadeWidth);
+            float greenEnd = greenThreshold + greenFadeWidth;
+
+            if (heat <= greenStart || heat >= greenEnd)
                 return 0f;
             if (heat <= greenThreshold)
-                return Mathf.InverseLerp(0f, greenThreshold, heat);
-            if (heat <= greenThreshold + greenFadeWidth)
-                return 1f - Mathf.InverseLerp(greenThreshold, greenThreshold + greenFadeWidth, heat);
-            return 0f;
+                return Mathf.InverseLerp(greenStart, greenThreshold, heat);
+            return 1f - Mathf.InverseLerp(greenThreshold, greenEnd, heat);
         }
 
         private static float CalculateRedFactor(float heat)

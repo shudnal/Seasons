@@ -5,15 +5,18 @@ namespace Seasons
 {
     public class SE_SummerHeat : SE_Stats
     {
-        private const int BarSegments = 12;
+        private const char DefaultBarSymbol = '▄';
+        private const float PartialSegmentEpsilon = 0.0001f;
         private static readonly StringBuilder TooltipBuilder = new StringBuilder(256);
         private float _damageTimer;
 
         public override void Setup(Character character)
         {
+            StatusEffectHud.EnsureTimeTextRichText();
+
             m_name = "$seasons_status_summer_heat_name";
             m_tooltip = "$seasons_status_summer_heat_description";
-            m_icon ??= Seasons.iconWarm;
+            m_icon ??= Seasons.iconWarm ?? Seasons.iconSummer;
             m_ttl = 0f;
             m_cooldownIcon = false;
             m_flashIcon = false;
@@ -71,7 +74,7 @@ namespace Seasons
             {
                 Seasons.SummerHeatDisplayMode.None => string.Empty,
                 Seasons.SummerHeatDisplayMode.Bar => BuildBarText(),
-                Seasons.SummerHeatDisplayMode.Percent => $"{SummerHeat.HeatPercent:0}%",
+                Seasons.SummerHeatDisplayMode.Percent => ColorizeText($"{SummerHeat.HeatPercent:0}%", GetHeatDisplayColor()),
                 _ => BuildBarText()
             };
         }
@@ -80,11 +83,10 @@ namespace Seasons
         {
             TooltipBuilder.Clear();
             TooltipBuilder.Append("$seasons_status_summer_heat_description".Localize()).Append('\n').Append('\n');
-            TooltipBuilder.AppendFormat("{0}: <color=orange>{1:0}%</color>\n", "$seasons_status_summer_heat_current".Localize(), SummerHeat.HeatPercent);
+            TooltipBuilder.AppendFormat("{0}: {1}\n", "$seasons_status_summer_heat_current".Localize(), ColorizeText($"{SummerHeat.HeatPercent:0}%", GetHeatDisplayColor()));
             TooltipBuilder.AppendFormat("{0}: <color=orange>{1}</color>\n", "$seasons_status_summer_heat_zone".Localize(), GetZoneText(SummerHeat.CurrentZone).Localize());
             TooltipBuilder.AppendFormat("{0}: <color=orange>{1}</color>\n", "$seasons_status_summer_heat_weather".Localize(), (SummerHeat.IsSunny ? "$seasons_status_summer_heat_sunny" : "$seasons_status_summer_heat_not_sunny").Localize());
             TooltipBuilder.AppendFormat("{0}: <color=orange>{1}</color>\n", "$seasons_status_summer_heat_exposure".Localize(), GetExposureText().Localize());
-            TooltipBuilder.AppendFormat("{0}: <color=orange>{1}</color>\n", "$seasons_status_summer_heat_trend".Localize(), GetTrendText().Localize());
 
             string modifiers = GetModifierSummary();
             if (!string.IsNullOrEmpty(modifiers))
@@ -98,6 +100,8 @@ namespace Seasons
                 float softCapPercent = Mathf.Lerp(1f, minSoftCapPercent, SummerHeat.MaxEffectFactor) * 100f;
                 TooltipBuilder.AppendFormat("<color=red>{0}</color>\n", string.Format("$seasons_status_summer_heat_cap_warning".Localize(), softCapPercent.ToString("0")));
             }
+
+            AppendTechnicalInfo(TooltipBuilder);
 
             return TooltipBuilder.ToString();
         }
@@ -155,56 +159,101 @@ namespace Seasons
 
         private string BuildBarText()
         {
-            int filledSegments = Mathf.Clamp(Mathf.RoundToInt(SummerHeat.HeatFactor * BarSegments), 0, BarSegments);
-            int blinkingIndex = -1;
-            bool blinkAsFilled = false;
+            int total = Mathf.Clamp(Seasons.summerHeatBarSegments.Value, 1, 32);
+            char symbol = GetBarSymbol();
 
-            if (SummerHeat.Direction > 0 && filledSegments < BarSegments)
-            {
-                blinkingIndex = filledSegments;
-            }
-            else if (SummerHeat.Direction < 0 && filledSegments > 0)
-            {
-                blinkingIndex = filledSegments - 1;
-                blinkAsFilled = true;
-            }
+            GetBarBrightness(out float emptyAlpha, out float fullAlpha);
 
-            StringBuilder builder = new StringBuilder(BarSegments + 2);
-            for (int i = 0; i < BarSegments; ++i)
-            {
-                if (i == blinkingIndex)
-                {
-                    builder.Append(BlinkChar(blinkAsFilled));
-                }
-                else if (i < filledSegments)
-                {
-                    builder.Append('▄');
-                }
-                else
-                {
-                    builder.Append('·');
-                }
-            }
+            float exactSegments = Mathf.Clamp01(SummerHeat.HeatFactor) * total;
+            int filledSegments = Mathf.Clamp(Mathf.FloorToInt(exactSegments), 0, total);
+            float partialFraction = exactSegments - filledSegments;
 
-            return builder.ToString();
+            bool hasPartialSegment = partialFraction > PartialSegmentEpsilon && filledSegments < total;
+            int emptySegments = Mathf.Max(0, total - filledSegments - (hasPartialSegment ? 1 : 0));
+            float partialAlpha = Mathf.Lerp(emptyAlpha, fullAlpha, Mathf.Clamp01(partialFraction));
+            Color heatColor = GetHeatDisplayColor();
+
+            string full = filledSegments > 0 ? new string(symbol, filledSegments) : string.Empty;
+            string partial = hasPartialSegment ? symbol.ToString() : string.Empty;
+            string empty = emptySegments > 0 ? new string(symbol, emptySegments) : string.Empty;
+
+            return WrapBarText($"{ColorizeText(full, heatColor, fullAlpha)}{ColorizeText(partial, heatColor, partialAlpha)}{ColorizeText(empty, heatColor, emptyAlpha)}");
         }
 
-        private static char BlinkChar(bool filledSegment)
+        private static string WrapBarText(string barText)
         {
-            return Mathf.PingPong(Time.time * 2f, 1f) > 0.5f
-                ? (filledSegment ? '▄' : '·')
-                : (filledSegment ? '·' : '▄');
+            return Seasons.summerHeatBarTagMode.Value switch
+            {
+                Seasons.SummerHeatBarTagMode.None => barText,
+                Seasons.SummerHeatBarTagMode.Sub => $"<sub>{barText}</sub>",
+                _ => $"<sup>{barText}</sup>"
+            };
         }
 
-        private static float GetHeatMultiplier(float configuredMultiplier)
+        private static char GetBarSymbol()
         {
-            if (Mathf.Approximately(configuredMultiplier, 1f))
+            string configuredSymbol = Seasons.summerHeatBarSymbol.Value;
+            if (string.IsNullOrWhiteSpace(configuredSymbol))
+                return DefaultBarSymbol;
+
+            configuredSymbol = configuredSymbol.Trim();
+            return configuredSymbol.Length > 0 ? configuredSymbol[0] : DefaultBarSymbol;
+        }
+
+        private static void GetBarBrightness(out float emptyAlpha, out float fullAlpha)
+        {
+            float configuredMin = Mathf.Clamp01(Seasons.summerHeatBarMinBrightness.Value);
+            float configuredMax = Mathf.Clamp01(Seasons.summerHeatBarMaxBrightness.Value);
+
+            emptyAlpha = Mathf.Min(configuredMin, configuredMax);
+            fullAlpha = Mathf.Max(configuredMin, configuredMax);
+        }
+
+        private static Color GetHeatDisplayColor()
+        {
+            Color bonusColor = Seasons.summerHeatBarBonusColor.Value;
+            Color neutralColor = Seasons.summerHeatBarNeutralColor.Value;
+            Color penaltyColor = Seasons.summerHeatBarPenaltyColor.Value;
+            Color maxColor = Seasons.summerHeatBarMaxColor.Value;
+
+            if (SummerHeat.MaxEffectFactor > 0f)
+                return Color.Lerp(penaltyColor, maxColor, SummerHeat.MaxEffectFactor);
+
+            if (SummerHeat.RedFactor > 0f)
+                return Color.Lerp(neutralColor, penaltyColor, SummerHeat.RedFactor);
+
+            if (SummerHeat.GreenFactor > 0f)
+                return Color.Lerp(neutralColor, bonusColor, SummerHeat.GreenFactor);
+
+            return neutralColor;
+        }
+
+        private static string ColorizeText(string value, Color color, float alpha = 1f)
+        {
+            if (string.IsNullOrEmpty(value))
+                return string.Empty;
+
+            return $"<color=#{ColorHex(color, alpha)}>{value}</color>";
+        }
+
+        private static string ColorHex(Color color, float alpha)
+        {
+            int r = Mathf.Clamp(Mathf.RoundToInt(Mathf.Clamp01(color.r) * 255f), 0, 255);
+            int g = Mathf.Clamp(Mathf.RoundToInt(Mathf.Clamp01(color.g) * 255f), 0, 255);
+            int b = Mathf.Clamp(Mathf.RoundToInt(Mathf.Clamp01(color.b) * 255f), 0, 255);
+            int a = Mathf.Clamp(Mathf.RoundToInt(Mathf.Clamp01(alpha) * Mathf.Clamp01(color.a) * 255f), 0, 255);
+            return $"{r:x2}{g:x2}{b:x2}{a:x2}";
+        }
+
+        private static float GetHeatMultiplier(float configuredEffect)
+        {
+            configuredEffect = Mathf.Clamp01(configuredEffect);
+            if (Mathf.Approximately(configuredEffect, 0f))
                 return 1f;
 
-            float bonusMultiplier = Mathf.Max(1f, 2f - configuredMultiplier);
-            float bonus = Mathf.Lerp(1f, bonusMultiplier, SummerHeat.GreenFactor);
+            float bonus = Mathf.Lerp(1f, 1f + configuredEffect, SummerHeat.GreenFactor);
             float penaltyFactor = Mathf.Max(SummerHeat.RedFactor, SummerHeat.MaxEffectFactor);
-            float penalty = Mathf.Lerp(1f, configuredMultiplier, penaltyFactor);
+            float penalty = Mathf.Lerp(1f, 1f - configuredEffect, penaltyFactor);
 
             return penaltyFactor > 0f ? penalty : bonus;
         }
@@ -217,6 +266,130 @@ namespace Seasons
                 return configuredValue * penaltyFactor;
 
             return 0f - configuredValue * SummerHeat.GreenFactor;
+        }
+
+        private static void AppendTechnicalInfo(StringBuilder builder)
+        {
+            if (!Seasons.summerHeatRavenTechnicalInfo.Value || !TextsDialog_AddActiveEffects_SeasonTooltipWhenBuffDisabled.isActiveEffectsListCall || !SummerHeat.IsReady)
+                return;
+
+            bool isDaytime = SummerHeat.Instance == null || SummerHeat.Instance.IsDaytime();
+            float nightFactor = Mathf.Clamp(Seasons.summerHeatNightFactor.Value, 0.1f, 1f);
+            float greenThreshold = GetThresholdForTime(Mathf.Max(1f, Seasons.summerHeatGreenThreshold.Value), isDaytime, nightFactor);
+            float neutralThreshold = GetThresholdForTime(Mathf.Max(Mathf.Max(1f, Seasons.summerHeatGreenThreshold.Value) + 1f, Seasons.summerHeatNeutralThreshold.Value), isDaytime, nightFactor);
+            float maxThreshold = GetThresholdForTime(Mathf.Max(Mathf.Max(Mathf.Max(1f, Seasons.summerHeatGreenThreshold.Value) + 1f, Seasons.summerHeatNeutralThreshold.Value) + 1f, Seasons.summerHeatMaxThreshold.Value), isDaytime, nightFactor);
+            float greenFadeWidth = Mathf.Max(0.1f, GetThresholdForTime(Seasons.summerHeatGreenFadeWidth.Value, isDaytime, nightFactor));
+            float redRampWidth = Mathf.Max(0.1f, GetThresholdForTime(Seasons.summerHeatRedRampWidth.Value, isDaytime, nightFactor));
+            float greenStart = Mathf.Max(0f, greenThreshold - greenFadeWidth);
+            float greenEnd = greenThreshold + greenFadeWidth;
+            float redFullThreshold = Mathf.Min(maxThreshold, neutralThreshold + redRampWidth);
+            float heatCap = isDaytime ? SummerHeatController.DaytimeHeatCap : SummerHeatController.DaytimeHeatCap * nightFactor;
+            float overheatBuffer = Mathf.Max(0f, Seasons.summerHeatMaxOverflow.Value);
+
+            Color currentColor = GetHeatDisplayColor();
+            Color bonusColor = Seasons.summerHeatBarBonusColor.Value;
+            Color penaltyColor = Seasons.summerHeatBarPenaltyColor.Value;
+            Color maxColor = Seasons.summerHeatBarMaxColor.Value;
+
+            builder.Append('\n');
+            builder.AppendFormat("<color=orange>{0}</color>\n", "$seasons_status_summer_heat_technical".Localize());
+            builder.AppendFormat("{0}: {1} / {2}\n",
+                "$seasons_status_summer_heat_technical_heat_values".Localize(),
+                FormatPercent(SummerHeat.HeatPercent, currentColor),
+                FormatPercent(SummerHeat.OverflowHeatPercent, maxColor));
+            builder.AppendFormat("{0}: {1} / {2} / {3}\n",
+                "$seasons_status_summer_heat_technical_factors".Localize(),
+                FormatFactorPercent(SummerHeat.GreenFactor, bonusColor),
+                FormatFactorPercent(SummerHeat.RedFactor, penaltyColor),
+                FormatBoolColored(SummerHeat.MaxEffectFactor > 0f, maxColor));
+            builder.AppendFormat("{0}: <color=orange>{1}</color>\n", "$seasons_status_summer_heat_technical_direction".Localize(), GetTrendText().Localize());
+            builder.AppendFormat("{0}: <color=orange>{1}</color> / <color=orange>{2}</color> / <color=orange>{3}</color> / <color=orange>{4}</color>\n",
+                "$seasons_status_summer_heat_technical_conditions".Localize(),
+                FormatBool(isDaytime),
+                FormatBool(SummerHeat.IsSunny),
+                FormatBool(SummerHeat.IsInShade),
+                FormatBool(SummerHeatVisuals.IsWorldHazeActive()));
+            builder.AppendFormat("{0}: {1}\n", "$seasons_status_summer_heat_technical_heat_scale".Localize(), BuildTechnicalHeatScale(isDaytime));
+            builder.AppendFormat("{0}: {1} / {2} / {3}\n",
+                "$seasons_status_summer_heat_technical_comfort_range".Localize(),
+                FormatPercent(greenStart, bonusColor),
+                FormatPercent(greenThreshold, bonusColor),
+                FormatPercent(greenEnd, bonusColor));
+            builder.AppendFormat("{0}: {1} / {2}\n",
+                "$seasons_status_summer_heat_technical_penalty_ramp".Localize(),
+                FormatPercent(neutralThreshold, penaltyColor),
+                FormatPercent(redFullThreshold, penaltyColor));
+            builder.AppendFormat("{0}: {1} / {2} / {3}\n",
+                "$seasons_status_summer_heat_technical_overheated".Localize(),
+                FormatPercent(maxThreshold, maxColor),
+                FormatPercent(heatCap, maxColor),
+                FormatPercent(overheatBuffer, maxColor));
+        }
+
+        private static float GetThresholdForTime(float value, bool isDaytime, float nightFactor) => isDaytime ? value : value * nightFactor;
+
+        private static string FormatPercent(float value, Color color) => ColorizeText($"{value:0.#}%", color);
+
+        private static string FormatFactorPercent(float value, Color color) => ColorizeText($"{Mathf.Clamp01(value) * 100f:0}%", color);
+
+        private static string FormatBool(bool value) => (value ? "$seasons_status_summer_heat_yes" : "$seasons_status_summer_heat_no").Localize();
+
+        private static string FormatBoolColored(bool value, Color yesColor)
+        {
+            string text = FormatBool(value);
+            return value ? ColorizeText(text, yesColor) : text;
+        }
+
+        private static string BuildTechnicalHeatScale(bool isDaytime)
+        {
+            const int segmentCount = 100;
+            const char segmentSymbol = '|';
+
+            StringBuilder builder = new StringBuilder(segmentCount * 24);
+            for (int i = 0; i < segmentCount; ++i)
+            {
+                float heatPercent = i * 100f / (segmentCount - 1);
+                builder.Append(ColorizeText(segmentSymbol.ToString(), GetHeatDisplayColorForValue(heatPercent, isDaytime)));
+            }
+
+            return $"<cspace=-0.08em>{builder}</cspace>";
+        }
+
+        private static Color GetHeatDisplayColorForValue(float heatPercent, bool isDaytime)
+        {
+            float nightFactor = Mathf.Clamp(Seasons.summerHeatNightFactor.Value, 0.1f, 1f);
+            float greenThreshold = GetThresholdForTime(Mathf.Max(1f, Seasons.summerHeatGreenThreshold.Value), isDaytime, nightFactor);
+            float neutralThreshold = GetThresholdForTime(Mathf.Max(Mathf.Max(1f, Seasons.summerHeatGreenThreshold.Value) + 1f, Seasons.summerHeatNeutralThreshold.Value), isDaytime, nightFactor);
+            float maxThreshold = GetThresholdForTime(Mathf.Max(Mathf.Max(Mathf.Max(1f, Seasons.summerHeatGreenThreshold.Value) + 1f, Seasons.summerHeatNeutralThreshold.Value) + 1f, Seasons.summerHeatMaxThreshold.Value), isDaytime, nightFactor);
+            float greenFadeWidth = Mathf.Max(0.1f, GetThresholdForTime(Seasons.summerHeatGreenFadeWidth.Value, isDaytime, nightFactor));
+            float redRampWidth = Mathf.Max(0.1f, GetThresholdForTime(Seasons.summerHeatRedRampWidth.Value, isDaytime, nightFactor));
+
+            Color bonusColor = Seasons.summerHeatBarBonusColor.Value;
+            Color neutralColor = Seasons.summerHeatBarNeutralColor.Value;
+            Color penaltyColor = Seasons.summerHeatBarPenaltyColor.Value;
+            Color maxColor = Seasons.summerHeatBarMaxColor.Value;
+
+            if (heatPercent >= maxThreshold)
+                return maxColor;
+
+            if (heatPercent > neutralThreshold)
+            {
+                float redFullThreshold = Mathf.Min(maxThreshold, neutralThreshold + redRampWidth);
+                float redFactor = heatPercent < redFullThreshold ? Mathf.InverseLerp(neutralThreshold, redFullThreshold, heatPercent) : 1f;
+                return Color.Lerp(neutralColor, penaltyColor, redFactor);
+            }
+
+            float greenStart = Mathf.Max(0f, greenThreshold - greenFadeWidth);
+            float greenEnd = greenThreshold + greenFadeWidth;
+            if (heatPercent > greenStart && heatPercent < greenEnd)
+            {
+                float greenFactor = heatPercent <= greenThreshold
+                    ? Mathf.InverseLerp(greenStart, greenThreshold, heatPercent)
+                    : 1f - Mathf.InverseLerp(greenThreshold, greenEnd, heatPercent);
+                return Color.Lerp(neutralColor, bonusColor, greenFactor);
+            }
+
+            return neutralColor;
         }
 
         private static string GetZoneText(HeatZone zone)
