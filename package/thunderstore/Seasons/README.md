@@ -3,6 +3,8 @@
 
 Four customizable seasons.
 
+Seasons changes Valheim through spring, summer, fall and winter. Each season can affect the world, weather, lighting, resources, creatures and character stats, while still keeping the vanilla game recognizable.
+
 ## If you experience FPS issues
 
 If you notice FPS drops, your GPU might handle more. Try adding these launch options:
@@ -535,6 +537,11 @@ Vanilla winter colors made by interpolating original biome color to "#FAFAFF" pr
 * Black forest has Swamp color in Fall to get effect of wet dirt ground
 * Plains has Meadows color in Spring to get effect of blooming surroundings
 
+## Summer Heat
+Summer is meant to feel like a good time to travel, gather and explore. A small amount of warmth is pleasant and can give you a gentle boost. During the hottest days, however, the open sun can push that warmth too far. If you keep running, fighting or travelling under harsh sunlight without cooling down, you can overheat and take small penalties.
+
+The mechanic is built around light risk and reward management rather than harsh punishment: enjoy the benefits of summer warmth, but respect the midday sun, shade, night air and your equipment choices when the day gets too hot. It is supported by small visual touches such as summer haze and personal heat distortion, both configurable.
+
 ## General settings
 * minimap will be recolored using the seasonal colors setting
 * seasonal items will be enabled in the corresponding season
@@ -551,6 +558,7 @@ Vanilla winter colors made by interpolating original biome color to "#FAFAFF" pr
 * water will freeze in set period of days in winter
 * ships can be pushed out of water when the surface is frozen
 * fish will be pushed below surface when it freezes
+* summer heat can be enabled or disabled, including its world haze and personal heat distortion visuals
 
 ## Custom world settings for realtime seasons calculations
 

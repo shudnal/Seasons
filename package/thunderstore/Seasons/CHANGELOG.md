@@ -1,3 +1,6 @@
+# 1.8.0
+* new mechanic: Summer Heat. Adds a heat meter with mild warmth bonuses, overheating penalties and configurable visual effects during the hottest summer days
+
 # 1.7.9
 * patch 0.221.10
 

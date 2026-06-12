@@ -3,6 +3,8 @@
 
 Four customizable seasons.
 
+Seasons changes Valheim through spring, summer, fall and winter. Each season can affect the world, weather, lighting, resources, creatures and character stats, while still keeping the vanilla game recognizable.
+
 ## If you feel impact on fps.
 
 If you do then probably you GPU can do better. Try setting launch options
@@ -20,6 +22,7 @@ If you use RenderLimits mod and have "Distance area" setting more than 10 it may
 * lightings. Control luminance, fog density on every time of day and indoors.
 * stats. Control different stats and multipliers like regeneration modifiers, stamina usage, skill levels or raise skill speed, damage modifiers and so.
 * seasonal settings like days in season, night length, related production and other multipliers
+* summer heat. Adds a heat meter with mild warmth bonuses, overheating penalties and configurable visual effects during the hottest summer days
 * trader items. Adds some items targeting potential lack of gatherable items in corresponding (prices may be high but he's an entrepreneur after all)
 
 ## Configurating the mod
@@ -470,9 +473,15 @@ Vanilla winter colors made by interpolating original biome color to "#FAFAFF" pr
 * Black forest has Swamp color in Fall to get effect of wet dirt ground
 * Plains has Meadows color in Spring to get effect of blooming surroundings
 
+## Summer Heat
+Summer is meant to feel like a good time to travel, gather and explore. A small amount of warmth is pleasant and can give you a gentle boost. During the hottest days, however, the open sun can push that warmth too far. If you keep running, fighting or travelling under harsh sunlight without cooling down, you can overheat and take small penalties.
+
+The mechanic is built around light risk and reward management rather than harsh punishment: enjoy the benefits of summer warmth, but respect the midday sun, shade, night air and your equipment choices when the day gets too hot. It is supported by small visual touches such as summer haze and personal heat distortion, both configurable.
+
 ## General settings
 * minimap will be recolored using the seasonal colors setting
 * seasonal items will be enabled in the corresponding season
+* summer heat can be enabled or disabled, including its world haze and personal heat distortion visuals
 * you won't die from freezing debuff if you're not in the mountains or deep north. You will stay at 1 hp.
 * seasonal stats will be applied only outdoors. In dungeons you won't have advantage.
 * current seasonal buff can be hidden and timer format can bet set to current day or the time left to next season
