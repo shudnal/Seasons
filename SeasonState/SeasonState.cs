@@ -1414,19 +1414,23 @@ namespace Seasons
 
             _pendingSeasonChange = newValue;
 
-            currentSeasonDay.AssignValueSafe(GetPendingSeasonDayChange);
+            currentSeasonDay.AssignValueSafeAndNotify(() =>
+            {
+                Season pendingSeason = (Season)((newValue / 10000) % seasonsCount);
+                int pendingDay = newValue % 10000;
 
-            LogInfo($"Season update pending: {m_season} -> {GetPendingSeasonDay().Item1}{(overrideSeason.Value ? "(override)" : "")}, Day: {m_day} -> {GetPendingSeasonDay().Item2}{(overrideSeasonDay.Value ? "(override)" : "")}, World Day: {m_worldDay}");
+                LogInfo(
+                    $"Season update pending: {m_season} -> {pendingSeason}{(overrideSeason.Value ? "(override)" : "")}, " +
+                    $"Day: {m_day} -> {pendingDay}{(overrideSeasonDay.Value ? "(override)" : "")}, " +
+                    $"World Day: {m_worldDay}");
+
+                return newValue;
+            });
         }
 
         internal static float GetDayFractionForSeasonChange()
         {
             return changeSeasonOnlyAfterSleep.Value ? 0.2498f : 0.24f;
-        }
-
-        internal static int GetPendingSeasonDayChange()
-        {
-            return _pendingSeasonChange;
         }
 
         public static void CheckSeasonChange()

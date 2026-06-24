@@ -6,16 +6,8 @@
 		<Message Text="Updated embedded translations before build." Importance="High" />
 	</Target>
 
-	<Target Name="RepackThunderstore" AfterTargets="Build">
-		<ItemGroup>
-			<InputAssemblies Include="$(TargetPath)" />
-			<InputAssemblies Include="$(OutputPath)ServerSync.dll" />
-		</ItemGroup>
-		<ILRepack Parallel="true" DebugInfo="true" Internalize="true" InputAssemblies="@(InputAssemblies)" OutputFile="$(TargetDir)thunderstore\$(TargetFileName)" TargetKind="SameAsPrimaryAssembly" LibraryPath="$(OutputPath)" />
-	</Target>
-
-	<Target Name="CopyDLLThunderstore" AfterTargets="RepackThunderstore">
-		<Copy SourceFiles="$(TargetDir)\thunderstore\$(TargetFileName)" DestinationFolder="$(ProjectDir)package\thunderstore\$(SolutionName)\" />
+	<Target Name="CopyDLLThunderstore" AfterTargets="Build">
+		<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ProjectDir)package\thunderstore\$(SolutionName)\" />
 		<Message Text="Copied to thunderstore package folder." Importance="High" />
 	</Target>
 
@@ -32,12 +24,13 @@
 	</Target>
 
 	<Target Name="CopyDLLPlugins" AfterTargets="CopyDLLThunderstore">
-		<Copy SourceFiles="$(TargetDir)\thunderstore\$(TargetFileName)" DestinationFolder="D:\r2modman\Valheim\profiles\beta\BepInEx\plugins\shudnal-$(SolutionName)\" />
+		<Copy SourceFiles="$(TargetPath)" DestinationFolder="D:\r2modman\Valheim\profiles\beta\BepInEx\plugins\shudnal-$(SolutionName)\" />
 		<Message Text="Copied to r2 folder." Importance="High" />
 	</Target>
 
 	<Target Name="RepackNexus" AfterTargets="CopyLanguageFileThunderstore">
 		<ItemGroup>
+			<InputAssemblies Include="$(TargetPath)" />
 			<InputAssemblies Include="$(OutputPath)Newtonsoft.Json.dll" />
 		</ItemGroup>
 		<ILRepack Parallel="true" DebugInfo="true" Internalize="true" InputAssemblies="@(InputAssemblies)" OutputFile="$(TargetPath)" TargetKind="SameAsPrimaryAssembly" LibraryPath="$(OutputPath)" />

@@ -7,7 +7,7 @@ using System.IO;
 using System.Reflection;
 using System.Linq;
 using static Seasons.Seasons;
-using ServerSync;
+using ConditionalConfigSync;
 
 namespace Seasons
 {
@@ -226,9 +226,9 @@ namespace Seasons
         private static void ReadSeasonsSettings(bool initial = false)
         {
             if (initial)
-                seasonsSettingsJSON.AssignValueSafe(GetSeasonalSettings);
+                seasonsSettingsJSON.AssignValueSafeAndNotify(GetSeasonalSettings);
             else
-                seasonsSettingsJSON.AssignValueIfChanged(GetSeasonalSettings);
+                seasonsSettingsJSON.AssignValueSafeIfChanged(GetSeasonalSettings);
         }
 
         private static void ReadConfigs(object sender, FileSystemEventArgs eargs)
@@ -238,7 +238,7 @@ namespace Seasons
             {
                 if (GetSyncedValueToAssign((eargs as RenamedEventArgs).OldName, out CustomSyncedValue<string> syncedValue, out string logMessage))
                 {
-                    syncedValue.AssignValueIfChanged("");
+                    syncedValue.AssignValueSafeIfChanged("");
                     LogInfo(logMessage + " defaults");
                 }
                 else if (TryGetSeasonByFilename(eargs.Name, out _))
@@ -264,17 +264,17 @@ namespace Seasons
             }
             catch (Exception e)
             {
-                if (!initial) 
+                if (!initial)
                     LogWarning($"Error reading file ({fullname})! Error: {e.Message}");
-                
+
                 content = "";
                 logMessage += " defaults";
             }
 
             if (initial)
-                syncedValue.AssignValueSafe(content);
+                syncedValue.AssignValueSafeAndNotify(content);
             else
-                syncedValue.AssignValueIfChanged(content);
+                syncedValue.AssignValueSafeIfChanged(content);
 
             LogInfo(logMessage);
         }

@@ -1,8 +1,8 @@
-﻿using BepInEx;
+using BepInEx;
 using BepInEx.Bootstrap;
 using BepInEx.Configuration;
 using HarmonyLib;
-using ServerSync;
+using ConditionalConfigSync;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -16,6 +16,7 @@ using static Terminal;
 namespace Seasons
 {
     [BepInPlugin(pluginID, pluginName, pluginVersion)]
+    [BepInDependency("_shudnal.ConditionalConfigSync", BepInDependency.DependencyFlags.HardDependency)]
     [BepInIncompatibility("RustyMods.Seasonality")]
     [BepInIncompatibility("TastyChickenLegs.LongerDays")]
     [BepInDependency(Compatibility.EpicLootCompat.GUID, BepInDependency.DependencyFlags.SoftDependency)]
@@ -30,7 +31,7 @@ namespace Seasons
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
-        internal static readonly ConfigSync configSync = new ConfigSync(pluginID) { DisplayName = pluginName, CurrentVersion = pluginVersion, MinimumRequiredVersion = pluginVersion };
+        internal static readonly ConfigSync configSync = new ConfigSync(pluginID) { DisplayName = pluginName, CurrentVersion = pluginVersion, MinimumRequiredVersion = pluginVersion, ModRequired = true };
 
         private static ConfigEntry<bool> configLocked;
         private static ConfigEntry<bool> loggingEnabled;
@@ -217,25 +218,46 @@ namespace Seasons
 
         public static SeasonalTextureVariants texturesVariants = new SeasonalTextureVariants();
 
-        public static readonly CustomSyncedValue<int> currentSeasonDay = new CustomSyncedValue<int>(configSync, "Current season and day", 1, Priority.First);
+        private const int syncPrioritySeasonDay = Priority.Last;
 
-        public static readonly CustomSyncedValue<string> customEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom environments JSON", "", Priority.HigherThanNormal);
-        public static readonly CustomSyncedValue<string> customBiomeEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom biome environments JSON", "", Priority.Normal);
-        public static readonly CustomSyncedValue<string> customEventsJSON = new CustomSyncedValue<string>(configSync, "Custom events JSON", "", Priority.Normal);
-        public static readonly CustomSyncedValue<string> customLightingsJSON = new CustomSyncedValue<string>(configSync, "Custom lightings JSON", "", Priority.Normal);
-        public static readonly CustomSyncedValue<string> customStatsJSON = new CustomSyncedValue<string>(configSync, "Custom stats JSON", "", Priority.Normal);
-        public static readonly CustomSyncedValue<string> customTraderItemsJSON = new CustomSyncedValue<string>(configSync, "Custom traders JSON", "", Priority.Normal);
-        public static readonly CustomSyncedValue<string> customWorldSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom world settings JSON", "", Priority.Normal);
-        public static readonly CustomSyncedValue<string> customGrassSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom grass settings JSON", "", Priority.Normal);
-        public static readonly CustomSyncedValue<string> customClutterSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom clutter settings JSON", "", Priority.Normal);
-        public static readonly CustomSyncedValue<string> customBiomeSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom biome settings JSON", "", Priority.Normal);
+        // JSON settings follow the same order as SeasonSettings.ReadInitialConfigs.
+        // Keep priorities unique so ConditionalConfigSync does not need the old mod-side queue for ordering.
+        private const int syncPriorityCustomEnvironments = Priority.VeryHigh;
+        private const int syncPriorityCustomBiomeEnvironments = Priority.VeryHigh - 1;
+        private const int syncPriorityCustomEvents = Priority.VeryHigh - 2;
+        private const int syncPriorityCustomLightings = Priority.VeryHigh - 3;
+        private const int syncPriorityCustomStats = Priority.VeryHigh - 4;
+        private const int syncPriorityCustomTraderItems = Priority.VeryHigh - 5;
+        private const int syncPriorityCustomWorldSettings = Priority.VeryHigh - 6;
+        private const int syncPriorityCustomGrassSettings = Priority.VeryHigh - 7;
+        private const int syncPriorityCustomClutterSettings = Priority.VeryHigh - 8;
+        private const int syncPriorityCustomBiomeSettings = Priority.VeryHigh - 9;
+        private const int syncPrioritySeasonsSettings = Priority.VeryHigh - 10;
 
-        public static readonly CustomSyncedValue<Dictionary<int, string>> seasonsSettingsJSON = new CustomSyncedValue<Dictionary<int, string>>(configSync, "Seasons settings JSON", new Dictionary<int, string>(), Priority.LowerThanNormal);
+        private const int syncPriorityCustomMaterialSettings = Priority.Low + 3;
+        private const int syncPriorityCustomColorSettings = Priority.Low + 2;
+        private const int syncPriorityCustomColorReplacement = Priority.Low + 1;
+        private const int syncPriorityCustomColorPositions = Priority.Low;
 
-        public static readonly CustomSyncedValue<string> customMaterialSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom material settings JSON", "", Priority.Low);
-        public static readonly CustomSyncedValue<string> customColorSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom color settings JSON", "", Priority.Low);
-        public static readonly CustomSyncedValue<string> customColorReplacementJSON = new CustomSyncedValue<string>(configSync, "Custom color replacements JSON", "", Priority.Low);
-        public static readonly CustomSyncedValue<string> customColorPositionsJSON = new CustomSyncedValue<string>(configSync, "Custom color positions JSON", "", Priority.Low);
+        public static readonly CustomSyncedValue<int> currentSeasonDay = new CustomSyncedValue<int>(configSync, "Current season and day", 1, syncPrioritySeasonDay);
+
+        public static readonly CustomSyncedValue<string> customEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom environments JSON", "", syncPriorityCustomEnvironments);
+        public static readonly CustomSyncedValue<string> customBiomeEnvironmentsJSON = new CustomSyncedValue<string>(configSync, "Custom biome environments JSON", "", syncPriorityCustomBiomeEnvironments);
+        public static readonly CustomSyncedValue<string> customEventsJSON = new CustomSyncedValue<string>(configSync, "Custom events JSON", "", syncPriorityCustomEvents);
+        public static readonly CustomSyncedValue<string> customLightingsJSON = new CustomSyncedValue<string>(configSync, "Custom lightings JSON", "", syncPriorityCustomLightings);
+        public static readonly CustomSyncedValue<string> customStatsJSON = new CustomSyncedValue<string>(configSync, "Custom stats JSON", "", syncPriorityCustomStats);
+        public static readonly CustomSyncedValue<string> customTraderItemsJSON = new CustomSyncedValue<string>(configSync, "Custom traders JSON", "", syncPriorityCustomTraderItems);
+        public static readonly CustomSyncedValue<string> customWorldSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom world settings JSON", "", syncPriorityCustomWorldSettings);
+        public static readonly CustomSyncedValue<string> customGrassSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom grass settings JSON", "", syncPriorityCustomGrassSettings);
+        public static readonly CustomSyncedValue<string> customClutterSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom clutter settings JSON", "", syncPriorityCustomClutterSettings);
+        public static readonly CustomSyncedValue<string> customBiomeSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom biome settings JSON", "", syncPriorityCustomBiomeSettings);
+
+        public static readonly CustomSyncedValue<Dictionary<int, string>> seasonsSettingsJSON = new CustomSyncedValue<Dictionary<int, string>>(configSync, "Seasons settings JSON", new Dictionary<int, string>(), syncPrioritySeasonsSettings, DictionaryContentComparer<int, string>.Instance);
+
+        public static readonly CustomSyncedValue<string> customMaterialSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom material settings JSON", "", syncPriorityCustomMaterialSettings);
+        public static readonly CustomSyncedValue<string> customColorSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom color settings JSON", "", syncPriorityCustomColorSettings);
+        public static readonly CustomSyncedValue<string> customColorReplacementJSON = new CustomSyncedValue<string>(configSync, "Custom color replacements JSON", "", syncPriorityCustomColorReplacement);
+        public static readonly CustomSyncedValue<string> customColorPositionsJSON = new CustomSyncedValue<string>(configSync, "Custom color positions JSON", "", syncPriorityCustomColorPositions);
 
         public static readonly CustomSyncedValue<uint> cacheRevision = new CustomSyncedValue<uint>(configSync, "Cache revision", 0, Priority.VeryLow);
 
@@ -265,7 +287,7 @@ namespace Seasons
             Fall = 2,
             Winter = 3
         }
-        
+
         public enum CacheFormat
         {
             Binary,
@@ -373,7 +395,7 @@ namespace Seasons
             if (loggingEnabled.Value)
                 instance.Logger.LogInfo(data);
         }
-        
+
         public static void LogWarning(object data)
         {
             instance.Logger.LogWarning(data);
@@ -386,24 +408,22 @@ namespace Seasons
 
         public void ConfigInit()
         {
-            config("General", "NexusID", 2654, "Nexus mod ID for updates", false);
-
-            configLocked = config("General", "Lock Configuration", defaultValue: true, "Configuration is locked and can be changed by server admins only.");
+            configLocked = serverConfig("General", "Lock Configuration", defaultValue: true, "Configuration is locked and can be changed by server admins only.");
             loggingEnabled = config("General", "Logging enabled", defaultValue: false, "Enable logging. [Not Synced with Server]", synchronizedSetting: false);
-            dayLengthSec = config("General", "Day length in seconds", defaultValue: 1800L, "Day length in seconds. Vanilla - 1800 seconds. Set to 0 to disable.");
+            dayLengthSec = serverConfig("General", "Day length in seconds", defaultValue: 1800L, "Day length in seconds. Vanilla - 1800 seconds. Set to 0 to disable.");
             enableLoadingTips = config("General", "Loading tips enabled", defaultValue: true, "Show seasonal tips on loading screen. [Not Synced with Server]", synchronizedSetting: false);
 
             enableLoadingTips.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
 
-            controlEnvironments = config("Season - Control", "Control environments", defaultValue: true, "Enables seasonal weathers");
-            controlRandomEvents = config("Season - Control", "Control random events", defaultValue: true, "Enables seasonal random events");
-            controlLightings = config("Season - Control", "Control lightings", defaultValue: true, "Enables seasonal lightings change (basically gamma or brightness)");
-            controlStats = config("Season - Control", "Control stats", defaultValue: true, "Enables seasonal stats change (status effect)");
-            controlMinimap = config("Season - Control", "Control minimap", defaultValue: true, "Enables seasonal minimap colors");
-            controlYggdrasil = config("Season - Control", "Control yggdrasil branch and roots", defaultValue: true, "Enables seasonal coloring of yggdrasil branch in the sky and roots on the ground");
-            controlTraders = config("Season - Control", "Control trader seasonal items list", defaultValue: true, "Enables seasonal changes of trader additional item availability");
-            controlGrass = config("Season - Control", "Control grass", defaultValue: true, "Enables seasonal changes of grass thickness, size and sparseness");
-            customTextures = config("Season - Control", "Custom textures", defaultValue: true, "Enables custom textures");
+            controlEnvironments = serverConfig("Season - Control", "Control environments", defaultValue: true, "Enables seasonal weathers");
+            controlRandomEvents = serverConfig("Season - Control", "Control random events", defaultValue: true, "Enables seasonal random events");
+            controlLightings = serverConfig("Season - Control", "Control lightings", defaultValue: true, "Enables seasonal lightings change (basically gamma or brightness)");
+            controlStats = serverConfig("Season - Control", "Control stats", defaultValue: true, "Enables seasonal stats change (status effect)");
+            controlMinimap = serverConfig("Season - Control", "Control minimap", defaultValue: true, "Enables seasonal minimap colors");
+            controlYggdrasil = serverConfig("Season - Control", "Control yggdrasil branch and roots", defaultValue: true, "Enables seasonal coloring of yggdrasil branch in the sky and roots on the ground");
+            controlTraders = serverConfig("Season - Control", "Control trader seasonal items list", defaultValue: true, "Enables seasonal changes of trader additional item availability");
+            controlGrass = serverConfig("Season - Control", "Control grass", defaultValue: true, "Enables seasonal changes of grass thickness, size and sparseness");
+            customTextures = serverConfig("Season - Control", "Custom textures", defaultValue: true, "Enables custom textures");
 
             controlRandomEvents.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
             controlLightings.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
@@ -418,42 +438,42 @@ namespace Seasons
                                                                                                    "\nFirst parameter is emission rate and second is max particles amount." +
                                                                                                    "\nHelps fps in Winter. Doesn't affect Mountains, Ashlands and DeepNorth." +
                                                                                                    "\nSet to 0:0 to return Vanilla behaviour.");
-            enableSeasonalItems = config("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
-            preventDeathFromFreezing = config("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
-            seasonalStatsOutdoorsOnly = config("Season", "Seasonal stats works only outdoors", defaultValue: true, "Make seasonal stats works only outdoors");
-            freezingSwimmingInWinter = config("Season", "Get freezing when swimming in cold water in winter", defaultValue: true, "Swimming in cold water during winter will get you freezing debuff");
-            changeSeasonOnlyAfterSleep = config("Season", "Change season only after sleep", defaultValue: false, "Season can be changed regular way only after sleep");
-            cropsDiesAfterSetDayInWinter = config("Season", "Crops will die after set day in winter", defaultValue: 3, "Crops and pickables will perish after set day in winter");
-            fireHeatProtectsFromPerish = config("Season", "Crops will survive if protected by fire", defaultValue: true, "Crops and pickables will not perish in winter if there are fire source nearby");
-            chanceToProduceACropInWinter = config("Season", "Crops will have a chance to survive winter", defaultValue: 0.33f, new ConfigDescription("Crops and pickables will have given chance to produce a harvest instead of complete perish.",
+            enableSeasonalItems = serverConfig("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
+            preventDeathFromFreezing = serverConfig("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
+            seasonalStatsOutdoorsOnly = serverConfig("Season", "Seasonal stats works only outdoors", defaultValue: true, "Make seasonal stats works only outdoors");
+            freezingSwimmingInWinter = serverConfig("Season", "Get freezing when swimming in cold water in winter", defaultValue: true, "Swimming in cold water during winter will get you freezing debuff");
+            changeSeasonOnlyAfterSleep = serverConfig("Season", "Change season only after sleep", defaultValue: false, "Season can be changed regular way only after sleep");
+            cropsDiesAfterSetDayInWinter = serverConfig("Season", "Crops will die after set day in winter", defaultValue: 3, "Crops and pickables will perish after set day in winter");
+            fireHeatProtectsFromPerish = serverConfig("Season", "Crops will survive if protected by fire", defaultValue: true, "Crops and pickables will not perish in winter if there are fire source nearby");
+            chanceToProduceACropInWinter = serverConfig("Season", "Crops will have a chance to survive winter", defaultValue: 0.33f, new ConfigDescription("Crops and pickables will have given chance to produce a harvest instead of complete perish.",
                                                                                                                                new AcceptableValueRange<float>(0f, 1f),
                                                                                                                                new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            secondsToFreezeForCropInWinter = config("Season", "Crops will be freezing for seconds until perish", defaultValue: 120f, "After crop is hit by winter it will not perish immediately but will start to gradually freeze to death.");
-            cultivatedGroundTurnsIntoDirtInWinter = config("Season", "Cultivated ground turns into regular Dirt in Winter", defaultValue: true, "With the onset of winter, any ground cultivated by player turns into ordinary dirt and has to be recultivated. It happens once per year.");
+            secondsToFreezeForCropInWinter = serverConfig("Season", "Crops will be freezing for seconds until perish", defaultValue: 120f, "After crop is hit by winter it will not perish immediately but will start to gradually freeze to death.");
+            cultivatedGroundTurnsIntoDirtInWinter = serverConfig("Season", "Cultivated ground turns into regular Dirt in Winter", defaultValue: true, "With the onset of winter, any ground cultivated by player turns into ordinary dirt and has to be recultivated. It happens once per year.");
 
-            cropsToSurviveInWinter = config("Season", "Crops will survive in winter", defaultValue: "Pickable_Carrot,Pickable_Barley,Pickable_Barley_Wild,Pickable_Flax,Pickable_Flax_Wild,Pickable_Thistle,Pickable_Mushroom_Magecap",
+            cropsToSurviveInWinter = serverConfig("Season", "Crops will survive in winter", defaultValue: "Pickable_Carrot,Pickable_Barley,Pickable_Barley_Wild,Pickable_Flax,Pickable_Flax_Wild,Pickable_Thistle,Pickable_Mushroom_Magecap",
                                                                                                 GetDescriptionSeparatedStrings("Crops and pickables from the list will not perish after set day in winter"));
-            cropsToControlGrowth = config("Season", "Crops to control growth", defaultValue: "Pickable_Barley,Pickable_Barley_Wild,Pickable_Dandelion,Pickable_Flax,Pickable_Flax_Wild,Pickable_SeedCarrot,Pickable_SeedOnion,Pickable_SeedTurnip,Pickable_Thistle,Pickable_Turnip",
+            cropsToControlGrowth = serverConfig("Season", "Crops to control growth", defaultValue: "Pickable_Barley,Pickable_Barley_Wild,Pickable_Dandelion,Pickable_Flax,Pickable_Flax_Wild,Pickable_SeedCarrot,Pickable_SeedOnion,Pickable_SeedTurnip,Pickable_Thistle,Pickable_Turnip",
                                                                                             GetDescriptionSeparatedStrings("All consumable crops will be added automatically. Set only unconsumable crops here." +
                                                                                             "Crops and pickables from the list will be controlled by growth multiplier in addition to consumable crops"));
 
 
-            woodListToControlDrop = config("Season", "Wood to control drop", defaultValue: "Wood,FineWood,RoundLog,ElderBark,YggdrasilWood",
+            woodListToControlDrop = serverConfig("Season", "Wood to control drop", defaultValue: "Wood,FineWood,RoundLog,ElderBark,YggdrasilWood",
                                                                                             GetDescriptionSeparatedStrings("Wood item names to control drop from trees"));
-            meatListToControlDrop = config("Season", "Meat to control drop", defaultValue: "RawMeat,DeerMeat,NeckTail,WolfMeat,LoxMeat,ChickenMeat,HareMeat,SerpentMeat",
+            meatListToControlDrop = serverConfig("Season", "Meat to control drop", defaultValue: "RawMeat,DeerMeat,NeckTail,WolfMeat,LoxMeat,ChickenMeat,HareMeat,SerpentMeat",
                                                                                             GetDescriptionSeparatedStrings("Meat item names to control drop from characters"));
-            shieldGeneratorProtection = config("Season", "Shield generator protects from weather", defaultValue: true, "If enabled - objects inside shield generator dome will be protected from seasonal effects both positive and negative.");
-            shieldGeneratorOnlyWinter = config("Season", "Shield generator protects from Winter only", defaultValue: true, "If enabled - objects inside shield generator dome will be protected from Winter only. If disabled - protection will work through all seasons.");
-            gettingWetInWinterCausesCold = config("Season", "Getting Wet in winter causes Cold", defaultValue: true, "If you get Wet status during winter you will get Cold status," +
+            shieldGeneratorProtection = serverConfig("Season", "Shield generator protects from weather", defaultValue: true, "If enabled - objects inside shield generator dome will be protected from seasonal effects both positive and negative.");
+            shieldGeneratorOnlyWinter = serverConfig("Season", "Shield generator protects from Winter only", defaultValue: true, "If enabled - objects inside shield generator dome will be protected from Winter only. If disabled - protection will work through all seasons.");
+            gettingWetInWinterCausesCold = serverConfig("Season", "Getting Wet in winter causes Cold", defaultValue: true, "If you get Wet status during winter you will get Cold status," +
                                                                                                                      "\nunless you have frost resistance mead or you are near a fire or in shelter");
-            changeNightLengthGradually = config("Season", "Change night length gradually", defaultValue: true, "If enabled - night length from seasonal settings will peak at mid season and gradually change to the next season." + 
+            changeNightLengthGradually = serverConfig("Season", "Change night length gradually", defaultValue: true, "If enabled - night length from seasonal settings will peak at mid season and gradually change to the next season." +
                                                                                                              "\nIf disabled - it will be fixed value for any day of a season.");
-            disableTorchWarmthInInterior = config("Season", "Disable torch warmth in dungeons in winter", defaultValue: true, "If enabled - torch will not provide heat in dungeons.");
-            gettingWetInMountainsCausesCold = config("Season", "Getting Wet in Mountains causes Cold", defaultValue: true, "If you get Wet status in Mountains in dungeon you will get Cold status in all seasons," +
+            disableTorchWarmthInInterior = serverConfig("Season", "Disable torch warmth in dungeons in winter", defaultValue: true, "If enabled - torch will not provide heat in dungeons.");
+            gettingWetInMountainsCausesCold = serverConfig("Season", "Getting Wet in Mountains causes Cold", defaultValue: true, "If you get Wet status in Mountains in dungeon you will get Cold status in all seasons," +
                                                                                                                         "\nunless you have frost resistance mead or you are near a fire or in shelter");
-            wearing2WarmPiecesPreventsWetCold = config("Season", "Wearing 2 warm armor pieces prevents Cold caused by Wet", defaultValue: true, "If you get Wet status in Mountains or in Winter you will not get Cold status caused by" +
+            wearing2WarmPiecesPreventsWetCold = serverConfig("Season", "Wearing 2 warm armor pieces prevents Cold caused by Wet", defaultValue: true, "If you get Wet status in Mountains or in Winter you will not get Cold status caused by" +
                 "\nGetting Wet in winter causes Cold or Getting Wet in Mountains causes Cold configs");
-            mountainInWinterRequires2WarmPieces = config("Season", "Mountains in Winter require 2 warm armor pieces", defaultValue: true, "If enabled - you have to wear 2 armor pieces with frost resistance in Winter or get frost resistance mead.");
+            mountainInWinterRequires2WarmPieces = serverConfig("Season", "Mountains in Winter require 2 warm armor pieces", defaultValue: true, "If enabled - you have to wear 2 armor pieces with frost resistance in Winter or get frost resistance mead.");
 
 
             cropsDiesAfterSetDayInWinter.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
@@ -470,14 +490,14 @@ namespace Seasons
             shieldGeneratorOnlyWinter.SettingChanged += (sender, args) => PrefabVariantController.UpdateShieldStateAfterConfigChange();
 
 
-            grassDefaultPatchSize = config("Season - Grass", "Default patch size", defaultValue: 10f, "Default size of grass patch (sparseness or how wide a single grass \"node\" is across the ground)" +
+            grassDefaultPatchSize = serverConfig("Season - Grass", "Default patch size", defaultValue: 10f, "Default size of grass patch (sparseness or how wide a single grass \"node\" is across the ground)" +
                                                                                                      "Increase to make grass more sparse and decrease to make grass more tight");
-            grassDefaultAmountScale = config("Season - Grass", "Default amount scale", defaultValue: 1.5f, "Default amount scale (grass density or how many grass patches created around you at once)");
-            grassToControlSize = config("Season - Grass", "List of grass prefabs to control size", defaultValue: "instanced_meadows_grass,instanced_forest_groundcover_brown,instanced_forest_groundcover,instanced_swamp_grass,instanced_heathgrass,grasscross_heath_green,instanced_meadows_grass_short,instanced_heathflowers,instanced_mistlands_grass_short",
+            grassDefaultAmountScale = serverConfig("Season - Grass", "Default amount scale", defaultValue: 1.5f, "Default amount scale (grass density or how many grass patches created around you at once)");
+            grassToControlSize = serverConfig("Season - Grass", "List of grass prefabs to control size", defaultValue: "instanced_meadows_grass,instanced_forest_groundcover_brown,instanced_forest_groundcover,instanced_swamp_grass,instanced_heathgrass,grasscross_heath_green,instanced_meadows_grass_short,instanced_heathflowers,instanced_mistlands_grass_short",
                                                                                             GetDescriptionSeparatedStrings("Grass with set prefabs to be hidden in winter and to change size in other seasons"));
 
-            grassSizeDefaultScaleMin = config("Season - Grass", "Default minimum size multiplier", defaultValue: 1f, "Default minimum size of grass will be multiplier by given number");
-            grassSizeDefaultScaleMax = config("Season - Grass", "Default maximum size multiplier", defaultValue: 1f, "Default maximum size of grass will be multiplier by given number");
+            grassSizeDefaultScaleMin = serverConfig("Season - Grass", "Default minimum size multiplier", defaultValue: 1f, "Default minimum size of grass will be multiplier by given number");
+            grassSizeDefaultScaleMax = serverConfig("Season - Grass", "Default maximum size multiplier", defaultValue: 1f, "Default maximum size of grass will be multiplier by given number");
 
             grassDefaultPatchSize.SettingChanged += (sender, args) => ClutterVariantController.UpdateGrassOnSettingChanged();
             grassDefaultAmountScale.SettingChanged += (sender, args) => ClutterVariantController.UpdateGrassOnSettingChanged();
@@ -512,23 +532,23 @@ namespace Seasons
             hoverPickable = config("Season - UI", "Pickables Hover", defaultValue: StationHover.Vanilla, "Hover text for pickables.");
             seasonalMinimapBorderColor = config("Season - UI", "Seasonal colored minimap border", defaultValue: true, "Change minimap border color according to current season.");
 
-            overrideSeason = config("Season - Override", "Override", defaultValue: false, "The season will be overridden by set season.");
-            seasonOverrided = config("Season - Override", "Season", defaultValue: Season.Spring, "The season to set.");
-            overrideSeasonDay = config("Season - Override", "Day override", defaultValue: false, "The season day will be overridden by set day.");
-            seasonDayOverrided = config("Season - Override", "Day", defaultValue: 1, "The season day to set.");
-            
+            overrideSeason = serverConfig("Season - Override", "Override", defaultValue: false, "The season will be overridden by set season.");
+            seasonOverrided = serverConfig("Season - Override", "Season", defaultValue: Season.Spring, "The season to set.");
+            overrideSeasonDay = serverConfig("Season - Override", "Day override", defaultValue: false, "The season day will be overridden by set day.");
+            seasonDayOverrided = serverConfig("Season - Override", "Day", defaultValue: 1, "The season day to set.");
+
             overrideSeason.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
             seasonOverrided.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
             overrideSeasonDay.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
             seasonDayOverrided.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
 
-            enableFrozenWater = config("Season - Winter ocean", "Enable frozen water", defaultValue: true, "Enable frozen water in winter");
-            waterFreezesInWinterDays = config("Season - Winter ocean", "Freeze the water at given days from to", defaultValue: new Vector2(6f, 9f), "Water will freeze in the first set day of winter and will be unfrozen after second set day");
-            enableIceFloes = config("Season - Winter ocean", "Enable ice floes in winter", defaultValue: true, "Enable ice floes in winter");
-            iceFloesInWinterDays = config("Season - Winter ocean", "Fill the water with ice floes at given days from to", defaultValue: new Vector2(4f, 10f), "Ice floes will be spawned in the first set day of winter and will be removed after second set day");
-            amountOfIceFloesInWinterDays = config("Season - Winter ocean", "Amount of ice floes in one zone", defaultValue: new Vector2(10f, 20f), "Game will take random value between set numbers and will try to spawn that amount of ice floes in one zone (square 64x64)");
-            iceFloesScale = config("Season - Winter ocean", "Scale of ice floes", defaultValue: new Vector2(0.75f, 2f), "Size of spawned ice floe random to XYZ axes");
-            iceFloesHealth = config("Season - Winter ocean", "Health of ice floes", defaultValue: 20f, "Health of ice floe of average size. Health changes proportionally the volume of an ice floe. Floes respawn is required to apply changes.");
+            enableFrozenWater = serverConfig("Season - Winter ocean", "Enable frozen water", defaultValue: true, "Enable frozen water in winter");
+            waterFreezesInWinterDays = serverConfig("Season - Winter ocean", "Freeze the water at given days from to", defaultValue: new Vector2(6f, 9f), "Water will freeze in the first set day of winter and will be unfrozen after second set day");
+            enableIceFloes = serverConfig("Season - Winter ocean", "Enable ice floes in winter", defaultValue: true, "Enable ice floes in winter");
+            iceFloesInWinterDays = serverConfig("Season - Winter ocean", "Fill the water with ice floes at given days from to", defaultValue: new Vector2(4f, 10f), "Ice floes will be spawned in the first set day of winter and will be removed after second set day");
+            amountOfIceFloesInWinterDays = serverConfig("Season - Winter ocean", "Amount of ice floes in one zone", defaultValue: new Vector2(10f, 20f), "Game will take random value between set numbers and will try to spawn that amount of ice floes in one zone (square 64x64)");
+            iceFloesScale = serverConfig("Season - Winter ocean", "Scale of ice floes", defaultValue: new Vector2(0.75f, 2f), "Size of spawned ice floe random to XYZ axes");
+            iceFloesHealth = serverConfig("Season - Winter ocean", "Health of ice floes", defaultValue: 20f, "Health of ice floe of average size. Health changes proportionally the volume of an ice floe. Floes respawn is required to apply changes.");
             enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
             frozenOceanSlipperiness = config("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1f, "Slipperiness factor of the frozen ocean surface");
             placeShipAboveFrozenOcean = config("Season - Winter ocean", "Place ship above frozen ocean surface", defaultValue: false, "Place ship above frozen ocean surface to move them without destroying");
@@ -542,65 +562,65 @@ namespace Seasons
             placeShipAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateShipsPositions();
             placeFloatingContainersAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateFloatingPositions();
 
-            summerHeatCoolingFoods = config("Season - Summer heat", "Cooling foods", defaultValue: "Eyescream,$item_eyescream", GetDescriptionSeparatedStrings("Foods that help cool you down in summer. Use prefab names or localization keys. While a cooling food is active, new heat bursts are blocked. It also protects from the older warm-clothes overheat status when the main Summer Heat mechanic is disabled."));
-            summerHeatEnabled = config("Season - Summer heat", "Enabled", defaultValue: true, "Turns the new Summer Heat mechanic on or off. When disabled, the heat meter, status effect, bonuses, penalties and visual heat effects are removed. The older warm-clothes overheat status can still work if 'Warm clothes add heat' is enabled.");
-            summerHeatAddsExtraWarmCloth = config("Season - Summer heat", "Warm clothes add heat", defaultValue: true, "Controls the older warm-clothes overheat status. The new Summer Heat mechanic uses the Armor heat settings below, so individual armor pieces can affect heat in a more detailed way.");
-            summerHeatDays = config("Season - Summer heat", "Heat days from to", defaultValue: new Vector2(4f, 7f), "Which summer days can become dangerously hot. The first number starts the hot period, the second number ends it.");
-            summerHeatTimeToMax = config("Season - Summer heat", "Time to max heat", defaultValue: 180f, "How long it takes to reach 100% heat while standing in direct sun with no shade, water or other cooling help.");
-            summerHeatGreenThreshold = config("Season - Summer heat", "Comfortable heat", defaultValue: 25f, new ConfigDescription("Heat percent where the warm-weather bonus is strongest. With the default 25% threshold and 20% bonus range, the bonus starts at 5%, reaches full strength at 25%, then fades out by 45%.", new AcceptableValueRange<float>(0f, 100f)));
-            summerHeatNeutralThreshold = config("Season - Summer heat", "Too hot threshold", defaultValue: 60f, new ConfigDescription("Heat percent where penalties begin. With the default 60% threshold and 20% penalty range, negative effects start at 60% and reach full strength at 80%.", new AcceptableValueRange<float>(0f, 100f)));
-            summerHeatMaxThreshold = config("Season - Summer heat", "Overheated threshold", defaultValue: 95f, new ConfigDescription("Heat percent where the worst heat state begins. This is where the soft HP cap damage can become active.", new AcceptableValueRange<float>(0f, 100f)));
-            summerHeatNightFactor = config("Season - Summer heat", "Night warmth factor", defaultValue: 0.5f, new ConfigDescription("How warm summer nights remain compared to daytime. At 50%, night can only hold about half of the daytime heat: the air is still warm, but without direct sun you should cool down toward a safer level instead of building up to full overheating.", new AcceptableValueRange<float>(0.1f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatZoneHysteresis = config("Season - Summer heat", "State switch buffer", defaultValue: 10f, new ConfigDescription("Small buffer around heat states, in percentage points. It prevents the status from rapidly switching back and forth when your heat is close to a boundary.", new AcceptableValueRange<float>(0f, 100f)));
-            summerHeatGreenFadeWidth = config("Season - Summer heat", "Comfortable heat range", defaultValue: 20f, new ConfigDescription("How wide the bonus area is around comfortable heat, in percentage points. With the default 25% threshold and 20% range, the bonus starts at 5%, reaches full strength at 25%, then fades out by 45%.", new AcceptableValueRange<float>(0f, 100f)));
-            summerHeatRedRampWidth = config("Season - Summer heat", "Penalty buildup range", defaultValue: 20f, new ConfigDescription("How gradually penalties build after you become too hot, in percentage points. With the default 60% threshold and 20% range, negative effects start at 60% and reach full strength at 80%.", new AcceptableValueRange<float>(0f, 100f)));
-            summerHeatMaxOverflow = config("Season - Summer heat", "Overheat buffer", defaultValue: 5f, new ConfigDescription("Small hidden heat reserve above 100%, in percentage points. It makes full overheating take a little time to cool off instead of disappearing instantly.", new AcceptableValueRange<float>(0f, 100f)));
+            summerHeatCoolingFoods = serverConfig("Season - Summer heat", "Cooling foods", defaultValue: "Eyescream,$item_eyescream", GetDescriptionSeparatedStrings("Foods that help cool you down in summer. Use prefab names or localization keys. While a cooling food is active, new heat bursts are blocked. It also protects from the older warm-clothes overheat status when the main Summer Heat mechanic is disabled."));
+            summerHeatEnabled = serverConfig("Season - Summer heat", "Enabled", defaultValue: true, "Turns the new Summer Heat mechanic on or off. When disabled, the heat meter, status effect, bonuses, penalties and visual heat effects are removed. The older warm-clothes overheat status can still work if 'Warm clothes add heat' is enabled.");
+            summerHeatAddsExtraWarmCloth = serverConfig("Season - Summer heat", "Warm clothes add heat", defaultValue: true, "Controls the older warm-clothes overheat status. The new Summer Heat mechanic uses the Armor heat settings below, so individual armor pieces can affect heat in a more detailed way.");
+            summerHeatDays = serverConfig("Season - Summer heat", "Heat days from to", defaultValue: new Vector2(4f, 7f), "Which summer days can become dangerously hot. The first number starts the hot period, the second number ends it.");
+            summerHeatTimeToMax = serverConfig("Season - Summer heat", "Time to max heat", defaultValue: 180f, "How long it takes to reach 100% heat while standing in direct sun with no shade, water or other cooling help.");
+            summerHeatGreenThreshold = serverConfig("Season - Summer heat", "Comfortable heat", defaultValue: 25f, new ConfigDescription("Heat percent where the warm-weather bonus is strongest. With the default 25% threshold and 20% bonus range, the bonus starts at 5%, reaches full strength at 25%, then fades out by 45%.", new AcceptableValueRange<float>(0f, 100f)));
+            summerHeatNeutralThreshold = serverConfig("Season - Summer heat", "Too hot threshold", defaultValue: 60f, new ConfigDescription("Heat percent where penalties begin. With the default 60% threshold and 20% penalty range, negative effects start at 60% and reach full strength at 80%.", new AcceptableValueRange<float>(0f, 100f)));
+            summerHeatMaxThreshold = serverConfig("Season - Summer heat", "Overheated threshold", defaultValue: 95f, new ConfigDescription("Heat percent where the worst heat state begins. This is where the soft HP cap damage can become active.", new AcceptableValueRange<float>(0f, 100f)));
+            summerHeatNightFactor = serverConfig("Season - Summer heat", "Night warmth factor", defaultValue: 0.5f, new ConfigDescription("How warm summer nights remain compared to daytime. At 50%, night can only hold about half of the daytime heat: the air is still warm, but without direct sun you should cool down toward a safer level instead of building up to full overheating.", new AcceptableValueRange<float>(0.1f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatZoneHysteresis = serverConfig("Season - Summer heat", "State switch buffer", defaultValue: 10f, new ConfigDescription("Small buffer around heat states, in percentage points. It prevents the status from rapidly switching back and forth when your heat is close to a boundary.", new AcceptableValueRange<float>(0f, 100f)));
+            summerHeatGreenFadeWidth = serverConfig("Season - Summer heat", "Comfortable heat range", defaultValue: 20f, new ConfigDescription("How wide the bonus area is around comfortable heat, in percentage points. With the default 25% threshold and 20% range, the bonus starts at 5%, reaches full strength at 25%, then fades out by 45%.", new AcceptableValueRange<float>(0f, 100f)));
+            summerHeatRedRampWidth = serverConfig("Season - Summer heat", "Penalty buildup range", defaultValue: 20f, new ConfigDescription("How gradually penalties build after you become too hot, in percentage points. With the default 60% threshold and 20% range, negative effects start at 60% and reach full strength at 80%.", new AcceptableValueRange<float>(0f, 100f)));
+            summerHeatMaxOverflow = serverConfig("Season - Summer heat", "Overheat buffer", defaultValue: 5f, new ConfigDescription("Small hidden heat reserve above 100%, in percentage points. It makes full overheating take a little time to cool off instead of disappearing instantly.", new AcceptableValueRange<float>(0f, 100f)));
             summerHeatWorldHazeEnabled = config("Season - Summer heat", "World heat haze", defaultValue: true, "Shows a subtle world haze during hot sunny summer days. This is only visual and does not change heat buildup.");
             summerHeatPersonalDistortionEnabled = config("Season - Summer heat", "Personal heat distortion", defaultValue: true, "Shows the personal camera heat distortion when your own heat rises above the comfortable range. This is only visual and does not change heat buildup.");
-            summerHeatNonSunnyEnvironments = config("Season - Summer heat", "Weather without direct sun", defaultValue: "Rain,LightRain,MistlandsRain,SlimeRain,SnowStorm,Thunder,MistlandsThunder,AshlandsThunder,Ashlands_SeaStorm,Mist,Ashlands_Misty,Ashlands_RainCinder,Ashlands_CinderRain", GetDescriptionSeparatedStrings("Technical weather list. Use internal EnvMan weather object names or particle system names, separated by commas. If the current weather matches one of these names, Summer Heat treats the sky as not sunny and direct sunlight heat stops."));
-            summerHeatInstantHeatSources = config("Season - Summer heat", "Actions add heat", defaultValue: true, "If enabled, jumps, attacks, dodges and blocks add small heat bursts during Summer Heat.");
-            summerHeatCampFireAddsHeat = config("Season - Summer heat", "Campfire adds heat", defaultValue: true, "If enabled, standing near a campfire can warm you up even during summer.");
-            summerHeatEncumberedAddsHeat = config("Season - Summer heat", "Heavy load adds heat", defaultValue: true, "If enabled, carrying too much weight makes you heat up slowly.");
-            summerHeatWindEffectPercent = config("Season - Summer heat", "Wind effect", defaultValue: 0.25f, new ConfigDescription("How strongly wind changes heating and cooling. With 25%, still air makes heating faster and cooling slower; strong wind does the opposite.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatNoonEffectPercent = config("Season - Summer heat", "Midday effect", defaultValue: 0.25f, new ConfigDescription("How much stronger the sun feels around midday. With 25%, heat builds faster and cools slower near noon.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatNonSunnyEnvironments = serverConfig("Season - Summer heat", "Weather without direct sun", defaultValue: "Rain,LightRain,MistlandsRain,SlimeRain,SnowStorm,Thunder,MistlandsThunder,AshlandsThunder,Ashlands_SeaStorm,Mist,Ashlands_Misty,Ashlands_RainCinder,Ashlands_CinderRain", GetDescriptionSeparatedStrings("Technical weather list. Use internal EnvMan weather object names or particle system names, separated by commas. If the current weather matches one of these names, Summer Heat treats the sky as not sunny and direct sunlight heat stops."));
+            summerHeatInstantHeatSources = serverConfig("Season - Summer heat", "Actions add heat", defaultValue: true, "If enabled, jumps, attacks, dodges and blocks add small heat bursts during Summer Heat.");
+            summerHeatCampFireAddsHeat = serverConfig("Season - Summer heat", "Campfire adds heat", defaultValue: true, "If enabled, standing near a campfire can warm you up even during summer.");
+            summerHeatEncumberedAddsHeat = serverConfig("Season - Summer heat", "Heavy load adds heat", defaultValue: true, "If enabled, carrying too much weight makes you heat up slowly.");
+            summerHeatWindEffectPercent = serverConfig("Season - Summer heat", "Wind effect", defaultValue: 0.25f, new ConfigDescription("How strongly wind changes heating and cooling. With 25%, still air makes heating faster and cooling slower; strong wind does the opposite.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatNoonEffectPercent = serverConfig("Season - Summer heat", "Midday effect", defaultValue: 0.25f, new ConfigDescription("How much stronger the sun feels around midday. With 25%, heat builds faster and cools slower near noon.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
 
-            summerHeatArmorHeatEnabled = config("Season - Summer heat - Armor heat", "Enabled", defaultValue: true, "Let equipped armor change how quickly you heat up and cool down. This replaces the simple 'two warm pieces add heat' rule inside the new Summer Heat mechanic.");
-            summerHeatOpenHelmetItems = config("Season - Summer heat - Armor heat", "Open helmets", defaultValue: "HelmetAshlandsMediumHood,HelmetBerserkerUndead,HelmetBronze,HelmetDverger,HelmetFishingHat,HelmetMidsummerCrown,HelmetTrollLeather,HelmetHat1,HelmetHat2,HelmetHat5,HelmetHat6,HelmetHat7,HelmetHat10", GetDescriptionSeparatedStrings("Helmets that leave enough of the head open to trap less heat. Use prefab names or localization keys, separated by commas. Items in this list heat less than closed helmets."));
-            summerHeatBareHeadHairItems = config("Season - Summer heat - Armor heat", "Bare head hairstyles", defaultValue: "HairNone,Hair9,Hair24,Hair14", GetDescriptionSeparatedStrings("Hairstyles that leave the head fully exposed to heat. Use internal hair item names, separated by commas. When no helmet is equipped, listed hairstyles add another 20% heating in direct sun and another 20% cooling outside direct sun. For an empty hair slot, use none, bald, balded or HairNone."));
-            summerHeatLightCloakItems = config("Season - Summer heat - Armor heat", "Light cloaks", defaultValue: "", GetDescriptionSeparatedStrings("Cloaks that should behave like light summer clothing. Use prefab names or localization keys, separated by commas. Items in this list reduce heat gain and help cooling a little."));
-            summerHeatOpenChestItems = config("Season - Summer heat - Armor heat", "Open chest armor", defaultValue: "ArmorBerserkerChest,ArmorBerserkerUndeadChest", GetDescriptionSeparatedStrings("Chest pieces that leave the body more open. Use prefab names or localization keys, separated by commas. Items in this list heat less than closed armor."));
-            summerHeatOpenLegItems = config("Season - Summer heat - Armor heat", "Open leg armor", defaultValue: "ArmorBerserkerLegs,ArmorBerserkerUndeadLegs", GetDescriptionSeparatedStrings("Leg pieces that leave the body more open. Use prefab names or localization keys, separated by commas. Items in this list heat less than closed armor."));
-            summerHeatUncoveredHeadSunHeating = config("Season - Summer heat - Armor heat", "Uncovered head sun heating", defaultValue: 0.25f, new ConfigDescription("How much faster you heat up in direct sun with no helmet. At 25%, sun heat becomes 25% stronger.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatUncoveredHeadShadeCooling = config("Season - Summer heat - Armor heat", "Uncovered head shade cooling", defaultValue: 0.2f, new ConfigDescription("How much faster you cool down without a helmet when you are not in direct sun. At 20%, cooling becomes 20% stronger.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatOpenHelmetHeating = config("Season - Summer heat - Armor heat", "Open helmet heating", defaultValue: 0.1f, new ConfigDescription("Extra heat gain from helmets listed as open. At 10%, you heat up 10% faster while wearing one.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatClosedHelmetHeating = config("Season - Summer heat - Armor heat", "Closed helmet heating", defaultValue: 0.2f, new ConfigDescription("Extra heat gain from any helmet not listed as open. At 20%, you heat up 20% faster while wearing one.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatClosedHelmetCoolingPenalty = config("Season - Summer heat - Armor heat", "Closed helmet cooling penalty", defaultValue: 0.1f, new ConfigDescription("How much closed helmets slow cooling. At 10%, cooling becomes 10% weaker while wearing one.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatNoCloakHeatingReduction = config("Season - Summer heat - Armor heat", "No cloak heating reduction", defaultValue: 0.1f, new ConfigDescription("How much slower you heat up without a cloak. At 10%, heat gain becomes 10% weaker.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatNoCloakCoolingBonus = config("Season - Summer heat - Armor heat", "No cloak cooling bonus", defaultValue: 0.15f, new ConfigDescription("How much faster you cool down without a cloak. At 15%, cooling becomes 15% stronger.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatLightCloakHeatingReduction = config("Season - Summer heat - Armor heat", "Light cloak heating reduction", defaultValue: 0.05f, new ConfigDescription("How much slower you heat up with a cloak listed as light. At 5%, heat gain becomes 5% weaker.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatLightCloakCoolingBonus = config("Season - Summer heat - Armor heat", "Light cloak cooling bonus", defaultValue: 0.1f, new ConfigDescription("How much faster you cool down with a cloak listed as light. At 10%, cooling becomes 10% stronger.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatCloakHeating = config("Season - Summer heat - Armor heat", "Cloak heating", defaultValue: 0.15f, new ConfigDescription("Extra heat gain from ordinary cloaks. At 15%, you heat up 15% faster while wearing one.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatColdCloakHeating = config("Season - Summer heat - Armor heat", "Cold cloak heating", defaultValue: 0.3f, new ConfigDescription("Extra heat gain from cloaks with frost resistance. At 30%, you heat up 30% faster while wearing one.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatColdCloakCoolingPenalty = config("Season - Summer heat - Armor heat", "Cold cloak cooling penalty", defaultValue: 0.1f, new ConfigDescription("How much frost-resistant cloaks slow cooling. At 10%, cooling becomes 10% weaker.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatEmptyArmorSlotHeatingReduction = config("Season - Summer heat - Armor heat", "Empty body slot heating reduction", defaultValue: 0.1f, new ConfigDescription("How much slower you heat up for each empty chest or leg armor slot. At 10%, each empty slot reduces heat gain by 10%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatEmptyArmorSlotCoolingBonus = config("Season - Summer heat - Armor heat", "Empty body slot cooling bonus", defaultValue: 0.15f, new ConfigDescription("How much faster you cool down for each empty chest or leg armor slot. At 15%, each empty slot improves cooling by 15%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatOpenArmorHeatingReduction = config("Season - Summer heat - Armor heat", "Open armor heating reduction", defaultValue: 0.05f, new ConfigDescription("How much slower you heat up with chest or leg armor listed as open. At 5%, each matching item reduces heat gain by 5%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatOpenArmorCoolingBonus = config("Season - Summer heat - Armor heat", "Open armor cooling bonus", defaultValue: 0.05f, new ConfigDescription("How much faster you cool down with chest or leg armor listed as open. At 5%, each matching item improves cooling by 5%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatClosedArmorHeating = config("Season - Summer heat - Armor heat", "Closed armor heating", defaultValue: 0.1f, new ConfigDescription("Extra heat gain from ordinary chest and leg armor. At 10%, each closed item makes you heat up 10% faster.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatColdArmorHeating = config("Season - Summer heat - Armor heat", "Cold armor heating", defaultValue: 0.25f, new ConfigDescription("Extra heat gain from chest and leg armor with frost resistance. At 25%, each warm item makes you heat up 25% faster.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatColdArmorCoolingPenalty = config("Season - Summer heat - Armor heat", "Cold armor cooling penalty", defaultValue: 0.1f, new ConfigDescription("How much frost-resistant chest and leg armor slows cooling. At 10%, each warm item makes cooling 10% weaker.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatArmorHeatEnabled = serverConfig("Season - Summer heat - Armor heat", "Enabled", defaultValue: true, "Let equipped armor change how quickly you heat up and cool down. This replaces the simple 'two warm pieces add heat' rule inside the new Summer Heat mechanic.");
+            summerHeatOpenHelmetItems = serverConfig("Season - Summer heat - Armor heat", "Open helmets", defaultValue: "HelmetAshlandsMediumHood,HelmetBerserkerUndead,HelmetBronze,HelmetDverger,HelmetFishingHat,HelmetMidsummerCrown,HelmetTrollLeather,HelmetHat1,HelmetHat2,HelmetHat5,HelmetHat6,HelmetHat7,HelmetHat10", GetDescriptionSeparatedStrings("Helmets that leave enough of the head open to trap less heat. Use prefab names or localization keys, separated by commas. Items in this list heat less than closed helmets."));
+            summerHeatBareHeadHairItems = serverConfig("Season - Summer heat - Armor heat", "Bare head hairstyles", defaultValue: "HairNone,Hair9,Hair24,Hair14", GetDescriptionSeparatedStrings("Hairstyles that leave the head fully exposed to heat. Use internal hair item names, separated by commas. When no helmet is equipped, listed hairstyles add another 20% heating in direct sun and another 20% cooling outside direct sun. For an empty hair slot, use none, bald, balded or HairNone."));
+            summerHeatLightCloakItems = serverConfig("Season - Summer heat - Armor heat", "Light cloaks", defaultValue: "", GetDescriptionSeparatedStrings("Cloaks that should behave like light summer clothing. Use prefab names or localization keys, separated by commas. Items in this list reduce heat gain and help cooling a little."));
+            summerHeatOpenChestItems = serverConfig("Season - Summer heat - Armor heat", "Open chest armor", defaultValue: "ArmorBerserkerChest,ArmorBerserkerUndeadChest", GetDescriptionSeparatedStrings("Chest pieces that leave the body more open. Use prefab names or localization keys, separated by commas. Items in this list heat less than closed armor."));
+            summerHeatOpenLegItems = serverConfig("Season - Summer heat - Armor heat", "Open leg armor", defaultValue: "ArmorBerserkerLegs,ArmorBerserkerUndeadLegs", GetDescriptionSeparatedStrings("Leg pieces that leave the body more open. Use prefab names or localization keys, separated by commas. Items in this list heat less than closed armor."));
+            summerHeatUncoveredHeadSunHeating = serverConfig("Season - Summer heat - Armor heat", "Uncovered head sun heating", defaultValue: 0.25f, new ConfigDescription("How much faster you heat up in direct sun with no helmet. At 25%, sun heat becomes 25% stronger.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatUncoveredHeadShadeCooling = serverConfig("Season - Summer heat - Armor heat", "Uncovered head shade cooling", defaultValue: 0.2f, new ConfigDescription("How much faster you cool down without a helmet when you are not in direct sun. At 20%, cooling becomes 20% stronger.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatOpenHelmetHeating = serverConfig("Season - Summer heat - Armor heat", "Open helmet heating", defaultValue: 0.1f, new ConfigDescription("Extra heat gain from helmets listed as open. At 10%, you heat up 10% faster while wearing one.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatClosedHelmetHeating = serverConfig("Season - Summer heat - Armor heat", "Closed helmet heating", defaultValue: 0.2f, new ConfigDescription("Extra heat gain from any helmet not listed as open. At 20%, you heat up 20% faster while wearing one.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatClosedHelmetCoolingPenalty = serverConfig("Season - Summer heat - Armor heat", "Closed helmet cooling penalty", defaultValue: 0.1f, new ConfigDescription("How much closed helmets slow cooling. At 10%, cooling becomes 10% weaker while wearing one.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatNoCloakHeatingReduction = serverConfig("Season - Summer heat - Armor heat", "No cloak heating reduction", defaultValue: 0.1f, new ConfigDescription("How much slower you heat up without a cloak. At 10%, heat gain becomes 10% weaker.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatNoCloakCoolingBonus = serverConfig("Season - Summer heat - Armor heat", "No cloak cooling bonus", defaultValue: 0.15f, new ConfigDescription("How much faster you cool down without a cloak. At 15%, cooling becomes 15% stronger.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatLightCloakHeatingReduction = serverConfig("Season - Summer heat - Armor heat", "Light cloak heating reduction", defaultValue: 0.05f, new ConfigDescription("How much slower you heat up with a cloak listed as light. At 5%, heat gain becomes 5% weaker.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatLightCloakCoolingBonus = serverConfig("Season - Summer heat - Armor heat", "Light cloak cooling bonus", defaultValue: 0.1f, new ConfigDescription("How much faster you cool down with a cloak listed as light. At 10%, cooling becomes 10% stronger.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatCloakHeating = serverConfig("Season - Summer heat - Armor heat", "Cloak heating", defaultValue: 0.15f, new ConfigDescription("Extra heat gain from ordinary cloaks. At 15%, you heat up 15% faster while wearing one.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatColdCloakHeating = serverConfig("Season - Summer heat - Armor heat", "Cold cloak heating", defaultValue: 0.3f, new ConfigDescription("Extra heat gain from cloaks with frost resistance. At 30%, you heat up 30% faster while wearing one.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatColdCloakCoolingPenalty = serverConfig("Season - Summer heat - Armor heat", "Cold cloak cooling penalty", defaultValue: 0.1f, new ConfigDescription("How much frost-resistant cloaks slow cooling. At 10%, cooling becomes 10% weaker.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatEmptyArmorSlotHeatingReduction = serverConfig("Season - Summer heat - Armor heat", "Empty body slot heating reduction", defaultValue: 0.1f, new ConfigDescription("How much slower you heat up for each empty chest or leg armor slot. At 10%, each empty slot reduces heat gain by 10%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatEmptyArmorSlotCoolingBonus = serverConfig("Season - Summer heat - Armor heat", "Empty body slot cooling bonus", defaultValue: 0.15f, new ConfigDescription("How much faster you cool down for each empty chest or leg armor slot. At 15%, each empty slot improves cooling by 15%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatOpenArmorHeatingReduction = serverConfig("Season - Summer heat - Armor heat", "Open armor heating reduction", defaultValue: 0.05f, new ConfigDescription("How much slower you heat up with chest or leg armor listed as open. At 5%, each matching item reduces heat gain by 5%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatOpenArmorCoolingBonus = serverConfig("Season - Summer heat - Armor heat", "Open armor cooling bonus", defaultValue: 0.05f, new ConfigDescription("How much faster you cool down with chest or leg armor listed as open. At 5%, each matching item improves cooling by 5%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatClosedArmorHeating = serverConfig("Season - Summer heat - Armor heat", "Closed armor heating", defaultValue: 0.1f, new ConfigDescription("Extra heat gain from ordinary chest and leg armor. At 10%, each closed item makes you heat up 10% faster.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatColdArmorHeating = serverConfig("Season - Summer heat - Armor heat", "Cold armor heating", defaultValue: 0.25f, new ConfigDescription("Extra heat gain from chest and leg armor with frost resistance. At 25%, each warm item makes you heat up 25% faster.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatColdArmorCoolingPenalty = serverConfig("Season - Summer heat - Armor heat", "Cold armor cooling penalty", defaultValue: 0.1f, new ConfigDescription("How much frost-resistant chest and leg armor slows cooling. At 10%, each warm item makes cooling 10% weaker.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
 
-            summerHeatDamageTickInterval = config("Season - Summer heat - Damage in red zone", "Damage tick interval", defaultValue: 2f, "Seconds between damage ticks while heat is forcing your health down.");
-            summerHeatDamageНealthPerTickMinHealthPercentage = config("Season - Summer heat - Damage in red zone", "Soft HP cap percentage", defaultValue: 0.8f, new ConfigDescription("Lowest health percentage that Summer Heat can push you toward. You will take constant damage when your HP is higher than this percent. This damage only lowers current HP toward the set mark; it does not reduce your real maximum HP.", new AcceptableValueRange<float>(0.05f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatDamageНealthPerTick = config("Season - Summer heat - Damage in red zone", "Damage per tick", defaultValue: 2f, "How much damage is dealt each tick while Summer Heat is pushing your HP down toward the soft cap.");
-            summerHeatDamageHitType = config("Season - Summer heat - Damage in red zone", "Damage hit type", defaultValue: HitData.HitType.Self, "How the game should mark this damage. Most players can leave this unchanged.");
-            summerHeatDamageMaxOnly = config("Season - Summer heat - Damage in red zone", "Damage only when overheated", defaultValue: true, "If enabled, HP cap damage waits until the status reaches Overheated. If disabled, the damage can start as soon as the top heat damage ramp begins near the end of the red zone.");
+            summerHeatDamageTickInterval = serverConfig("Season - Summer heat - Damage in red zone", "Damage tick interval", defaultValue: 2f, "Seconds between damage ticks while heat is forcing your health down.");
+            summerHeatDamageНealthPerTickMinHealthPercentage = serverConfig("Season - Summer heat - Damage in red zone", "Soft HP cap percentage", defaultValue: 0.8f, new ConfigDescription("Lowest health percentage that Summer Heat can push you toward. You will take constant damage when your HP is higher than this percent. This damage only lowers current HP toward the set mark; it does not reduce your real maximum HP.", new AcceptableValueRange<float>(0.05f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatDamageНealthPerTick = serverConfig("Season - Summer heat - Damage in red zone", "Damage per tick", defaultValue: 2f, "How much damage is dealt each tick while Summer Heat is pushing your HP down toward the soft cap.");
+            summerHeatDamageHitType = serverConfig("Season - Summer heat - Damage in red zone", "Damage hit type", defaultValue: HitData.HitType.Self, "How the game should mark this damage. Most players can leave this unchanged.");
+            summerHeatDamageMaxOnly = serverConfig("Season - Summer heat - Damage in red zone", "Damage only when overheated", defaultValue: true, "If enabled, HP cap damage waits until the status reaches Overheated. If disabled, the damage can start as soon as the top heat damage ramp begins near the end of the red zone.");
 
-            summerHeatStaminaUseMultiplier = config("Season - Summer heat - Multipliers", "Stamina use effect", defaultValue: 0.2f, new ConfigDescription("How strongly heat changes running stamina cost. With 20%, red heat can make running cost up to 20% more, while comfortable heat can make it cost up to 20% less.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatAdrenalineMultiplier = config("Season - Summer heat - Multipliers", "Adrenaline effect", defaultValue: 0.15f, new ConfigDescription("How strongly heat changes adrenaline use. With 15%, red heat can cost up to 15% more, while comfortable heat can cost up to 15% less.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatHealthRegenMultiplier = config("Season - Summer heat - Multipliers", "Health regen effect", defaultValue: 0.15f, new ConfigDescription("How strongly heat changes health regeneration. With 15%, red heat can reduce regeneration by up to 15%, while comfortable heat can increase it by up to 15%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatStaminaRegenMultiplier = config("Season - Summer heat - Multipliers", "Stamina regen effect", defaultValue: 0.15f, new ConfigDescription("How strongly heat changes stamina regeneration. With 15%, red heat can reduce regeneration by up to 15%, while comfortable heat can increase it by up to 15%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatEitrRegenMultiplier = config("Season - Summer heat - Multipliers", "Eitr regen effect", defaultValue: 0.1f, new ConfigDescription("How strongly heat changes eitr regeneration. With 10%, red heat can reduce regeneration by up to 10%, while comfortable heat can increase it by up to 10%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatStaminaUseMultiplier = serverConfig("Season - Summer heat - Multipliers", "Stamina use effect", defaultValue: 0.2f, new ConfigDescription("How strongly heat changes running stamina cost. With 20%, red heat can make running cost up to 20% more, while comfortable heat can make it cost up to 20% less.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatAdrenalineMultiplier = serverConfig("Season - Summer heat - Multipliers", "Adrenaline effect", defaultValue: 0.15f, new ConfigDescription("How strongly heat changes adrenaline use. With 15%, red heat can cost up to 15% more, while comfortable heat can cost up to 15% less.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatHealthRegenMultiplier = serverConfig("Season - Summer heat - Multipliers", "Health regen effect", defaultValue: 0.15f, new ConfigDescription("How strongly heat changes health regeneration. With 15%, red heat can reduce regeneration by up to 15%, while comfortable heat can increase it by up to 15%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatStaminaRegenMultiplier = serverConfig("Season - Summer heat - Multipliers", "Stamina regen effect", defaultValue: 0.15f, new ConfigDescription("How strongly heat changes stamina regeneration. With 15%, red heat can reduce regeneration by up to 15%, while comfortable heat can increase it by up to 15%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatEitrRegenMultiplier = serverConfig("Season - Summer heat - Multipliers", "Eitr regen effect", defaultValue: 0.1f, new ConfigDescription("How strongly heat changes eitr regeneration. With 10%, red heat can reduce regeneration by up to 10%, while comfortable heat can increase it by up to 10%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
 
             bool myLittleUiStatusElementEnabled = Compatibility.MyLittleUICompat.IsMapStatusEffectListElementEnabled();
             SummerHeatBarTagMode defaultSummerHeatBarTagMode = myLittleUiStatusElementEnabled ? SummerHeatBarTagMode.Sup : SummerHeatBarTagMode.None;
@@ -697,12 +717,12 @@ namespace Seasons
             summerHeatBarPenaltyColor.SettingChanged += summerHeatStatusDisplayHandler;
             summerHeatBarMaxColor.SettingChanged += summerHeatStatusDisplayHandler;
 
-            enableSeasonalGlobalKeys = config("Seasons - Global keys", "Enable setting seasonal Global Keys", defaultValue: false, "Enables setting seasonal global key");
-            seasonalGlobalKeyFall = config("Seasons - Global keys", "Fall", defaultValue: "Season_Fall", "Seasonal global key for autumn. You can set config value like \"Season Fall\" space separated and it will be treated as key value pair.");
-            seasonalGlobalKeySpring = config("Seasons - Global keys", "Spring", defaultValue: "Season_Spring", "Seasonal global key for spring. You can set config value like \"Season Spring\" space separated and it will be treated as key value pair.");
-            seasonalGlobalKeySummer = config("Seasons - Global keys", "Summer", defaultValue: "Season_Summer", "Seasonal global key for summer. You can set config value like \"Season Summer\" space separated and it will be treated as key value pair.");
-            seasonalGlobalKeyWinter = config("Seasons - Global keys", "Winter", defaultValue: "Season_Winter", "Seasonal global key for winter. You can set config value like \"Season Winter\" space separated and it will be treated as key value pair.");
-            seasonalGlobalKeyDay = config("Seasons - Global keys", "Day number", defaultValue: "SeasonDay_{0}", "Seasonal global key for current day number. You can set config value like \"SeasonDay {0}\" space separated and it will be treated as key value pair.");
+            enableSeasonalGlobalKeys = serverConfig("Seasons - Global keys", "Enable setting seasonal Global Keys", defaultValue: false, "Enables setting seasonal global key");
+            seasonalGlobalKeyFall = serverConfig("Seasons - Global keys", "Fall", defaultValue: "Season_Fall", "Seasonal global key for autumn. You can set config value like \"Season Fall\" space separated and it will be treated as key value pair.");
+            seasonalGlobalKeySpring = serverConfig("Seasons - Global keys", "Spring", defaultValue: "Season_Spring", "Seasonal global key for spring. You can set config value like \"Season Spring\" space separated and it will be treated as key value pair.");
+            seasonalGlobalKeySummer = serverConfig("Seasons - Global keys", "Summer", defaultValue: "Season_Summer", "Seasonal global key for summer. You can set config value like \"Season Summer\" space separated and it will be treated as key value pair.");
+            seasonalGlobalKeyWinter = serverConfig("Seasons - Global keys", "Winter", defaultValue: "Season_Winter", "Seasonal global key for winter. You can set config value like \"Season Winter\" space separated and it will be treated as key value pair.");
+            seasonalGlobalKeyDay = serverConfig("Seasons - Global keys", "Day number", defaultValue: "SeasonDay_{0}", "Seasonal global key for current day number. You can set config value like \"SeasonDay {0}\" space separated and it will be treated as key value pair.");
 
             enableSeasonalGlobalKeys.SettingChanged += (sender, args) => seasonState?.UpdateGlobalKeys();
             seasonalGlobalKeyFall.SettingChanged += (sender, args) => seasonState?.UpdateGlobalKeys();
@@ -711,15 +731,15 @@ namespace Seasons
             seasonalGlobalKeyWinter.SettingChanged += (sender, args) => seasonState?.UpdateGlobalKeys();
             seasonalGlobalKeyDay.SettingChanged += (sender, args) => seasonState?.UpdateGlobalKeys();
 
-            cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
-            logTime = config("Test", "Log time", defaultValue: false, "Log time info on state update");
-            logFloes = config("Test", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying");
-            logControllersTime = config("Test", "Log prefab caching time", defaultValue: false, "Log elapsed time of prefabs caching process in descending order");
+            cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading of single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.", synchronizedSetting: false);
+            logTime = config("Test", "Log time", defaultValue: false, "Log time info on state update", synchronizedSetting: false);
+            logFloes = config("Test", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying", synchronizedSetting: false);
+            logControllersTime = config("Test", "Log prefab caching time", defaultValue: false, "Log elapsed time of prefabs caching process in descending order", synchronizedSetting: false);
             plainsSwampBorderFix = config("Test", "Plains Swamp border fix", defaultValue: true, "Fix clipping into ground on Plains - Swamp border");
             frozenKarvePositionFix = config("Test", "Fix position for frozen Karve", defaultValue: false, "Make Karve storage always available if frozen. If Karve is below certain level it will be pushed to the surface.");
-            lastDayTerrainFactor = config("Test", "Last day terrain factor", defaultValue: 0.0f, "Last day");
-            firstDayTerrainFactor = config("Test", "First day terrain factor", defaultValue: 0.0f, "First day");
-            runTextureCachingSync = config("Test", "Run texture caching without indicator", defaultValue: false, "It is significantly faster than running with loading indicator but lacks visual progress");
+            lastDayTerrainFactor = config("Test", "Last day terrain factor", defaultValue: 0.0f, "Last day", synchronizedSetting: false);
+            firstDayTerrainFactor = config("Test", "First day terrain factor", defaultValue: 0.0f, "First day", synchronizedSetting: false);
+            runTextureCachingSync = config("Test", "Run texture caching without indicator", defaultValue: false, "It is significantly faster than running with loading indicator but lacks visual progress", synchronizedSetting: false);
 
             plainsSwampBorderFix.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateTerrainColors();
             lastDayTerrainFactor.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateTerrainColors();
@@ -750,23 +770,25 @@ namespace Seasons
 
         ConfigEntry<T> config<T>(string group, string name, T defaultValue, ConfigDescription description, bool synchronizedSetting = true)
         {
-            ConfigEntry<T> configEntry = Config.Bind(group, name, defaultValue, description);
+            return configSync.AddConfigEntry(Config, group, name, defaultValue, description, syncMode: ConfigSyncMode.Conditional, synchronizedSetting).SourceConfig;
+        }
 
-            SyncedConfigEntry<T> syncedConfigEntry = configSync.AddConfigEntry(configEntry);
-            syncedConfigEntry.SynchronizedConfig = synchronizedSetting;
-
-            return configEntry;
+        ConfigEntry<T> serverConfig<T>(string group, string name, T defaultValue, ConfigDescription description)
+        {
+            return configSync.AddConfigEntry(Config, group, name, defaultValue, description, syncMode: ConfigSyncMode.AlwaysServerControlled, serverControlledByDefault:true).SourceConfig;
         }
 
         ConfigEntry<T> config<T>(string group, string name, T defaultValue, string description, bool synchronizedSetting = true) => config(group, name, defaultValue, new ConfigDescription(description), synchronizedSetting);
 
-        private void LoadIcons() 
+        ConfigEntry<T> serverConfig<T>(string group, string name, T defaultValue, string description) => serverConfig(group, name, defaultValue, new ConfigDescription(description));
+
+        private void LoadIcons()
         {
-            LoadIcon("season_spring.png",   ref iconSpring);
-            LoadIcon("season_summer.png",   ref iconSummer);
-            LoadIcon("season_fall.png",     ref iconFall);
-            LoadIcon("season_winter.png",   ref iconWinter);
-            LoadIcon("valheim_warm.png",    ref iconWarm);
+            LoadIcon("season_spring.png", ref iconSpring);
+            LoadIcon("season_summer.png", ref iconSummer);
+            LoadIcon("season_fall.png", ref iconFall);
+            LoadIcon("season_winter.png", ref iconWinter);
+            LoadIcon("valheim_warm.png", ref iconWarm);
 
             Minimap_Summer_ForestTex = new Texture2D(512, 512, TextureFormat.RGBA32, false);
             LoadTexture("Minimap_Summer_ForestTex.png", ref Minimap_Summer_ForestTex);
@@ -815,7 +837,7 @@ namespace Seasons
             tex.name = Path.GetFileNameWithoutExtension(filename);
             return tex.LoadImage(data, true);
         }
-        
+
         private Sprite GetSpriteConfig(string fieldName) => GetType().GetField(fieldName).GetValue(this) as Sprite;
 
         public static string GetSeasonTooltip(Season season) => $"$seasons_season_{season.ToString().ToLower()}_has_come";
@@ -865,7 +887,7 @@ namespace Seasons
             // At first fill all grown state pickables and stubs prefabs
             foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
             {
-                if (prefab?.TryGetComponent(out Pickable pickable) == true && pickable.m_itemPrefab != null && 
+                if (prefab?.TryGetComponent(out Pickable pickable) == true && pickable.m_itemPrefab != null &&
                     pickable.m_itemPrefab.TryGetComponent(out ItemDrop itemDrop) && itemDrop.m_itemData.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Consumable)
                     _PlantsToControlGrowth.Add(pickable.gameObject.name.ToLower());
 
@@ -915,7 +937,7 @@ namespace Seasons
         public static bool ControlPlantGrowth(GameObject gameObject)
         {
             return _PlantsToControlGrowth.Contains(PrefabVariantController.GetPrefabName(gameObject).ToLower());
-            }
+        }
 
         public static bool PlantWillSurviveWinter(GameObject gameObject)
         {
@@ -966,10 +988,10 @@ namespace Seasons
 
             Heightmap.Biome biome = WorldGenerator.instance.GetBiome(position);
 
-            ignored = biome == Heightmap.Biome.AshLands || 
+            ignored = biome == Heightmap.Biome.AshLands ||
                       biome == Heightmap.Biome.DeepNorth ||
                       biome == Heightmap.Biome.Mountain && WorldGenerator.instance.GetBaseHeight(position.x, position.z, menuTerrain: false) > WorldGenerator.mountainBaseHeightMin + 0.05f;
-            
+
             _cachedIgnoredPositions[pos] = ignored;
             return ignored;
         }

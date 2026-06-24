@@ -1,7 +1,7 @@
 ﻿using BepInEx;
 using HarmonyLib;
 using Newtonsoft.Json;
-using ServerSync;
+using ConditionalConfigSync;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -1610,11 +1610,11 @@ namespace Seasons
             ReadConfigFile(eargs.Name, eargs.FullPath);
             if (eargs is RenamedEventArgs && GetSyncedValueToAssign((eargs as RenamedEventArgs).OldName, out CustomSyncedValue<string> syncedValue, out string logMessage))
             {
-                syncedValue.AssignValueIfChanged("");
+                syncedValue.AssignValueSafeIfChanged("");
                 LogInfo(logMessage);
             }
 
-            cacheRevision.AssignValueIfChanged(GetRevision);
+            cacheRevision.AssignValueSafeIfChanged(GetRevision);
         }
 
         private static void ReadConfigFile(string filename, string fullname)
@@ -1634,7 +1634,7 @@ namespace Seasons
                 logMessage += " defaults";
             }
 
-            syncedValue.AssignValueIfChanged(content);
+            syncedValue.AssignValueSafeIfChanged(content);
 
             LogInfo(logMessage);
         }
