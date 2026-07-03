@@ -113,7 +113,7 @@ namespace Seasons
                             || Game.instance.m_sleeping;
 
             if (logTime.Value)
-                LogInfo($"Current: {m_season, -6} {m_day} {m_worldDay} New: {newSeason, -6} {m_dayInSeasonGlobal} {worldDay} Time: {EnvMan.instance.GetDayFraction(),-6:F4} TotalSeconds: {GetTotalSeconds(), -10:F2} TimeToChange:{timeForSeasonToChange, -5} SleepCheck:{sleepCheck,-5} Force:{forceSeasonChange, -5} ToPast:{timeForSeasonToChange && !forceSeasonChange && !sleepCheck && m_isUsingIngameDays && changeSeasonOnlyAfterSleep.Value && GetCurrentDay() == GetDaysInSeason() && m_dayInSeasonGlobal != GetCurrentDay(), -5}");
+                LogInfo($"Current: {m_season,-6} {m_day} {m_worldDay} New: {newSeason,-6} {m_dayInSeasonGlobal} {worldDay} Time: {EnvMan.instance.GetDayFraction(),-6:F4} TotalSeconds: {GetTotalSeconds(),-10:F2} TimeToChange:{timeForSeasonToChange,-5} SleepCheck:{sleepCheck,-5} Force:{forceSeasonChange,-5} ToPast:{timeForSeasonToChange && !forceSeasonChange && !sleepCheck && m_isUsingIngameDays && changeSeasonOnlyAfterSleep.Value && GetCurrentDay() == GetDaysInSeason() && m_dayInSeasonGlobal != GetCurrentDay(),-5}");
 
             Season setSeason = m_season;
             if (overrideSeason.Value)
@@ -123,7 +123,7 @@ namespace Seasons
                 if (timeForSeasonToChange && !forceSeasonChange && !sleepCheck && m_isUsingIngameDays && changeSeasonOnlyAfterSleep.Value && GetCurrentDay() == GetDaysInSeason() && m_dayInSeasonGlobal != GetCurrentDay())
                 {
                     double timeSeconds = ZNet.instance.GetTimeSeconds() - EnvMan.instance.m_dayLengthSec;
-                    
+
                     ZNet.instance.SetNetTime(Math.Max(timeSeconds, 0));
                     ZNet.instance.SendNetTime();
 
@@ -267,7 +267,7 @@ namespace Seasons
                 return currentNightLength;
 
             int daysInSeason = GetDaysInSeason(season);
-            
+
             float currentPeakDay = daysInSeason / 2f;
             int lastPeakDay = Mathf.CeilToInt(currentPeakDay);
             int firstPeakDay = Mathf.FloorToInt(currentPeakDay);
@@ -290,7 +290,7 @@ namespace Seasons
             {
                 Season next = GetNextSeason(season);
                 int daysInNextSeason = GetDaysInSeason(next);
-                
+
                 firstPeakDay = Mathf.FloorToInt(daysInNextSeason / 2f);
                 int daysLeft = daysInSeason - lastPeakDay;
 
@@ -347,7 +347,7 @@ namespace Seasons
         {
             SeasonBiomeEnvironments.SeasonBiomeEnvironment biomeEnv = seasonBiomeEnvironments.GetSeasonBiomeEnvironment(seasonState.GetCurrentSeason());
 
-            RefreshBiomesDefault(forceUpdate:false);
+            RefreshBiomesDefault(forceUpdate: false);
 
             EnvMan.instance.m_biomes.Clear();
 
@@ -359,17 +359,32 @@ namespace Seasons
             {
                 try
                 {
-                    BiomeEnvSetup biomeEnvironment = JsonUtility.FromJson<BiomeEnvSetup>(biomeEnvironmentDefault);
-
-                    foreach (SeasonBiomeEnvironments.SeasonBiomeEnvironment.EnvironmentReplace replace in biomeEnv.replace)
-                        biomeEnvironment.m_environments.DoIf(env => env.m_environment == replace.m_environment, env => env.m_environment = replace.replace_to);
+                    BiomeEnvSetup biomeEnvironment =
+                        JsonUtility.FromJson<BiomeEnvSetup>(biomeEnvironmentDefault);
 
                     foreach (SeasonBiomeEnvironments.SeasonBiomeEnvironment.EnvironmentAdd add in biomeEnv.add)
-                        if (add.m_name == biomeEnvironment.m_name && !biomeEnvironment.m_environments.Any(env => env.m_environment == add.m_environment.m_environment))
-                            biomeEnvironment.m_environments.Add(add.m_environment);
+                    {
+                        if (!BiomeNameMatches(add.m_name, biomeEnvironment))
+                            continue;
+
+                        biomeEnvironment.m_environments.Add(add.m_environment);
+                    }
+
+                    foreach (SeasonBiomeEnvironments.SeasonBiomeEnvironment.EnvironmentReplace replace in biomeEnv.replace)
+                    {
+                        biomeEnvironment.m_environments.DoIf(
+                            env => env.m_environment == replace.m_environment,
+                            env => env.m_environment = replace.replace_to);
+                    }
 
                     foreach (SeasonBiomeEnvironments.SeasonBiomeEnvironment.EnvironmentRemove remove in biomeEnv.remove)
-                        biomeEnvironment.m_environments.RemoveAll(env => biomeEnvironment.m_name == remove.m_name && env.m_environment == remove.m_environment);
+                    {
+                        if (!BiomeNameMatches(remove.m_name, biomeEnvironment))
+                            continue;
+
+                        biomeEnvironment.m_environments.RemoveAll(env =>
+                            env.m_environment == remove.m_environment);
+                    }
 
                     EnvMan.instance.AppendBiomeSetup(biomeEnvironment);
                 }
@@ -424,7 +439,8 @@ namespace Seasons
             if (!controlEnvironments.Value)
                 return;
 
-            SeasonEnvironment.ClearCachedObjects();
+            if (EnvMan.instance == null)
+                return;
 
             foreach (SeasonEnvironment senv in seasonEnvironments)
             {
@@ -435,11 +451,14 @@ namespace Seasons
 
             CustomMusic.CheckMusicList();
 
+            SeasonEnvironment.RebuildCachedObjects();
+
             if (!String.IsNullOrEmpty(customEnvironmentsJSON.Value))
             {
                 try
                 {
                     seasonEnvironments = JsonConvert.DeserializeObject<List<SeasonEnvironment>>(customEnvironmentsJSON.Value);
+                    seasonEnvironments = SortCustomEnvironmentsByCloneDependencies(seasonEnvironments);
                     LogInfo($"Custom environments updated");
                 }
                 catch (Exception e)
@@ -450,8 +469,11 @@ namespace Seasons
             else
             {
                 seasonEnvironments = SeasonEnvironment.GetDefaultCustomEnvironments();
+                seasonEnvironments = SortCustomEnvironmentsByCloneDependencies(seasonEnvironments);
                 LogInfo($"Custom environments loaded defaults");
             }
+
+            SeasonEnvironment.AddCachedObjectsFromCurrentEnvironments();
 
             foreach (SeasonEnvironment senv in seasonEnvironments)
             {
@@ -459,7 +481,10 @@ namespace Seasons
                 if (env2 != null)
                     EnvMan.instance.m_environments.Remove(env2);
 
-                EnvMan.instance.AppendEnvironment(senv.ToEnvSetup());
+                EnvSetup env = senv.ToEnvSetup();
+                EnvMan.instance.AppendEnvironment(env);
+
+                SeasonEnvironment.AddCachedObjects(env);
             }
 
             UpdateCurrentEnvironment();
@@ -495,7 +520,7 @@ namespace Seasons
                 seasonBiomeEnvironments = new SeasonBiomeEnvironments(loadDefaults: true);
                 LogInfo($"Custom biome environments loaded defaults");
             }
-            
+
             seasonState.UpdateBiomesSetup();
         }
 
@@ -710,7 +735,7 @@ namespace Seasons
                 ZoneSystem.instance.RemoveGlobalKey(GetSeasonalGlobalKey(season));
 
             string globalKey = GetSeasonalGlobalKey(GetCurrentSeason());
-            
+
             if (enableSeasonalGlobalKeys.Value)
                 ZoneSystem.instance.SetGlobalKey(globalKey);
 
@@ -942,7 +967,7 @@ namespace Seasons
             double secondsLeft = beehive.m_secPerUnit * amount - product;
             if (IsProtectedPosition(beehive.transform.position))
                 return secondsLeft;
-            
+
             return GetSecondsLeftWithSeasonalMultiplier(secondsLeft, GetBeehiveProductionMultiplier);
         }
 
@@ -1494,6 +1519,140 @@ namespace Seasons
         public static Tuple<Season, int> GetPendingSeasonDay()
         {
             return Tuple.Create((Season)((_pendingSeasonChange / 10000) % 4), _pendingSeasonChange % 10000);
+        }
+
+        private static bool BiomeNameMatches(string configuredName, BiomeEnvSetup biomeEnvironment)
+        {
+            if (string.IsNullOrWhiteSpace(configuredName))
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(biomeEnvironment.m_name) &&
+                string.Equals(
+                    configuredName,
+                    biomeEnvironment.m_name,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return string.Equals(
+                NormalizeBiomeName(configuredName),
+                NormalizeBiomeName(biomeEnvironment.m_biome.ToString()),
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeBiomeName(string biomeName)
+        {
+            return biomeName
+                .Replace(" ", "")
+                .Replace("_", "")
+                .Replace("-", "");
+        }
+
+        private static List<SeasonEnvironment> SortCustomEnvironmentsByCloneDependencies(List<SeasonEnvironment> environments)
+        {
+            if (environments == null || environments.Count == 0)
+                return new List<SeasonEnvironment>();
+
+            Dictionary<string, int> lastIndexByName = new Dictionary<string, int>();
+            HashSet<string> duplicateNames = new HashSet<string>();
+
+            for (int i = 0; i < environments.Count; i++)
+            {
+                SeasonEnvironment environment = environments[i];
+
+                if (environment == null || String.IsNullOrWhiteSpace(environment.m_name))
+                {
+                    LogWarning("Custom environment with empty m_name was skipped.");
+                    continue;
+                }
+
+                if (lastIndexByName.ContainsKey(environment.m_name))
+                    duplicateNames.Add(environment.m_name);
+
+                lastIndexByName[environment.m_name] = i;
+            }
+
+            foreach (string duplicateName in duplicateNames)
+                LogWarning($"Duplicate custom environment name \"{duplicateName}\". The last definition will be used.");
+
+            List<SeasonEnvironment> uniqueEnvironments = new List<SeasonEnvironment>();
+            Dictionary<string, SeasonEnvironment> customByName = new Dictionary<string, SeasonEnvironment>();
+
+            for (int i = 0; i < environments.Count; i++)
+            {
+                SeasonEnvironment environment = environments[i];
+
+                if (environment == null || String.IsNullOrWhiteSpace(environment.m_name))
+                    continue;
+
+                if (lastIndexByName[environment.m_name] != i)
+                    continue;
+
+                uniqueEnvironments.Add(environment);
+                customByName[environment.m_name] = environment;
+            }
+
+            HashSet<string> existingEnvironmentNames = EnvMan.instance.m_environments
+                .Where(environment => environment != null && !String.IsNullOrWhiteSpace(environment.m_name))
+                .Select(environment => environment.m_name)
+                .ToHashSet();
+
+            List<SeasonEnvironment> sorted = new List<SeasonEnvironment>();
+            HashSet<string> resolvedCustomNames = new HashSet<string>();
+            HashSet<string> addedNames = new HashSet<string>();
+
+            bool progress;
+
+            do
+            {
+                progress = false;
+
+                foreach (SeasonEnvironment environment in uniqueEnvironments)
+                {
+                    if (addedNames.Contains(environment.m_name))
+                        continue;
+
+                    string cloneFrom = environment.m_cloneFrom;
+
+                    bool cloneSourceResolved =
+                        String.IsNullOrWhiteSpace(cloneFrom) ||
+                        existingEnvironmentNames.Contains(cloneFrom) ||
+                        resolvedCustomNames.Contains(cloneFrom);
+
+                    if (!cloneSourceResolved)
+                        continue;
+
+                    sorted.Add(environment);
+                    addedNames.Add(environment.m_name);
+                    resolvedCustomNames.Add(environment.m_name);
+                    progress = true;
+                }
+            }
+            while (progress);
+
+            foreach (SeasonEnvironment environment in uniqueEnvironments)
+            {
+                if (addedNames.Contains(environment.m_name))
+                    continue;
+
+                if (customByName.ContainsKey(environment.m_cloneFrom))
+                {
+                    LogWarning(
+                        $"Custom environment \"{environment.m_name}\" has unresolved clone dependency \"{environment.m_cloneFrom}\". " +
+                        "This is probably a circular clone dependency.");
+                }
+                else
+                {
+                    LogWarning(
+                        $"Custom environment \"{environment.m_name}\" clone source \"{environment.m_cloneFrom}\" was not found.");
+                }
+
+                sorted.Add(environment);
+                addedNames.Add(environment.m_name);
+            }
+
+            return sorted;
         }
     }
 }

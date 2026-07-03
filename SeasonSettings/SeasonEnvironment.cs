@@ -144,7 +144,17 @@ namespace Seasons
 
         public EnvSetup ToEnvSetup()
         {
-            EnvSetup original = EnvMan.instance.m_environments.Find(e => e.m_name == m_cloneFrom) ?? EnvMan.instance.m_environments[0];
+            EnvSetup original = EnvMan.instance.m_environments.Find(e => e.m_name == m_cloneFrom);
+
+            if (original == null)
+            {
+                Seasons.LogWarning($"Environment \"{m_name}\" clone source \"{m_cloneFrom}\" was not found. Falling back to \"Clear\".");
+
+                original = EnvMan.instance.GetEnv("Clear") ?? EnvMan.instance.m_environments.FirstOrDefault();
+            }
+
+            if (original == null)
+                throw new InvalidOperationException($"No environment is available to clone for \"{m_name}\".");
 
             SeasonEnvironment defaultSettings = new SeasonEnvironment();
 
@@ -163,17 +173,44 @@ namespace Seasons
                 {
                     case "m_envObject":
                         {
-                            env.m_envObject = usedObjects.GetValueSafe(m_envObject);
+                            if (usedObjects.TryGetValue(m_envObject, out GameObject envObject) && envObject != null)
+                            {
+                                env.m_envObject = envObject;
+                            }
+                            else
+                            {
+                                Seasons.LogWarning($"Environment object \"{m_envObject}\" was not found for environment \"{m_name}\".");
+                            }
+
                             continue;
                         }
                     case "m_psystems":
                         {
-                            env.m_psystems = m_psystems.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Where(ps => usedObjects.ContainsKey(ps)).Select(ps => usedObjects.GetValueSafe(ps)).ToArray();
+                            List<GameObject> particleSystems = new List<GameObject>();
+
+                            foreach (string particleSystemName in m_psystems.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+                            {
+                                string name = particleSystemName.Trim();
+
+                                if (usedObjects.TryGetValue(name, out GameObject particleSystem) && particleSystem != null)
+                                {
+                                    particleSystems.Add(particleSystem);
+                                    continue;
+                                }
+
+                                Seasons.LogWarning($"Particle system \"{name}\" was not found for environment \"{m_name}\".");
+                            }
+
+                            env.m_psystems = particleSystems.ToArray();
                             continue;
                         }
                     case "m_ambientLoop":
                         {
                             env.m_ambientLoop = usedAudioClips.GetValueSafe(m_ambientLoop) ?? CustomMusic.audioClips.GetValueSafe(m_ambientLoop);
+
+                            if (env.m_ambientLoop == null)
+                                Seasons.LogWarning($"Ambient loop \"{m_ambientLoop}\" was not found for environment \"{m_name}\".");
+
                             continue;
                         }
                 }
@@ -381,48 +418,61 @@ namespace Seasons
             };
         }
 
-        public static Dictionary<string, GameObject> usedObjects
-        {
-            get
-            {
-                if (_usedObjects.Count > 0 || EnvMan.instance == null)
-                    return _usedObjects;
+        private static readonly Dictionary<string, GameObject> usedObjects = new Dictionary<string, GameObject>();
 
-                foreach (EnvSetup env in EnvMan.instance.m_environments)
-                {
-                    if (env.m_envObject != null && !_usedObjects.ContainsKey(env.m_envObject.name))
-                        _usedObjects.Add(env.m_envObject.name, env.m_envObject);
+        private static readonly Dictionary<string, AudioClip> usedAudioClips = new Dictionary<string, AudioClip>();
 
-                    env.m_psystems?.Where(ps => !_usedObjects.ContainsKey(ps.name)).Do(ps => _usedObjects.Add(ps.name, ps));
-                }
-
-                return _usedObjects;
-            }
-        }
-
-        private static readonly Dictionary<string, GameObject> _usedObjects = new Dictionary<string, GameObject>();
-
-        public static Dictionary<string, AudioClip> usedAudioClips
-        {
-            get
-            {
-                if (_usedAudioClips.Count > 0 || EnvMan.instance == null)
-                    return _usedAudioClips;
-
-                foreach (EnvSetup env in EnvMan.instance.m_environments)
-                    if (env.m_ambientLoop != null && !_usedAudioClips.ContainsKey(env.m_ambientLoop.name))
-                        _usedAudioClips.Add(env.m_ambientLoop.name, env.m_ambientLoop);
-
-                return _usedAudioClips;
-            }
-        }
-
-        private static readonly Dictionary<string, AudioClip> _usedAudioClips = new Dictionary<string, AudioClip>();
-        
         public static void ClearCachedObjects()
         {
-            _usedObjects.Clear();
-            _usedAudioClips.Clear();
+            usedObjects.Clear();
+            usedAudioClips.Clear();
+        }
+
+        public static void RebuildCachedObjects()
+        {
+            ClearCachedObjects();
+            AddCachedObjectsFromCurrentEnvironments();
+        }
+
+        public static void AddCachedObjectsFromCurrentEnvironments()
+        {
+            if (EnvMan.instance == null || EnvMan.instance.m_environments == null)
+                return;
+
+            foreach (EnvSetup env in EnvMan.instance.m_environments)
+                AddCachedObjects(env);
+        }
+
+        public static void AddCachedObjects(EnvSetup env)
+        {
+            if (env == null)
+                return;
+
+            AddCachedObject(env.m_envObject);
+
+            if (env.m_psystems != null)
+            {
+                foreach (GameObject psystem in env.m_psystems)
+                    AddCachedObject(psystem);
+            }
+
+            AddCachedAudioClip(env.m_ambientLoop);
+        }
+
+        private static void AddCachedObject(GameObject obj)
+        {
+            if (obj == null || String.IsNullOrWhiteSpace(obj.name) || usedObjects.ContainsKey(obj.name))
+                return;
+
+            usedObjects.Add(obj.name, obj);
+        }
+
+        private static void AddCachedAudioClip(AudioClip clip)
+        {
+            if (clip == null || String.IsNullOrWhiteSpace(clip.name) || usedAudioClips.ContainsKey(clip.name))
+                return;
+
+            usedAudioClips.Add(clip.name, clip);
         }
     }
 }
