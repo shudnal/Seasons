@@ -1,4 +1,4 @@
-﻿using BepInEx;
+using BepInEx;
 using HarmonyLib;
 using Newtonsoft.Json;
 using System;
@@ -6,6 +6,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using UnityEngine;
 using static Seasons.Seasons;
 
@@ -355,6 +356,8 @@ namespace Seasons
 
             UpdateCurrentEnvironment();
 
+            Compatibility.EWDCompat.OnSeasonsBiomeSetupApplied();
+
             void ChangeBiomeEnvironment(string biomeEnvironmentDefault)
             {
                 try
@@ -362,29 +365,7 @@ namespace Seasons
                     BiomeEnvSetup biomeEnvironment =
                         JsonUtility.FromJson<BiomeEnvSetup>(biomeEnvironmentDefault);
 
-                    foreach (SeasonBiomeEnvironments.SeasonBiomeEnvironment.EnvironmentAdd add in biomeEnv.add)
-                    {
-                        if (!BiomeNameMatches(add.m_name, biomeEnvironment))
-                            continue;
-
-                        biomeEnvironment.m_environments.Add(add.m_environment);
-                    }
-
-                    foreach (SeasonBiomeEnvironments.SeasonBiomeEnvironment.EnvironmentReplace replace in biomeEnv.replace)
-                    {
-                        biomeEnvironment.m_environments.DoIf(
-                            env => env.m_environment == replace.m_environment,
-                            env => env.m_environment = replace.replace_to);
-                    }
-
-                    foreach (SeasonBiomeEnvironments.SeasonBiomeEnvironment.EnvironmentRemove remove in biomeEnv.remove)
-                    {
-                        if (!BiomeNameMatches(remove.m_name, biomeEnvironment))
-                            continue;
-
-                        biomeEnvironment.m_environments.RemoveAll(env =>
-                            env.m_environment == remove.m_environment);
-                    }
+                    biomeEnvironment.m_environments = ApplySeasonBiomeEnvironmentRules(biomeEnv, biomeEnvironment, biomeEnvironment.m_environments);
 
                     EnvMan.instance.AppendBiomeSetup(biomeEnvironment);
                 }
@@ -486,6 +467,8 @@ namespace Seasons
 
                 SeasonEnvironment.AddCachedObjects(env);
             }
+
+            Compatibility.EWDCompat.RegisterSeasonEnvironmentsInEwdOriginals();
 
             UpdateCurrentEnvironment();
         }
@@ -1521,6 +1504,78 @@ namespace Seasons
             return Tuple.Create((Season)((_pendingSeasonChange / 10000) % 4), _pendingSeasonChange % 10000);
         }
 
+        internal static List<EnvEntry> ApplySeasonBiomeEnvironmentRules(Heightmap.Biome biome, List<EnvEntry> environments)
+        {
+            if (!IsActive || !controlEnvironments.Value || environments == null)
+                return environments;
+
+            SeasonBiomeEnvironments.SeasonBiomeEnvironment biomeEnv = seasonBiomeEnvironments.GetSeasonBiomeEnvironment(seasonState.GetCurrentSeason());
+            return ApplySeasonBiomeEnvironmentRules(biomeEnv, biome, environments);
+        }
+
+        private static List<EnvEntry> ApplySeasonBiomeEnvironmentRules(SeasonBiomeEnvironments.SeasonBiomeEnvironment biomeEnv, BiomeEnvSetup biomeEnvironment, List<EnvEntry> environments)
+        {
+            return ApplySeasonBiomeEnvironmentRules(biomeEnv, environments, configuredName => BiomeNameMatches(configuredName, biomeEnvironment));
+        }
+
+        private static List<EnvEntry> ApplySeasonBiomeEnvironmentRules(SeasonBiomeEnvironments.SeasonBiomeEnvironment biomeEnv, Heightmap.Biome biome, List<EnvEntry> environments)
+        {
+            return ApplySeasonBiomeEnvironmentRules(biomeEnv, environments, configuredName => BiomeNameMatches(configuredName, biome));
+        }
+
+        private static List<EnvEntry> ApplySeasonBiomeEnvironmentRules(SeasonBiomeEnvironments.SeasonBiomeEnvironment biomeEnv, List<EnvEntry> environments, Func<string, bool> biomeMatches)
+        {
+            List<EnvEntry> result = environments == null
+                ? new List<EnvEntry>()
+                : environments.Select(CloneEnvEntry).ToList();
+
+            if (biomeEnv == null)
+                return result;
+
+            foreach (SeasonBiomeEnvironments.SeasonBiomeEnvironment.EnvironmentAdd add in biomeEnv.add)
+            {
+                if (add == null || add.m_environment == null || !biomeMatches(add.m_name))
+                    continue;
+
+                result.Add(CloneEnvEntry(add.m_environment));
+            }
+
+            foreach (SeasonBiomeEnvironments.SeasonBiomeEnvironment.EnvironmentReplace replace in biomeEnv.replace)
+            {
+                if (replace == null || string.IsNullOrWhiteSpace(replace.m_environment))
+                    continue;
+
+                result.DoIf(
+                    env => env.m_environment == replace.m_environment,
+                    env => env.m_environment = replace.replace_to);
+            }
+
+            foreach (SeasonBiomeEnvironments.SeasonBiomeEnvironment.EnvironmentRemove remove in biomeEnv.remove)
+            {
+                if (remove == null || string.IsNullOrWhiteSpace(remove.m_environment) || !biomeMatches(remove.m_name))
+                    continue;
+
+                result.RemoveAll(env => env.m_environment == remove.m_environment);
+            }
+
+            return result;
+        }
+
+        private static readonly FieldInfo[] envEntryFields = typeof(EnvEntry).GetFields(BindingFlags.Instance | BindingFlags.Public);
+
+        private static EnvEntry CloneEnvEntry(EnvEntry source)
+        {
+            EnvEntry clone = new EnvEntry();
+
+            if (source == null)
+                return clone;
+
+            foreach (FieldInfo field in envEntryFields)
+                field.SetValue(clone, field.GetValue(source));
+
+            return clone;
+        }
+
         private static bool BiomeNameMatches(string configuredName, BiomeEnvSetup biomeEnvironment)
         {
             if (string.IsNullOrWhiteSpace(configuredName))
@@ -1538,6 +1593,17 @@ namespace Seasons
             return string.Equals(
                 NormalizeBiomeName(configuredName),
                 NormalizeBiomeName(biomeEnvironment.m_biome.ToString()),
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool BiomeNameMatches(string configuredName, Heightmap.Biome biome)
+        {
+            if (string.IsNullOrWhiteSpace(configuredName))
+                return false;
+
+            return string.Equals(
+                NormalizeBiomeName(configuredName),
+                NormalizeBiomeName(biome.ToString()),
                 StringComparison.OrdinalIgnoreCase);
         }
 
