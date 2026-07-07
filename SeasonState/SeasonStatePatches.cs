@@ -161,6 +161,9 @@ namespace Seasons
                 if (seasonState.GetPlantsGrowthMultiplier() == 0f)
                     return false;
 
+                if (___m_respawnTimeMinutes == 0)
+                    return false;
+
                 __state = ___m_respawnTimeMinutes;
 
                 ___m_respawnTimeMinutes = (float)seasonState.GetSecondsToRespawnPickable(__instance) / 60f;
