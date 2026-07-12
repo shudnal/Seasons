@@ -123,8 +123,8 @@ namespace Seasons
         public static ConfigEntry<bool> summerHeatWorldHazeEnabled;
         public static ConfigEntry<bool> summerHeatPersonalDistortionEnabled;
         public static ConfigEntry<float> summerHeatDamageTickInterval;
-        public static ConfigEntry<float> summerHeatDamageНealthPerTickMinHealthPercentage;
-        public static ConfigEntry<float> summerHeatDamageНealthPerTick;
+        public static ConfigEntry<float> summerHeatDamageHealthPerTickMinHealthPercentage;
+        public static ConfigEntry<float> summerHeatDamageHealthPerTick;
         public static ConfigEntry<HitData.HitType> summerHeatDamageHitType;
         public static ConfigEntry<bool> summerHeatDamageMaxOnly;
         public static ConfigEntry<float> summerHeatStaminaUseMultiplier;
@@ -550,9 +550,9 @@ namespace Seasons
             iceFloesScale = serverConfig("Season - Winter ocean", "Scale of ice floes", defaultValue: new Vector2(0.75f, 2f), "Size of spawned ice floe random to XYZ axes");
             iceFloesHealth = serverConfig("Season - Winter ocean", "Health of ice floes", defaultValue: 20f, "Health of ice floe of average size. Health changes proportionally the volume of an ice floe. Floes respawn is required to apply changes.");
             enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
-            frozenOceanSlipperiness = config("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1f, "Slipperiness factor of the frozen ocean surface");
-            placeShipAboveFrozenOcean = config("Season - Winter ocean", "Place ship above frozen ocean surface", defaultValue: false, "Place ship above frozen ocean surface to move them without destroying");
-            placeFloatingContainersAboveFrozenOcean = config("Season - Winter ocean", "Place floating containers above frozen ocean surface", defaultValue: false, "Place floating containers above frozen ocean surface");
+            frozenOceanSlipperiness = serverConfig("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1f, "Slipperiness factor of the frozen ocean surface");
+            placeShipAboveFrozenOcean = serverConfig("Season - Winter ocean", "Place ship above frozen ocean surface", defaultValue: false, "Place ship above frozen ocean surface to move them without destroying");
+            placeFloatingContainersAboveFrozenOcean = serverConfig("Season - Winter ocean", "Place floating containers above frozen ocean surface", defaultValue: false, "Place floating containers above frozen ocean surface");
 
             enableFrozenWater.SettingChanged += (sender, args) => { ZoneSystemVariantController.UpdateWaterState(); LoadingTips.UpdateLoadingTips(); };
             enableIceFloes.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
@@ -611,8 +611,8 @@ namespace Seasons
             summerHeatColdArmorCoolingPenalty = serverConfig("Season - Summer heat - Armor heat", "Cold armor cooling penalty", defaultValue: 0.1f, new ConfigDescription("How much frost-resistant chest and leg armor slows cooling. At 10%, each warm item makes cooling 10% weaker.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
 
             summerHeatDamageTickInterval = serverConfig("Season - Summer heat - Damage in red zone", "Damage tick interval", defaultValue: 2f, "Seconds between damage ticks while heat is forcing your health down.");
-            summerHeatDamageНealthPerTickMinHealthPercentage = serverConfig("Season - Summer heat - Damage in red zone", "Soft HP cap percentage", defaultValue: 0.8f, new ConfigDescription("Lowest health percentage that Summer Heat can push you toward. You will take constant damage when your HP is higher than this percent. This damage only lowers current HP toward the set mark; it does not reduce your real maximum HP.", new AcceptableValueRange<float>(0.05f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            summerHeatDamageНealthPerTick = serverConfig("Season - Summer heat - Damage in red zone", "Damage per tick", defaultValue: 2f, "How much damage is dealt each tick while Summer Heat is pushing your HP down toward the soft cap.");
+            summerHeatDamageHealthPerTickMinHealthPercentage = serverConfig("Season - Summer heat - Damage in red zone", "Soft HP cap percentage", defaultValue: 0.8f, new ConfigDescription("Lowest health percentage that Summer Heat can push you toward. You will take constant damage when your HP is higher than this percent. This damage only lowers current HP toward the set mark; it does not reduce your real maximum HP.", new AcceptableValueRange<float>(0.05f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatDamageHealthPerTick = serverConfig("Season - Summer heat - Damage in red zone", "Damage per tick", defaultValue: 2f, "How much damage is dealt each tick while Summer Heat is pushing your HP down toward the soft cap.");
             summerHeatDamageHitType = serverConfig("Season - Summer heat - Damage in red zone", "Damage hit type", defaultValue: HitData.HitType.Self, "How the game should mark this damage. Most players can leave this unchanged.");
             summerHeatDamageMaxOnly = serverConfig("Season - Summer heat - Damage in red zone", "Damage only when overheated", defaultValue: true, "If enabled, HP cap damage waits until the status reaches Overheated. If disabled, the damage can start as soon as the top heat damage ramp begins near the end of the red zone.");
 
@@ -663,8 +663,8 @@ namespace Seasons
             summerHeatPersonalDistortionEnabled.SettingChanged += summerHeatRefreshHandler;
             summerHeatNonSunnyEnvironments.SettingChanged += summerHeatRefreshHandler;
             summerHeatDamageTickInterval.SettingChanged += summerHeatRefreshHandler;
-            summerHeatDamageНealthPerTickMinHealthPercentage.SettingChanged += summerHeatRefreshHandler;
-            summerHeatDamageНealthPerTick.SettingChanged += summerHeatRefreshHandler;
+            summerHeatDamageHealthPerTickMinHealthPercentage.SettingChanged += summerHeatRefreshHandler;
+            summerHeatDamageHealthPerTick.SettingChanged += summerHeatRefreshHandler;
             summerHeatDamageHitType.SettingChanged += summerHeatRefreshHandler;
             summerHeatDamageMaxOnly.SettingChanged += summerHeatRefreshHandler;
             summerHeatStaminaUseMultiplier.SettingChanged += summerHeatRefreshHandler;
@@ -736,7 +736,7 @@ namespace Seasons
             logFloes = config("Test", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying", synchronizedSetting: false);
             logControllersTime = config("Test", "Log prefab caching time", defaultValue: false, "Log elapsed time of prefabs caching process in descending order", synchronizedSetting: false);
             plainsSwampBorderFix = config("Test", "Plains Swamp border fix", defaultValue: true, "Fix clipping into ground on Plains - Swamp border");
-            frozenKarvePositionFix = config("Test", "Fix position for frozen Karve", defaultValue: false, "Make Karve storage always available if frozen. If Karve is below certain level it will be pushed to the surface.");
+            frozenKarvePositionFix = serverConfig("Test", "Fix position for frozen Karve", defaultValue: false, "Make Karve storage always available if frozen. If Karve is below certain level it will be pushed to the surface.");
             lastDayTerrainFactor = config("Test", "Last day terrain factor", defaultValue: 0.0f, "Last day", synchronizedSetting: false);
             firstDayTerrainFactor = config("Test", "First day terrain factor", defaultValue: 0.0f, "First day", synchronizedSetting: false);
             runTextureCachingSync = config("Test", "Run texture caching without indicator", defaultValue: false, "It is significantly faster than running with loading indicator but lacks visual progress", synchronizedSetting: false);

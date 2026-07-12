@@ -1,5 +1,12 @@
 # 1.8.0
+* migrated configuration and runtime state synchronization from ServerSync to ConditionalConfigSync; server administrators can override the ownership policy of policy-controlled settings
 * new mechanic: Summer Heat. Adds a heat meter with mild warmth bonuses, overheating penalties and configurable visual effects during the hottest summer days
+* new summer UI color
+* localizations revised
+* better ExpandWorldData environment compatibility
+* fixed respawning issue with pickables not meant to be respawned
+* normal fish should be pushed under the ice in any circumstances, fish dropped from inventory should stay
+* many optimizations and little fixes for smoother experience
 
 # 1.7.9
 * patch 0.221.10

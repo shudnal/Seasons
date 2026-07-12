@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using UnityEngine;
 using static Seasons.SummerHeatUtils;
 
@@ -47,7 +47,7 @@ namespace Seasons
                 return;
 
             _damageTimer = 0f;
-            float minSoftCapPercent = Mathf.Clamp01(Seasons.summerHeatDamageНealthPerTickMinHealthPercentage.Value);
+            float minSoftCapPercent = Mathf.Clamp01(Seasons.summerHeatDamageHealthPerTickMinHealthPercentage.Value);
             float softCapPercent = Mathf.Lerp(1f, minSoftCapPercent, maxFactor);
             if (player.GetHealthPercentage() <= softCapPercent)
                 return;
@@ -55,7 +55,7 @@ namespace Seasons
             if (Seasons.summerHeatDamageMaxOnly.Value && SummerHeat.CurrentZone != HeatZone.Max)
                 return;
 
-            float damageAmount = Mathf.Abs(Seasons.summerHeatDamageНealthPerTick.Value);
+            float damageAmount = Mathf.Abs(Seasons.summerHeatDamageHealthPerTick.Value);
             if (damageAmount <= 0f)
                 return;
 
@@ -97,7 +97,7 @@ namespace Seasons
 
             if (SummerHeat.MaxEffectFactor > 0f)
             {
-                float minSoftCapPercent = Mathf.Clamp01(Seasons.summerHeatDamageНealthPerTickMinHealthPercentage.Value);
+                float minSoftCapPercent = Mathf.Clamp01(Seasons.summerHeatDamageHealthPerTickMinHealthPercentage.Value);
                 float softCapPercent = Mathf.Lerp(1f, minSoftCapPercent, SummerHeat.MaxEffectFactor) * 100f;
                 TooltipBuilder.AppendFormat("<color=red>{0}</color>\n", string.Format("$seasons_status_summer_heat_cap_warning".Localize(), softCapPercent.ToString("0")));
             }

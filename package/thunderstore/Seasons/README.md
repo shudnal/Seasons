@@ -5,6 +5,16 @@ Four customizable seasons.
 
 Seasons changes Valheim through spring, summer, fall and winter. Each season can affect the world, weather, lighting, resources, creatures and character stats, while still keeping the vanilla game recognizable.
 
+## Conditional Config Sync
+* Config values marked with `[Synced with Server]` are synchronized from the server by default. Most of them control whether an entire feature or section is enabled, while its visual presentation and formatting remain configurable by each client
+* Server administrators can change the synchronization policy for policy-controlled settings in `BepInEx/config/shudnal.ConditionalConfigSync/ConditionalConfigSync.SyncPolicy.cfg`
+* Prefix an exact setting or whole-section identifier with `+` to force server control or `-` to make it client-controlled. Exact-setting rules take precedence over whole-section rules
+* Use shared modpack configs or distribute your config manually if you also want client-controlled appearance and formatting settings to be identical for all players initially
+* Seasons must be installed on the server and every connecting client
+* The current season and day, seasonal JSON settings, generated runtime data, and settings that affect shared world state or networked physics are always controlled by the server and cannot be made client-controlled through the synchronization policy
+* Settings without `[Synced with Server]` are client-controlled by default, but a server administrator can still force them to be server-controlled through the synchronization policy
+* If you install this mod manually do not forget to install [ConditionalConfigSync](https://thunderstore.io/c/valheim/p/shudnal/ConditionalConfigSync/)
+
 ## If you experience FPS issues
 
 If you notice FPS drops, your GPU might handle more. Try adding these launch options:

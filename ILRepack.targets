@@ -1,51 +1,143 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
+	<PropertyGroup>
+		<ThunderstorePackageName>Seasons</ThunderstorePackageName>
+		<ThunderstorePackageDir>$(MSBuildProjectDirectory)\package\thunderstore\$(ThunderstorePackageName)\</ThunderstorePackageDir>
+		<ThunderstoreZipPath>$(MSBuildProjectDirectory)\package\thunderstore\$(ThunderstorePackageName).zip</ThunderstoreZipPath>
+
+		<BuildThunderstorePackageOnBuild Condition="'$(BuildThunderstorePackageOnBuild)' == ''">true</BuildThunderstorePackageOnBuild>
+		<CopyToR2ModManOnBuild Condition="'$(CopyToR2ModManOnBuild)' == ''">true</CopyToR2ModManOnBuild>
+
+		<R2ModManPluginDirectory Condition="'$(R2ModManPluginDirectory)' == ''">D:\r2modman\Valheim\profiles\beta\BepInEx\plugins\shudnal-$(ThunderstorePackageName)\</R2ModManPluginDirectory>
+	</PropertyGroup>
+
 	<Target Name="UpdateTranslations" BeforeTargets="BeforeBuild">
-		<Exec Command="powershell -ExecutionPolicy Bypass -NoProfile -File &quot;$(ProjectDir)UpdateTranslations.ps1&quot;" />
+		<Exec Command="powershell -ExecutionPolicy Bypass -NoProfile -File &quot;$(MSBuildProjectDirectory)\UpdateTranslations.ps1&quot;" />
 		<Message Text="Updated embedded translations before build." Importance="High" />
 	</Target>
 
-	<Target Name="CopyDLLThunderstore" AfterTargets="Build">
-		<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ProjectDir)package\thunderstore\$(SolutionName)\" />
-		<Message Text="Copied to thunderstore package folder." Importance="High" />
-	</Target>
+	<!--
+    Run all post-build operations in an explicit order:
+    1. Package the original plugin DLL for Thunderstore.
+    2. Copy the original plugin DLL to the r2modman profile.
+    3. Repack Newtonsoft.Json into the plugin DLL for Nexus.
+    4. Build the Nexus package from the repacked DLL.
+  -->
+	<Target
+	  Name="BuildSeasonsArtifacts"
+	  AfterTargets="Build"
+	  DependsOnTargets="BuildSeasonsThunderstorePackage;CopySeasonsToR2ModMan;RepackNexus;CopyDLLNexus;ZipNexus"
+	  Condition="'$(DesignTimeBuild)' != 'true'" />
 
-	<Target Name="CopyLanguageFileThunderstore" AfterTargets="CopyDLLThunderstore">
-		<Copy SourceFiles="$(ProjectDir)translations\English.json" DestinationFiles="$(ProjectDir)package\thunderstore\$(SolutionName)\$(SolutionName).English.json" />
-		<Message Text="Copied English.json to thunderstore package folder." Importance="High" />
-	</Target>
+	<Target
+	  Name="BuildSeasonsThunderstorePackage"
+	  Condition="'$(BuildThunderstorePackageOnBuild)' == 'true'">
 
-	<Target Name="ZipThunderstore" AfterTargets="CopyLanguageFileThunderstore">
+		<PropertyGroup>
+			<_SeasonsPackageAssembly Condition="'$(SeasonsPackageAssembly)' != ''">$(SeasonsPackageAssembly)</_SeasonsPackageAssembly>
+			<_SeasonsPackageAssembly Condition="'$(_SeasonsPackageAssembly)' == ''">$(TargetPath)</_SeasonsPackageAssembly>
+			<_SeasonsEnglishLocalization>$(MSBuildProjectDirectory)\Translations\English.json</_SeasonsEnglishLocalization>
+		</PropertyGroup>
+
+		<Error Condition="!Exists('$(_SeasonsPackageAssembly)')" Text="Plugin assembly was not found: $(_SeasonsPackageAssembly)" />
+		<Error Condition="!Exists('$(_SeasonsEnglishLocalization)')" Text="English localization was not found: $(_SeasonsEnglishLocalization)" />
+		<Error Condition="!Exists('$(ThunderstorePackageDir)manifest.json')" Text="Thunderstore manifest was not found: $(ThunderstorePackageDir)manifest.json" />
+		<Error Condition="!Exists('$(ThunderstorePackageDir)icon.png')" Text="Thunderstore icon was not found: $(ThunderstorePackageDir)icon.png" />
+		<Error Condition="!Exists('$(ThunderstorePackageDir)README.md')" Text="Thunderstore README was not found: $(ThunderstorePackageDir)README.md" />
+		<Error Condition="!Exists('$(ThunderstorePackageDir)CHANGELOG.md')" Text="Thunderstore changelog was not found: $(ThunderstorePackageDir)CHANGELOG.md" />
+		<Error Condition="!Exists('$(MSBuildProjectDirectory)\UpdateThunderstoreManifest.ps1')" Text="UpdateThunderstoreManifest.ps1 was not found." />
+
+		<GetAssemblyIdentity AssemblyFiles="$(_SeasonsPackageAssembly)">
+			<Output TaskParameter="Assemblies" ItemName="_SeasonsAssemblyIdentity" />
+		</GetAssemblyIdentity>
+
+		<PropertyGroup>
+			<PackageVersion>%(_SeasonsAssemblyIdentity.Version)</PackageVersion>
+		</PropertyGroup>
+
+		<Error Condition="'$(PackageVersion)' == ''" Text="Package version was not resolved from $(_SeasonsPackageAssembly)." />
+
+		<MakeDir Directories="$(ThunderstorePackageDir)" />
+
+		<Copy
+		  SourceFiles="$(ThunderstorePackageDir)README.md"
+		  DestinationFiles="$(MSBuildProjectDirectory)\README.md"
+		  SkipUnchangedFiles="true" />
+
+		<Copy
+		  SourceFiles="$(_SeasonsPackageAssembly)"
+		  DestinationFiles="$(ThunderstorePackageDir)$(ThunderstorePackageName).dll"
+		  SkipUnchangedFiles="true" />
+
+		<Copy
+		  SourceFiles="$(_SeasonsEnglishLocalization)"
+		  DestinationFiles="$(ThunderstorePackageDir)$(ThunderstorePackageName).English.json"
+		  SkipUnchangedFiles="true" />
+
+		<Exec
+		  Command="powershell -ExecutionPolicy Bypass -NoProfile -File &quot;$(MSBuildProjectDirectory)\UpdateThunderstoreManifest.ps1&quot; -ManifestPath &quot;$(ThunderstorePackageDir)manifest.json&quot; -Version &quot;$(PackageVersion)&quot;" />
+
 		<ZipDirectory
-				SourceDirectory="$(ProjectDir)package\thunderstore\$(SolutionName)\"
-				DestinationFile="$(ProjectDir)package\thunderstore\$(SolutionName).zip"
-				Overwrite="true"/>
+		  SourceDirectory="$(ThunderstorePackageDir)"
+		  DestinationFile="$(ThunderstoreZipPath)"
+		  Overwrite="true" />
+
+		<Message Text="Detected package version from DLL: $(PackageVersion)" Importance="High" />
+		<Message Text="Thunderstore package directory updated: $(ThunderstorePackageDir)" Importance="High" />
+		<Message Text="Thunderstore archive created: $(ThunderstoreZipPath)" Importance="High" />
 	</Target>
 
-	<Target Name="CopyDLLPlugins" AfterTargets="CopyDLLThunderstore">
-		<Copy SourceFiles="$(TargetPath)" DestinationFolder="D:\r2modman\Valheim\profiles\beta\BepInEx\plugins\shudnal-$(SolutionName)\" />
-		<Message Text="Copied to r2 folder." Importance="High" />
+	<Target
+	  Name="CopySeasonsToR2ModMan"
+	  Condition="'$(CopyToR2ModManOnBuild)' == 'true'">
+
+		<PropertyGroup>
+			<_SeasonsR2ModManAssembly Condition="'$(SeasonsPackageAssembly)' != ''">$(SeasonsPackageAssembly)</_SeasonsR2ModManAssembly>
+			<_SeasonsR2ModManAssembly Condition="'$(_SeasonsR2ModManAssembly)' == ''">$(TargetPath)</_SeasonsR2ModManAssembly>
+		</PropertyGroup>
+
+		<Error Condition="!Exists('$(_SeasonsR2ModManAssembly)')" Text="Plugin DLL was not found: $(_SeasonsR2ModManAssembly)" />
+
+		<MakeDir Directories="$(R2ModManPluginDirectory)" />
+		<Copy
+		  SourceFiles="$(_SeasonsR2ModManAssembly)"
+		  DestinationFiles="$(R2ModManPluginDirectory)$(ThunderstorePackageName).dll"
+		  SkipUnchangedFiles="true" />
+
+		<Message Text="Copied $(ThunderstorePackageName).dll to r2modman profile: $(R2ModManPluginDirectory)" Importance="High" />
 	</Target>
 
-	<Target Name="RepackNexus" AfterTargets="CopyLanguageFileThunderstore">
+	<Target Name="RepackNexus">
 		<ItemGroup>
 			<InputAssemblies Include="$(TargetPath)" />
 			<InputAssemblies Include="$(OutputPath)Newtonsoft.Json.dll" />
 		</ItemGroup>
-		<ILRepack Parallel="true" DebugInfo="true" Internalize="true" InputAssemblies="@(InputAssemblies)" OutputFile="$(TargetPath)" TargetKind="SameAsPrimaryAssembly" LibraryPath="$(OutputPath)" />
+
+		<ILRepack
+		  Parallel="true"
+		  DebugInfo="true"
+		  Internalize="true"
+		  InputAssemblies="@(InputAssemblies)"
+		  OutputFile="$(TargetPath)"
+		  TargetKind="SameAsPrimaryAssembly"
+		  LibraryPath="$(OutputPath)" />
 	</Target>
 
-	<Target Name="CopyDLLNexus" AfterTargets="RepackNexus">
-		<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ProjectDir)package\nexus\$(SolutionName)\" />
-		<Message Text="Copied to nexus package folder." Importance="High" />
+	<Target Name="CopyDLLNexus">
+		<MakeDir Directories="$(MSBuildProjectDirectory)\package\nexus\$(MSBuildProjectName)\" />
+		<Copy
+		  SourceFiles="$(TargetPath)"
+		  DestinationFiles="$(MSBuildProjectDirectory)\package\nexus\$(MSBuildProjectName)\$(TargetFileName)" />
+		<Message Text="Copied repacked DLL to Nexus package folder." Importance="High" />
 	</Target>
 
-	<Target Name="ZipNexus" AfterTargets="CopyDLLNexus">
+	<Target Name="ZipNexus">
 		<ZipDirectory
-				SourceDirectory="$(ProjectDir)package\nexus\$(SolutionName)\"
-				DestinationFile="$(ProjectDir)package\nexus\$(SolutionName).zip"
-				Overwrite="true"/>
+		  SourceDirectory="$(MSBuildProjectDirectory)\package\nexus\$(MSBuildProjectName)\"
+		  DestinationFile="$(MSBuildProjectDirectory)\package\nexus\$(MSBuildProjectName).zip"
+		  Overwrite="true" />
+		<Message Text="Nexus archive created: $(MSBuildProjectDirectory)\package\nexus\$(MSBuildProjectName).zip" Importance="High" />
 	</Target>
 
 </Project>

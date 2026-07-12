@@ -226,6 +226,7 @@
     <None Include=".editorconfig" />
     <None Include="EmbeddedLocalizations.csv" />
     <None Include="ILRepack.targets" />
+    <None Include="UpdateThunderstoreManifest.ps1" />
     <EmbeddedResource Include="Translations\Chinese.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </EmbeddedResource>
