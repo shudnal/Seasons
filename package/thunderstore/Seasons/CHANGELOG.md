@@ -1,3 +1,7 @@
+# 1.8.1
+* fixed visuals for couple of configs
+* updated english localization json file in thunderstore package
+
 # 1.8.0
 * migrated configuration and runtime state synchronization from ServerSync to ConditionalConfigSync; server administrators can override the ownership policy of policy-controlled settings
 * new mechanic: Summer Heat. Adds a heat meter with mild warmth bonuses, overheating penalties and configurable visual effects during the hottest summer days

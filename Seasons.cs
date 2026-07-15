@@ -27,7 +27,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.8.0";
+        public const string pluginVersion = "1.8.1";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -409,9 +409,9 @@ namespace Seasons
         public void ConfigInit()
         {
             configLocked = serverConfig("General", "Lock Configuration", defaultValue: true, "Configuration is locked and can be changed by server admins only.");
-            loggingEnabled = config("General", "Logging enabled", defaultValue: false, "Enable logging. [Not Synced with Server]", synchronizedSetting: false);
+            loggingEnabled = config("General", "Logging enabled", defaultValue: false, "Enable logging.", synchronizedSetting: false);
             dayLengthSec = serverConfig("General", "Day length in seconds", defaultValue: 1800L, "Day length in seconds. Vanilla - 1800 seconds. Set to 0 to disable.");
-            enableLoadingTips = config("General", "Loading tips enabled", defaultValue: true, "Show seasonal tips on loading screen. [Not Synced with Server]", synchronizedSetting: false);
+            enableLoadingTips = config("General", "Loading tips enabled", defaultValue: true, "Show seasonal tips on loading screen.", synchronizedSetting: false);
 
             enableLoadingTips.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
 
@@ -433,11 +433,11 @@ namespace Seasons
             customTextures.SettingChanged += (sender, args) => CustomTextures.UpdateTexturesOnChange();
 
             disableBloomInWinter = config("Season", "Disable Bloom in Winter", defaultValue: true, "Force disables Bloom graphics setting while in Winter and restores it in other seasons (it will not change Graphics setting, only disables posteffect)." +
-                                                                                                   "\nBloom in Winter is what makes you blind with that much of white. [Not Synced with Server]", synchronizedSetting: false);
+                                                                                                   "\nBloom in Winter is what makes you blind with that much of white.", synchronizedSetting: false);
             reduceSnowStormInWinter = config("Season", "Reduce SnowStorm particles in Winter", defaultValue: new Vector2(250, 1000), "Reduce SnowStorm particles emission rate and maximum amount. Vanilla values is 500:2000" +
                                                                                                    "\nFirst parameter is emission rate and second is max particles amount." +
                                                                                                    "\nHelps fps in Winter. Doesn't affect Mountains, Ashlands and DeepNorth." +
-                                                                                                   "\nSet to 0:0 to return Vanilla behaviour.");
+                                                                                                   "\nSet to 0:0 to return Vanilla behaviour.", synchronizedSetting: false);
             enableSeasonalItems = serverConfig("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
             preventDeathFromFreezing = serverConfig("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
             seasonalStatsOutdoorsOnly = serverConfig("Season", "Seasonal stats works only outdoors", defaultValue: true, "Make seasonal stats works only outdoors");
@@ -570,7 +570,7 @@ namespace Seasons
             summerHeatGreenThreshold = serverConfig("Season - Summer heat", "Comfortable heat", defaultValue: 25f, new ConfigDescription("Heat percent where the warm-weather bonus is strongest. With the default 25% threshold and 20% bonus range, the bonus starts at 5%, reaches full strength at 25%, then fades out by 45%.", new AcceptableValueRange<float>(0f, 100f)));
             summerHeatNeutralThreshold = serverConfig("Season - Summer heat", "Too hot threshold", defaultValue: 60f, new ConfigDescription("Heat percent where penalties begin. With the default 60% threshold and 20% penalty range, negative effects start at 60% and reach full strength at 80%.", new AcceptableValueRange<float>(0f, 100f)));
             summerHeatMaxThreshold = serverConfig("Season - Summer heat", "Overheated threshold", defaultValue: 95f, new ConfigDescription("Heat percent where the worst heat state begins. This is where the soft HP cap damage can become active.", new AcceptableValueRange<float>(0f, 100f)));
-            summerHeatNightFactor = serverConfig("Season - Summer heat", "Night warmth factor", defaultValue: 0.5f, new ConfigDescription("How warm summer nights remain compared to daytime. At 50%, night can only hold about half of the daytime heat: the air is still warm, but without direct sun you should cool down toward a safer level instead of building up to full overheating.", new AcceptableValueRange<float>(0.1f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatNightFactor = serverConfig("Season - Summer heat", "Night warmth factor", defaultValue: 0.5f, new ConfigDescription("How warm summer nights remain compared to daytime. At 50%, night can only hold about half of the daytime heat: the air is still warm, but without direct sun you should cool down toward a safer level instead of building up to full overheating. Set to 0% to reduce the normal night heat cap to zero.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
             summerHeatZoneHysteresis = serverConfig("Season - Summer heat", "State switch buffer", defaultValue: 10f, new ConfigDescription("Small buffer around heat states, in percentage points. It prevents the status from rapidly switching back and forth when your heat is close to a boundary.", new AcceptableValueRange<float>(0f, 100f)));
             summerHeatGreenFadeWidth = serverConfig("Season - Summer heat", "Comfortable heat range", defaultValue: 20f, new ConfigDescription("How wide the bonus area is around comfortable heat, in percentage points. With the default 25% threshold and 20% range, the bonus starts at 5%, reaches full strength at 25%, then fades out by 45%.", new AcceptableValueRange<float>(0f, 100f)));
             summerHeatRedRampWidth = serverConfig("Season - Summer heat", "Penalty buildup range", defaultValue: 20f, new ConfigDescription("How gradually penalties build after you become too hot, in percentage points. With the default 60% threshold and 20% range, negative effects start at 60% and reach full strength at 80%.", new AcceptableValueRange<float>(0f, 100f)));
@@ -611,7 +611,7 @@ namespace Seasons
             summerHeatColdArmorCoolingPenalty = serverConfig("Season - Summer heat - Armor heat", "Cold armor cooling penalty", defaultValue: 0.1f, new ConfigDescription("How much frost-resistant chest and leg armor slows cooling. At 10%, each warm item makes cooling 10% weaker.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
 
             summerHeatDamageTickInterval = serverConfig("Season - Summer heat - Damage in red zone", "Damage tick interval", defaultValue: 2f, "Seconds between damage ticks while heat is forcing your health down.");
-            summerHeatDamageHealthPerTickMinHealthPercentage = serverConfig("Season - Summer heat - Damage in red zone", "Soft HP cap percentage", defaultValue: 0.8f, new ConfigDescription("Lowest health percentage that Summer Heat can push you toward. You will take constant damage when your HP is higher than this percent. This damage only lowers current HP toward the set mark; it does not reduce your real maximum HP.", new AcceptableValueRange<float>(0.05f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            summerHeatDamageHealthPerTickMinHealthPercentage = serverConfig("Season - Summer heat - Damage in red zone", "Soft HP cap percentage", defaultValue: 0.8f, new ConfigDescription("Lowest health percentage that Summer Heat can push you toward. You will take constant damage when your HP is higher than this percent. This damage only lowers current HP toward the set mark; it does not reduce your real maximum HP. Values below 1% are treated as 1%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
             summerHeatDamageHealthPerTick = serverConfig("Season - Summer heat - Damage in red zone", "Damage per tick", defaultValue: 2f, "How much damage is dealt each tick while Summer Heat is pushing your HP down toward the soft cap.");
             summerHeatDamageHitType = serverConfig("Season - Summer heat - Damage in red zone", "Damage hit type", defaultValue: HitData.HitType.Self, "How the game should mark this damage. Most players can leave this unchanged.");
             summerHeatDamageMaxOnly = serverConfig("Season - Summer heat - Damage in red zone", "Damage only when overheated", defaultValue: true, "If enabled, HP cap damage waits until the status reaches Overheated. If disabled, the damage can start as soon as the top heat damage ramp begins near the end of the red zone.");
@@ -731,15 +731,15 @@ namespace Seasons
             seasonalGlobalKeyWinter.SettingChanged += (sender, args) => seasonState?.UpdateGlobalKeys();
             seasonalGlobalKeyDay.SettingChanged += (sender, args) => seasonState?.UpdateGlobalKeys();
 
-            cacheStorageFormat = config("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading of single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.", synchronizedSetting: false);
-            logTime = config("Test", "Log time", defaultValue: false, "Log time info on state update", synchronizedSetting: false);
-            logFloes = config("Test", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying", synchronizedSetting: false);
-            logControllersTime = config("Test", "Log prefab caching time", defaultValue: false, "Log elapsed time of prefabs caching process in descending order", synchronizedSetting: false);
-            plainsSwampBorderFix = config("Test", "Plains Swamp border fix", defaultValue: true, "Fix clipping into ground on Plains - Swamp border");
+            cacheStorageFormat = clientConfig("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading of single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
+            logTime = clientConfig("Test", "Log time", defaultValue: false, "Log time info on state update");
+            logFloes = clientConfig("Test", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying");
+            logControllersTime = clientConfig("Test", "Log prefab caching time", defaultValue: false, "Log elapsed time of prefabs caching process in descending order");
+            plainsSwampBorderFix = clientConfig("Test", "Plains Swamp border fix", defaultValue: true, "Fix clipping into ground on Plains - Swamp border");
             frozenKarvePositionFix = serverConfig("Test", "Fix position for frozen Karve", defaultValue: false, "Make Karve storage always available if frozen. If Karve is below certain level it will be pushed to the surface.");
-            lastDayTerrainFactor = config("Test", "Last day terrain factor", defaultValue: 0.0f, "Last day", synchronizedSetting: false);
-            firstDayTerrainFactor = config("Test", "First day terrain factor", defaultValue: 0.0f, "First day", synchronizedSetting: false);
-            runTextureCachingSync = config("Test", "Run texture caching without indicator", defaultValue: false, "It is significantly faster than running with loading indicator but lacks visual progress", synchronizedSetting: false);
+            lastDayTerrainFactor = clientConfig("Test", "Last day terrain factor", defaultValue: 0.0f, "Last day");
+            firstDayTerrainFactor = clientConfig("Test", "First day terrain factor", defaultValue: 0.0f, "First day");
+            runTextureCachingSync = clientConfig("Test", "Run texture caching without indicator", defaultValue: false, "It is significantly faster than running with loading indicator but lacks visual progress");
 
             plainsSwampBorderFix.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateTerrainColors();
             lastDayTerrainFactor.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateTerrainColors();
@@ -768,6 +768,7 @@ namespace Seasons
             });
         }
 
+#pragma warning disable IDE1006 // Naming Styles
         ConfigEntry<T> config<T>(string group, string name, T defaultValue, ConfigDescription description, bool synchronizedSetting = true)
         {
             return configSync.AddConfigEntry(Config, group, name, defaultValue, description, syncMode: ConfigSyncMode.Conditional, synchronizedSetting).SourceConfig;
@@ -778,9 +779,16 @@ namespace Seasons
             return configSync.AddConfigEntry(Config, group, name, defaultValue, description, syncMode: ConfigSyncMode.AlwaysServerControlled, serverControlledByDefault:true).SourceConfig;
         }
 
+        ConfigEntry<T> clientConfig<T>(string group, string name, T defaultValue, ConfigDescription description)
+        {
+            return configSync.AddConfigEntry(Config, group, name, defaultValue, description, syncMode: ConfigSyncMode.AlwaysClientControlled).SourceConfig;
+        }
+
         ConfigEntry<T> config<T>(string group, string name, T defaultValue, string description, bool synchronizedSetting = true) => config(group, name, defaultValue, new ConfigDescription(description), synchronizedSetting);
 
         ConfigEntry<T> serverConfig<T>(string group, string name, T defaultValue, string description) => serverConfig(group, name, defaultValue, new ConfigDescription(description));
+        ConfigEntry<T> clientConfig<T>(string group, string name, T defaultValue, string description) => clientConfig(group, name, defaultValue, new ConfigDescription(description));
+#pragma warning restore IDE1006 // Naming Styles
 
         private void LoadIcons()
         {
@@ -1072,7 +1080,7 @@ namespace Seasons
             if (!pickable.m_nview || !pickable.m_nview.IsValid())
                 yield break;
 
-            if (UnityEngine.Random.Range(0f, 1f) < chanceToProduceACropInWinter.Value)
+            if (UnityEngine.Random.Range(0f, 1f) < Mathf.Clamp01(chanceToProduceACropInWinter.Value))
                 pickable.m_nview.GetZDO().Set(SeasonsVars.s_cropSurvivedWinterDayHash, seasonState.GetCurrentWorldDay());
             else
                 pickable.m_nview.InvokeRPC(ZNetView.Everybody, "RPC_SetPicked", true);

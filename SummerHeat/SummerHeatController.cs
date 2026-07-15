@@ -148,6 +148,10 @@ namespace Seasons
             float neutralThreshold = GetNeutralThreshold(isDaytime);
             float maxThreshold = GetMaxThreshold(isDaytime);
             float hysteresis = GetZoneHysteresis(isDaytime);
+
+            if (heatPercent <= 0f && overflowHeat <= 0f && maxThreshold <= 0f)
+                return HeatZone.Neutral;
+
             float greenReturnThreshold = greenThreshold + hysteresis * 0.5f;
             float greenExitThreshold = greenThreshold + hysteresis;
             float redReturnThreshold = neutralThreshold - hysteresis;

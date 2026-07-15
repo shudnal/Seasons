@@ -1855,11 +1855,12 @@ namespace Seasons
         private static void AddWaveForce(Floating floating, float fixedDeltaTime)
         {
             floating.m_body.WakeUp();
-            
+
             foreach (Vector3 position in positions)
             {
                 float depthDelta = position.y - Floating.GetLiquidLevel(position);
-                Vector3 force = 0.5f * Mathf.Clamp01(Mathf.Abs(depthDelta / 4)) * (fixedDeltaTime * 50f) * depthDelta < 0 ? Vector3.up * 0.6f : Vector3.down;
+                float forceAmount = 0.5f * Mathf.Clamp01(Mathf.Abs(depthDelta / 4f)) * (fixedDeltaTime * 50f) * Mathf.Abs(depthDelta);
+                Vector3 force = depthDelta < 0f ? Vector3.up * (forceAmount * 0.6f) : Vector3.down * forceAmount;
                 floating.m_body.AddForceAtPosition(force * 0.02f * floating.m_body.mass * 0.25f, position, ForceMode.Impulse);
             }
         }

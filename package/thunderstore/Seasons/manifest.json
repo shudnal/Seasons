@@ -1,11 +1,11 @@
 ﻿{
     "name":  "Seasons",
-    "version_number":  "1.8.0",
+    "version_number":  "1.8.1",
     "website_url":  "https://github.com/shudnal/Seasons",
     "description":  "Four customizable seasons. Different visual flavor for every season, seasonal impact on gameplay. Frozen water and ice floes in Winter. Different weather, raids, lightings and trader items. New special spring grass. Minimal impact on fps.",
     "dependencies":  [
                          "denikson-BepInExPack_Valheim-5.4.2333",
                          "ValheimModding-JsonDotNET-13.0.4",
-                         "shudnal-ConditionalConfigSync-1.0.1"
+                         "shudnal-ConditionalConfigSync-1.0.2"
                      ]
 }

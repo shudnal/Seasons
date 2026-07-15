@@ -47,7 +47,7 @@ namespace Seasons
                 return;
 
             _damageTimer = 0f;
-            float minSoftCapPercent = Mathf.Clamp01(Seasons.summerHeatDamageHealthPerTickMinHealthPercentage.Value);
+            float minSoftCapPercent = GetMinSoftHpCap();
             float softCapPercent = Mathf.Lerp(1f, minSoftCapPercent, maxFactor);
             if (player.GetHealthPercentage() <= softCapPercent)
                 return;
@@ -97,7 +97,7 @@ namespace Seasons
 
             if (SummerHeat.MaxEffectFactor > 0f)
             {
-                float minSoftCapPercent = Mathf.Clamp01(Seasons.summerHeatDamageHealthPerTickMinHealthPercentage.Value);
+                float minSoftCapPercent = GetMinSoftHpCap();
                 float softCapPercent = Mathf.Lerp(1f, minSoftCapPercent, SummerHeat.MaxEffectFactor) * 100f;
                 TooltipBuilder.AppendFormat("<color=red>{0}</color>\n", string.Format("$seasons_status_summer_heat_cap_warning".Localize(), softCapPercent.ToString("0")));
             }
@@ -407,6 +407,9 @@ namespace Seasons
             Color neutralColor = Seasons.summerHeatBarNeutralColor.Value;
             Color penaltyColor = Seasons.summerHeatBarPenaltyColor.Value;
             Color maxColor = Seasons.summerHeatBarMaxColor.Value;
+
+            if (!isDaytime && nightFactor <= 0f)
+                return neutralColor;
 
             if (heatPercent >= maxThreshold)
                 return maxColor;
