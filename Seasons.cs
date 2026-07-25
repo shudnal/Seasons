@@ -27,7 +27,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.8.1";
+        public const string pluginVersion = "1.8.2";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -425,6 +425,7 @@ namespace Seasons
             controlGrass = serverConfig("Season - Control", "Control grass", defaultValue: true, "Enables seasonal changes of grass thickness, size and sparseness");
             customTextures = serverConfig("Season - Control", "Custom textures", defaultValue: true, "Enables custom textures");
 
+            controlEnvironments.SettingChanged += (sender, args) => SeasonState.UpdateEnvironmentControlState();
             controlRandomEvents.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
             controlLightings.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
             controlStats.SettingChanged += (sender, args) => { SE_Season.UpdateSeasonStatusEffectStats(); LoadingTips.UpdateLoadingTips(); };

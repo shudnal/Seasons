@@ -37,6 +37,8 @@ namespace Seasons
 
         private static readonly Season[] _seasons = (Season[])Enum.GetValues(typeof(Season));
         private static readonly Dictionary<Heightmap.Biome, string> biomesDefault = new Dictionary<Heightmap.Biome, string>();
+        private static readonly Dictionary<string, EnvSetup> replacedEnvironmentDefaults = new Dictionary<string, EnvSetup>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, EnvSetup> appliedSeasonEnvironmentObjects = new Dictionary<string, EnvSetup>(StringComparer.Ordinal);
         private static readonly List<ItemDrop.ItemData> _itemDataList = new List<ItemDrop.ItemData>();
         private static readonly HashSet<string> _coolingFoodNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static int _pendingSeasonChange = 0;
@@ -58,6 +60,7 @@ namespace Seasons
                 return;
 
             ClearBiomesDefault();
+            ResetEnvironmentStateTracking();
 
             foreach (Season season in _seasons)
                 if (!seasonsSettings.ContainsKey(season))
@@ -346,14 +349,24 @@ namespace Seasons
 
         private void UpdateBiomesSetup()
         {
-            SeasonBiomeEnvironments.SeasonBiomeEnvironment biomeEnv = seasonBiomeEnvironments.GetSeasonBiomeEnvironment(seasonState.GetCurrentSeason());
-
             RefreshBiomesDefault(forceUpdate: false);
+
+            if (Compatibility.EWDCompat.ShouldApplySeasonalRulesToAvailableEnvironments())
+            {
+                RefreshBiomeEnvironmentReferences();
+                UpdateCurrentEnvironment();
+                return;
+            }
+
+            SeasonBiomeEnvironments.SeasonBiomeEnvironment biomeEnv = controlEnvironments.Value
+                ? seasonBiomeEnvironments.GetSeasonBiomeEnvironment(seasonState.GetCurrentSeason())
+                : null;
 
             EnvMan.instance.m_biomes.Clear();
 
             biomesDefault.Do(kvp => ChangeBiomeEnvironment(kvp.Value));
 
+            RefreshBiomeEnvironmentReferences();
             UpdateCurrentEnvironment();
 
             Compatibility.EWDCompat.OnSeasonsBiomeSetupApplied();
@@ -365,7 +378,8 @@ namespace Seasons
                     BiomeEnvSetup biomeEnvironment =
                         JsonUtility.FromJson<BiomeEnvSetup>(biomeEnvironmentDefault);
 
-                    biomeEnvironment.m_environments = ApplySeasonBiomeEnvironmentRules(biomeEnv, biomeEnvironment, biomeEnvironment.m_environments);
+                    if (biomeEnv != null)
+                        biomeEnvironment.m_environments = ApplySeasonBiomeEnvironmentRules(biomeEnv, biomeEnvironment, biomeEnvironment.m_environments);
 
                     EnvMan.instance.AppendBiomeSetup(biomeEnvironment);
                 }
@@ -414,21 +428,23 @@ namespace Seasons
 
         public static void UpdateSeasonEnvironments()
         {
-            if (!IsActive)
+            UpdateSeasonEnvironments(rebuildBiomeSetup: true);
+        }
+
+        private static void UpdateSeasonEnvironments(bool rebuildBiomeSetup)
+        {
+            if (!IsActive || EnvMan.instance == null)
                 return;
+
+            unresolvedSeasonEnvironmentRules.Clear();
 
             if (!controlEnvironments.Value)
-                return;
-
-            if (EnvMan.instance == null)
-                return;
-
-            foreach (SeasonEnvironment senv in seasonEnvironments)
             {
-                EnvSetup env2 = EnvMan.instance.GetEnv(senv.m_name);
-                if (env2 != null)
-                    EnvMan.instance.m_environments.Remove(env2);
+                RestoreEnvironmentControlState();
+                return;
             }
+
+            RemoveAppliedSeasonEnvironments();
 
             CustomMusic.CheckMusicList();
 
@@ -458,19 +474,130 @@ namespace Seasons
 
             foreach (SeasonEnvironment senv in seasonEnvironments)
             {
-                EnvSetup env2 = EnvMan.instance.GetEnv(senv.m_name);
-                if (env2 != null)
-                    EnvMan.instance.m_environments.Remove(env2);
+                if (senv == null || String.IsNullOrWhiteSpace(senv.m_name))
+                    continue;
 
-                EnvSetup env = senv.ToEnvSetup();
-                EnvMan.instance.AppendEnvironment(env);
+                EnvSetup existingEnvironment = EnvMan.instance.GetEnv(senv.m_name);
+                if (existingEnvironment != null)
+                {
+                    replacedEnvironmentDefaults[senv.m_name] = existingEnvironment;
+                    EnvMan.instance.m_environments.Remove(existingEnvironment);
+                }
 
-                SeasonEnvironment.AddCachedObjects(env);
+                EnvSetup environment = senv.ToEnvSetup();
+                EnvMan.instance.AppendEnvironment(environment);
+                appliedSeasonEnvironmentObjects[senv.m_name] = environment;
+
+                SeasonEnvironment.AddCachedObjects(environment);
             }
 
-            Compatibility.EWDCompat.RegisterSeasonEnvironmentsInEwdOriginals();
+            if (rebuildBiomeSetup)
+                seasonState.UpdateBiomesSetup();
+            else
+                UpdateCurrentEnvironment();
+        }
 
-            UpdateCurrentEnvironment();
+        public static void UpdateEnvironmentControlState()
+        {
+            if (IsActive)
+            {
+                if (controlEnvironments.Value)
+                {
+                    UpdateSeasonEnvironments(rebuildBiomeSetup: false);
+                    UpdateBiomeEnvironments();
+                }
+                else
+                {
+                    RestoreEnvironmentControlState();
+                }
+            }
+
+            LoadingTips.UpdateLoadingTips();
+        }
+
+        public static void PrepareForExternalEnvironmentUpdate()
+        {
+            if (EnvMan.instance == null || appliedSeasonEnvironmentObjects.Count == 0)
+                return;
+
+            bool appliedEnvironmentStillPresent = appliedSeasonEnvironmentObjects.Values
+                .Any(environment => environment != null && EnvMan.instance.m_environments.Contains(environment));
+
+            if (!appliedEnvironmentStillPresent)
+                ResetEnvironmentStateTracking();
+        }
+
+        public static void ResetEnvironmentStateTracking()
+        {
+            replacedEnvironmentDefaults.Clear();
+            appliedSeasonEnvironmentObjects.Clear();
+        }
+
+        private static void RestoreEnvironmentControlState()
+        {
+            unresolvedSeasonEnvironmentRules.Clear();
+            RemoveAppliedSeasonEnvironments();
+            seasonState.UpdateBiomesSetup();
+        }
+
+        private static void RemoveAppliedSeasonEnvironments()
+        {
+            if (EnvMan.instance == null)
+            {
+                ResetEnvironmentStateTracking();
+                return;
+            }
+
+            foreach (EnvSetup environment in appliedSeasonEnvironmentObjects.Values)
+            {
+                if (environment != null)
+                    EnvMan.instance.m_environments.Remove(environment);
+            }
+
+            foreach (KeyValuePair<string, EnvSetup> defaultEnvironment in replacedEnvironmentDefaults)
+            {
+                if (defaultEnvironment.Value != null && EnvMan.instance.GetEnv(defaultEnvironment.Key) == null)
+                    EnvMan.instance.AppendEnvironment(defaultEnvironment.Value);
+            }
+
+            ResetEnvironmentStateTracking();
+        }
+
+        private static void RefreshBiomeEnvironmentReferences()
+        {
+            if (EnvMan.instance?.m_biomes == null)
+                return;
+
+            HashSet<string> unresolvedEnvironments = new HashSet<string>();
+
+            foreach (BiomeEnvSetup biomeEnvironment in EnvMan.instance.m_biomes)
+            {
+                if (biomeEnvironment == null)
+                    continue;
+
+                EnvMan.instance.InitializeBiomeEnvSetup(biomeEnvironment);
+
+                foreach (EnvEntry environment in biomeEnvironment.m_environments)
+                {
+                    if (environment != null && environment.m_env == null && !String.IsNullOrWhiteSpace(environment.m_environment))
+                        unresolvedEnvironments.Add(environment.m_environment);
+                }
+            }
+
+            if (unresolvedEnvironments.Count > 0)
+                LogWarning($"Unresolved biome environment references: {String.Join(", ", unresolvedEnvironments.OrderBy(name => name))}");
+        }
+
+        public static void ReapplyEnvironmentStateAfterWorldInitialization()
+        {
+            if (!IsActive)
+                return;
+
+            UpdateSeasonEnvironments(rebuildBiomeSetup: false);
+            UpdateBiomeEnvironments();
+
+            if (currentSeasonDay.Value > 0)
+                OnSeasonDayChange();
         }
 
         private static void UpdateCurrentEnvironment()
@@ -482,6 +609,8 @@ namespace Seasons
         {
             if (!IsActive)
                 return;
+
+            unresolvedSeasonEnvironmentRules.Clear();
 
             if (!controlEnvironments.Value)
                 return;
@@ -1515,19 +1644,36 @@ namespace Seasons
 
         private static List<EnvEntry> ApplySeasonBiomeEnvironmentRules(SeasonBiomeEnvironments.SeasonBiomeEnvironment biomeEnv, BiomeEnvSetup biomeEnvironment, List<EnvEntry> environments)
         {
-            return ApplySeasonBiomeEnvironmentRules(biomeEnv, environments, configuredName => BiomeNameMatches(configuredName, biomeEnvironment));
+            return ApplySeasonBiomeEnvironmentRules(
+                biomeEnv,
+                environments,
+                configuredName => BiomeNameMatches(configuredName, biomeEnvironment),
+                preserveSourceEntries: false);
         }
 
         private static List<EnvEntry> ApplySeasonBiomeEnvironmentRules(SeasonBiomeEnvironments.SeasonBiomeEnvironment biomeEnv, Heightmap.Biome biome, List<EnvEntry> environments)
         {
-            return ApplySeasonBiomeEnvironmentRules(biomeEnv, environments, configuredName => BiomeNameMatches(configuredName, biome));
+            return ApplySeasonBiomeEnvironmentRules(
+                biomeEnv,
+                environments,
+                configuredName => BiomeNameMatches(configuredName, biome),
+                preserveSourceEntries: true);
         }
 
-        private static List<EnvEntry> ApplySeasonBiomeEnvironmentRules(SeasonBiomeEnvironments.SeasonBiomeEnvironment biomeEnv, List<EnvEntry> environments, Func<string, bool> biomeMatches)
+        private static List<EnvEntry> ApplySeasonBiomeEnvironmentRules(
+            SeasonBiomeEnvironments.SeasonBiomeEnvironment biomeEnv,
+            List<EnvEntry> environments,
+            Func<string, bool> biomeMatches,
+            bool preserveSourceEntries)
         {
             List<EnvEntry> result = environments == null
                 ? new List<EnvEntry>()
-                : environments.Select(CloneEnvEntry).ToList();
+                : environments
+                    .Where(environment => environment != null)
+                    .Select(environment => preserveSourceEntries ? environment : CloneEnvEntry(environment))
+                    .ToList();
+
+            RefreshEnvironmentReferences(result);
 
             if (biomeEnv == null)
                 return result;
@@ -1537,17 +1683,28 @@ namespace Seasons
                 if (add == null || add.m_environment == null || !biomeMatches(add.m_name))
                     continue;
 
-                result.Add(CloneEnvEntry(add.m_environment));
+                EnvEntry addedEnvironment = CloneEnvEntry(add.m_environment);
+                if (TryResolveSeasonEnvironmentReference(addedEnvironment, $"add rule for biome {add.m_name}"))
+                    result.Add(addedEnvironment);
             }
 
             foreach (SeasonBiomeEnvironments.SeasonBiomeEnvironment.EnvironmentReplace replace in biomeEnv.replace)
             {
-                if (replace == null || string.IsNullOrWhiteSpace(replace.m_environment))
+                if (replace == null || string.IsNullOrWhiteSpace(replace.m_environment) || string.IsNullOrWhiteSpace(replace.replace_to))
                     continue;
 
-                result.DoIf(
-                    env => env.m_environment == replace.m_environment,
-                    env => env.m_environment = replace.replace_to);
+                for (int i = 0; i < result.Count; i++)
+                {
+                    EnvEntry sourceEnvironment = result[i];
+                    if (!String.Equals(sourceEnvironment.m_environment, replace.m_environment, StringComparison.Ordinal))
+                        continue;
+
+                    EnvEntry replacementEnvironment = CloneEnvEntry(sourceEnvironment);
+                    replacementEnvironment.m_environment = replace.replace_to;
+
+                    if (TryResolveSeasonEnvironmentReference(replacementEnvironment, $"replace rule {replace.m_environment} -> {replace.replace_to}"))
+                        result[i] = replacementEnvironment;
+                }
             }
 
             foreach (SeasonBiomeEnvironments.SeasonBiomeEnvironment.EnvironmentRemove remove in biomeEnv.remove)
@@ -1555,13 +1712,14 @@ namespace Seasons
                 if (remove == null || string.IsNullOrWhiteSpace(remove.m_environment) || !biomeMatches(remove.m_name))
                     continue;
 
-                result.RemoveAll(env => env.m_environment == remove.m_environment);
+                result.RemoveAll(environment => String.Equals(environment.m_environment, remove.m_environment, StringComparison.Ordinal));
             }
 
             return result;
         }
 
         private static readonly FieldInfo[] envEntryFields = typeof(EnvEntry).GetFields(BindingFlags.Instance | BindingFlags.Public);
+        private static readonly HashSet<string> unresolvedSeasonEnvironmentRules = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         private static EnvEntry CloneEnvEntry(EnvEntry source)
         {
@@ -1571,29 +1729,62 @@ namespace Seasons
                 return clone;
 
             foreach (FieldInfo field in envEntryFields)
-                field.SetValue(clone, field.GetValue(source));
+            {
+                if (field.Name == nameof(EnvEntry.m_env))
+                    continue;
 
+                field.SetValue(clone, field.GetValue(source));
+            }
+
+            clone.m_env = null;
             return clone;
+        }
+
+        private static void RefreshEnvironmentReferences(IEnumerable<EnvEntry> environments)
+        {
+            if (EnvMan.instance == null || environments == null)
+                return;
+
+            foreach (EnvEntry environment in environments)
+            {
+                if (environment == null || String.IsNullOrWhiteSpace(environment.m_environment))
+                    continue;
+
+                environment.m_env = EnvMan.instance.GetEnv(environment.m_environment);
+            }
+        }
+
+        private static bool TryResolveSeasonEnvironmentReference(EnvEntry environment, string ruleDescription)
+        {
+            if (environment == null || String.IsNullOrWhiteSpace(environment.m_environment) || EnvMan.instance == null)
+                return false;
+
+            environment.m_env = EnvMan.instance.GetEnv(environment.m_environment);
+            if (environment.m_env != null)
+                return true;
+
+            string warningKey = $"{ruleDescription}|{environment.m_environment}";
+            if (unresolvedSeasonEnvironmentRules.Add(warningKey))
+                LogWarning($"Seasonal biome environment {ruleDescription} references missing environment {environment.m_environment}; the rule was skipped.");
+
+            return false;
         }
 
         private static bool BiomeNameMatches(string configuredName, BiomeEnvSetup biomeEnvironment)
         {
-            if (string.IsNullOrWhiteSpace(configuredName))
+            if (string.IsNullOrWhiteSpace(configuredName) || biomeEnvironment == null)
                 return false;
 
             if (!string.IsNullOrWhiteSpace(biomeEnvironment.m_name) &&
                 string.Equals(
-                    configuredName,
-                    biomeEnvironment.m_name,
+                    NormalizeBiomeName(configuredName),
+                    NormalizeBiomeName(biomeEnvironment.m_name),
                     StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
 
-            return string.Equals(
-                NormalizeBiomeName(configuredName),
-                NormalizeBiomeName(biomeEnvironment.m_biome.ToString()),
-                StringComparison.OrdinalIgnoreCase);
+            return BiomeNameMatches(configuredName, biomeEnvironment.m_biome);
         }
 
         private static bool BiomeNameMatches(string configuredName, Heightmap.Biome biome)
@@ -1601,14 +1792,27 @@ namespace Seasons
             if (string.IsNullOrWhiteSpace(configuredName))
                 return false;
 
-            return string.Equals(
-                NormalizeBiomeName(configuredName),
+            string normalizedConfiguredName = NormalizeBiomeName(configuredName);
+            if (string.Equals(
+                normalizedConfiguredName,
                 NormalizeBiomeName(biome.ToString()),
-                StringComparison.OrdinalIgnoreCase);
+                StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return Compatibility.EWDCompat.TryGetBiomeDisplayName(biome, out string displayName) &&
+                string.Equals(
+                    normalizedConfiguredName,
+                    NormalizeBiomeName(displayName),
+                    StringComparison.OrdinalIgnoreCase);
         }
 
         private static string NormalizeBiomeName(string biomeName)
         {
+            if (String.IsNullOrWhiteSpace(biomeName))
+                return String.Empty;
+
             return biomeName
                 .Replace(" ", "")
                 .Replace("_", "")

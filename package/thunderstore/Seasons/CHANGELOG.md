@@ -1,3 +1,10 @@
+# 1.8.2
+* updated Expand World Data compatibility for the current environment and biome reload lifecycle
+* preserved EWD biome environment key conditions and custom biome names when seasonal weather rules are applied
+* fixed seasonal replacement environments retaining stale runtime references
+* fixed changing Control environments at runtime not fully restoring or reapplying biome weather tables
+* fixed runtime custom environment reloads leaving biome entries with unresolved environment references
+
 # 1.8.1
 * fixed visuals for couple of configs
 * updated english localization json file in thunderstore package

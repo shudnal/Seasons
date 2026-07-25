@@ -2,10 +2,8 @@ using BepInEx;
 using BepInEx.Bootstrap;
 using HarmonyLib;
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
-using UnityEngine;
 
 namespace Seasons.Compatibility
 {
@@ -19,9 +17,9 @@ namespace Seasons.Compatibility
 
         private static Type environmentManagerType;
         private static Type biomeManagerType;
-        private static FieldInfo environmentOriginalsField;
-        private static bool delayedRefreshPending;
-        private static float lastDelayedRefreshRequestTime;
+        private static FieldInfo environmentManagerInitializedField;
+        private static FieldInfo biomeToDisplayNameField;
+        private static bool seasonsWorldInitialized;
         private static bool ewdBiomeSetupAppliedLast;
 
         public static void CheckForCompatibility()
@@ -30,6 +28,17 @@ namespace Seasons.Compatibility
 
             if (isEnabled)
                 assembly ??= Assembly.GetAssembly(plugin.Instance.GetType());
+        }
+
+        public static void ResetWorldState()
+        {
+            seasonsWorldInitialized = false;
+            ewdBiomeSetupAppliedLast = false;
+        }
+
+        public static void MarkWorldInitialized()
+        {
+            seasonsWorldInitialized = true;
         }
 
         public static void OnSeasonsBiomeSetupApplied()
@@ -42,226 +51,165 @@ namespace Seasons.Compatibility
 
         public static bool ShouldApplySeasonalRulesToAvailableEnvironments()
         {
-            return isEnabled && ewdBiomeSetupAppliedLast;
+            return isEnabled && seasonsWorldInitialized && ewdBiomeSetupAppliedLast;
         }
 
-        public static void RegisterSeasonEnvironmentsInEwdOriginals()
+        public static bool TryGetBiomeDisplayName(Heightmap.Biome biome, out string displayName)
         {
-            if (!isEnabled || EnvMan.instance == null)
+            displayName = null;
+
+            if (!TryGetBiomeManagerType())
+                return false;
+
+            biomeToDisplayNameField ??= AccessTools.Field(biomeManagerType, "BiomeToDisplayName");
+            Dictionary<Heightmap.Biome, string> displayNames = biomeToDisplayNameField?.GetValue(null) as Dictionary<Heightmap.Biome, string>;
+
+            return displayNames != null && displayNames.TryGetValue(biome, out displayName) && !String.IsNullOrWhiteSpace(displayName);
+        }
+
+        private static bool TryGetEnvironmentManagerType()
+        {
+            if (environmentManagerType != null)
+                return true;
+
+            if (assembly == null && Chainloader.PluginInfos.TryGetValue(GUID, out PluginInfo ewd))
+                assembly = Assembly.GetAssembly(ewd.Instance.GetType());
+
+            environmentManagerType = assembly?.GetType("ExpandWorldData.EnvironmentManager");
+            return environmentManagerType != null;
+        }
+
+        private static bool TryGetBiomeManagerType()
+        {
+            if (biomeManagerType != null)
+                return true;
+
+            if (assembly == null && Chainloader.PluginInfos.TryGetValue(GUID, out PluginInfo ewd))
+                assembly = Assembly.GetAssembly(ewd.Instance.GetType());
+
+            biomeManagerType = assembly?.GetType("ExpandWorldData.BiomeManager");
+            return biomeManagerType != null;
+        }
+
+        private static bool IsEnvironmentManagerInitialized()
+        {
+            if (!TryGetEnvironmentManagerType())
+                return false;
+
+            environmentManagerInitializedField ??= AccessTools.Field(environmentManagerType, "Initialized");
+            return environmentManagerInitializedField?.GetValue(null) is bool initialized && initialized;
+        }
+
+        private static void ReapplySeasonEnvironmentsAfterEwdUpdate()
+        {
+            if (!seasonsWorldInitialized || !IsEnvironmentManagerInitialized() || !SeasonState.IsActive)
                 return;
 
-            Dictionary<string, EnvSetup> originals = GetEnvironmentOriginals();
-            if (originals == null)
-                return;
+            SeasonState.PrepareForExternalEnvironmentUpdate();
+            SeasonState.UpdateSeasonEnvironments();
+            EnvManPatches.settingsUpdated = true;
 
-            int added = 0;
-
-            foreach (SeasonEnvironment seasonEnvironment in SeasonState.seasonEnvironments)
-            {
-                if (seasonEnvironment == null || string.IsNullOrWhiteSpace(seasonEnvironment.m_name))
-                    continue;
-
-                EnvSetup env = EnvMan.instance.GetEnv(seasonEnvironment.m_name);
-                if (env == null || string.IsNullOrWhiteSpace(env.m_name) || originals.ContainsKey(env.m_name))
-                    continue;
-
-                originals.Add(env.m_name, env);
-                added++;
-            }
-
-            if (added > 0)
-                Seasons.LogInfo($"Added {added} Seasons custom environments to Expand World Data originals.");
+            Seasons.LogInfo("Reapplied Seasons environments after Expand World Data environment update.");
         }
 
-        private static Dictionary<string, EnvSetup> GetEnvironmentOriginals()
+        private static void CaptureEwdBiomeSetup()
         {
-            environmentManagerType ??= assembly?.GetType("ExpandWorldData.EnvironmentManager");
-            if (environmentManagerType == null)
-                return null;
+            ewdBiomeSetupAppliedLast = true;
 
-            environmentOriginalsField ??= AccessTools.Field(environmentManagerType, "Originals");
-            return environmentOriginalsField?.GetValue(null) as Dictionary<string, EnvSetup>;
-        }
-
-        private static void CaptureEwdBiomeDefaults()
-        {
-            if (!SeasonState.IsActive)
+            if (!seasonsWorldInitialized || EnvMan.instance == null)
                 return;
 
             SeasonState.RefreshBiomesDefault(forceUpdate: true);
-            ewdBiomeSetupAppliedLast = true;
-        }
+            EnvMan.instance.m_environmentPeriod = -1L;
 
-        private static void RequestDelayedRefresh(string reason)
-        {
-            if (!isEnabled || Seasons.instance == null || !SeasonState.IsActive)
-                return;
-
-            lastDelayedRefreshRequestTime = Time.realtimeSinceStartup;
-
-            if (!delayedRefreshPending)
+            if (SeasonState.IsActive)
             {
-                delayedRefreshPending = true;
-                Seasons.instance.StartCoroutine(DelayedRefresh());
+                EnvManPatches.settingsUpdated = true;
+                Seasons.LogInfo("Expand World Data biome environment setup registered as authoritative for seasonal weather rules.");
             }
-
-            Seasons.LogInfo($"Expand World Data compatibility refresh requested: {reason}");
-        }
-
-        private static IEnumerator DelayedRefresh()
-        {
-            while (Time.realtimeSinceStartup - lastDelayedRefreshRequestTime < 1f)
-                yield return null;
-
-            delayedRefreshPending = false;
-
-            ApplyDelayedRefresh();
-        }
-
-        private static void ApplyDelayedRefresh()
-        {
-            if (!SeasonState.IsActive)
-                return;
-
-            Seasons.LogInfo($"Applying Expand World Data environment compatibility refresh.");
-
-            SeasonState.UpdateSeasonEnvironments();
-            SeasonState.UpdateBiomeEnvironments();
-            RegisterSeasonEnvironmentsInEwdOriginals();
-            EnvManPatches.settingsUpdated = true;
         }
 
         [HarmonyPatch]
-        public static class EWD_EnvironmentManager_Set_RefreshBiomeSettings
+        public static class EWD_EnvironmentManager_Initialize_ResetWorldState
         {
             public static MethodBase target;
 
             public static bool Prepare(MethodBase original)
             {
-                if (!Chainloader.PluginInfos.TryGetValue(GUID, out PluginInfo ewd))
+                if (!TryGetEnvironmentManagerType())
                     return false;
 
-                assembly ??= Assembly.GetAssembly(ewd.Instance.GetType());
-                environmentManagerType ??= assembly.GetType("ExpandWorldData.EnvironmentManager");
-                if (environmentManagerType == null)
-                    return false;
-
-                target ??= AccessTools.Method(environmentManagerType, "Set");
+                target ??= AccessTools.Method(environmentManagerType, "Initialize", Type.EmptyTypes);
                 if (target == null)
                     return false;
 
                 if (original == null)
-                    Seasons.LogInfo("ExpandWorldData.EnvironmentManager:Set method is patched to refresh Seasons environments after EWD environment changes");
+                    Seasons.LogInfo("ExpandWorldData.EnvironmentManager:Initialize method is patched to reset Seasons EWD world state");
 
                 return true;
             }
 
             public static MethodBase TargetMethod() => target;
 
-            public static void Finalizer()
+            public static void Prefix()
             {
-                RequestDelayedRefresh("EWD environment data changed");
+                ResetWorldState();
             }
         }
 
         [HarmonyPatch]
-        public static class EWD_EnvironmentManager_SetOriginals_RegisterSeasonEnvironments
+        public static class EWD_EnvironmentManager_Set_ReapplySeasonEnvironments
         {
             public static MethodBase target;
 
             public static bool Prepare(MethodBase original)
             {
-                if (!Chainloader.PluginInfos.TryGetValue(GUID, out PluginInfo ewd))
+                if (!TryGetEnvironmentManagerType())
                     return false;
 
-                assembly ??= Assembly.GetAssembly(ewd.Instance.GetType());
-                environmentManagerType ??= assembly.GetType("ExpandWorldData.EnvironmentManager");
-                if (environmentManagerType == null)
-                    return false;
-
-                target ??= AccessTools.Method(environmentManagerType, "SetOriginals");
+                target ??= AccessTools.Method(environmentManagerType, "Set", new Type[] { typeof(string) });
                 if (target == null)
                     return false;
 
                 if (original == null)
-                    Seasons.LogInfo("ExpandWorldData.EnvironmentManager:SetOriginals method is patched to include Seasons custom environments");
+                    Seasons.LogInfo("ExpandWorldData.EnvironmentManager:Set method is patched to reapply Seasons environments after EWD environment changes");
 
                 return true;
             }
 
             public static MethodBase TargetMethod() => target;
 
-            public static void Finalizer()
+            public static void Postfix()
             {
-                RegisterSeasonEnvironmentsInEwdOriginals();
+                ReapplySeasonEnvironmentsAfterEwdUpdate();
             }
         }
 
         [HarmonyPatch]
-        public static class EWD_BiomeManager_LoadEnvironments_RefreshBiomeSettings
+        public static class EWD_BiomeManager_SetupBiomeEnvs_RegisterAuthoritativeSetup
         {
             public static MethodBase target;
 
             public static bool Prepare(MethodBase original)
             {
-                if (!Chainloader.PluginInfos.TryGetValue(GUID, out PluginInfo ewd))
+                if (!TryGetBiomeManagerType())
                     return false;
 
-                assembly ??= Assembly.GetAssembly(ewd.Instance.GetType());
-                biomeManagerType ??= assembly.GetType("ExpandWorldData.BiomeManager");
-                if (biomeManagerType == null)
-                    return false;
-
-                target ??= AccessTools.Method(biomeManagerType, "LoadEnvironments");
+                target ??= AccessTools.Method(biomeManagerType, "SetupBiomeEnvs", new Type[] { typeof(List<BiomeEnvSetup>) });
                 if (target == null)
                     return false;
 
                 if (original == null)
-                    Seasons.LogInfo("ExpandWorldData.BiomeManager:LoadEnvironments method is patched to refresh Seasons biome settings after EWD biome changes");
+                    Seasons.LogInfo("ExpandWorldData.BiomeManager:SetupBiomeEnvs method is patched to preserve EWD biome entries while applying seasonal rules");
 
                 return true;
             }
 
             public static MethodBase TargetMethod() => target;
 
-            public static void Finalizer()
+            public static void Postfix()
             {
-                CaptureEwdBiomeDefaults();
-                RequestDelayedRefresh("EWD biome environments loaded");
-            }
-        }
-
-        [HarmonyPatch]
-        public static class EWD_BiomeManager_SetupBiomeEnvs_RefreshBiomeSettings
-        {
-            public static MethodBase target;
-
-            public static bool Prepare(MethodBase original)
-            {
-                if (!Chainloader.PluginInfos.TryGetValue(GUID, out PluginInfo ewd))
-                    return false;
-
-                assembly ??= Assembly.GetAssembly(ewd.Instance.GetType());
-                biomeManagerType ??= assembly.GetType("ExpandWorldData.BiomeManager");
-                if (biomeManagerType == null)
-                    return false;
-
-                target ??= AccessTools.Method(biomeManagerType, "SetupBiomeEnvs");
-                if (target == null)
-                    return false;
-
-                if (original == null)
-                    Seasons.LogInfo("ExpandWorldData.BiomeManager:SetupBiomeEnvs method is patched to refresh Seasons biome settings after EWD biome changes");
-
-                return true;
-            }
-
-            public static MethodBase TargetMethod() => target;
-
-            public static void Finalizer()
-            {
-                CaptureEwdBiomeDefaults();
-                RequestDelayedRefresh("EWD biome setup changed");
+                CaptureEwdBiomeSetup();
             }
         }
 
@@ -269,14 +217,11 @@ namespace Seasons.Compatibility
         public static class EnvMan_GetAvailableEnvironments_ApplySeasonalRulesAfterEWD
         {
             [HarmonyPriority(Priority.Last)]
-            public static void Postfix(ref List<EnvEntry> __result, object[] __args)
+            [HarmonyAfter(new string[1] { GUID })]
+            public static void Postfix(Heightmap.Biome biome, ref List<EnvEntry> __result)
             {
                 if (__result == null || !ShouldApplySeasonalRulesToAvailableEnvironments())
                     return;
-
-                Heightmap.Biome biome = Heightmap.Biome.None;
-                if (__args != null && __args.Length > 0 && __args[0] is Heightmap.Biome argBiome)
-                    biome = argBiome;
 
                 __result = SeasonState.ApplySeasonBiomeEnvironmentRules(biome, __result);
             }
