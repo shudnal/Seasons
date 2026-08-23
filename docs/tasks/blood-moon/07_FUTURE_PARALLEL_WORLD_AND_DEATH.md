@@ -1,109 +1,157 @@
-# Blood Moon — future parallel world and death
+# Blood Moon — parallel world, Blood Craft and death
 
 Обязательная часть задачи `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
 
-# 22. Обязательные последующие архитектурные контракты
+> Production-код по этому документу не начинать до закрытия gate из `09_PREIMPLEMENTATION_DECISIONS_AND_SPIKES.md`.
 
-Следующие разделы **не реализуются в первом срезе**, но текущий код не должен делать их невозможными или требовать переписывания event identity/protocol.
+# 22. Связанные архитектурные контракты
 
-## 22.4. Параллельный слой и Blood Craft — один этап
+## 22.1. Параллельный слой и Blood Craft реализуются согласованно
 
-Эти системы нельзя реализовывать независимо:
+Эти системы образуют один gameplay contract:
 
-- Blood Craft определяет временные предметы и источники атак;
-- parallel-world layer определяет, что игрок видит, с чем сталкивается и чему может нанести урон;
-- projectiles/AOE должны сохранять принадлежность к слою;
-- без общей матрицы получится ситуация «вижу цель, но не понимаю, почему не наношу урон».
+- participant state определяет принадлежность Player к blood layer;
+- Blood Craft определяет временные items и attack sources;
+- visibility/collision определяет, что локально существует для Player;
+- target/damage routing определяет допустимые взаимодействия;
+- projectiles/AOE/summons сохраняют `eventId` после создания и owner migration;
+- ejection возвращает Player в real-world layer без transform/respawn изменений.
 
-### Финальная матрица взаимодействий
+Blood Craft не является обязательным условием самого layer controller, но production-этапы должны использовать одну interaction policy и не создавать параллельные несовместимые модели.
 
-| Источник | Цель | Видимость/коллизия/урон |
+### Финальная матрица
+
+| Источник | Цель | Результат |
 |---|---|---|
-| Active/GoalReached participant | blood enemy текущего event ID | разрешено |
-| Active/GoalReached participant | ordinary enemy, boss, tamed | скрыто/неинтерактивно для локального участника, урон запрещён |
-| Active/GoalReached participant | building, crop и другие world objects | остаются частью пространства мира, но blood-layer атаки не наносят им урон |
-| Active/GoalReached participant | другой player | обычная видимость; урон только через отдельный optional PvP |
-| blood enemy | Active/GoalReached participant текущего event ID | разрешено |
-| blood enemy | любой другой player/обычный мир | не выбирать целью, урон запрещён |
-| nonparticipant client | blood enemy | не видеть, не сталкиваться локальным Player/projectile, не наносить урон |
-| ordinary enemy | Active/GoalReached participant | не выбирать целью и не наносить урон, пока игрок находится в blood layer |
+| `AwaitingContact`/`Fighting`/`GoalReached` Player | blood enemy текущего event ID | видит, сталкивается, hit разрешён |
+| blood-layer Player | ordinary enemy, boss, tamed | локально скрыто/неинтерактивно, target/damage запрещены |
+| blood-layer Player attack | building, crop, tree, ore, ordinary destructible | world geometry остаётся, damage/resource action запрещены |
+| blood-layer Player | другой Player | обычная видимость; damage только через optional PvP |
+| blood enemy | blood-layer Player текущего event ID | target/damage разрешены |
+| blood enemy | `Ejected`, nonparticipant, ordinary world | target/damage запрещены |
+| nonparticipant client | blood enemy | не видит, не сталкивается, не попадает projectile/AOE |
+| ordinary enemy | blood-layer Player | target/damage запрещены |
+| ordinary enemy | real-world Player/NPC/tamed | зависит от выбранной ordinary-world simulation policy |
 
-Игроки должны оставаться видимыми друг другу: неучаствующий наблюдатель может видеть, как участник сражается с воздухом.
+Player остаются видимыми друг другу. Real-world observer может видеть, как participant сражается с воздухом.
 
-Не отключать event enemy GameObject/AI целиком на клиенте-наблюдателе, особенно если этот пир владеет ZDO. Presentation и локальные collision/hit rules должны отделяться от сетевой симуляции и ownership.
+## 22.2. Не отключать root GameObject из-за локальной невидимости
 
-Полноценная реализация должна проверять не только Renderer:
+Client, который не должен видеть entity, всё ещё может быть её ZDO owner и обязан симулировать её для других peers.
 
-- physics collisions;
-- projectile hit masks;
-- AoE overlaps;
-- AI target lists;
-- final damage;
-- ragdoll/effects;
-- ownership migration;
-- переход в/из Bloodlust без stale colliders/renderers.
+Presentation controller должен отдельно управлять:
 
-### Blood Craft доступность
+- Renderer/LOD;
+- audio;
+- EnemyHud/name;
+- local Character/hitbox collider interaction;
+- projectile masks;
+- AoE acceptance;
+- target selection;
+- final damage.
 
-Blood Craft работает во время Marked и Active, пока у игрока есть соответствующий status.
+Не использовать `GameObject.SetActive(false)`/полное выключение AI как универсальный способ скрытия.
 
-- только уже известные рецепты;
-- бесплатно оружие, броня, trinkets, ammo и разрешённые consumables;
-- никаких blood drops/event currency для крафта;
-- подготовка должна быть простой и доступной до начала боя;
-- временные предметы не ломаются;
-- бесплатный upgrade разрешён только уже временному предмету;
-- постоянный предмет нельзя бесплатно улучшить;
-- эффекты уже употреблённой бесплатной еды/расходников после события остаются;
+## 22.3. Ownership ordinary entities
+
+### Не использовать устойчивый `SetOwner(0)` parking
+
+Vanilla `ZDOMan.ReleaseZDOS` периодически вызывает `ReleaseNearbyZDOS` и назначает persistent ownerless ZDO ближайшему active peer. Поэтому `SetOwner(0)` без изменения центральной owner-selection logic не создаёт стабильную паузу.
+
+Также ownerless interval создаёт лишние owner revisions, RPC/ownership races и неопределённое поведение нестандартных nonpersistent modded entities.
+
+### Предпочтительный порядок
+
+1. Не менять owner, если это не требуется.
+2. Если ordinary entity owned blood participant и рядом есть eligible real-world peer, server может напрямую назначить этого peer owner без промежуточного owner=0.
+3. Если eligible peer нет, сохранить current owner.
+4. Для сохранения образа «real world застыл» локально suspend ordinary AI на participant owner по выбранной Policy B.
+5. После ejection/resolve suspension снимается немедленно.
+6. Если suspension окажется хрупкой, fallback — background simulation без owner changes.
+7. Не patch-ить глобальный `ZDO.SetOwner`/`ReleaseNearbyZDOS` до отдельного доказанного spike.
+
+Event enemies могут быть owned participant или nonparticipant. Nonparticipant owner продолжает AI simulation, но локально не видит/не сталкивается с entity; central target rules разрешают event enemy атаковать только blood-layer Player.
+
+### Simulation policy
+
+Предпочтительно проверить:
+
+- **Policy A:** ordinary world продолжает background simulation;
+- **Policy B:** ordinary entity owned participant suspend-ится, если рядом нет real-world observer; при появлении observer ownership по возможности передаётся ему;
+- **Policy C:** глобальный layer-aware owner pool — не рекомендуется без необходимости.
+
+Предварительный выбор — Policy B, fallback — A.
+
+## 22.4. First contact и ejection
+
+В 23:00 Player входит в `AwaitingContact` blood layer без transform changes.
+
+Первый accepted blood interaction переводит в `Fighting` и создаёт `FirstBloodContactRecord`. Запись не является positional backup.
+
+Preferred defeat flow:
+
+- lethal condition перехватывается до `Player.OnDeath`;
+- no TombStone/death point/ragdoll/respawn;
+- обычный inventory/equipment/food остаются;
+- health восстанавливается;
+- phase → `Ejected`, outcome → `Death`;
+- blood layer отключается;
+- real world возвращается в той же position/rotation/velocity;
+- применяется короткая grace после отдельного решения.
+
+Никаких автоматических teleport/raycast/ground restore.
+
+## 22.5. Blood Craft доступность
+
+Blood Craft работает во время Marked и blood-layer phases, пока у Player есть соответствующее право/status.
+
+- только известные recipes;
+- бесплатно оружие, armour, trinkets, ammo и разрешённые consumables;
+- никаких blood drops/event currency;
+- временные items не ломаются;
+- бесплатный upgrade только временному item;
+- постоянный item нельзя бесплатно upgrade;
+- употреблённая бесплатная food/mead может оставить эффект после события;
 - оставшиеся ammo/consumables/items удаляются.
 
-Blood Craft — не награда. Это временное снятие resource/skill lock-in, чтобы игрок мог попробовать другой билд в реальном бою.
+Blood Craft — временное снятие resource/skill lock-in, а не reward.
 
-### Интеграция с Craft/Upgrade UI
+## 22.6. Craft/Upgrade UI
 
-Перед реализацией повторно проверить актуальный `assemblies_combined`. В текущем коде:
+Перед реализацией повторно проверить актуальный `assemblies_combined`.
 
-- `Player.GetAvailableRecipes(ref List<Recipe>)` формирует исходный набор;
-- `InventoryGui.UpdateRecipeList(List<Recipe>)` различает Craft/Upgrade через `InCraftTab()` и создаёт `m_availableRecipes`.
+### Кастомная вкладка
 
-Принятый UX:
+Если вкладка не vanilla Craft/Upgrade:
 
-#### Любая кастомная вкладка
+- ничего не менять;
+- не добавлять recipes;
+- не менять requirements/button/UI другого мода.
 
-Если активная вкладка не является ванильной Craft или Upgrade:
+### Upgrade
 
-- не менять список;
-- не добавлять дубли;
-- не менять requirements;
-- не перекрашивать кнопку;
-- не вмешиваться в UI другого мода.
+- не дублировать базовый список;
+- после формирования `m_availableRecipes` проверять `RecipeDataPair.ItemData`;
+- Blood Craft item row подсвечивать приглушённо-красным;
+- selected temporary item делает Upgrade button красной;
+- upgrade бесплатный;
+- marker/owner/event ID сохраняются;
+- ordinary item остаётся vanilla.
 
-#### Upgrade
+### Craft
 
-- базовый список рецептов не модифицировать и не дублировать;
-- после формирования `m_availableRecipes` определить строки, где `RecipeDataPair.ItemData` является Blood Craft item;
-- выделить такие строки приглушённым красным текстом/фоном/обводкой;
-- при выборе временного item сделать кнопку Upgrade красной;
-- upgrade временного item бесплатный;
-- upgrade обычного item остаётся полностью ванильным;
-- результат upgrade сохраняет marker, owner и event ID.
+- после vanilla списка известных recipes добавить runtime Blood Craft clone для eligible recipe;
+- original permanent recipe остаётся;
+- clone имеет отдельную identity и локализуемый marker;
+- row/button подсвечиваются;
+- requirements бесплатны;
+- shared `Recipe` не мутируется;
+- clones очищаются при rebuild/close/unload;
+- actual craft path валидирует clone identity, а не цвет UI.
 
-#### Craft
+Точную Harmony-точку выбрать после проверки совместимости с custom tabs.
 
-- после получения ванильного списка известных/доступных рецептов пройти по нему;
-- для каждого eligible recipe добавить отдельный runtime clone/дубль Blood Craft recipe;
-- оригинальный постоянный recipe остаётся в списке;
-- clone имеет явный локализуемый префикс/маркер и отдельную runtime identity;
-- blood row подсвечивается приглушённо-красным;
-- при выборе blood clone кнопка Craft красная и требования бесплатны;
-- обычный recipe рядом остаётся платным;
-- не мутировать исходный shared `Recipe`;
-- временные recipe clones очищаются при перестроении списка/закрытии UI/world unload;
-- actual crafting path обязан валидировать выбранный clone, а не доверять только цвету UI.
-
-Точную Harmony-точку (`Player.GetAvailableRecipes` postfix/finalizer, `InventoryGui.UpdateRecipeList` prefix/postfix/finalizer либо комбинацию) выбрать после проверки актуального кода и совместимости с кастомными вкладками. Требование важнее конкретной точки патча.
-
-### Marker
+## 22.7. Marker и inventory invariant
 
 ```text
 Seasons.BloodCraft.Schema
@@ -111,97 +159,130 @@ Seasons.BloodCraft.EventId
 Seasons.BloodCraft.OwnerPlayerId
 ```
 
-### Инвариант
-
-> Blood Craft item может существовать только в поддерживаемом inventory своего Player-владельца и только в соответствующем event ID.
-
-### Damage routing
-
-Основной routing определяется участием Player в текущем blood layer, а не только marker предмета:
-
-- melee, projectile и persistent AOE активного участника относятся к текущему `eventId`;
-- такие атаки наносят урон только blood enemies текущего event ID;
-- обычное постоянное оружие участника также может использоваться против blood enemies, чтобы игрок не сталкивался с необъяснимым «моё оружие перестало работать»;
-- Blood Craft marker отвечает за временность/владение предметом и дополнительно переносится в attack attribution;
-- никакие blood-layer атаки не наносят урон ordinary enemies, bosses, tamed, crops, buildings и nonparticipants;
-- projectile/AOE получают event/layer marker в момент создания, чтобы позднее попадание не зависело от текущего оружия или состояния UI.
+> Blood Craft item существует только в поддерживаемом inventory своего owner и только в соответствующем event ID.
 
 ### Drop cleanup
 
-В `ItemDrop.Awake` предмет с Blood Craft marker немедленно уничтожается.
+`ItemDrop.Awake` немедленно уничтожает Blood Craft item.
 
-### Interactable.UseItem
+### `Interactable.UseItem`
 
-Под `UseItem` имеется в виду `Interactable.UseItem`: временный item нельзя применить к объекту мира/станции/стойке/контейнерному потребителю.
+Временный item нельзя применить к world object/station/stand/container consumer.
 
-При этом нельзя запрещать нормальное player use:
+Нельзя запрещать player use:
 
-- экипировать оружие/броню;
-- стрелять ammo;
-- пить разрешённый mead;
-- есть разрешённую еду.
+- equip weapon/armour;
+- fire ammo;
+- drink mead;
+- eat food.
 
 ### Tombstone/load/external inventories
 
-- удалить временные предметы до переноса в TombStone;
+- при dream collapse TombStone не создаётся;
+- при любом fallback vanilla death удалить Blood Craft items до TombStone transfer;
 - очищать stale markers при Inventory.Load;
-- запрещать перенос в container, ship storage, item stand, armour stand, trade/external inventories;
-- учитывать сторонние equipment inventories через owner invariant, насколько возможно без жёстких зависимостей.
+- запрещать container/ship storage/item stand/armour stand/trade/external inventory;
+- учитывать сторонние equipment inventories через owner invariant без hard dependency.
 
 ### Stack merge
 
-В текущей игре `m_customData` не предотвращает слияние стеков. `Inventory.AddItem`/`FindFreeStackItem` ориентируются прежде всего на name/quality/world level.
+`m_customData` не предотвращает vanilla stack merge. Запрещать объединение:
 
-Слияние временного и постоянного stack должно быть **явно запрещено**.
+- temporary + permanent;
+- разные event ID;
+- разные owner ID.
 
-Перед реализацией выбрать наиболее надёжный путь:
+До реализации сравнить:
 
 1. точечный transpiler/override stack compatibility;
-2. временное извлечение Blood Craft items вокруг конкретной vanilla merge operation и безопасное возвращение;
-3. отдельный virtual inventory для stackables только если первые варианты хуже.
+2. временное извлечение temporary items вокруг merge operation;
+3. virtual inventory только как fallback.
 
-Не допускать:
+## 22.8. Damage routing и attribution
 
-- потери marker и сохранения бесплатного stack;
-- переноса marker на обычный stack и удаления постоянных предметов утром;
-- объединения Blood Craft stacks разных event ID/owner ID.
+Layer принадлежность Player является главным правилом:
 
-## 22.5. Смерть вдали от базы и dream return
+- обычное и Blood Craft оружие blood-layer Player повреждает только blood enemies текущего event ID;
+- никакие его attacks не повреждают ordinary enemies, bosses, tamed, crops, buildings, trees/ores и nonparticipants;
+- projectile/AOE получает event/layer attribution при создании;
+- delayed hit не зависит от текущего weapon/status/owner;
+- blood enemy projectile/AOE также сохраняет marker после source death/owner migration.
 
-Первый срез только сохраняет `CombatEntrySnapshot` и использует vanilla death под `SoftDeath`.
+## 22.9. Combat summons
 
-До релизной версии отдельно принять и реализовать UX смерти, учитывая nomap/noportals:
+Для полноценной поддержки magic/BloodMagic:
 
-### Кандидат: dream collapse
+- combat summon, созданный blood-layer Player в Active, становится blood entity текущего event ID;
+- атакует только blood enemies;
+- невидим/неинтерактивен для real-world Player;
+- исчезает при owner ejection/resolve;
+- summon/tamed, существовавший до blood layer, остаётся ordinary и скрывается от participant;
+- ordinary turret/trap не становится blood entity автоматически.
 
-- lethal blood damage фиксирует outcome `Death`;
-- игрок теряет доступ к активной части события;
-- нет skill loss;
-- нет обязательного долгого corpse run к случайной точке боя;
-- после fade игрок возвращается к валидной точке входа в Fighting либо к другому безопасному anchor;
-- обычный inventory не дублируется и не теряется;
-- Blood Craft items очищаются;
-- DreamText объясняет удар, забытьё и возвращение.
+## 22.10. DOT/status attribution
 
-### Открытые вопросы
+Vanilla poison/burning и другие persistent effects не имеют достаточной event attribution по одному hash.
 
-- создавать ли TombStone вообще;
-- перехватывать ли только blood enemy damage или любую смерть с Bloodlust;
-- что делать на корабле, в данже, воде, воздухе и attached;
-- как валидировать сохранённую позицию после изменения мира;
-- что делать, если вход в бой произошёл в заведомо опасной точке;
-- как совместить с death/respawn модами.
+До production enemy pool выбрать:
 
-До решения не выдавать обычный vanilla death flow за окончательный дизайн.
+1. первый enemy без persistent DOT/status attacks;
+2. blood-specific status clones;
+3. source-aware SE tracking.
 
-## 22.6. Lifesteal
+Для первого combat prototype принят вариант 1. Не удалять глобально Poison/Burning, потому что можно стереть pre-existing real-world effect.
 
-Отложить до playtest общего темпа.
+## 22.11. Context policy
 
-Будущий вариант должен учитывать attack-instance/target dedup и cap лечения в секунду; не реализовывать сейчас преждевременную формулу.
+До реализации определить минимум:
 
-## 22.7. Music
+- outdoor ground;
+- dungeon/interior;
+- ship/ocean;
+- mounted/attached;
+- swimming/falling;
+- boss encounter;
+- portal/teleport;
+- late join.
 
-Позже возможно несколько собственных треков по состояниям Marked/Active/Final. Текущая visual/phase architecture должна предоставлять чистые transitions, но музыка не входит в эту задачу.
+Для context выбрать:
 
----
+```text
+full participation
+context-specific blood pool
+AwaitingContact без forced engagement
+safe skip for this Player
+```
+
+Surface-only spawn не является production support.
+
+## 22.12. World interactions
+
+Принято:
+
+- geometry/terrain/buildings остаются видимыми/коллизионными;
+- blood attacks не меняют world resources/objects;
+- doors/crafting stations остаются usable;
+- Player transform/ship position не изменяются модом.
+
+Открыто:
+
+- ordinary ItemDrop visibility/pickup;
+- containers;
+- ship/mount controls;
+- building/placement/terrain tools;
+- trader/NPC;
+- traps/turrets.
+
+Решение должно сохранять agency и не давать непонятных полуработающих действий.
+
+## 22.13. Re-entry
+
+Первая версия может не иметь re-entry.
+
+Будущий предпочтительный вариант — один temporary owner/event-bound Blood Craft consumable, подготовленный в Marked и используемый из inventory после ejection. Он не требует базы, не меняет world и исчезает утром.
+
+## 22.14. Lifesteal и музыка
+
+Lifesteal отложен до playtest темпа.
+
+Музыка позже может иметь несколько tracks по state. Текущая architecture предоставляет чистые phase transitions, но audio не входит в первый prototype.
