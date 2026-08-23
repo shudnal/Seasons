@@ -1,157 +1,189 @@
-# Blood Moon — parallel world, Blood Craft and death
+# Blood Moon — parallel layer and Blood Craft contracts
 
-Обязательная часть задачи `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
+Part of `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
 
-> Production-код по этому документу не начинать до закрытия gate из `09_PREIMPLEMENTATION_DECISIONS_AND_SPIKES.md`.
+> Production implementation is blocked by runtime spike files `09` and `10`.
 
-# 22. Связанные архитектурные контракты
+# 22. Parallel-world contract
 
-## 22.1. Параллельный слой и Blood Craft реализуются согласованно
+## 22.1. Layer classifications
 
-Эти системы образуют один gameplay contract:
+Candidate centralized classifications:
 
-- participant state определяет принадлежность Player к blood layer;
-- Blood Craft определяет временные items и attack sources;
-- visibility/collision определяет, что локально существует для Player;
-- target/damage routing определяет допустимые взаимодействия;
-- projectiles/AOE/summons сохраняют `eventId` после создания и owner migration;
-- ejection возвращает Player в real-world layer без transform/respawn изменений.
+```csharp
+RealWorld
+SharedPlayer
+BloodAwaitingContact
+BloodParticipant
+BloodEnemy
+BloodBoundMount
+```
 
-Blood Craft не является обязательным условием самого layer controller, но production-этапы должны использовать одну interaction policy и не создавать параллельные несовместимые модели.
+- `BloodAwaitingContact`: blood invasion is visible, but ordinary world remains visible until first accepted contact;
+- `BloodParticipant`: full blood-only isolation for `Fighting`/`GoalReached`;
+- `SharedPlayer`: players remain visible to both worlds;
+- `BloodBoundMount`: rider’s currently mounted creature retained only as a movement bridge during full layer.
 
-### Финальная матрица
+All local and network paths use one policy:
 
-| Источник | Цель | Результат |
+```text
+CanSee
+CanCollide
+CanTarget
+CanDamage
+CanInteract
+```
+
+## 22.2. Interaction matrix after first contact
+
+| Source | Target | Result |
 |---|---|---|
-| `AwaitingContact`/`Fighting`/`GoalReached` Player | blood enemy текущего event ID | видит, сталкивается, hit разрешён |
-| blood-layer Player | ordinary enemy, boss, tamed | локально скрыто/неинтерактивно, target/damage запрещены |
-| blood-layer Player attack | building, crop, tree, ore, ordinary destructible | world geometry остаётся, damage/resource action запрещены |
-| blood-layer Player | другой Player | обычная видимость; damage только через optional PvP |
-| blood enemy | blood-layer Player текущего event ID | target/damage разрешены |
-| blood enemy | `Ejected`, nonparticipant, ordinary world | target/damage запрещены |
-| nonparticipant client | blood enemy | не видит, не сталкивается, не попадает projectile/AOE |
-| ordinary enemy | blood-layer Player | target/damage запрещены |
-| ordinary enemy | real-world Player/NPC/tamed | зависит от выбранной ordinary-world simulation policy |
+| Fighting/GoalReached Player | blood enemy current event | visible, collidable and damage allowed |
+| Fighting/GoalReached Player | ordinary enemy, boss, tamed | locally hidden/noninteractive, damage forbidden |
+| blood-layer Player attack | building, crop, tree, ore, ordinary destructible | geometry remains, damage/resource action forbidden |
+| blood-layer Player | another Player | visible; damage only via future optional PvP |
+| blood enemy | current-event Fighting/GoalReached Player | target/damage allowed |
+| blood enemy | AwaitingContact Player | may target/accepted first hit; first hit switches Player before resolution |
+| blood enemy | Ejected/nonparticipant/ordinary world | target/damage forbidden |
+| observer client | blood enemy | hidden, noncolliding with local Player/projectiles, no damage |
+| ordinary enemy | blood-layer Player | target/damage forbidden |
+| ordinary enemy | real-world actors | background/suspension policy decides normal simulation |
 
-Player остаются видимыми друг другу. Real-world observer может видеть, как participant сражается с воздухом.
+Observers still see participant Player fighting apparently empty space.
 
-## 22.2. Не отключать root GameObject из-за локальной невидимости
+## 22.3. Do not disable network root
 
-Client, который не должен видеть entity, всё ещё может быть её ZDO owner и обязан симулировать её для других peers.
+A client that must not see an entity may still own/simulate its ZDO for another peer.
 
-Presentation controller должен отдельно управлять:
+Do not use `GameObject.SetActive(false)` or disable AI/root as the visibility solution.
 
-- Renderer/LOD;
+Control separately:
+
+- character visual/LOD;
 - audio;
 - EnemyHud/name;
-- local Character/hitbox collider interaction;
-- projectile masks;
-- AoE acceptance;
+- local Player ↔ Character body collision;
+- hitboxes;
+- melee/projectile/AoE candidate filtering;
 - target selection;
-- final damage.
+- final damage;
+- hover/interaction.
 
-Не использовать `GameObject.SetActive(false)`/полное выключение AI как универсальный способ скрытия.
+## 22.4. Collision transparency
 
-## 22.3. Ownership ordinary entities
+`Physics.IgnoreCollision` for body colliders is insufficient. Hidden Character hitboxes can still block attacks.
 
-### Не использовать устойчивый `SetOwner(0)` parking
+Required paths:
 
-Vanilla `ZDOMan.ReleaseZDOS` периодически вызывает `ReleaseNearbyZDOS` и назначает persistent ownerless ZDO ближайшему active peer. Поэтому `SetOwner(0)` без изменения центральной owner-selection logic не создаёт стабильную паузу.
+- melee candidate filtering;
+- area attack filtering;
+- projectile hit filtering that continues to the next raycast hit after an incompatible hidden collider;
+- AoE filtering before damage/status/stagger;
+- final damage guard;
+- event/layer attribution stored when projectile/AoE is created.
 
-Также ownerless interval создаёт лишние owner revisions, RPC/ownership races и неопределённое поведение нестандартных nonpersistent modded entities.
+## 22.5. Ownership
 
-### Предпочтительный порядок
+Do not mass-call `SetOwner(0)`:
 
-1. Не менять owner, если это не требуется.
-2. Если ordinary entity owned blood participant и рядом есть eligible real-world peer, server может напрямую назначить этого peer owner без промежуточного owner=0.
-3. Если eligible peer нет, сохранить current owner.
-4. Для сохранения образа «real world застыл» локально suspend ordinary AI на participant owner по выбранной Policy B.
-5. После ejection/resolve suspension снимается немедленно.
-6. Если suspension окажется хрупкой, fallback — background simulation без owner changes.
-7. Не patch-ить глобальный `ZDO.SetOwner`/`ReleaseNearbyZDOS` до отдельного доказанного spike.
+- vanilla `ReleaseNearbyZDOS` reassigns persistent ownerless ZDOs to active peers;
+- owner revisions churn;
+- owner-targeted RPC become ambiguous;
+- nonpersistent modded objects risk orphan behavior.
 
-Event enemies могут быть owned participant или nonparticipant. Nonparticipant owner продолжает AI simulation, но локально не видит/не сталкивается с entity; central target rules разрешают event enemy атаковать только blood-layer Player.
+Visibility is independent of ownership.
 
-### Simulation policy
+Baseline:
 
-Предпочтительно проверить:
+- retain current owner;
+- participant or observer owner simulates entity;
+- local presentation follows local layer;
+- optional direct transfer to an eligible observer is an optimization, not a requirement.
 
-- **Policy A:** ordinary world продолжает background simulation;
-- **Policy B:** ordinary entity owned participant suspend-ится, если рядом нет real-world observer; при появлении observer ownership по возможности передаётся ему;
-- **Policy C:** глобальный layer-aware owner pool — не рекомендуется без необходимости.
+## 22.6. Ordinary-world simulation
 
-Предварительный выбор — Policy B, fallback — A.
+### Baseline
 
-## 22.4. First contact и ejection
+Ordinary world continues vanilla simulation but cannot see/damage blood-layer Player and is locally hidden from that Player.
 
-В 23:00 Player входит в `AwaitingContact` blood layer без transform changes.
+### Conditional suspension experiment
 
-Первый accepted blood interaction переводит в `Fighting` и создаёт `FirstBloodContactRecord`. Запись не является positional backup.
+Only after baseline isolation works:
 
-Preferred defeat flow:
+- if ordinary Character is owned by a blood participant;
+- and no ready real-world witness is within active area/witness radius;
+- retain owner but suspend narrow AI movement/target acquisition;
+- resume on witness appearance/ejection/resolve;
+- exclude `BloodBoundMount`;
+- use group interaction radius plus hysteresis.
 
-- lethal condition перехватывается до `Player.OnDeath`;
-- no TombStone/death point/ragdoll/respawn;
-- обычный inventory/equipment/food остаются;
-- health восстанавливается;
-- phase → `Ejected`, outcome → `Death`;
-- blood layer отключается;
-- real world возвращается в той же position/rotation/velocity;
-- применяется короткая grace после отдельного решения.
+`AwaitingContact` and `Ejected` count as real-world witnesses. This is not a full simulation freeze: physics, status timers and other components may continue.
 
-Никаких автоматических teleport/raycast/ground restore.
+Production fallback is background simulation if suspension is fragile.
 
-## 22.5. Blood Craft доступность
+---
 
-Blood Craft работает во время Marked и blood-layer phases, пока у Player есть соответствующее право/status.
+# 23. Mounted bridge
 
-- только известные recipes;
-- бесплатно оружие, armour, trinkets, ammo и разрешённые consumables;
-- никаких blood drops/event currency;
-- временные items не ломаются;
-- бесплатный upgrade только временному item;
-- постоянный item нельзя бесплатно upgrade;
-- употреблённая бесплатная food/mead может оставить эффект после события;
-- оставшиеся ammo/consumables/items удаляются.
+Forced dismount is not accepted as the primary approach. Vanilla saddle release calls `AttachStop`, which moves the Player to mount detach offset.
 
-Blood Craft — временное снятие resource/skill lock-in, а не reward.
+Preferred spike:
 
-## 22.6. Craft/Upgrade UI
+- identify current saddle through `Player.GetDoodadController() is Sadle`;
+- accepted blood hit on rider or current mount contacts rider;
+- zero blood damage to mount;
+- rider enters Fighting without dismount;
+- mount remains visible/controllable to rider;
+- observers see ordinary rider+mount;
+- blood enemies target rider, not mount;
+- ordinary enemies do not target/damage bridged mount;
+- mount cannot damage blood enemies or grant progress;
+- voluntary dismount releases bridge and ordinary mount becomes hidden/noninteractive for still-fighting Player.
 
-Перед реализацией повторно проверить актуальный `assemblies_combined`.
+If this cannot be isolated safely, mounted context remains deferred until voluntary dismount. Do not hide failure behind a forced transform change.
 
-### Кастомная вкладка
+---
 
-Если вкладка не vanilla Craft/Upgrade:
+# 24. Blood Craft contract
 
-- ничего не менять;
-- не добавлять recipes;
-- не менять requirements/button/UI другого мода.
+Blood Craft is temporary build experimentation, not reward.
+
+- available during Marked and authorized Blood Moon phases;
+- only already known recipes;
+- free temporary weapons, armor, trinkets, ammo and allowed consumables;
+- no event currency/drop loop;
+- temporary items do not break;
+- free upgrade only for temporary item;
+- normal item cannot be upgraded free;
+- remaining temporary items/ammo/consumables are removed;
+- effects of already consumed food/mead may remain.
+
+## 24.1. Craft UI
+
+### Custom tabs
+
+If active tab is not vanilla Craft or Upgrade, do nothing.
 
 ### Upgrade
 
-- не дублировать базовый список;
-- после формирования `m_availableRecipes` проверять `RecipeDataPair.ItemData`;
-- Blood Craft item row подсвечивать приглушённо-красным;
-- selected temporary item делает Upgrade button красной;
-- upgrade бесплатный;
-- marker/owner/event ID сохраняются;
-- ordinary item остаётся vanilla.
+- do not duplicate list;
+- highlight rows whose `RecipeDataPair.ItemData` is Blood Craft;
+- red Upgrade button for selected temporary item;
+- free upgrade;
+- preserve marker/owner/event ID;
+- normal item remains vanilla.
 
 ### Craft
 
-- после vanilla списка известных recipes добавить runtime Blood Craft clone для eligible recipe;
-- original permanent recipe остаётся;
-- clone имеет отдельную identity и локализуемый marker;
-- row/button подсвечиваются;
-- requirements бесплатны;
-- shared `Recipe` не мутируется;
-- clones очищаются при rebuild/close/unload;
-- actual craft path валидирует clone identity, а не цвет UI.
+- after vanilla known recipe list, add runtime Blood Craft clone for eligible recipe;
+- keep original permanent recipe;
+- clone has separate identity/localized marker and muted-red row/button;
+- clone requirements are free;
+- never mutate shared `Recipe`;
+- clear clones on rebuild/close/unload;
+- actual craft path validates clone identity, not UI color.
 
-Точную Harmony-точку выбрать после проверки совместимости с custom tabs.
-
-## 22.7. Marker и inventory invariant
+## 24.2. Marker and inventory invariant
 
 ```text
 Seasons.BloodCraft.Schema
@@ -159,130 +191,62 @@ Seasons.BloodCraft.EventId
 Seasons.BloodCraft.OwnerPlayerId
 ```
 
-> Blood Craft item существует только в поддерживаемом inventory своего owner и только в соответствующем event ID.
+> A Blood Craft item may exist only in its owner Player’s supported inventory and only for its event ID.
 
-### Drop cleanup
+- `ItemDrop.Awake` destroys a dropped temporary item;
+- `Interactable.UseItem` rejects using it on world objects/stations/stands;
+- player equip/fire/eat/drink remains allowed;
+- clear stale markers on inventory load;
+- reject container/ship storage/item stand/armor stand/trade/external inventory;
+- dream collapse creates no TombStone; fallback vanilla death removes temporary items before transfer.
 
-`ItemDrop.Awake` немедленно уничтожает Blood Craft item.
+## 24.3. Stack merge
 
-### `Interactable.UseItem`
-
-Временный item нельзя применить к world object/station/stand/container consumer.
-
-Нельзя запрещать player use:
-
-- equip weapon/armour;
-- fire ammo;
-- drink mead;
-- eat food.
-
-### Tombstone/load/external inventories
-
-- при dream collapse TombStone не создаётся;
-- при любом fallback vanilla death удалить Blood Craft items до TombStone transfer;
-- очищать stale markers при Inventory.Load;
-- запрещать container/ship storage/item stand/armour stand/trade/external inventory;
-- учитывать сторонние equipment inventories через owner invariant без hard dependency.
-
-### Stack merge
-
-`m_customData` не предотвращает vanilla stack merge. Запрещать объединение:
+Vanilla stack compatibility does not reliably include `m_customData`. Explicitly reject merge:
 
 - temporary + permanent;
-- разные event ID;
-- разные owner ID.
+- different event IDs;
+- different owners.
 
-До реализации сравнить:
+Compare a narrow stack-compatibility transpiler/override against temporary extraction around merge; use virtual inventory only as fallback.
 
-1. точечный transpiler/override stack compatibility;
-2. временное извлечение temporary items вокруг merge operation;
-3. virtual inventory только как fallback.
+## 24.4. Damage routing
 
-## 22.8. Damage routing и attribution
+Layer membership is primary:
 
-Layer принадлежность Player является главным правилом:
+- normal and Blood Craft weapons of blood-layer Player damage only current-event blood entities;
+- no damage to ordinary enemies, boss, tamed, crops, buildings, trees/ores or nonparticipants;
+- projectile/AoE captures event/layer/source identity on creation;
+- delayed hit is independent of later weapon/owner/phase.
 
-- обычное и Blood Craft оружие blood-layer Player повреждает только blood enemies текущего event ID;
-- никакие его attacks не повреждают ordinary enemies, bosses, tamed, crops, buildings, trees/ores и nonparticipants;
-- projectile/AOE получает event/layer attribution при создании;
-- delayed hit не зависит от текущего weapon/status/owner;
-- blood enemy projectile/AOE также сохраняет marker после source death/owner migration.
+## 24.5. Summons
 
-## 22.9. Combat summons
+- summon created by Fighting/GoalReached Player becomes current-event blood entity;
+- attacks only blood enemies;
+- hidden from real-world clients;
+- removed on owner ejection/resolution;
+- pre-existing summon/tamed remains ordinary;
+- turrets/traps do not become blood automatically.
 
-Для полноценной поддержки magic/BloodMagic:
+## 24.6. DoT
 
-- combat summon, созданный blood-layer Player в Active, становится blood entity текущего event ID;
-- атакует только blood enemies;
-- невидим/неинтерактивен для real-world Player;
-- исчезает при owner ejection/resolve;
-- summon/tamed, существовавший до blood layer, остаётся ordinary и скрывается от participant;
-- ordinary turret/trap не становится blood entity автоматически.
+Vanilla damaging statuses lack enough source attribution. First prototype enemy has no persistent DoT.
 
-## 22.10. DOT/status attribution
+At dream collapse clear current damaging DoTs as explicitly accepted, but never use `RemoveAllStatusEffects`. Production must decide a safe vanilla/modded classifier or blood-specific/source-aware statuses.
 
-Vanilla poison/burning и другие persistent effects не имеют достаточной event attribution по одному hash.
+---
 
-До production enemy pool выбрать:
+# 25. Context and interactions
 
-1. первый enemy без persistent DOT/status attacks;
-2. blood-specific status clones;
-3. source-aware SE tracking.
+Before first contact, ordinary interactions remain vanilla.
 
-Для первого combat prototype принят вариант 1. Не удалять глобально Poison/Burning, потому что можно стереть pre-existing real-world effect.
+After full layer, geometry/doors/ladders and escape movement remain. Ordinary world-changing actions should be hidden or rejected until ejection/resolution:
 
-## 22.11. Context policy
+- ordinary pickups;
+- harvesting/mining/chopping;
+- trader;
+- external inventories;
+- ordinary crafting/upgrade;
+- attacks on resources/buildings.
 
-До реализации определить минимум:
-
-- outdoor ground;
-- dungeon/interior;
-- ship/ocean;
-- mounted/attached;
-- swimming/falling;
-- boss encounter;
-- portal/teleport;
-- late join.
-
-Для context выбрать:
-
-```text
-full participation
-context-specific blood pool
-AwaitingContact без forced engagement
-safe skip for this Player
-```
-
-Surface-only spawn не является production support.
-
-## 22.12. World interactions
-
-Принято:
-
-- geometry/terrain/buildings остаются видимыми/коллизионными;
-- blood attacks не меняют world resources/objects;
-- doors/crafting stations остаются usable;
-- Player transform/ship position не изменяются модом.
-
-Открыто:
-
-- ordinary ItemDrop visibility/pickup;
-- containers;
-- ship/mount controls;
-- building/placement/terrain tools;
-- trader/NPC;
-- traps/turrets.
-
-Решение должно сохранять agency и не давать непонятных полуработающих действий.
-
-## 22.13. Re-entry
-
-Первая версия может не иметь re-entry.
-
-Будущий предпочтительный вариант — один temporary owner/event-bound Blood Craft consumable, подготовленный в Marked и используемый из inventory после ejection. Он не требует базы, не меняет world и исчезает утром.
-
-## 22.14. Lifesteal и музыка
-
-Lifesteal отложен до playtest темпа.
-
-Музыка позже может иметь несколько tracks по state. Текущая architecture предоставляет чистые phase transitions, но audio не входит в первый prototype.
+Portals, ship/mount controls and entering unsupported context require the runtime spike result. Preserve agency and avoid a visually available action that silently half-works.

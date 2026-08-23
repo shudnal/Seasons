@@ -1,313 +1,184 @@
-# Blood Moon — edge cases, acceptance and report
+# Blood Moon — validation, edge cases and reporting
 
-Обязательная часть задачи `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
+Part of `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
 
-> **Текущий этап:** preimplementation design и technical spikes. Production-код первого вертикального среза не начинать, пока владелец мода явно не закроет gate из `09_PREIMPLEMENTATION_DECISIONS_AND_SPIKES.md`.
+> Current acceptance target is the isolated runtime spike in file `10`, not production Blood Moon.
 
-# 23. Preimplementation edge cases
+# 26. Mandatory spike scenarios
 
-До снятия gate необходимо проверить и зафиксировать решения минимум для следующих сценариев.
+## 26.1. Modes
 
-## 23.1. First contact
+- single-player;
+- listen server;
+- dedicated server with participant and observer;
+- late join;
+- owner migration;
+- owner disconnect;
+- stale/duplicate RPC.
 
-- incoming accepted hit от blood enemy;
-- outgoing melee hit по blood enemy;
-- projectile hit;
+## 26.2. Layer matrix
+
+- participant AwaitingContact sees ordinary + blood;
+- participant Fighting sees blood but not ordinary creatures/tamed/boss;
+- observer sees ordinary + participant but not blood enemy;
+- participant/observer can each own ordinary or blood entity;
+- hidden owner entity continues required remote simulation;
+- no root GameObject disable;
+- render/audio/HUD/collision restore cleanly after transition.
+
+## 26.3. Hit transparency
+
+- hidden ordinary enemy between participant and blood target;
+- hidden blood enemy between observer and ordinary target;
+- melee;
+- arrow/bolt;
+- thrown projectile;
+- event projectile;
+- AoE;
+- status/stagger/skill-credit rejection for incompatible target;
+- delayed hit after source state/owner change.
+
+## 26.4. First contact
+
+- incoming hit;
+- outgoing melee/projectile;
 - block;
 - parry;
-- полностью resisted/immune hit;
-- miss и near-projectile notification не считаются contact;
+- fully mitigated hit;
 - lethal first hit;
-- два одновременных first-contact report;
-- owner migration между contact и server validation;
-- stale contact report предыдущего event ID;
-- late join сразу рядом с blood enemy;
-- `AwaitingContact` Player достиг forced end, не вступив в бой.
+- miss/aggro/near projectile do not count;
+- local transition before same hit resolution;
+- server reject/resync;
+- exactly once.
 
-## 23.2. Dream collapse
+## 26.5. Dream collapse
 
-- прямой lethal hit blood enemy;
-- fall damage после blood knockback;
-- delayed projectile/AOE;
-- poison/burning/status tick;
-- drowning;
-- lava;
-- smoke;
-- structural/cart/tree/environmental damage;
-- `EdgeOfWorld`;
-- admin/scripted kill;
-- lethal hit одновременно с достижением 100%;
-- lethal hit во время PrepareResolution;
-- repeated `Character.CheckDeath` вызов до server acknowledgement;
-- no `Player.OnDeath`;
-- no death point;
-- no death effects/ragdoll;
-- no TombStone;
-- no inventory/equipment/food changes;
-- no respawn request;
-- health restoration;
-- server exactly-once `Death/Ejected` outcome;
-- death-specific DreamText при общем resolution.
+- `Character.CheckDeath` intercepts health <=0;
+- `Player.OnDeath` not called;
+- no death point, effects, ragdoll, TombStone, food clear or respawn;
+- health/stamina/eitr full;
+- food/adrenaline unchanged;
+- damaging DoT cleanup only;
+- outcome `Defeated` exactly once;
+- no re-entry;
+- airborne landing;
+- fall after blood knockback;
+- swimming/attached stabilization;
+- 10 seconds 75% reduction after stabilization;
+- lava behavior after grace;
+- direct forced `Player.OnDeath` remains vanilla.
 
-## 23.3. Ejection без transform changes
-
-- Player на устойчивой земле;
-- Player падает после knockback;
-- Player плавает;
-- Player в lava;
-- Player на движущемся корабле;
-- Player attached к ship controls;
-- Player на mount;
-- Player в dungeon/interior;
-- Player в portal/teleport transition;
-- ordinary enemy collider возвращается в той же точке;
-- ordinary projectile/AOE уже летит в точку Player;
-- transition grace покрывает landing, но имеет hard cap;
-- velocity, position и rotation не задаются модом;
-- grace не создаёт бесконечную неуязвимость.
-
-## 23.4. Ownership и local layer
-
-Проверить все комбинации:
-
-1. blood enemy owned blood participant;
-2. blood enemy owned real-world nonparticipant;
-3. ordinary enemy owned blood participant;
-4. ordinary enemy owned real-world nonparticipant;
-5. ordinary tamed owned blood participant;
-6. ownerless persistent ZDO автоматически получает owner через vanilla `ReleaseNearbyZDOS`;
-7. прямой transfer ordinary entity от participant к nonparticipant;
-8. owner disconnect;
-9. late join рядом с entities;
-10. split/merge групп меняет eligible peers;
-11. server/listen-host как owner;
-12. dedicated server без graphics/local Player.
-
-Локальное скрытие не должно отключать root GameObject/AI владельца и ломать симуляцию для других peers.
-
-## 23.5. Ordinary-world simulation policy
-
-Сравнить:
-
-- Policy A: background vanilla simulation;
-- Policy B: conditional AI suspension на participant-owner при отсутствии real-world observer;
-- прямую передачу ownership eligible nonparticipant без owner=0 interval.
-
-Для Policy B проверить:
-
-- ground melee monster;
-- flying monster;
-- swimming monster;
-- tamed AI;
-- regeneration/world-time update;
-- movement/physics после resume;
-- target state после resume;
-- procreation/consume/follow/saddle paths;
-- nonparticipant enters/leaves active area;
-- CPU/network profile;
-- cleanup при exception/world unload.
-
-## 23.6. Visibility, collision и attacks
-
-- renderer/LOD hidden;
-- audio hidden;
-- EnemyHud/name hidden;
-- local Player не сталкивается с hidden ordinary/blood entity;
-- entity всё ещё collides с terrain/world geometry;
-- melee hit filtering;
-- arrow/bolt;
-- thrown weapon;
-- bomb;
-- persistent AOE;
-- summon;
-- projectile owner migration;
-- delayed hit после ejection;
-- nonparticipant видит participant, сражающегося с воздухом;
-- event enemy owned nonparticipant продолжает атаковать remote participant;
-- no stale collider/renderer after layer transition.
-
-## 23.7. Context policy
-
-Для каждого context выбрать `full`, `context-specific`, `AwaitingContact without forced engagement` или `safe skip`:
+## 26.6. Contexts
 
 - outdoor ground;
-- dungeon/interior;
-- ship/ocean;
-- mounted/attached;
-- swimming;
-- falling/flying;
-- active boss encounter;
+- interior/dungeon atmosphere without enemies/layer;
+- ship/ocean atmosphere without enemies/layer;
+- generic attached first hit without detach;
+- mounted bridge hit on rider and mount;
+- voluntary dismount;
+- visible boss HUD deferral and later entry;
 - portal/teleport;
-- late join;
-- empty server until 05:45.
+- edge-of-world preventive exit;
+- Fighting Player entering unsupported context.
 
-## 23.8. DOT/status policy
+## 26.7. Ordinary simulation
 
-- первый enemy не использует persistent DOT/status;
-- pre-existing real-world Poison/Burning не удаляется глобально;
-- blood-origin status attribution после owner/source death;
-- ejection cleanup не стирает unrelated effect;
-- future blood-specific status clone либо source-aware tracking рассматриваются отдельно.
-
-## 23.9. Real-world interactions
-
-До production implementation определить:
-
-- ordinary ItemDrop visibility/pickup;
-- containers и StackAll;
-- ship/mount controls;
-- crafting stations;
-- doors;
-- building/placement/terrain tools;
-- trader/NPC;
-- portals;
-- traps/turrets;
-- harvesting/mining/chopping;
-- interaction с tamed;
-- поведение в Marked, AwaitingContact, Fighting, GoalReached и Ejected.
+- background simulation baseline;
+- optional AI suspension when owner is participant and no real-world witness;
+- AwaitingContact/Ejected as witnesses;
+- observer enters/leaves;
+- tamed/flying/swimming enemy;
+- bridged mount excluded;
+- resume correctness;
+- CPU/network comparison.
 
 ---
-# 24. Gate для начала production implementation
 
-До отдельного решения владельца должны быть закрыты и записаны:
+# 27. Spike acceptance criteria
 
-1. first-contact contract;
-2. dream-collapse lethal scope;
-3. health/stamina/eitr после collapse;
-4. transition-grace rule и deny-list;
-5. re-entry policy первой версии;
-6. ordinary-world simulation policy;
-7. ownership-transfer policy;
-8. local visibility/collision mechanism;
-9. context policy для dungeon и ship/ocean;
-10. boss-overlap policy;
-11. DOT/status policy;
-12. допустимые real-world interactions;
-13. обработка summons/projectiles/AOE;
-14. поведение ordinary threats immediately after ejection.
+The spike is complete only when the report answers with runtime evidence:
 
-До закрытия gate:
+1. Can local presentation be hidden independently of ZDO ownership?
+2. Can a hidden owner entity still simulate correctly for another peer?
+3. Can body/hitbox/projectile/AoE incompatibility be made transparent without global layer changes?
+4. Can accepted first contact switch the Player before the same hit is processed?
+5. Can the server validate/deduplicate provisional local contact?
+6. Can `Character.CheckDeath` produce `Defeated` without any `Player.OnDeath` side effect?
+7. Can damaging DoTs be cleared without removing buffs/food effects?
+8. Can recovery protection terminate correctly on ground, water and attached states?
+9. Can the mounted bridge work without forced dismount/transform change?
+10. Can boss/interior/ship contexts defer engagement without breaking their systems?
+11. Can preventive world-edge exit happen before edge death?
+12. Is background simulation acceptable?
+13. If not, is conditional AI suspension both necessary and safe?
+14. What exact minimal Harmony points are needed?
+15. Which desired behaviors are too fragile and should be simplified or dropped?
 
-- не создавать production Blood Moon classes/patches;
-- не открывать implementation PR;
-- не менять plugin version/release docs;
-- разрешены только docs, чтение `assemblies_combined` и отдельно согласованные spike commits.
+Failure of a candidate is a valid spike result if evidence and fallback are documented.
 
 ---
-# 25. Acceptance criteria technical spikes
 
-Preimplementation считается достаточным для старта production-кода, когда:
+# 28. Spike branch and PR
 
-1. `Character.CheckDeath` spike подтверждает или опровергает безопасный owner-side collapse до `Player.OnDeath`.
-2. Подтверждено отсутствие TombStone/death point/respawn/inventory loss при collapse.
-3. First contact корректно работает для incoming, outgoing и block/parry по утверждённому контракту.
-4. Collapse точно один раз фиксируется сервером и не зависит от duplicate RPC.
-5. Local layer isolation проверена минимум на двух клиентах при разных owner combinations.
-6. Root GameObject/owner AI не выключается только из-за локальной невидимости.
-7. Проверено, что `SetOwner(0)` переопределяется vanilla owner assignment и не используется как основной pause mechanism.
-8. Выбрана Policy A или B ordinary-world simulation на основании runtime результата.
-9. Direct owner transfer к eligible real-world peer проверен либо явно отложен с обоснованием.
-10. Ejection grace не меняет transform, покрывает mid-air landing и имеет конечный cap.
-11. Зафиксированы policies для land, dungeon, ship/ocean, attached/mount и portal transition.
-12. Первый enemy prototype не требует нерешённого DOT attribution.
-13. Все решения отражены в `01`–`09` документах без противоречий.
-14. Владелец явно разрешил начало production implementation.
+Work only in:
 
----
-# 26. Будущие acceptance criteria первого playable slice
+```text
+spike/blood-moon-parallel-layer
+```
 
-После снятия gate первый playable slice должен обеспечить:
+Base: current `feat/blood-moon`.
 
-1. Структурированные state machines без монолита в `Seasons.cs`.
-2. Debug-команды позволяют прогнать событие без ожидания года.
-3. Сервер авторитетно переводит событие через все фазы.
-4. Выбранная CCS/RPC схема соответствует фактическим гарантиям CCS.
-5. Late join получает самодостаточный snapshot.
-6. First install внутри event window безопасно пропускает текущий год.
-7. Restart восстанавливает либо безопасно разрешает событие.
-8. Forewarning имеет видимый не текстовый эффект.
-9. В 18:00 обычный RandEvent останавливается и подавляется.
-10. С 18:00 до 23:00 текущая погода линейно краснеет.
-11. В 23:00 включаются forced environment и `AwaitingContact`.
-12. Первый accepted contact переводит Player в `Fighting`.
-13. Поражение вызывает dream collapse/ejection без vanilla death flow и transform changes.
-14. Skill loss невозможен; один `SoftDeath` status не считается достаточным доказательством.
-15. Один event enemy появляется с group/server cap и ZDO marker.
-16. Event enemy target/damage разрешён только blood-layer participants.
-17. Buildings, crops, tamed, ordinary creatures и nonparticipants не повреждаются.
-18. Target/damage rules централизованы.
-19. Event enemy не оставляет loot/долгий ragdoll.
-20. Kill credit exactly once меняет authoritative progress.
-21. На 100% full buff остаётся.
-22. Auto-complete не создаёт combat success/reward.
-23. Все terminal outcomes дают early resolution.
-24. В 05:45 происходит forced resolution.
-25. Resolution имеет fade barrier/timeout, cleanup, time advance, DreamText и Rested reset.
-26. Нет map markers.
-27. Нет предметных/материальных/world-state rewards.
-28. Нет version bump/release changes.
-29. Все новые source files явно включены в `.csproj`.
-30. Выполнены доступные Debug/Release builds.
-31. Подготовлен manual multiplayer checklist.
-32. Открыт draft PR, проведён Codex review, PR не слит.
+Open draft PR:
+
+```text
+spike/blood-moon-parallel-layer → feat/blood-moon
+```
+
+Do not open/merge into `master`. Do not version-bump or edit release files.
+
+Run Codex code review on the spike PR. Fix correctness issues that invalidate experiments; do not polish experimental code into production prematurely.
 
 ---
-# 27. Рекомендуемая последовательность после снятия gate
 
-## Commit 1 — authoritative lifecycle
+# 29. Required report
 
-- configs;
-- schedule/event ID;
-- state records/transitions;
-- CCS/RPC decision;
-- persistence/recovery;
-- `FirstBloodContactRecord`;
-- centralized interaction policy;
-- debug commands;
-- localization tokens.
+Commit a report containing:
 
-## Commit 2 — presentation and suppression
+- exact Seasons base commit;
+- exact `assemblies_combined` commit;
+- test environment and player count;
+- commands/config used;
+- patches and alternatives tried;
+- owner matrix;
+- result for every scenario above;
+- logs/screenshots where useful;
+- CPU/network observations;
+- confirmed production invariants;
+- rejected approaches and reasons;
+- fallback decisions;
+- recommended production architecture;
+- exact updates required in docs `01`–`09`;
+- whether each spike file should be deleted, kept as a diagnostic, or promoted selectively.
 
-- forewarning visuals;
-- Marked/AwaitingContact/Fighting status;
-- real skill-loss protection;
-- sleep/RandEvent suppression;
-- environment overlay/force lease;
-- cloud VFX;
-- resolution fade/time/DreamText/Rested.
-
-## Commit 3 — first combat loop
-
-- groups;
-- spawner;
-- enemy marker;
-- target/damage rules;
-- no loot/ragdoll cleanup;
-- owner reports/dedup;
-- first contact/progress/100%/collapse/early completion.
-
-## Commit 4 — validation fixes
-
-- builds;
-- edge cases;
-- manual checklist;
-- Codex-review fixes.
+Do not claim multiplayer, VFX or physics success without a real-game test.
 
 ---
-# 28. Итоговый отчёт Codex
 
-После будущей реализации выдать:
+# 30. Production gate after spike
 
-- commits;
-- architecture summary;
-- CCS/RPC rationale;
-- changed/new files;
-- build results;
-- static/automatic checks;
-- manual runtime checklist;
-- known limitations;
-- draft PR;
-- Codex review findings/fixes/rejections;
-- точную следующую точку продолжения.
+Before production implementation, owner must explicitly accept:
 
-Не утверждать runtime multiplayer/VFX validation без реального запуска игры.
+- local visibility/collision technique;
+- hit-transparency technique;
+- exact first-contact patch points;
+- dream-collapse DoT classifier;
+- stabilization rule;
+- mounted policy;
+- boss-context synchronization;
+- world-edge withdrawal outcome;
+- unsupported-context-after-contact policy;
+- background simulation or conditional suspension;
+- ordinary interaction restrictions;
+- projectile/AoE/summon attribution.
+
+Then replace the spike task with a new production task and start the first playable slice. Do not infer approval from a partially successful experiment.
