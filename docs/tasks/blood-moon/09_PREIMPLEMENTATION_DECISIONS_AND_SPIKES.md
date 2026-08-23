@@ -2,453 +2,491 @@
 
 Обязательная часть задачи `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
 
-> **Статус:** разработку production-кода Blood Moon пока не начинать. Общая архитектура понятна, но несколько решений ниже напрямую определяют participant state machine, death flow, visibility/collision layer и ownership. Сначала закрыть эти вопросы и провести узкие технические spikes в реальной игре.
+> **Статус:** production-разработку Blood Moon пока не начинать. Этот файл имеет приоритет для границы входа в параллельный слой, defeat flow, ownership, local visibility/collision и context policies. Сначала закрыть решения и провести узкие runtime spikes.
 
-# 27. Новое базовое направление
+# 27. Уже принятые ограничения
 
-## 27.1. Никакого восстановления позиции или ротации
+## 27.1. Никаких перемещений Player
 
-Blood Moon не должен перемещать или разворачивать модель Player ни при входе, ни при поражении, ни при утреннем завершении.
+Blood Moon не меняет:
 
-Допустимо:
+- position;
+- rotation;
+- parent/attach state;
+- ship/mount position;
+- velocity через принудительное восстановление;
+- Y через raycast к земле.
 
-- изменить status effects;
-- изменить health/stamina/eitr через штатные API, если это принято отдельным решением;
-- включить emote/pose;
-- локально изменить presentation/collision rules blood layer;
-- сделать fade.
+Допустимы только status/effect/UI/fade/emote, изменение combat resources через штатные API и локальные interaction-layer rules.
 
-Недопустимо:
+`Character.m_lastGroundPoint` не является безопасным spawn anchor: это последняя contact point, она может быть устаревшей, относиться к движущемуся collider/rigidbody и не описывает валидную позицию capsule.
 
-- телепортировать к `m_lastGroundPoint`;
-- raycast-ом подбирать «безопасную» Y-позицию;
-- снимать Player с корабля, mount или attached object;
-- менять rotation;
-- восстанавливать transform из snapshot.
+## 27.2. Positional backup удалён из дизайна
 
-Причина: `Character.m_lastGroundPoint` является последней контактной точкой, а не гарантированным безопасным положением capsule. Она может быть устаревшей, относиться к движущемуся collider/rigidbody и по умолчанию не является валидированным spawn anchor.
+`CombatEntrySnapshot` как точка teleport/restore больше не нужен.
 
-## 27.2. Active начинается с `AwaitingContact`
-
-В 23:00 enrolled Player входит в blood presentation/interaction layer, но ещё не считается реально вступившим в бой.
-
-Требуемая participant-модель:
-
-```csharp
-internal enum BloodMoonParticipantPhase
-{
-    None,
-    Marked,
-    AwaitingContact,
-    Fighting,
-    GoalReached,
-    Ejected,
-    Resolved
-}
-```
-
-- `AwaitingContact`: Player видит blood enemies и может быть ими выбран целью, но первый подтверждённый контакт ещё не зарегистрирован.
-- `Fighting`: произошёл первый допустимый blood interaction.
-- `GoalReached`: боевой progress достиг 100%; полный buff остаётся.
-- `Ejected`: Player пережил dream collapse, вернулся в real-world layer и больше не является целью/участником боя текущего event ID.
-
-`Disconnected` остаётся outcome/metadata, а не отдельной физической фазой.
-
-## 27.3. Первый контакт вместо positional backup
-
-Не хранить `CombatEntrySnapshot` как точку будущего teleport/restore.
-
-Вместо него хранить `FirstBloodContactRecord`:
+Разрешено сохранить только диагностический `FirstBloodContactRecord`:
 
 ```text
 eventId
 stable player ID
 current peer/session UID
+Player ZDOID
 authoritative timestamp
-contact kind: incoming / outgoing / block / parry
+contact kind
 blood enemy ZDOID
 player position только для диагностики/статистики
 ```
 
-Позиция в записи не является anchor и никогда автоматически не применяется к transform.
+Position из записи никогда не применяется к transform.
 
-Первый контакт должен пройти через центральный `BloodMoonInteractionRules` и серверную валидацию. Клиент-владелец Player может применить необходимое локальное состояние немедленно, но сервер остаётся источником истины.
+## 27.3. Настоящий `Player.OnDeath` нежелателен
 
-## 27.4. Предпочтительный death flow: dream collapse без настоящей смерти
+Предпочтительное поражение — **dream collapse** до vanilla death flow:
 
-Основной кандидат на финальное решение:
+- no death point;
+- no death effects/ragdoll;
+- no TombStone;
+- no inventory/equipment/food transfer;
+- no respawn request;
+- no transform changes;
+- participant получает terminal defeat outcome и возвращается в real-world layer на том же месте.
 
-1. Owner Player обнаруживает lethal condition в blood layer до вызова `Player.OnDeath`.
-2. Обычный death flow не запускается.
-3. Не создаются death point, ragdoll, TombStone и respawn request.
-4. Обычный inventory, equipment, food и position не меняются.
-5. Player восстанавливает health до принятого значения; стартовый кандидат — 100% max health.
-6. Participant outcome фиксируется как `Death`, phase — `Ejected`.
-7. Blood presentation, targeting и collisions для этого Player немедленно отключаются.
-8. Player остаётся в той же position/rotation и снова видит real-world layer.
-9. При необходимости включается короткая transition grace без изменения transform.
-10. При глобальном завершении Player получает death-specific DreamText.
+Предпочтительная техническая точка spike — owner-side prefix `Character.CheckDeath`: current game вызывает `OnDeath()` после того, как health уже стал `<= 0`, но до `Player.OnDeath` ещё можно восстановить health и завершить иллюзорный бой.
 
-В текущем коде Valheim `Character.CheckDeath()` вызывает `OnDeath()` только после того, как health уже стал `<= 0`. Поэтому `Character.CheckDeath` является предпочтительной точкой spike: проверить, можно ли owner-side prefix безопасно заменить смерть на collapse, восстановить health и сообщить серверу outcome до создания TombStone.
+## 27.4. `SoftDeath` — только понятная индикация
 
-## 27.5. `SoftDeath` сам по себе не является гарантией
+Простое добавление `SEMan.s_statusEffectSoftDeath` не гарантирует отсутствие skill loss. `Player.HardDeath()` определяется `m_timeSinceDeath`; vanilla добавляет SoftDeath status уже после того, как `HardDeath()` false.
 
-Ванильный `SoftDeath` status можно оставить как понятную игроку визуальную индикацию, но нельзя считать его механизмом защиты навыков.
+Если какой-либо fallback всё ещё вызывает vanilla death, нужен отдельный узкий guard `HardDeath == false`. При dream collapse skill loss отсутствует потому, что `Player.OnDeath` не вызывается.
 
-`Player.HardDeath()` определяется `m_timeSinceDeath`, а ванильный код лишь добавляет `SoftDeath`, когда `HardDeath()` уже false. Простое `SEMan.AddStatusEffect(SEMan.s_statusEffectSoftDeath)` не меняет результат `HardDeath()`.
+## 27.5. `SetOwner(0)` не является pause mechanism
 
-Если в blood layer остаются сценарии настоящей vanilla death, необходимо отдельно гарантировать `HardDeath == false` узким patch-ом. Для dream collapse skill loss отсутствует потому, что `Player.OnDeath` вообще не вызывается.
+Vanilla `ZDOMan.ReleaseZDOS` периодически вызывает `ReleaseNearbyZDOS` и снова назначает persistent ownerless ZDO ближайшему active peer. Поэтому owner=0:
 
-# 28. Определение первого контакта — решение ещё требуется
+- нестабилен;
+- может сразу вернуть owner тому же participant;
+- создаёт owner-revision churn;
+- требует вмешательства в центральный owner-selection path;
+- опасен для нестандартных nonpersistent entities и owner-targeted RPC.
 
-Нужно выбрать один контракт и затем использовать его в сети, state machine и reward tracking.
+Не строить parallel-world simulation на массовом снятии owner.
+
+# 28. Граница входа в параллельный слой — главный открытый выбор
+
+Нужно различать **видимость кровавых проявлений** и **фактическое выпадение из обычного мира**.
+
+## Модель A — полный blood layer с 23:00
+
+В 23:00 Player сразу:
+
+- перестаёт видеть/interact с ordinary entities;
+- видит blood enemies;
+- может быть ими атакован;
+- остаётся `AwaitingContact` только для progress/statistics.
+
+Плюс: простая фаза.
+
+Минус: Player на корабле, mount, в dungeon, boss fight или другой непредсказуемой ситуации принудительно теряет ordinary context ещё до собственного участия.
+
+## Модель B — вторжение до контакта, layer switch на первом контакте
+
+В 23:00 Player входит в `AwaitingContact`:
+
+- ordinary world пока остаётся видимым и интерактивным;
+- blood enemies становятся видимыми и могут искать Player;
+- Player может атаковать blood enemy;
+- blood enemy не взаимодействует с ordinary world;
+- accepted first blood interaction атомарно переводит Player в `Fighting` и включает полный blood-only layer.
+
+Первый blood hit должен переключить layer **до применения этого же hit**, чтобы defence modifier, lethal interception и routing уже действовали на первом контакте.
+
+**Предварительная рекомендация: модель B.** Она точнее соответствует идее «контакт с иллюзорным миром», сохраняет agency и заметно уменьшает число forced context transitions. Определения `AwaitingContact` в файлах `01`–`04` считать provisional до утверждения этой модели.
+
+# 29. Что считать первым контактом
 
 ## Вариант A — только фактическая потеря health
 
-Контакт считается состоявшимся, если final accepted damage уменьшил health.
+Недостатки:
 
-Минусы:
-
-- успешный block/parry не считается боем;
-- полностью resisted hit не считается;
-- первый защищённый игрок может долго оставаться `AwaitingContact`, хотя активно сражается.
+- block/parry не считается участием;
+- immune/resisted hit не считается;
+- shield/support Player может активно сражаться, оставаясь вне `Fighting`.
 
 ## Вариант B — принятый attack contact
 
-Контакт считается состоявшимся, если допустимый blood-layer hit дошёл до damage/block pipeline, даже если block/parry/resistance свели health damage к нулю.
+Контакт считается состоявшимся, когда допустимый blood hit дошёл до attack/block/damage pipeline:
 
-Промах, near-projectile notification и простое попадание в trigger без attack resolution не считаются.
+- incoming damage;
+- outgoing melee/projectile hit;
+- block;
+- parry;
+- полностью mitigated hit.
 
-**Рекомендация:** вариант B. Он лучше поддерживает shields, parry, tank/support play и не привязывает state machine к конкретной формуле damage mitigation.
+Не считаются:
 
-До явного утверждения не кодировать окончательное условие.
+- miss;
+- near-projectile notification;
+- trigger overlap без attack resolution;
+- простое обнаружение/aggro.
 
-# 29. Scope dream collapse — решение ещё требуется
+**Рекомендация: вариант B.** Он лучше поддерживает разные боевые стили. Нужен spike для точных Harmony points incoming/outgoing/block/parry и exactly-once server validation.
 
-## Вариант A — только прямой lethal hit от blood enemy
+# 30. Dream collapse
 
-Плюсы: минимальный exploit surface.
+## 30.1. Предпочтительный flow
 
-Минусы:
+После подтверждённого layer entry (`Fighting`/`GoalReached`):
 
-- fall после blood knockback создаст настоящую могилу;
-- delayed poison/burning/AOE может создать настоящую могилу;
-- attribution легко потерять между projectile, DOT и final death.
+1. owner Player обнаруживает lethal condition до `Player.OnDeath`;
+2. health восстанавливается через штатный API;
+3. outcome фиксируется как `Defeated`/`Collapsed` (финальное имя ещё выбрать), phase — `Ejected`;
+4. blood target/damage/presentation/collision rules отключаются;
+5. ordinary layer возвращается;
+6. Player остаётся в той же position/rotation и с текущей velocity;
+7. применяется короткая transition grace;
+8. повторный вход не происходит автоматически.
 
-## Вариант B — любой lethal damage в `Fighting`/`GoalReached`
+Кодовый outcome лучше назвать `Defeated` или `Collapsed`, а не `Death`, чтобы не смешивать его с реальным `Player.OnDeath`. Death-specific DreamText при этом сохраняется.
 
-Плюсы:
+## 30.2. Какие lethal причины покрывать
 
-- единая понятная гарантия: смерть внутри иллюзорного боя всегда выбрасывает в real world;
-- не нужно угадывать происхождение fall/DOT;
-- никогда не возникает TombStone из иллюзорной фазы.
+### Вариант A — только direct blood hit
 
-Минусы:
+Ломается на fall после knockback, delayed AOE/projectile и DOT attribution.
 
-- один раз за событие Player может использовать collapse как защиту от world hazard;
-- нужно определить исключения вроде `EdgeOfWorld`, admin kill и специальных scripted deaths.
+### Вариант B — любой lethal damage после входа в `Fighting`/`GoalReached`
 
-## Вариант C — окно blood attribution
+Даёт простую гарантию: пока Player внутри иллюзорного боя, TombStone не возникает ни при какой обычной причине.
 
-Collapse применяется для прямого blood damage и environmental death в течение N секунд после blood hit/knockback.
+### Вариант C — attribution window после blood hit
 
-Минус: сложная и неизбежно спорная эвристика.
+Сложная и спорная эвристика.
 
-**Предварительная рекомендация:** вариант B с небольшим явным deny-list (`EdgeOfWorld`, административное/скриптовое убийство, если такое требуется). Ejection терминальна для текущего event ID, поэтому exploit ограничен одним выходом из редкого ежегодного события.
+**Рекомендация: вариант B.** Ejection terminal для редкого ежегодного события, поэтому возможная одноразовая защита от world hazard несущественнее, чем гарантированная целостность иллюзорной механики.
 
-# 30. Transition grace после ejection
+Отдельно решить специальные причины:
 
-Так как transform не меняется, ejection может произойти:
+- `EdgeOfWorld`;
+- admin/scripted kill;
+- world shutdown;
+- forced character removal.
+
+## 30.3. Combat resources после collapse
+
+Уже принято: food и ordinary inventory не меняются.
+
+Нужно выбрать:
+
+- health = 100%;
+- stamina/eitr оставить текущими;
+- либо восстановить stamina/eitr полностью/частично.
+
+**Предварительная рекомендация:** full health и full current-cap stamina/eitr. Defeat уже завершает редкое событие; цель collapse — безопасно вернуть agency, а не создать вторую немедленную смерть в real world.
+
+# 31. Transition grace после ejection
+
+Без transform changes Player может вернуться:
 
 - в воздухе после knockback;
 - внутри collider скрытого ordinary creature;
-- над водой/лавой;
-- на корабле или mount;
-- в узком проходе, где сразу возобновляется real-world combat.
+- под ordinary projectile/AOE;
+- в воде/lava;
+- на корабле/mount;
+- в узком проходе.
 
-Нужен отдельный короткий transition state, не являющийся новым участием в Blood Moon.
-
-Кандидат:
+Предварительный контракт:
 
 ```text
 минимум 2 секунды invulnerability
-и далее до первого устойчивого IsOnGround(),
-но не дольше 8–10 секунд
+далее до устойчивого IsOnGround() и отсутствия overlap с ordinary Character collider
+hard cap 8–10 секунд
 ```
 
 Во время grace:
 
-- blood enemies уже не видят и не повреждают Player;
-- ordinary world presentation возвращается;
-- Player не перемещается и сохраняет velocity;
-- fall damage, связанный с текущим падением, должен быть подавлен либо grace должна покрыть landing;
-- после cap обычные правила полностью возвращаются.
+- blood enemies уже не видят Player;
+- ordinary world визуально возвращается;
+- Player сохраняет velocity;
+- fall damage текущего падения подавляется;
+- collision с overlapping ordinary characters возвращается только после separation или hard cap;
+- world geometry collision не отключается;
+- после cap vanilla rules полностью возвращаются.
 
-Нужно отдельно решить поведение в воде/лаве и при `EdgeOfWorld`.
+Нужно отдельно решить lava/water/EdgeOfWorld и ordinary projectile, созданный до ejection.
 
-# 31. Re-entry после ejection
+# 32. Re-entry
 
-Для первой релизной версии допустимо не давать повторный вход: поражение должно сохранять смысл.
+**Рекомендация для первой версии: re-entry отсутствует.** Поражение должно сохранять смысл.
 
-Если re-entry будет добавлен позже, наиболее совместимый вариант — один специальный временный Blood Craft consumable, который можно подготовить в Marked и использовать из inventory после ejection:
+Будущий совместимый вариант — один temporary owner/event-bound Blood Craft consumable:
 
+- готовится в Marked;
+- работает из inventory в поле;
 - не требует campfire/base/world object;
-- подходит игроку в поле, nomap/noportals и на корабле;
+- ограничен одним использованием;
 - исчезает утром;
-- имеет owner/event ID;
-- может быть ограничен одним использованием;
-- возвращает в `AwaitingContact` или `Fighting` по отдельно принятому правилу.
+- возвращает в `AwaitingContact`, а не сразу в `Fighting`.
 
-Не делать automatic re-entry и не привязывать основной вариант к жертве на базе.
+# 33. Ownership и ordinary-world simulation
 
-# 32. Ownership ordinary world: `SetOwner(0)` не использовать как базовый механизм
+## 33.1. Предпочтительная ownership policy
 
-## 32.1. Почему ownerless parking опасен
+1. Не менять owner без необходимости.
+2. Event enemy может быть owned participant или nonparticipant; owner продолжает симуляцию, local presentation зависит от local layer.
+3. Если ordinary entity owned blood participant и рядом есть eligible real-world peer, server может **напрямую** передать owner этому peer без owner=0 interval.
+4. Если eligible peer нет, current owner сохраняется.
+5. Не patch-ить глобальный `ZDO.SetOwner`/`ReleaseNearbyZDOS` до доказанной необходимости.
 
-Ванильный `ZDOMan.ReleaseZDOS` примерно раз в две секунды вызывает `ReleaseNearbyZDOS` для server reference position и peer positions. Persistent ZDO без допустимого owner в active area снова получает owner по vanilla proximity logic.
-
-Следовательно, простой `SetOwner(0)`:
-
-- не является устойчивым состоянием pause;
-- потребует patch центрального owner-selection path;
-- может немедленно вернуть ordinary creature тому же blood participant;
-- создаёт дополнительные owner-revision churn и сетевые края;
-- для нестандартных nonpersistent объектов повышает риск orphan cleanup;
-- делает обычный owner-targeted RPC неоднозначным, пока owner равен нулю.
-
-Ownership — механизм сетевой симуляции, а не штатный pause API.
-
-## 32.2. Предпочтительная совместимая схема
-
-Не менять ownership без необходимости.
-
-1. Presentation/collision layer отделяется от симуляции.
-2. Event enemy может оставаться owned любым nearby peer, включая nonparticipant, если его AI продолжает работать и central interaction rules разрешают ему видеть только blood participants.
-3. Ordinary creature, owned blood participant, либо продолжает background real-world simulation, либо локально suspend-ится через узкий AI gate — это отдельное продуктовое решение ниже.
-4. Если рядом есть eligible nonparticipant peer, server может **напрямую** передать ordinary creature этому peer, не оставляя ZDO ownerless.
-5. Если eligible peer нет, сохранить текущего owner и применить выбранную simulation policy.
-6. Не patch-ить глобальный `ZDO.SetOwner` без доказанной необходимости.
-7. Если всё же потребуется owner-selection patch, он должен быть узким, prefab/character-cached и покрыт dedicated/listen/disconnect tests.
-
-Для ownership policy participant record должен различать:
+Participant identity должна различать:
 
 ```text
 stable profile/player ID
-current ZNet peer/session UID
+current peer/session UID
 Player ZDOID
 ```
 
-Peer UID может измениться после reconnect.
+## 33.2. Policy A — background simulation
 
-# 33. Должен ли real world продолжать симуляцию
+Ordinary AI продолжает vanilla simulation, но не видит/damage blood-layer Player и локально скрыт от него.
 
-Нужно выбрать политику.
+Плюс: максимальная совместимость.
 
-## Policy A — background simulation
+Минус: ordinary enemies могут уйти, атаковать tamed/base и изменить мир, пока solo Player не может это видеть.
 
-Ordinary enemies/tamed продолжают vanilla AI на текущем owner, но:
-
-- не видят blood-layer Player;
-- не наносят ему damage;
-- локально скрыты и не сталкиваются с ним.
-
-Плюсы: минимальное вмешательство в ownership/AI, nonparticipants всегда видят живой мир.
-
-Минусы: пока solo Player находится в иллюзии, ordinary enemies могут переместиться, напасть на tamed/base и изменить мир в его отсутствие.
-
-## Policy B — conditional suspension
+## 33.3. Policy B — conditional AI suspension
 
 Если ordinary creature owned blood participant и рядом нет real-world nonparticipant:
 
 - owner сохраняется;
-- BaseAI/MonsterAI simulation локально suspend-ится;
-- объект не уничтожается и не становится ownerless;
-- после ejection/окончания simulation продолжается;
-- если появляется nonparticipant, server по возможности передаёт owner ему и suspension снимается.
+- BaseAI/MonsterAI locomotion/targeting suspend-ятся узким gate;
+- после ejection/resolve AI продолжается;
+- при появлении real-world observer server по возможности напрямую передаёт owner ему и снимает suspension.
 
-Плюсы: ближе к образу «мир застыл там, где его оставили».
+Это не полный snapshot-freeze мира. Character physics, status timers, procreation и другие компоненты могут продолжаться и требуют отдельной проверки.
 
-Минусы: нужно проверить movement/physics/status/procreation paths помимо `BaseAI.UpdateAI`.
+**Предварительная рекомендация: spike Policy B; fallback Policy A.** Layer-aware глобальный owner pool считать последним, наиболее инвазивным вариантом.
 
-## Policy C — layer-aware owner pool
+## 33.4. Размер suspension scope
 
-Patch vanilla owner selection и разрешить ordinary objects только real-world peers, blood enemies — только blood peers/server.
+Нужно решить, какие ordinary characters suspend-ить:
 
-Это самый инвазивный вариант и пока **не рекомендуется**.
+- весь active area participant;
+- group interaction radius + hysteresis;
+- только entities, которые видимы/могут взаимодействовать с participant.
 
-**Предварительная рекомендация:** Policy B после отдельного spike. Если она окажется хрупкой, fallback — Policy A. Не переходить к Policy C без измеримой причины.
+Рекомендация для spike: group interaction radius с отдельным enter/leave hysteresis, а не весь мир или все sectors.
 
-# 34. Presentation, collisions и owner simulation
+# 34. Local visibility/collision не равна отключению объекта
 
-Нельзя отключать root GameObject или весь AI только потому, что локальный Player не должен видеть entity: этот же client может быть owner и обязан симулировать объект для других peers.
+Нельзя выключать root GameObject/AI только потому, что local Player не должен видеть entity: client может быть owner и симулировать её для других peers.
 
-Нужен локальный layer controller, который раздельно управляет:
+Layer controller раздельно управляет:
 
-- renderers/LOD;
-- blood/ordinary VFX;
-- audio emitters;
-- EnemyHud/name presentation;
-- Character/hitbox colliders относительно local Player;
-- projectile collision masks;
+- Renderer/LOD;
+- audio;
+- EnemyHud/name;
+- main Character collider относительно local Player;
+- hitbox colliders;
+- projectile collision/continuation;
 - AoE overlap acceptance;
 - target selection;
-- final damage routing.
+- final damage.
 
-Обязательные ownership test cases:
+Вероятный spike-кандидат:
+
+- hide render/audio/HUD локально;
+- `Physics.IgnoreCollision` для local Player ↔ hidden Character main collider;
+- отдельная фильтрация hitbox/projectile/AOE;
+- никогда не отключать terrain/world collision owner entity.
+
+Обязательные owner cases:
 
 1. blood enemy owned participant;
 2. blood enemy owned nonparticipant;
 3. ordinary enemy owned participant;
 4. ordinary enemy owned nonparticipant;
-5. owner migration во время контакта;
+5. owner migration во время attack;
 6. owner disconnect;
 7. late join рядом с уже существующими entities.
 
-# 35. Наследование blood layer для созданных объектов
+# 35. Projectiles, AOE, summons и status attribution
 
-Для поддержки реальных боевых билдов одной маркировки weapon/projectile недостаточно.
+## 35.1. Projectile/AOE
 
-Будущее правило:
+При создании сохранять:
 
-- projectile и persistent AOE, созданные blood-layer participant, получают `eventId`/layer attribution при создании;
-- combat summon, созданный participant во время Active, становится blood entity текущего event ID;
-- такой summon атакует только blood enemies и исчезает при ejection/resolve;
-- summon/tamed, существовавший до входа в layer, остаётся ordinary real-world entity и локально скрывается от participant;
-- ordinary turret/trap не становится blood entity автоматически;
-- blood enemy projectile/AOE также сохраняет marker после смерти/смены owner источника.
+```text
+eventId
+layer/source kind
+source Player/enemy ZDOID
+```
 
-Иначе magic/BloodMagic builds не будут полноценно работать в событии.
+Delayed hit не зависит от текущего weapon, phase или owner источника.
 
-# 36. DOT и status effects
+## 35.2. Combat summons
 
-Persistent vanilla effects создают проблему attribution:
+- summon, созданный `Fighting`/`GoalReached` Player, становится blood entity текущего event ID;
+- атакует только blood enemies;
+- скрыт от real-world clients;
+- исчезает при ejection/resolve;
+- pre-existing summon/tamed остаётся ordinary;
+- ordinary turret/trap не становится blood entity автоматически.
 
-- poison/burning могут сработать после ejection;
-- один и тот же status hash может существовать до Blood Moon и быть reset blood hit-ом;
-- без source marker нельзя безопасно удалить только blood-origin instance.
+## 35.3. DOT/status
 
-До реализации расширенного enemy pool выбрать один путь:
+Vanilla Poison/Burning hash не даёт достаточной source attribution.
 
-1. первый playable slice использует enemy без persistent DOT/status attacks;
-2. blood attacks применяют отдельные blood-specific status clones с event ID;
-3. внедрить source-aware tracking для SE application и аккуратный cleanup.
+Для первого enemy prototype принято:
 
-**Рекомендация для первого combat prototype:** вариант 1. Не маскировать нерешённый attribution глобальным `RemoveStatusEffect(Poison/Burning)`.
+- использовать enemy без persistent DOT/status attacks;
+- не удалять глобально ordinary Poison/Burning;
+- позднее выбрать blood-specific status clones или source-aware tracking.
 
-# 37. Контексты, которые нельзя оставить на потом
+# 36. Context policies, которые нужно выбрать
 
-До production implementation определить поведение минимум для:
+Для каждого context определить одну политику:
+
+```text
+full participation
+context-specific blood enemy pool
+AwaitingContact без forced engagement
+safe skip этого Player
+```
+
+Обязательные contexts:
 
 - outdoor ground;
 - dungeon/interior;
 - ship/ocean;
 - mounted/attached;
-- swimming;
-- flying/falling;
+- swimming/falling;
 - active boss encounter;
 - portal/teleport transition;
-- player entering/leaving instance/dungeon;
-- late join во время Active.
+- late join.
 
-Для каждого контекста нужна одна из политик:
+Предварительные рекомендации для первого релиза:
 
-```text
-полноценный spawn/participation
-ограниченный context-specific enemy pool
-AwaitingContact без forced engagement
-безопасный skip текущего Player
-```
+- outdoor ground — full;
+- portal/teleport — spawn pause, state следует за Player;
+- unsupported dungeon/ship/mount context — `AwaitingContact` без forced engagement до выхода из context;
+- active boss encounter — не переключать Player в full blood layer; держать deferred eligibility и разрешить поздний entry, если boss context закончился до forced end.
 
-Нельзя считать surface spawn достаточным для игрока на корабле или в dungeon.
+# 37. Real-world interactions в full blood layer
 
-# 38. World interactions в blood layer
+Принято:
 
-Нужно явно решить, какие real-world действия остаются допустимыми.
+- terrain/geometry/buildings остаются видимыми и коллизионными;
+- blood attacks не повреждают ordinary world;
+- doors и Blood Craft stations должны быть usable;
+- Player transform/ship position не меняются.
 
-Уже принято:
+Нужно решить:
 
-- geometry/terrain/buildings остаются видимыми и коллизионными;
-- blood-layer attacks не повреждают buildings, crops, ores, trees, ordinary entities;
-- doors и crafting stations должны оставаться usable;
-- Blood Craft работает через реальные stations/UI;
-- Blood Craft items нельзя вынести в world/external inventory.
+- ordinary ItemDrop visibility/pickup;
+- containers/StackAll;
+- ordinary crafting/upgrade;
+- ship/mount controls;
+- portals;
+- building/placement/terrain tools;
+- harvesting/mining/chopping;
+- trader/NPC;
+- traps/turrets;
+- ordinary Player-to-Player item transfer.
 
-Открыто:
+Предварительная совместимая политика:
 
-- видимость и pickup уже лежащих ordinary ItemDrop;
-- использование containers во время Active;
-- управление ship/mount;
-- placement/building/terrain tools;
-- взаимодействие с trader/NPC;
-- ordinary traps/turrets.
+- в `Marked` и `AwaitingContact` ordinary world interactions остаются vanilla;
+- после `Fighting` разрешить movement, doors, ladders, escape controls и Blood Craft;
+- ordinary pickups, resource-changing actions, trader и external inventory interactions скрыть/запретить до ejection/resolve;
+- Blood Craft items в любом случае не покидают owner inventory.
 
-Эти правила должны быть согласованы с принципом: постоянный результат события — навыки, но Player не теряет агентность и остаётся в той же физической точке мира.
+# 38. Technical spikes
 
-# 39. Обязательные technical spikes до начала разработки
+## Spike A — first contact + atomic layer switch
 
-Spikes выполняются отдельными минимальными экспериментами и не превращаются автоматически в production implementation.
+Single-player, listen и dedicated:
 
-## Spike A — first contact и dream collapse
-
-Проверить в single-player, listen server и dedicated server:
-
-- incoming first blood hit;
-- outgoing first blood hit;
+- incoming/outgoing contact;
 - block/parry;
 - lethal first hit;
-- `Character.CheckDeath` interception до `Player.OnDeath`;
+- layer switch до применения первого hit;
+- duplicate/stale report;
+- server rejection/resync.
+
+## Spike B — dream collapse
+
+- `Character.CheckDeath` interception;
+- no `Player.OnDeath` side effects;
+- health/resource restore;
 - no TombStone/death point/respawn;
-- full heal/ejection без transform changes;
-- server validation и повторный report;
-- stale event ID.
+- ejection exactly once;
+- landing/overlap grace;
+- real-world projectile immediately after return.
 
-## Spike B — local parallel presentation
+## Spike C — local parallel presentation
 
-На двух клиентах проверить обе ownership-комбинации:
+Два клиента и все owner combinations:
 
-- один client в blood layer, второй в real world;
-- event enemy owner participant/nonparticipant;
-- ordinary enemy owner participant/nonparticipant;
-- renderer/audio/hitbox/collision/projectile isolation;
-- observers видят participant, сражающегося с воздухом.
+- renderer/audio/HUD;
+- main collider/hitbox;
+- projectile/AOE;
+- observer видит Player, сражающегося с воздухом;
+- hidden owner entity продолжает remote simulation.
 
-## Spike C — ordinary simulation policy
+## Spike D — ordinary simulation
 
-Сравнить Policy A и Policy B:
+Сравнить Policy A/B:
 
-- AI/movement после suspend/resume;
-- flying/swimming/tamed;
-- nonparticipant entering range;
-- direct owner transfer без ownerless interval;
+- ground/flying/swimming/tamed AI;
+- suspend/resume;
+- direct owner transfer;
+- observer enters/leaves;
 - owner disconnect;
 - CPU/network profile.
 
-## Spike D — spawned combat objects
+## Spike E — context support
 
-Проверить melee, arrow/bolt, thrown weapon, bomb, persistent AOE и summon attribution через owner migration и delayed hit.
+- land;
+- dungeon;
+- ship/ocean;
+- mount/attached;
+- portal;
+- active boss.
 
-## Spike E — context spawn
+## Spike F — spawned combat objects
 
-Проверить land, dungeon, ship/ocean, attached/mount и portal transition. Зафиксировать поддерживаемую политику для первого релиза.
+- melee;
+- arrow/bolt;
+- thrown;
+- bomb;
+- persistent AOE;
+- summon;
+- owner migration/delayed hit.
 
-# 40. Gate для начала production-кода
+# 39. Gate для production-кода
 
-До явного решения владельца мода должны быть закрыты минимум:
+До отдельного решения владельца закрыть:
 
-1. first-contact contract;
-2. dream-collapse lethal scope;
-3. ejection grace;
-4. ordinary-world simulation policy;
-5. visibility/collision mechanism;
-6. context policy для dungeon и ocean/ship;
-7. DOT/status policy;
-8. re-entry policy первой версии;
-9. boss-overlap policy;
-10. допустимые world interactions.
+1. Model A или B границы входа;
+2. first-contact contract;
+3. dream-collapse lethal scope;
+4. кодовое имя defeat outcome;
+5. health/stamina/eitr после collapse;
+6. transition grace и collision separation;
+7. re-entry первой версии;
+8. Policy A/B ordinary simulation;
+9. suspension scope;
+10. local visibility/collision mechanism;
+11. dungeon и ship/ocean policy;
+12. boss-overlap policy;
+13. DOT/status policy;
+14. real-world interactions;
+15. projectile/AOE/summon attribution.
 
 Пока gate не закрыт:
 
-- не начинать реализацию первого вертикального среза;
+- не начинать production implementation;
 - не открывать implementation PR;
 - не делать version bump;
-- разрешены только документация, чтение `assemblies_combined` и отдельно согласованные technical spikes.
+- разрешены только документация, чтение `assemblies_combined` и отдельно согласованные spike commits.
