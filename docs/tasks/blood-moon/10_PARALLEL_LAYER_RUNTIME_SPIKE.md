@@ -4,54 +4,42 @@ This is the only implementation task currently permitted by the Blood Moon desig
 
 ## 0. Branch and scope
 
-Create and work only in:
+Work only in:
 
 ```text
 spike/blood-moon-parallel-layer
 ```
 
-Base it on the current head of:
+Base: current `feat/blood-moon`.
+
+Open only a draft PR:
 
 ```text
-feat/blood-moon
+spike/blood-moon-parallel-layer → feat/blood-moon
 ```
 
-The spike must not be merged into `master`. Open a draft PR from the spike branch into `feat/blood-moon` for review only.
+Do not merge into `master`, bump the version, edit release files, add permanent assets or claim production readiness.
 
-Do not:
+All spike behavior is disabled by default and enabled only by an admin/debug command or explicit development config.
 
-- implement the annual calendar or complete event;
-- add release configuration or migrations;
-- change the plugin version;
-- update public README/changelog/package files;
-- add permanent assets;
-- claim production readiness;
-- turn experimental hooks into broad always-on Harmony patches.
-
-All spike behavior must be disabled by default and reachable only through an admin/debug command or an explicit local development config.
-
-Before patching any game method, read its current code from:
-
-```text
-https://github.com/shudnal/assemblies_combined
-```
+Before patching a game method, read its current implementation from `shudnal/assemblies_combined`.
 
 ## 1. Goal
 
-Determine whether the intended parallel-world experience can be implemented safely without:
+Prove or reject a minimal parallel-world architecture without:
 
-- moving Player;
-- disabling networked GameObjects;
-- breaking ZDO ownership;
-- making hidden colliders block attacks;
-- producing a real death/TombStone;
-- breaking mounted, boss, dungeon, ship or observer scenarios.
+- moving/rotating/reparenting Player;
+- disabling networked root GameObjects;
+- using mass `SetOwner(0)` parking;
+- allowing hidden colliders to block attacks;
+- calling `Player.OnDeath` for illusory defeat;
+- breaking observer, mount, boss, dungeon, ship or ownership scenarios.
 
-The spike is successful only if it produces evidence for a minimal production architecture. It is acceptable and useful for a candidate approach to fail.
+A failed candidate is a useful result if the failure and fallback are documented.
 
-## 2. Temporary test model
+## 2. Temporary model
 
-Use a minimal isolated controller with these local classifications:
+### 2.1. Layer classification
 
 ```csharp
 internal enum BloodMoonSpikeLayer
@@ -65,9 +53,67 @@ internal enum BloodMoonSpikeLayer
 }
 ```
 
-Use one centralized policy object. Exact signatures may change, but the spike must not duplicate rules across patches:
+### 2.2. Participant phase and outcome
 
 ```csharp
+internal enum BloodMoonParticipantPhase
+{
+    None,
+    Marked,
+    AwaitingContact,
+    Fighting,
+    GoalReached,
+    Ejected,
+    Resolved
+}
+
+internal enum BloodMoonParticipantOutcome
+{
+    None,
+    Success,
+    Defeated,
+    Disconnected
+}
+```
+
+The spike may omit unrelated future outcomes.
+
+### 2.3. Engagement gate
+
+Context is independent of participant phase:
+
+```csharp
+internal enum BloodMoonEngagementGate
+{
+    None,
+    Teleporting,
+    Interior,
+    ShipOrOcean,
+    BossEncounter
+}
+```
+
+A gate may be active before or after first contact.
+
+While gate is active:
+
+- ordinary world is visible/interactable;
+- blood enemies do not spawn/target this Player;
+- full blood-only layer is suspended;
+- Bloodlust combat modifiers are suspended;
+- Blood Moon `SoftDeath` indicator is absent;
+- `Character.CheckDeath` dream-collapse protection is inactive;
+- ordinary death is vanilla;
+- event clock and existing personal progress continue;
+- when gate clears before forced end, Player returns to `AwaitingContact` or resumes `Fighting`/`GoalReached` without transform changes.
+
+This suspension is the preferred policy for interior, ship/ocean, teleport and visible-boss contexts. It avoids terminal withdrawal and preserves agency. The spike must test whether resume is clean.
+
+### 2.4. Central policy
+
+Use one policy object; do not duplicate allowlists across patches:
+
+```text
 CanSee(localPlayer, entity)
 CanCollide(localPlayer, entity)
 CanTarget(attacker, target)
@@ -75,29 +121,29 @@ CanDamage(source, target, hit)
 CanInteract(player, target)
 ```
 
-Create only enough temporary state to test:
+Temporary state is limited to:
 
 ```text
 eventId
-participant phase
-outcome
+phase/outcome/gate
 first-contact record
 ejection/grace state
 entity layer marker
-projectile/AOE layer attribution
+projectile/AOE attribution
 ```
 
-Do not build the production persistence/network protocol yet. RPC messages used in multiplayer tests still require event ID, sender validation and duplicate protection.
+Do not build production persistence/networking. Multiplayer reports still include event ID, sender/object identity and duplicate protection.
 
 ## 3. Debug commands
 
-Prefer the existing Seasons command style. Minimum test controls:
+Minimum:
 
 ```text
 seasons bloodmoon spike status
 seasons bloodmoon spike reset
 seasons bloodmoon spike awaiting
 seasons bloodmoon spike fighting
+seasons bloodmoon spike gate <none|teleport|interior|ship|boss>
 seasons bloodmoon spike eject
 seasons bloodmoon spike spawn ordinary <prefab>
 seasons bloodmoon spike spawn blood <prefab>
@@ -105,72 +151,71 @@ seasons bloodmoon spike setowner <ordinary|blood> <server|participant|observer>
 seasons bloodmoon spike dump
 ```
 
-Commands must work in single-player/listen server. Multiplayer-changing commands are admin-only.
+Single-player/listen must work. Multiplayer-changing commands are admin-only.
 
-## 4. Spike A — local visibility and ownership matrix
+# 4. Spike A — local visibility and ownership matrix
 
-Set up:
+Set up participant, observer, one ordinary enemy and one event-marked blood enemy.
 
-- one participant client;
-- one observer client;
-- one ordinary enemy;
-- one event-marked blood enemy;
-- all four ownership combinations:
-  - blood enemy owned participant;
-  - blood enemy owned observer;
-  - ordinary enemy owned participant;
-  - ordinary enemy owned observer.
+Test all owner combinations:
 
-Required states:
+```text
+blood owned by participant
+blood owned by observer
+ordinary owned by participant
+ordinary owned by observer
+```
 
-### `AwaitingContact`
+### AwaitingContact
 
-Participant sees ordinary enemy and blood enemy. Observer sees ordinary enemy and participant but not blood enemy.
+- participant sees ordinary + blood;
+- observer sees ordinary + participant, not blood.
 
-### `Fighting`
+### Fighting/GoalReached with gate None
 
-Participant sees blood enemy and other players but not ordinary enemy/tamed/boss. Observer sees ordinary enemy and participant but not blood enemy.
+- participant sees blood + all Players, not ordinary creatures/tamed/boss;
+- observer sees ordinary + participant, not blood.
 
 Requirements:
 
-- never call `GameObject.SetActive(false)` on a networked entity as the layer mechanism;
-- hidden owner entity must still be able to simulate for remote peers;
-- local visual/audio/EnemyHud suppression must restore without stale state;
-- owner migration and late join must reapply presentation correctly.
+- no root `GameObject.SetActive(false)`;
+- hidden owner entity still simulates for remote peer;
+- visual/audio/EnemyHud restore without stale state;
+- owner migration and late join reapply local presentation.
 
-Candidate presentation path:
+Candidate path:
 
-- use or patch `Character.SetVisible`/equivalent for the visual root without disabling AI/root;
-- explicitly suppress local audio and `EnemyHud.TestShow`;
-- keep world/terrain collision of the hidden entity active.
+- patch/use `Character.SetVisible` or renderer state without disabling root/AI;
+- suppress local audio and `EnemyHud.TestShow` through the same policy;
+- keep terrain/world collision active.
 
-Record exact methods and state that had to be touched.
+# 5. Spike B — cross-layer collision and hit transparency
 
-## 5. Spike B — collision and attack transparency
+Test both local-Player pairs and entity-to-entity pairs.
 
-`Physics.IgnoreCollision` between local Player main collider and hidden Character main collider is only one part of the test.
+Blood and ordinary Characters must not push or physically affect each other merely because one client owns both. Cache pairwise collision changes; do not recompute all pairs every frame.
 
 Verify:
 
-- body collision;
-- hitbox collision;
-- melee overlap/raycast;
-- arrow/bolt raycast;
-- thrown projectile;
-- event projectile;
-- AoE overlap;
-- final `Character.Damage`/`WearNTear` safeguards.
+- body colliders;
+- hitboxes;
+- melee ray/overlap;
+- arrows/bolts;
+- thrown/event projectiles;
+- AoE;
+- final `Character.Damage`/`WearNTear` guards.
 
-Critical scenarios:
+Critical cases:
 
-1. A hidden ordinary enemy stands between participant and blood enemy. Participant projectile must pass through the hidden ordinary collider and hit the blood enemy.
-2. A hidden blood enemy stands between observer and ordinary target. Observer projectile must pass through the hidden blood collider.
-3. An AoE only damages compatible targets.
-4. An incompatible object never receives damage, stagger, status or skill credit.
+1. Hidden ordinary enemy between participant and blood target: participant projectile passes through and hits blood target.
+2. Hidden blood enemy between observer and ordinary target: observer projectile passes through.
+3. Blood enemy and ordinary creature do not push each other on the simulation owner.
+4. AoE affects only compatible targets.
+5. Incompatible target receives no damage, stagger, status or skill credit.
 
-Inspect `Attack.DoMeleeAttack`, `Attack.DoAreaAttack`, `Projectile.FixedUpdate`/`OnHit`/`DoAOE` and related current game code. Prefer filtering candidate hits before damage. Keep final damage guards as defense in depth.
+Inspect current `Attack.DoMeleeAttack`, `Attack.DoAreaAttack`, `Projectile.FixedUpdate`, `Projectile.OnHit` and `Projectile.DoAOE`. Prefer filtering before damage. Final damage guard remains defense in depth.
 
-Projectile/AOE spawned during the spike must capture:
+Projectile/AOE captures on creation:
 
 ```text
 eventId
@@ -178,24 +223,19 @@ source layer
 source ZDOID
 ```
 
-at creation, so delayed hit behavior does not depend on the owner’s later state.
+Delayed hit must not depend on later source state/owner.
 
-## 6. Spike C — accepted first contact
+# 6. Spike C — accepted first contact
 
-Participant starts in `AwaitingContact` with ordinary and blood entities visible.
+Start in `AwaitingContact`, ordinary and blood worlds both visible.
 
-Test contact kinds:
+Contacts:
 
-- incoming direct hit;
-- outgoing melee hit;
-- outgoing projectile hit;
+- incoming hit;
+- outgoing melee/projectile hit;
 - block;
 - parry;
-- fully mitigated/resisted accepted hit;
-- lethal first hit;
-- duplicate report;
-- stale event ID;
-- server rejection/resync.
+- fully mitigated/resisted accepted hit.
 
 Not contacts:
 
@@ -206,208 +246,230 @@ Not contacts:
 
 Acceptance:
 
-- local transition to `Fighting` occurs before the first accepted incoming hit is resolved;
-- first Bloodlust defense applies to that same hit;
-- layer switch happens once;
-- server validates and publishes the transition;
-- rejection restores authoritative state without leaving hidden renderers/colliders.
+- local `AwaitingContact → Fighting` occurs before the same first incoming hit is resolved;
+- Bloodlust base defense applies to that hit;
+- full layer switches once;
+- server validates/deduplicates;
+- rejection/resync restores renderer/audio/collision/status.
 
-Determine the narrowest reliable Harmony points. In particular inspect the current order in `Character.RPC_Damage` and `Humanoid.BlockAttack` rather than inferring contact from health delta alone.
+Inspect actual order in `Character.RPC_Damage`, `Humanoid.BlockAttack`, melee and projectile paths. Do not infer contact from positive health loss only.
 
-## 7. Spike D — dream collapse
+First record:
 
-Use owner-side `Character.CheckDeath` interception for local Player when:
+```text
+eventId
+stable Player ID
+peer UID
+Player ZDOID
+contact kind
+blood enemy ZDOID
+timestamp
+position only for diagnostics
+```
+
+# 7. Spike D — dream collapse
+
+Use owner-side `Character.CheckDeath` interception only when:
 
 ```text
 phase == Fighting || phase == GoalReached
+gate == None
+full blood layer active
 health <= 0
 not already ejected
 ```
 
-The spike must prove:
+Prove:
 
 - `Player.OnDeath` is not called;
-- no death point;
-- no death effects/ragdoll;
-- no TombStone;
-- no inventory/equipment transfer;
-- no food clear;
-- no respawn request;
-- no position/rotation/parent/velocity restore;
-- outcome is exactly `BloodMoonParticipantOutcome.Defeated` once;
+- no death point/effects/ragdoll/TombStone;
+- no inventory/equipment/food transfer;
+- no respawn;
+- no transform/parent/velocity restore;
+- outcome exactly `Defeated` once;
 - no re-entry.
 
-On collapse:
+Restore:
 
 ```text
-Health  = current maximum
-Stamina = current maximum
-Eitr    = current maximum
-Food    = unchanged
-Adrenaline = unchanged
+Health = current max
+Stamina = current max
+Eitr = current max
+Food unchanged
+Adrenaline unchanged
 ```
 
-Remove damaging DoT effects without `RemoveAllStatusEffects`. At minimum inspect and test current vanilla `SE_Burning`, `SE_Poison` and `SE_Smoke`; report how modded damaging status effects could be handled without deleting buffs.
+Remove damaging DoT effects without `RemoveAllStatusEffects`.
 
-### Recovery protection
+At minimum test:
+
+- `SE_Burning`;
+- `SE_Poison`;
+- `SE_Smoke`;
+- `SE_Stats` where `m_tickInterval > 0` and `m_healthPerTick < 0`.
+
+Report a safe approach for unknown modded DoT classes. Do not delete unrelated buffs.
+
+## 7.1. Recovery protection
 
 Stage 1:
 
-- full incoming-damage immunity while the Player is still airborne from the collapse;
-- must suppress the landing/fall damage belonging to that fall.
+- full incoming immunity while airborne from collapse;
+- cover landing/fall damage from that trajectory.
 
-Test and choose an explicit stabilization condition. Candidate:
+Test a finite stabilization rule. Candidate:
 
 ```text
 IsOnGround || IsSwimming || IsAttached
 ```
 
-This prevents indefinite immunity in water or on an attached object while preserving the intended airborne protection.
-
 Stage 2:
 
 ```text
 10 seconds
-75% incoming-damage reduction
-final incoming multiplier = 0.25
+75% incoming reduction
+final multiplier 0.25
 ```
 
-Test fall, water and lava. Lava is not made permanently safe: after the grace period vanilla lava behavior returns.
+Test fall, water, attached and lava. Lava is not permanently safe; vanilla damage returns after grace.
 
-Direct forced `Player.OnDeath` must remain vanilla. An admin command implemented by ordinary HP reduction naturally reaches the spike collapse; an admin/scripted direct death call does not.
+`SoftDeath` is added only while full blood layer is active, as familiar UI. It is removed/suspended with the layer and is not the protection mechanism.
 
-## 8. Spike E — contexts
+Direct forced `Player.OnDeath` remains vanilla. HP reduction reaches collapse naturally.
 
-### Interior/dungeon
+# 8. Spike E — contexts
 
-- red atmosphere/forced-environment presentation may remain;
-- no blood enemy spawn;
-- no full layer/contact;
-- eligibility resumes after returning to a supported outdoor context.
+## 8.1. Interior/dungeon
 
-### Ship/ocean
+- red atmosphere may remain;
+- gate `Interior`;
+- no blood spawn/layer/SoftDeath/collapse protection;
+- clear gate and resume after supported outdoor return.
+
+## 8.2. Ship/ocean
 
 - red atmosphere remains;
-- no blood enemy spawn/full layer;
-- no forced detach or ship movement;
-- eligibility resumes on supported land.
+- gate `ShipOrOcean`;
+- no blood spawn/layer;
+- no forced detach/ship movement;
+- resume on supported land.
 
-### Generic attached
+## 8.3. Teleport
+
+- gate during transition;
+- no spawn/contact during teleport;
+- after completion recompute destination context;
+- resume prior personal phase if supported.
+
+## 8.4. Generic attached
 
 - no forced detach;
-- Player may remain `AwaitingContact` and receive a first blood hit;
-- full layer must not change parent/attach state.
+- may remain AwaitingContact and receive first hit;
+- full layer must not alter parent/attach state;
+- stabilization after defeat must not wait forever solely because attached.
 
-### Mounted
+## 8.5. Mounted bridge
 
-Do not use forced `StopDoodadControl` as the primary design: vanilla `Sadle.OnUseStop` calls `Player.AttachStop`, and `AttachStop` moves Player to the detach offset.
+Do not force `StopDoodadControl`: vanilla saddle release calls `AttachStop`, which moves Player to detach offset.
 
-Test a **blood-bound mount bridge**:
+Test `BloodBoundMount`:
 
-- current mount is obtained through `Player.GetDoodadController() is Sadle`;
-- blood hit on rider or current mount enters rider into `Fighting`;
-- blood source damage to mount is zero;
-- mount stays visible and controllable for rider;
-- mount remains ordinary for observers;
+- obtain current mount via `Player.GetDoodadController() is Sadle`;
+- blood hit on rider or ridden mount contacts rider;
+- mount takes zero blood damage;
+- if mount collider receives a blood hit, either transparently continue/redirect the attack to rider so mount is not an invulnerable shield;
+- rider enters Fighting without dismount;
+- mount stays visible/controllable to rider and ordinary to observers;
 - blood enemies target rider, not mount;
-- ordinary enemies cannot target/damage the blood-bound mount while rider is in full layer;
-- mount cannot damage blood enemies or produce progress;
-- voluntary dismount releases bridge and returns mount to ordinary hidden behavior for the still-fighting Player.
+- ordinary enemies do not target/damage bridged mount;
+- mount cannot damage blood enemies or grant progress;
+- voluntary dismount releases bridge; still-fighting Player then sees mount as ordinary-hidden.
 
-If the bridge cannot be made reliable without broad invasive patches, record mounted context as deferred until voluntary dismount. Do not silently fall back to forced dismount.
+If unreliable, mounted context uses an engagement gate until voluntary dismount. Never silently use forced dismount.
 
-### Boss encounter
+## 8.6. Boss encounter
 
-Use `EnemyHud.instance.ShowingBossHud()` as the local product signal:
+Use local `EnemyHud.instance.ShowingBossHud()` signal:
 
-- while visible, do not spawn blood enemies or enter full layer;
-- preserve boss combat/bookkeeping;
-- prefer boss environment/music plus compatible red overlay, not Blood Moon force that destroys readability;
-- after boss HUD has been absent for a short stability delay, re-evaluate eligibility.
+- gate `BossEncounter` while visible;
+- preserve boss combat/bookkeeping/environment/music where possible; use compatible red overlay only;
+- after HUD absent for stability delay, clear gate and resume.
 
-Test a client report to server. Treat it only as a delay signal, not a trusted reward claim.
+Client report is low-trust delay state, never a reward/outcome claim. Optionally validate nearby boss on server.
 
-### Edge of world
+## 8.7. Edge of world
 
-Use `ZoneSystemVariantController.IsBeyondWorldEdge(position, offset)` with a positive safety offset. Eject/withdraw Player before vanilla tidal/edge death becomes relevant. Do not wait for `HitData.HitType.EdgeOfWorld`.
+Use `ZoneSystemVariantController.IsBeyondWorldEdge(position, positiveSafetyOffset)`.
 
-The final non-defeat outcome name for this preventive exit remains open; report a recommendation.
+Before vanilla edge/tidal death:
 
-## 9. Spike F — ordinary-world simulation
+- remove full layer/Bloodlust/SoftDeath;
+- eject or withdraw without transform changes;
+- ordinary edge death afterwards remains vanilla.
 
-Run this only after visibility/collision isolation works.
+Report a final neutral outcome name; do not label preventive exit `Defeated` automatically.
 
-### Baseline: background simulation
+# 9. Spike F — ordinary-world simulation
 
-Do not alter ownership or suspend AI. Prove that participant can be locally isolated while owner simulation continues for observer.
+Run only after layer isolation works.
 
-### Conditional suspension experiment
+## 9.1. Baseline: background simulation
 
-Definition of a real-world witness for an ordinary entity:
+Do not change owner or suspend AI. Prove hidden owner simulation works for remote observer.
 
-- ready Player/peer;
-- participant phase is not `Fighting` or `GoalReached`;
-- reference/Player position is within active area or configured witness radius;
-- ordinary world is visible to that Player.
+## 9.2. Definition of real-world witness
 
-`AwaitingContact` and `Ejected` count as real-world witnesses.
+For an ordinary entity, witness exists if a ready Player/peer:
 
-If an ordinary entity is owned by a full-layer participant and no real-world witness exists:
+- is not full-layer `Fighting`/`GoalReached`;
+- is within active area or configured witness radius;
+- can see ordinary world.
 
+`AwaitingContact`, context-gated participants and `Ejected` count as witnesses.
+
+## 9.3. Conditional suspension experiment
+
+Only if baseline causes unacceptable world changes:
+
+- ordinary entity is owned by full-layer participant;
+- no real-world witness;
 - retain owner;
-- suspend only AI movement/target acquisition through a narrow guard;
-- do not claim a full simulation freeze;
-- exclude current `BloodBoundMount`;
-- resume when witness appears or participant is ejected/resolved.
+- suspend only AI movement/target acquisition through narrow guard;
+- exclude BloodBoundMount;
+- resume when witness appears or participant layer ends;
+- use interaction radius + hysteresis, not all active sectors.
 
-Use interaction radius plus enter/leave hysteresis, not every active sector.
+This is not full freeze: physics/status/procreation may continue. Compare CPU/network and state integrity. Production fallback is background simulation if suspension is fragile.
 
-Compare:
+# 10. Evidence and report
 
-- ordinary ground/flying/swimming enemies;
-- tameables;
-- observer entering/leaving;
-- owner disconnect/migration;
-- CPU/network behavior;
-- state after resume.
+Commit a report with:
 
-Production recommendation must prefer background simulation if conditional suspension introduces ownership or component inconsistency.
+- exact Seasons and `assemblies_combined` commits;
+- patches/alternatives tried;
+- single/listen/dedicated results;
+- ownership matrix;
+- screenshots/log excerpts;
+- performance observations;
+- supported/unsupported contexts;
+- recommended minimal production architecture;
+- rejected approaches and fallbacks;
+- required doc changes;
+- which spike code to delete, retain as diagnostics or promote selectively.
 
-## 10. Evidence and result report
+Run Codex review on draft PR into `feat/blood-moon`. Do not merge before owner runtime review.
 
-Commit a report to the spike branch containing:
+# 11. Acceptance gate
 
-- exact game commit from `assemblies_combined` used;
-- exact Seasons base commit;
-- patches tried;
-- which approaches worked, failed or were abandoned;
-- single-player/listen/dedicated results;
-- owner matrix results;
-- screenshots/log excerpts where useful;
-- known unsupported interactions;
-- recommended production architecture;
-- changes required in authoritative design files `01`–`09`;
-- whether the spike code should be deleted, retained as tests, or promoted selectively.
+Answer with runtime evidence:
 
-Open a draft PR:
-
-```text
-spike/blood-moon-parallel-layer → feat/blood-moon
-```
-
-Run Codex code review on that PR. Do not merge before owner runtime review.
-
-## 11. Spike acceptance gate
-
-The spike is complete when it can answer, with runtime evidence:
-
-1. Can a client hide an entity while still owning/simulating it for another client?
-2. Can incompatible Character colliders become transparent to melee/projectiles/AoE without changing global layers?
-3. Can first contact switch the layer before the same hit is resolved?
-4. Can `Character.CheckDeath` produce `Defeated` without any `Player.OnDeath` side effect?
-5. Can recovery protection handle airborne/water/attached cases without indefinite immunity?
-6. Can the mounted bridge work without forced transform changes?
-7. Can boss/dungeon/ship contexts defer engagement cleanly?
-8. Is background simulation acceptable, or is conditional AI suspension both necessary and safe?
-9. Which minimal set of production Harmony points is required?
-10. Which parts remain too fragile and must be simplified or dropped?
+1. Can client hide entity while still owning/simulating it remotely?
+2. Can cross-layer Character physics be isolated?
+3. Can hidden hitboxes be transparent to melee/projectile/AoE?
+4. Can first contact switch before same hit resolution?
+5. Can CheckDeath produce Defeated without OnDeath side effects?
+6. Can recovery protection terminate on ground/water/attached without infinite immunity?
+7. Can mounted bridge work without forced movement?
+8. Can context gates suspend/resume personal layer cleanly?
+9. Is background simulation acceptable; if not, is conditional suspension safe?
+10. What is the minimal production patch set, and what must be simplified/dropped?
