@@ -31,5 +31,22 @@ namespace Seasons.BloodMoon
                 return !IsFrozenForNewCombatWork();
             }
         }
+
+        [HarmonyPatch(typeof(Character), nameof(Character.RPC_Damage))]
+        private static class CharacterDamagePatch
+        {
+            [HarmonyPriority(Priority.First)]
+            private static bool Prefix(Character __instance)
+            {
+                if (!IsFrozenForNewCombatWork() || __instance == null)
+                    return true;
+
+                if (__instance is Player player && BloodMoonInteractionRules.IsActiveParticipant(player))
+                    return false;
+                if (BloodMoonInteractionRules.IsBloodEnemy(__instance))
+                    return false;
+                return true;
+            }
+        }
     }
 }
