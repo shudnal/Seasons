@@ -115,6 +115,7 @@ namespace Seasons.BloodMoon
             BloodMoonEnvironment.ReleaseForcedEnvironment();
             BloodMoonPresentation.CleanupTransientState();
             BloodMoonSpawner.ResetClientState();
+            BloodMoonSummons.ResetRuntimeState();
             BloodMoonHitAttribution.Reset();
             if (BloodMoonNetwork.ClientGlobal.EventId >= 0L)
                 BloodMoonSkills.ResetLocal(BloodMoonNetwork.ClientGlobal.EventId);
@@ -122,6 +123,8 @@ namespace Seasons.BloodMoon
 
         private void TickServer(double now)
         {
+            BloodMoonSummons.TickServer(State, now);
+
             if (!BloodMoonConfig.Enabled.Value)
             {
                 if (State.IsEventLive && State.Phase != BloodMoonEventPhase.Resolving)
@@ -408,6 +411,7 @@ namespace Seasons.BloodMoon
             participant.ExitReason = reason;
             participant.ExitedAt = now;
             BloodMoonGroups.RemovePlayer(State, participant.PlayerId);
+            BloodMoonSummons.CleanupForPlayer(State.EventId, participant.PlayerId, now);
             Touch(now, persist: true, publish: true);
             LogInfo($"[BloodMoon][event:{State.EventId}][player:{participant.PlayerId}] Exited: {reason}; goal={participant.GoalReached}; combat={GetCombatProgress(participant):0.##}%.");
         }
@@ -563,6 +567,7 @@ namespace Seasons.BloodMoon
                     break;
 
                 case BloodMoonResolutionStep.CleaningTemporaryItems:
+                    BloodMoonSummons.CleanupEvent(State.EventId, now);
                     BroadcastClientAction("cleanup-craft");
                     BloodCraft.CleanupLocal(Player.m_localPlayer);
                     SetResolutionStep(BloodMoonResolutionStep.RestoringWorldSystems, now);
@@ -686,6 +691,7 @@ namespace Seasons.BloodMoon
 
             BloodMoonBosses.Recover(State);
             BloodMoonSpawner.Recover(State);
+            BloodMoonSummons.Recover(State);
 
             if (State.Phase == BloodMoonEventPhase.Marked || State.IsCombatLive || State.Phase == BloodMoonEventPhase.Resolving && State.ResolutionStep < BloodMoonResolutionStep.RestoringWorldSystems)
                 BloodMoonRandEventSuppression.StopActiveRandomEvent();
@@ -776,10 +782,12 @@ namespace Seasons.BloodMoon
             long lastCreated = State?.LastCreatedEventId ?? -1L;
             long lastResolved = State?.LastResolvedEventId ?? -1L;
             double firstEnabled = State?.FirstEnabledAt ?? 0d;
+            double now = SeasonState.IsActive ? seasonState.GetTotalSeconds() : 0d;
             if (State != null)
             {
                 BloodMoonSpawner.CleanupExtraEnemies(State);
                 BloodMoonBosses.RestoreAll(State);
+                BloodMoonSummons.CleanupEvent(State.EventId, now);
                 BroadcastClientAction("cleanup-craft");
                 if (State.EventId >= 0L)
                 {
@@ -887,30 +895,35 @@ namespace Seasons.BloodMoon
             if (BloodMoonNetwork.ClientGlobal.EventId >= 0L && eventId != BloodMoonNetwork.ClientGlobal.EventId && action != "cleanup-craft")
                 return;
 
+            Player localPlayer = Player.m_localPlayer;
+            long localPlayerId = localPlayer != null ? localPlayer.GetPlayerID() : 0L;
             switch (action)
             {
                 case "enroll":
                     BloodMoonPresentation.OnEnrolled();
                     break;
                 case "defeated":
-                    BloodMoonRecovery.ApplyDefeat(Player.m_localPlayer);
-                    BloodCraft.CleanupLocal(Player.m_localPlayer);
+                    BloodMoonRecovery.ApplyDefeat(localPlayer);
+                    BloodMoonSummons.CleanupLocalTemporary(eventId, localPlayerId);
+                    BloodCraft.CleanupLocal(localPlayer);
                     break;
                 case "withdrawn":
-                    BloodMoonRecovery.ApplyWithdrawal(Player.m_localPlayer);
-                    BloodCraft.CleanupLocal(Player.m_localPlayer);
+                    BloodMoonRecovery.ApplyWithdrawal(localPlayer);
+                    BloodMoonSummons.CleanupLocalTemporary(eventId, localPlayerId);
+                    BloodCraft.CleanupLocal(localPlayer);
                     break;
                 case "cleanup-craft":
-                    BloodCraft.CleanupLocal(Player.m_localPlayer);
+                    BloodMoonSummons.CleanupLocalTemporary(eventId, localPlayerId);
+                    BloodCraft.CleanupLocal(localPlayer);
                     break;
                 case "reward":
-                    BloodMoonSkills.ApplySerializedReward(Player.m_localPlayer, payload);
+                    BloodMoonSkills.ApplySerializedReward(localPlayer, payload);
                     break;
                 case "chronicle":
                     BloodMoonPresentation.PublishChronicle(payload);
                     break;
                 case "remove-rested":
-                    BloodMoonRecovery.RemoveRested(Player.m_localPlayer);
+                    BloodMoonRecovery.RemoveRested(localPlayer);
                     break;
                 case "resolution-complete":
                     BloodMoonPresentation.OnResolutionComplete();
