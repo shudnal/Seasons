@@ -7,8 +7,15 @@ namespace Seasons.BloodMoon
     {
         private static void Postfix()
         {
-            if (ZNet.instance != null && ZNet.instance.IsServer())
-                ZNet.instance.SendNetTime();
+            if (ZNet.instance == null || !ZNet.instance.IsServer())
+                return;
+
+            ZNet.instance.SendNetTime();
+            if (EnvMan.instance != null)
+            {
+                EnvMan.instance.m_skipTime = false;
+                EnvMan.instance.m_totalSeconds = ZNet.instance.GetTimeSeconds();
+            }
         }
     }
 }
