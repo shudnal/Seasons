@@ -36,6 +36,7 @@ namespace Seasons.BloodMoon
                     continue;
 
                 Normalize(state);
+                BloodMoonRecoverySchedule.ReconcileForcedEnd(state);
                 LogInfo($"[BloodMoon.Persistence] Loaded event {state.EventId}, phase {state.Phase}, revision {state.Revision} from '{candidate}'.");
                 if (!string.Equals(candidate, path, StringComparison.Ordinal))
                 {
