@@ -131,6 +131,8 @@ namespace Seasons.BloodMoon
                 return;
             }
 
+            EnsureFirstEnabledAt(now);
+
             if (State.Phase == BloodMoonEventPhase.Resolving)
             {
                 TickResolution(now);
@@ -183,6 +185,15 @@ namespace Seasons.BloodMoon
                 BeginResolution("all enrolled participants completed or exited", now);
         }
 
+        private void EnsureFirstEnabledAt(double now)
+        {
+            if (State == null || State.FirstEnabledAt > 0d)
+                return;
+            State.FirstEnabledAt = now;
+            Touch(now, persist: true, publish: false);
+            LogInfo($"[BloodMoon.Persistence] First enabled observation recorded at {now:0.###} for world {State.WorldUid}.");
+        }
+
         private void TryCreateScheduledEvent(double now)
         {
             BloodMoonScheduleSnapshot schedule = BloodMoonSchedule.FindCurrentOrNext(now);
@@ -193,24 +204,28 @@ namespace Seasons.BloodMoon
             if (expected == BloodMoonEventPhase.Dormant || expected == BloodMoonEventPhase.Resolved)
                 return;
 
-            bool firstObservedEvent = State.EventId < 0L && State.LastCreatedEventId < 0L && State.LastResolvedEventId < 0L;
-            if (firstObservedEvent && now > schedule.ForewarningAt + 1d)
+            bool noEventHistory = State.EventId < 0L && State.LastCreatedEventId < 0L && State.LastResolvedEventId < 0L;
+            bool firstEnabledInsideCurrentWindow = noEventHistory && State.FirstEnabledAt >= schedule.ForewarningAt && State.FirstEnabledAt < schedule.MorningAt;
+            if (firstEnabledInsideCurrentWindow)
             {
-                long lastCreated = schedule.EventWorldDay;
+                double firstEnabledAt = State.FirstEnabledAt;
                 State = BloodMoonPersistence.CreateClean(loadedWorldUid);
+                State.FirstEnabledAt = firstEnabledAt;
                 State.EventId = schedule.EventWorldDay;
-                State.LastCreatedEventId = lastCreated;
-                State.LastResolvedEventId = lastCreated;
+                State.LastCreatedEventId = schedule.EventWorldDay;
+                State.LastResolvedEventId = schedule.EventWorldDay;
                 State.Schedule = schedule;
                 State.Phase = BloodMoonEventPhase.Skipped;
                 Touch(now, persist: true, publish: true);
-                LogInfo($"[BloodMoon][event:{State.EventId}][phase] Skipped first observed event because its forewarning window had already started.");
+                LogInfo($"[BloodMoon][event:{State.EventId}][phase] Skipped first enabled event because enablement occurred inside its forewarning/final-night window.");
                 return;
             }
 
             long previousCreated = State.LastCreatedEventId;
             long previousResolved = State.LastResolvedEventId;
+            double firstEnabled = State.FirstEnabledAt;
             State = BloodMoonPersistence.CreateClean(loadedWorldUid);
+            State.FirstEnabledAt = firstEnabled;
             State.EventId = schedule.EventWorldDay;
             State.LastCreatedEventId = schedule.EventWorldDay;
             State.LastResolvedEventId = previousResolved;
@@ -712,9 +727,13 @@ namespace Seasons.BloodMoon
                     DebugCleanup();
 
                 int day = seasonState.GetCurrentWorldDay();
+                double firstEnabled = State?.FirstEnabledAt > 0d ? State.FirstEnabledAt : now;
+                long previousResolved = State?.LastResolvedEventId ?? -1L;
                 State = BloodMoonPersistence.CreateClean(loadedWorldUid);
+                State.FirstEnabledAt = firstEnabled;
                 State.EventId = day;
                 State.LastCreatedEventId = day;
+                State.LastResolvedEventId = previousResolved;
                 State.Schedule = CreateDebugSchedule(day, now);
                 State.Phase = BloodMoonEventPhase.Forewarning;
                 Touch(now, persist: true, publish: true);
@@ -756,17 +775,28 @@ namespace Seasons.BloodMoon
 
         internal void DebugCleanup()
         {
+            long lastCreated = State?.LastCreatedEventId ?? -1L;
+            long lastResolved = State?.LastResolvedEventId ?? -1L;
+            double firstEnabled = State?.FirstEnabledAt ?? 0d;
             if (State != null)
             {
                 BloodMoonSpawner.CleanupExtraEnemies(State);
                 BloodMoonBosses.RestoreAll(State);
                 BroadcastClientAction("cleanup-craft");
+                if (State.EventId >= 0L)
+                {
+                    lastCreated = Math.Max(lastCreated, State.EventId);
+                    lastResolved = Math.Max(lastResolved, State.EventId);
+                }
             }
             BloodCraft.CleanupLocal(Player.m_localPlayer);
             BloodMoonEnvironment.ReleaseForcedEnvironment();
             BloodMoonRandEventSuppression.Release();
             BloodMoonHitAttribution.Reset();
             State = BloodMoonPersistence.CreateClean(loadedWorldUid);
+            State.FirstEnabledAt = firstEnabled;
+            State.LastCreatedEventId = lastCreated;
+            State.LastResolvedEventId = lastResolved;
             BloodMoonPersistence.Save(State);
             PublishState(force: true);
         }
@@ -775,7 +805,7 @@ namespace Seasons.BloodMoon
         {
             if (State == null)
                 return "Blood Moon state is not loaded.";
-            return $"event={State.EventId} phase={State.Phase} step={State.ResolutionStep} revision={State.Revision} participants={State.Participants.Count} groups={State.Groups.Count} leases={State.SpawnLeases.Count} extras={State.ExtraEnemyZdos.Count} bosses={State.ParkedBosses.Count}";
+            return $"event={State.EventId} phase={State.Phase} step={State.ResolutionStep} revision={State.Revision} firstEnabled={State.FirstEnabledAt:0.###} participants={State.Participants.Count} groups={State.Groups.Count} leases={State.SpawnLeases.Count} extras={State.ExtraEnemyZdos.Count} bosses={State.ParkedBosses.Count}";
         }
 
         private bool ValidateSender(long sender, long eventId, long claimedPlayerId, out BloodMoonParticipantState participant)
