@@ -98,6 +98,7 @@ namespace Seasons.BloodMoon
         private sealed class TargetState
         {
             internal bool Active;
+            internal bool Restored;
             internal bool AttackPlayerObjects;
         }
 
@@ -124,7 +125,7 @@ namespace Seasons.BloodMoon
             if (__state == null || !__state.Active)
                 return;
 
-            __instance.m_attackPlayerObjects = __state.AttackPlayerObjects;
+            Restore(__instance, __state);
             __instance.m_targetStatic = null;
 
             if (__instance.m_targetCreature is Player current && BloodMoonInteractionRules.IsActiveParticipant(current))
@@ -147,6 +148,20 @@ namespace Seasons.BloodMoon
                 __instance.m_timeSinceSensedTargetCreature = 0f;
             }
         }
+
+        private static System.Exception Finalizer(System.Exception __exception, MonsterAI __instance, TargetState __state)
+        {
+            Restore(__instance, __state);
+            return __exception;
+        }
+
+        private static void Restore(MonsterAI ai, TargetState state)
+        {
+            if (ai == null || state == null || !state.Active || state.Restored)
+                return;
+            state.Restored = true;
+            ai.m_attackPlayerObjects = state.AttackPlayerObjects;
+        }
     }
 
     [HarmonyPatch(typeof(MonsterAI), nameof(MonsterAI.UpdateAI))]
@@ -155,6 +170,7 @@ namespace Seasons.BloodMoon
         private sealed class RuntimeState
         {
             internal bool Active;
+            internal bool Restored;
             internal bool FleeIfHurtWhenTargetCantBeReached;
             internal bool FleeIfNotAlerted;
             internal float FleeIfLowHealth;
@@ -192,34 +208,30 @@ namespace Seasons.BloodMoon
 
         private static void Postfix(MonsterAI __instance, RuntimeState __state)
         {
-            if (__state == null || !__state.Active)
-                return;
-
-            BloodMoonAiRuntimeContext.BloodAiDepth = Mathf.Max(0, BloodMoonAiRuntimeContext.BloodAiDepth - 1);
-            __instance.m_fleeIfHurtWhenTargetCantBeReached = __state.FleeIfHurtWhenTargetCantBeReached;
-            __instance.m_fleeIfNotAlerted = __state.FleeIfNotAlerted;
-            __instance.m_fleeIfLowHealth = __state.FleeIfLowHealth;
-            __instance.m_avoidFire = __state.AvoidFire;
-            __instance.m_afraidOfFire = __state.AfraidOfFire;
-            __instance.m_consumeItems = __state.ConsumeItems;
-            __instance.m_maxChaseDistance = __state.MaxChaseDistance;
-            __instance.m_targetStatic = null;
+            Restore(__instance, __state);
+            if (__state != null && __state.Active)
+                __instance.m_targetStatic = null;
         }
 
         private static System.Exception Finalizer(System.Exception __exception, RuntimeState __state, MonsterAI __instance)
         {
-            if (__state != null && __state.Active && BloodMoonAiRuntimeContext.BloodAiDepth > 0)
-            {
-                BloodMoonAiRuntimeContext.BloodAiDepth--;
-                __instance.m_fleeIfHurtWhenTargetCantBeReached = __state.FleeIfHurtWhenTargetCantBeReached;
-                __instance.m_fleeIfNotAlerted = __state.FleeIfNotAlerted;
-                __instance.m_fleeIfLowHealth = __state.FleeIfLowHealth;
-                __instance.m_avoidFire = __state.AvoidFire;
-                __instance.m_afraidOfFire = __state.AfraidOfFire;
-                __instance.m_consumeItems = __state.ConsumeItems;
-                __instance.m_maxChaseDistance = __state.MaxChaseDistance;
-            }
+            Restore(__instance, __state);
             return __exception;
+        }
+
+        private static void Restore(MonsterAI ai, RuntimeState state)
+        {
+            if (ai == null || state == null || !state.Active || state.Restored)
+                return;
+            state.Restored = true;
+            BloodMoonAiRuntimeContext.BloodAiDepth = Mathf.Max(0, BloodMoonAiRuntimeContext.BloodAiDepth - 1);
+            ai.m_fleeIfHurtWhenTargetCantBeReached = state.FleeIfHurtWhenTargetCantBeReached;
+            ai.m_fleeIfNotAlerted = state.FleeIfNotAlerted;
+            ai.m_fleeIfLowHealth = state.FleeIfLowHealth;
+            ai.m_avoidFire = state.AvoidFire;
+            ai.m_afraidOfFire = state.AfraidOfFire;
+            ai.m_consumeItems = state.ConsumeItems;
+            ai.m_maxChaseDistance = state.MaxChaseDistance;
         }
     }
 
