@@ -9,6 +9,7 @@ namespace Seasons.BloodMoon
     {
         None,
         Participant,
+        ParticipantSummon,
         BloodEnemy
     }
 
@@ -77,6 +78,10 @@ namespace Seasons.BloodMoon
                 sourceType = BloodMoonCombatSourceType.Participant;
                 playerId = player.GetPlayerID();
             }
+            else if (BloodMoonSummons.IsBloodSummon(owner) && BloodMoonSummons.TryGetOwnerPlayerId(owner, out playerId))
+            {
+                sourceType = BloodMoonCombatSourceType.ParticipantSummon;
+            }
             else if (BloodMoonInteractionRules.IsBloodEnemy(owner))
             {
                 sourceType = BloodMoonCombatSourceType.BloodEnemy;
@@ -141,6 +146,7 @@ namespace Seasons.BloodMoon
             return attribution.SourceType switch
             {
                 BloodMoonCombatSourceType.Participant => BloodMoonInteractionRules.IsBloodEnemy(target),
+                BloodMoonCombatSourceType.ParticipantSummon => BloodMoonInteractionRules.IsBloodEnemy(target),
                 BloodMoonCombatSourceType.BloodEnemy => target is Player player && BloodMoonInteractionRules.IsActiveParticipant(player),
                 _ => false
             };
@@ -195,7 +201,9 @@ namespace Seasons.BloodMoon
 
         internal static bool CanCredit(BloodMoonHitAttributionData attribution)
         {
-            return attribution != null && attribution.SourceType == BloodMoonCombatSourceType.Participant && BloodMoonInteractionRules.CanCreditProgress(attribution.SourcePlayerId);
+            return attribution != null &&
+                (attribution.SourceType == BloodMoonCombatSourceType.Participant || attribution.SourceType == BloodMoonCombatSourceType.ParticipantSummon) &&
+                BloodMoonInteractionRules.CanCreditProgress(attribution.SourcePlayerId);
         }
 
         internal static void Cleanup(UnityEngine.Object sourceObject)
@@ -229,17 +237,23 @@ namespace Seasons.BloodMoon
                 return;
 
             ZDO sourceZdo = ZDOMan.instance.GetZDO(attribution.SourceCharacterId);
-            if (sourceZdo == null || sourceZdo.GetOwner() != sender)
+            if (sourceZdo == null)
                 return;
 
             if (attribution.SourceType == BloodMoonCombatSourceType.Participant)
             {
-                if (attribution.SourcePlayerId == 0L || sourceZdo.GetLong(ZDOVars.s_playerID, 0L) != attribution.SourcePlayerId)
+                if (sourceZdo.GetOwner() != sender || attribution.SourcePlayerId == 0L || sourceZdo.GetLong(ZDOVars.s_playerID, 0L) != attribution.SourcePlayerId)
                     return;
             }
-            else if (attribution.SourcePlayerId != 0L)
+            else if (attribution.SourceType == BloodMoonCombatSourceType.ParticipantSummon)
             {
-                return;
+                if (!BloodMoonSummons.ValidateMarkedSummonZdo(sourceZdo, attribution.EventId, attribution.SourcePlayerId))
+                    return;
+            }
+            else
+            {
+                if (sourceZdo.GetOwner() != sender || attribution.SourcePlayerId != 0L)
+                    return;
             }
 
             AddPending(attribution, target);
@@ -247,7 +261,8 @@ namespace Seasons.BloodMoon
 
         private static bool IsKnownSourceType(BloodMoonCombatSourceType sourceType)
         {
-            return sourceType == BloodMoonCombatSourceType.Participant || sourceType == BloodMoonCombatSourceType.BloodEnemy;
+            return sourceType == BloodMoonCombatSourceType.Participant || sourceType == BloodMoonCombatSourceType.ParticipantSummon ||
+                sourceType == BloodMoonCombatSourceType.BloodEnemy;
         }
 
         private static void AddPending(BloodMoonHitAttributionData attribution, ZDOID target)
