@@ -185,6 +185,8 @@ namespace Seasons.BloodMoon
 
         private static void Spawn(ConsoleEventArgs args)
         {
+            if (!RequireServer(args))
+                return;
             if (args.Length < 4)
             {
                 Print(args, "Usage: seasons bloodmoon spawn <prefab>");
@@ -193,7 +195,7 @@ namespace Seasons.BloodMoon
             Player player = Player.m_localPlayer;
             if (player == null || ZNetScene.instance == null)
             {
-                Print(args, "Debug spawning requires a local world owner/client.");
+                Print(args, "Debug spawning requires a listen/single-player server with a local player.");
                 return;
             }
 
@@ -206,9 +208,9 @@ namespace Seasons.BloodMoon
 
             BloodMoonEventState state = BloodMoonController.Instance?.State;
             long eventId = state?.EventId ?? BloodMoonNetwork.ClientGlobal.EventId;
-            if (eventId < 0L)
+            if (state == null || !state.IsCombatLive || eventId < 0L)
             {
-                Print(args, "No Blood Moon event is active.");
+                Print(args, "Blood Moon combat is not active.");
                 return;
             }
 
@@ -224,17 +226,14 @@ namespace Seasons.BloodMoon
                 return;
             }
 
-            long groupId = state == null ? -1L : BloodMoonGroups.FindForPlayer(state, player.GetPlayerID())?.GroupId ?? -1L;
+            long groupId = BloodMoonGroups.FindForPlayer(state, player.GetPlayerID())?.GroupId ?? -1L;
             ZDO zdo = nview.GetZDO();
             zdo.Set(BloodMoonSpawner.EventMarker, eventId);
             zdo.Set(BloodMoonSpawner.GroupMarker, groupId);
             zdo.Set(BloodMoonSpawner.RoleMarker, (int)(player.InInterior() ? BloodMoonExtraEnemyRole.Interior : BloodMoonExtraEnemyRole.Surface));
-            if (state != null && ZNet.instance != null && ZNet.instance.IsServer())
-            {
-                state.ExtraEnemyZdos.Add(zdo.m_uid.ToString());
-                BloodMoonPersistence.Save(state);
-                BloodMoonController.Instance.PublishState(force: true);
-            }
+            state.ExtraEnemyZdos.Add(zdo.m_uid.ToString());
+            BloodMoonPersistence.Save(state);
+            BloodMoonController.Instance.PublishState(force: true);
             Print(args, $"Spawned marked {prefab.name} as {zdo.m_uid} for event {eventId}.");
         }
 
@@ -290,8 +289,9 @@ namespace Seasons.BloodMoon
         {
             BloodMoonEventState state = BloodMoonController.Instance?.State;
             IEnumerable<BloodMoonParticipantState> participants = state?.Participants.Values ?? BloodMoonNetwork.ClientParticipants.Participants ?? Enumerable.Empty<BloodMoonParticipantState>();
-            foreach (BloodMoonParticipantState participant in participants.OrderBy(item => item.PlayerId))
+            foreach (BloodMoonParticipantState raw in participants.OrderBy(item => item.PlayerId))
             {
+                BloodMoonParticipantState participant = state != null ? raw : BloodMoonParticipantDetails.MergeOwnDetail(raw);
                 Print(args, $"player={participant.PlayerId} name='{participant.PlayerName}' phase={participant.Phase} exit={participant.ExitReason} goal={participant.GoalReached} auto={participant.AutoCompleted} points={participant.CombatPoints:0.###} display={participant.DisplayProgress:0.##}% contribution={participant.Contribution:0.###} skillSeq={participant.LastSkillReportSequence}");
             }
         }
@@ -344,8 +344,10 @@ namespace Seasons.BloodMoon
         {
             BloodMoonGlobalSnapshot global = BloodMoonNetwork.ClientGlobal;
             BloodMoonParticipantSnapshot participants = BloodMoonNetwork.ClientParticipants;
+            BloodMoonParticipantDetailSnapshot own = BloodMoonParticipantDetails.ClientOwn;
             Print(args, $"global: schema={global.Schema} event={global.EventId} phase={global.Phase} step={global.ResolutionStep} revision={global.Revision} behavior={global.BloodBehaviorEnabled} spawnsStopped={global.SpawnsStopped} serverTime={global.ServerTime:0.###}");
             Print(args, $"participants: schema={participants.Schema} event={participants.EventId} revision={participants.Revision} count={participants.Participants?.Count ?? 0}");
+            Print(args, $"own-detail: schema={own.Schema} event={own.EventId} revision={own.Revision} player={own.PlayerId} points={own.CombatPoints:0.###} display={own.DisplayProgress:0.##}% contribution={own.Contribution:0.###}");
             Print(args, BloodMoonSkills.DumpLocal());
         }
 
