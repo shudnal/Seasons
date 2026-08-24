@@ -15,14 +15,40 @@ namespace Seasons.BloodMoon
             if (participant == null)
                 return "Blood Moon";
 
-            string state = participant.GoalReached ? "Goal reached" : participant.Phase.ToString();
-            return $"Blood Moon\n{state}\nCombat progress: {participant.DisplayProgress:0.#}%";
+            if (participant.Phase == BloodMoonParticipantPhase.Marked)
+            {
+                return "Blood Moon — Marked\n" +
+                    "Combat begins at 23:00.\n" +
+                    "You cannot sleep while marked.\n" +
+                    "Known combat recipes can be Blood Crafted for free.\n" +
+                    "Blood Craft items disappear when you exit or at dawn.";
+            }
+
+            if (participant.GoalReached)
+            {
+                return "Blood Moon — Goal reached\n" +
+                    "Combat progress: 100%\n" +
+                    "Success is secured for this Blood Moon.\n" +
+                    "You remain an active participant and can keep fighting to help others.";
+            }
+
+            string autoCompleting = BloodMoonNetwork.ClientGlobal.Phase == BloodMoonEventPhase.AutoCompleting
+                ? "\nDawn is now raising displayed progress automatically; only combat progress counts toward rewards."
+                : string.Empty;
+            return $"Blood Moon — Fighting\nCombat progress: {participant.DisplayProgress:0.#}%\n" +
+                "If your health is depleted, your Blood Moon participation ends.\n" +
+                "No grave is created and no skills are lost.\n" +
+                "Blood Craft items disappear when you exit." + autoCompleting;
         }
 
         public override string GetIconText()
         {
             BloodMoonParticipantState participant = BloodMoonInteractionRules.GetLocalParticipant();
-            return participant == null ? string.Empty : $"{participant.DisplayProgress:0}%";
+            if (participant == null)
+                return string.Empty;
+            if (participant.Phase == BloodMoonParticipantPhase.Marked)
+                return "23:00";
+            return participant.GoalReached ? "100%" : $"{participant.DisplayProgress:0}%";
         }
     }
 
@@ -67,8 +93,7 @@ namespace Seasons.BloodMoon
                 effect.m_nameHash = SE_BloodMoon.EffectHash;
                 effect.m_name = "Blood Moon";
                 effect.m_tooltip = "Survive the Blood Moon.";
-                effect.m_startMessage = "The Blood Moon has marked you.";
-                effect.m_startMessageType = MessageHud.MessageType.Center;
+                effect.m_startMessage = string.Empty;
                 effect.m_stopMessage = string.Empty;
                 effect.m_icon = bloodMoonIcon;
                 effect.m_ttl = 0f;
