@@ -22,7 +22,7 @@ namespace Seasons.BloodMoon
             if (attacker is Player player && BloodMoonInteractionRules.IsActiveParticipant(player) && BloodMoonInteractionRules.IsBloodEnemy(target))
                 multiplier = Mathf.Max(0f, BloodMoonConfig.EnemyIncomingDamageMultiplier.Value);
             else if (BloodMoonInteractionRules.IsBloodEnemy(attacker) && target is Player targetPlayer && BloodMoonInteractionRules.IsActiveParticipant(targetPlayer))
-                multiplier = Mathf.Max(0f, BloodMoonConfig.EnemyOutgoingDamageMultiplier.Value) * BloodMoonRecovery.GetIncomingDamageMultiplier(targetPlayer);
+                multiplier = Mathf.Max(0f, BloodMoonConfig.EnemyOutgoingDamageMultiplier.Value);
             return true;
         }
 
@@ -34,8 +34,8 @@ namespace Seasons.BloodMoon
 
             if (attribution.SourceType == BloodMoonCombatSourceType.Participant)
                 multiplier = Mathf.Max(0f, BloodMoonConfig.EnemyIncomingDamageMultiplier.Value);
-            else if (attribution.SourceType == BloodMoonCombatSourceType.BloodEnemy && target is Player player)
-                multiplier = Mathf.Max(0f, BloodMoonConfig.EnemyOutgoingDamageMultiplier.Value) * BloodMoonRecovery.GetIncomingDamageMultiplier(player);
+            else if (attribution.SourceType == BloodMoonCombatSourceType.BloodEnemy && target is Player)
+                multiplier = Mathf.Max(0f, BloodMoonConfig.EnemyOutgoingDamageMultiplier.Value);
             return true;
         }
 
@@ -132,6 +132,13 @@ namespace Seasons.BloodMoon
         {
             if (hit == null || !__instance.IsOwner())
                 return true;
+
+            if (__instance is Player protectedPlayer && !BloodMoonRecovery.ApplyIncomingDamageProtection(protectedPlayer, hit))
+            {
+                if (BloodMoonConfig.LogHits.Value)
+                    Seasons.LogInfo($"[BloodMoon][recovery][player:{protectedPlayer.GetPlayerID()}] blocked incoming damage.");
+                return false;
+            }
 
             BloodMoonHitAttributionData attribution = null;
             bool attributed = BloodMoonHitAttribution.TryConsume(__instance, hit, out attribution);
