@@ -13,6 +13,7 @@ namespace Seasons.BloodMoon
 
         private const string RpcDefeated = "Seasons.BloodMoon.Defeated";
         private const string RpcEnemyDeath = "Seasons.BloodMoon.EnemyDeath";
+        private const string RpcZoneClaim = "Seasons.BloodMoon.ZoneClaim";
         private const string RpcSpawnLease = "Seasons.BloodMoon.SpawnLease";
         private const string RpcSpawnReport = "Seasons.BloodMoon.SpawnReport";
         private const string RpcFade = "Seasons.BloodMoon.Fade";
@@ -49,6 +50,7 @@ namespace Seasons.BloodMoon
             registeredRpc = rpc;
             rpc.Register<ZPackage>(RpcDefeated, OnDefeated);
             rpc.Register<ZPackage>(RpcEnemyDeath, OnEnemyDeath);
+            rpc.Register<ZPackage>(RpcZoneClaim, OnZoneClaim);
             rpc.Register<ZPackage>(RpcSpawnLease, OnSpawnLease);
             rpc.Register<ZPackage>(RpcSpawnReport, OnSpawnReport);
             rpc.Register<ZPackage>(RpcFade, OnFade);
@@ -96,6 +98,14 @@ namespace Seasons.BloodMoon
             pkg.Write(enemyId);
             pkg.Write(points);
             SendToServer(RpcEnemyDeath, pkg);
+        }
+
+        internal static void SendZoneClaim(long eventId, Vector2i zone)
+        {
+            ZPackage pkg = CreateHeader(eventId, GetLocalPlayerId());
+            pkg.Write(zone.x);
+            pkg.Write(zone.y);
+            SendToServer(RpcZoneClaim, pkg);
         }
 
         internal static void SendSpawnReport(long eventId, long groupId, int groupRevision, int leaseRevision, ZDOID spawnedId)
@@ -197,6 +207,13 @@ namespace Seasons.BloodMoon
             ZDOID enemyId = pkg.ReadZDOID();
             float points = pkg.ReadSingle();
             BloodMoonController.Instance?.OnEnemyDeathReport(sender, eventId, playerId, enemyId, points);
+        }
+
+        private static void OnZoneClaim(long sender, ZPackage pkg)
+        {
+            if (!ReadHeader(pkg, out long eventId, out long playerId) || ZNet.instance == null || !ZNet.instance.IsServer())
+                return;
+            BloodMoonController.Instance?.OnZoneClaim(sender, eventId, playerId, pkg.ReadInt(), pkg.ReadInt());
         }
 
         private static void OnSpawnLease(long sender, ZPackage pkg)
