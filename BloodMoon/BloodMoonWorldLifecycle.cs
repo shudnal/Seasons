@@ -10,6 +10,7 @@ namespace Seasons.BloodMoon
         {
             BloodCraft.CleanupLocal(Player.m_localPlayer);
             BloodMoonRecovery.ResetRuntime();
+            BloodMoonSummons.ResetRuntimeState();
             BloodMoonHitAttribution.Reset();
             BloodMoonSpawner.ResetClientState();
             BloodMoonBosses.ResetRuntimeState();
