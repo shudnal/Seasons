@@ -51,10 +51,14 @@ namespace Seasons.BloodMoon
 
     internal static class BloodMoonStatus
     {
+        private static Sprite bloodMoonIcon;
+
         internal static void EnsureRegistered(ObjectDB objectDb)
         {
             if (objectDb == null || objectDb.m_StatusEffects == null)
                 return;
+
+            EnsureIcon();
 
             if (!objectDb.m_StatusEffects.Any(effect => effect != null && effect.name == SE_BloodMoon.EffectName))
             {
@@ -66,7 +70,7 @@ namespace Seasons.BloodMoon
                 effect.m_startMessage = "The Blood Moon has marked you.";
                 effect.m_startMessageType = MessageHud.MessageType.Center;
                 effect.m_stopMessage = string.Empty;
-                effect.m_icon = Seasons.iconFall;
+                effect.m_icon = bloodMoonIcon;
                 effect.m_ttl = 0f;
                 objectDb.m_StatusEffects.Add(effect);
             }
@@ -80,7 +84,8 @@ namespace Seasons.BloodMoon
                 recovery.m_tooltip = "Temporary protection after Defeated.";
                 recovery.m_startMessage = string.Empty;
                 recovery.m_stopMessage = string.Empty;
-                recovery.m_icon = Seasons.iconFall;
+                recovery.m_icon = bloodMoonIcon;
+                recovery.m_cooldownIcon = true;
                 recovery.m_ttl = 0f;
                 objectDb.m_StatusEffects.Add(recovery);
             }
@@ -119,6 +124,12 @@ namespace Seasons.BloodMoon
             Player player = Player.m_localPlayer;
             if (player?.GetSEMan() != null && player.GetSEMan().HaveStatusEffect(SE_BloodMoonRecovery.EffectHash))
                 player.GetSEMan().RemoveStatusEffect(SE_BloodMoonRecovery.EffectHash);
+        }
+
+        private static void EnsureIcon()
+        {
+            if (bloodMoonIcon == null)
+                Seasons.LoadIcon("blood_moon.png", ref bloodMoonIcon);
         }
     }
 
