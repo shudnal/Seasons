@@ -247,7 +247,7 @@ namespace Seasons.BloodMoon
             }
             else if (attribution.SourceType == BloodMoonCombatSourceType.ParticipantSummon)
             {
-                if (!BloodMoonSummons.ValidateMarkedSummonZdo(sourceZdo, attribution.EventId, attribution.SourcePlayerId))
+                if (sourceZdo.GetOwner() != sender || !BloodMoonSummons.ValidateMarkedSummonZdo(sourceZdo, attribution.EventId, attribution.SourcePlayerId))
                     return;
             }
             else
