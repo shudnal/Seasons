@@ -8,13 +8,14 @@ namespace Seasons.BloodMoon
     internal static class BloodMoonSpatialState
     {
         private const string RpcName = "Seasons.BloodMoon.SpatialState";
-        private const float SuspendedHeartbeatSeconds = 2f;
+        private const float HeartbeatSeconds = 2f;
+        private const double ServerRecordLifetimeSeconds = 5d;
 
         private sealed class ServerRecord
         {
             internal long EventId;
-            internal long Sender;
             internal bool Suspended;
+            internal double LastSeen;
         }
 
         private static readonly Dictionary<long, ServerRecord> serverRecords = new Dictionary<long, ServerRecord>();
@@ -60,8 +61,8 @@ namespace Seasons.BloodMoon
             }
 
             localHeartbeat -= Mathf.Max(0f, dt);
-            bool heartbeatDue = suspended && localHeartbeat <= 0f;
-            if (localSent && localLastSuspended == suspended && !heartbeatDue)
+            bool stateChanged = !localSent || localLastSuspended != suspended;
+            if (!stateChanged && localHeartbeat > 0f)
                 return;
 
             ZPackage pkg = new ZPackage();
@@ -72,7 +73,7 @@ namespace Seasons.BloodMoon
             ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.instance.GetServerPeerID(), RpcName, pkg);
             localSent = true;
             localLastSuspended = suspended;
-            localHeartbeat = suspended ? SuspendedHeartbeatSeconds : 0f;
+            localHeartbeat = HeartbeatSeconds;
         }
 
         internal static bool IsAnchorSuspended(long eventId, long playerId)
@@ -84,7 +85,15 @@ namespace Seasons.BloodMoon
                 BloodMoonNetwork.ClientGlobal.EventId == eventId && Player.m_localPlayer.IsTeleporting())
                 return true;
 
-            return serverRecords.TryGetValue(playerId, out ServerRecord record) && record.EventId == eventId && record.Suspended;
+            if (!serverRecords.TryGetValue(playerId, out ServerRecord record) || record.EventId != eventId || !record.Suspended)
+                return false;
+
+            double now = SeasonState.IsActive ? seasonState.GetTotalSeconds() : record.LastSeen;
+            if (now - record.LastSeen <= ServerRecordLifetimeSeconds)
+                return true;
+
+            serverRecords.Remove(playerId);
+            return false;
         }
 
         internal static void Reset()
@@ -112,8 +121,8 @@ namespace Seasons.BloodMoon
             serverRecords[playerId] = new ServerRecord
             {
                 EventId = eventId,
-                Sender = sender,
-                Suspended = suspended
+                Suspended = suspended,
+                LastSeen = SeasonState.IsActive ? seasonState.GetTotalSeconds() : 0d
             };
         }
 
