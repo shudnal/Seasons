@@ -54,7 +54,7 @@ namespace Seasons.BloodMoon
                 }
 
                 group.MemberPlayerIds = component.OrderBy(id => id).ToList();
-                group.Anchor = Average(group.MemberPlayerIds.Where(positions.ContainsKey).Select(id => positions[id]));
+                group.Anchor = SelectRealMemberAnchor(group.MemberPlayerIds, positions);
                 group.UpdatedAt = now;
                 group.ExtraEnemyCount = state.ExtraEnemyZdos.Count(id => BloodMoonSpawner.GetMarkedGroupId(id) == group.GroupId);
                 next[group.GroupId] = group;
@@ -125,16 +125,26 @@ namespace Seasons.BloodMoon
             return result;
         }
 
-        private static Vector3 Average(IEnumerable<Vector3> points)
+        private static Vector3 SelectRealMemberAnchor(List<long> memberIds, Dictionary<long, Vector3> positions)
         {
-            Vector3 sum = Vector3.zero;
-            int count = 0;
-            foreach (Vector3 point in points)
-            {
-                sum += point;
-                count++;
-            }
-            return count > 0 ? sum / count : Vector3.zero;
+            List<KeyValuePair<long, Vector3>> members = memberIds
+                .Where(positions.ContainsKey)
+                .Select(id => new KeyValuePair<long, Vector3>(id, positions[id]))
+                .ToList();
+            if (members.Count == 0)
+                return Vector3.zero;
+            if (members.Count == 1)
+                return members[0].Value;
+
+            Vector3 centroid = Vector3.zero;
+            foreach (KeyValuePair<long, Vector3> member in members)
+                centroid += member.Value;
+            centroid /= members.Count;
+
+            return members
+                .OrderBy(member => Utils.DistanceXZ(member.Value, centroid))
+                .ThenBy(member => member.Key)
+                .First().Value;
         }
     }
 }
