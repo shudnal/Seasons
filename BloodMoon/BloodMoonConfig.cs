@@ -30,6 +30,8 @@ namespace Seasons.BloodMoon
         internal static ConfigEntry<bool> MusicEnabled;
         internal static ConfigEntry<bool> LogHits;
 
+        private static bool initialized;
+
         internal const float ForewarningHour = 12f;
         internal const float MarkedHour = 18f;
         internal const float ActiveHour = 23f;
@@ -39,6 +41,10 @@ namespace Seasons.BloodMoon
 
         internal static void Initialize()
         {
+            if (initialized)
+                return;
+            initialized = true;
+
             Enabled = Server("Blood Moon", "Enabled", true, "Enable the annual Blood Moon event.");
             AutumnDay = Server("Blood Moon", "Autumn day", 9, "Autumn day used as the Blood Moon event day. Forewarning starts three days earlier.");
 
