@@ -176,7 +176,8 @@ namespace Seasons.BloodMoon
             RefreshEligibleSkills();
             long eventId = BloodMoonNetwork.ClientGlobal.EventId;
             float used = GetLocalLiveBonusUsed(eventId);
-            return $"eligible=[{string.Join(",", cachedEligibleSkills.OrderBy(skill => (int)skill))}] liveBonusUsed={used:0.###}/{Mathf.Max(0f, BloodMoonConfig.LiveSkillBonusCap.Value):0.###} sequence={localReportSequence}";
+            bool baselineKnown = TryGetPrivateBaseline(eventId, Player.m_localPlayer?.GetPlayerID() ?? 0L, out long serverSequence, out float serverBonusUsed);
+            return $"eligible=[{string.Join(",", cachedEligibleSkills.OrderBy(skill => (int)skill))}] liveBonusUsed={used:0.###}/{Mathf.Max(0f, BloodMoonConfig.LiveSkillBonusCap.Value):0.###} sequence={localReportSequence} privateBaseline={baselineKnown} serverSequence={serverSequence} serverBonusUsed={serverBonusUsed:0.###}";
         }
 
         internal static void ResetLocal(long eventId)
@@ -192,11 +193,13 @@ namespace Seasons.BloodMoon
             if (rewardApplicationDepth > 0 || player == null || player != Player.m_localPlayer || value <= 0f || !BloodMoonInteractionRules.IsActiveParticipant(player) || !IsEligible(skillType))
                 return;
 
+            if (!EnsureLocalEvent(player))
+                return;
+
             Skills.Skill skill = player.m_skills.GetSkill(skillType);
             if (skill?.m_info == null || skill.m_level >= 100f)
                 return;
 
-            EnsureLocalEvent();
             float regularMultiplier = 1f;
             player.GetSEMan()?.ModifyRaiseSkill(skillType, ref regularMultiplier);
             float baseFactor = value * regularMultiplier;
@@ -328,9 +331,8 @@ namespace Seasons.BloodMoon
         private static float GetLocalLiveBonusUsed(long eventId)
         {
             float local = localLiveBonusUsed.TryGetValue(eventId, out float value) ? value : 0f;
-            BloodMoonParticipantState participant = BloodMoonInteractionRules.GetLocalParticipant();
-            if (participant != null && participant.LiveSkillBonusEquivalent != null)
-                local = Mathf.Max(local, participant.LiveSkillBonusEquivalent.Values.Sum());
+            if (TryGetPrivateBaseline(eventId, Player.m_localPlayer?.GetPlayerID() ?? 0L, out _, out float serverUsed))
+                local = Mathf.Max(local, serverUsed);
             return local;
         }
 
@@ -344,14 +346,41 @@ namespace Seasons.BloodMoon
             return BloodMoonConfig.RewardMode.Value == BloodMoonRewardMode.LimitedTripleGainOnly || BloodMoonConfig.RewardMode.Value == BloodMoonRewardMode.Hybrid;
         }
 
-        private static void EnsureLocalEvent()
+        private static bool EnsureLocalEvent(Player player)
         {
             long eventId = BloodMoonNetwork.ClientGlobal.EventId;
-            if (localEventId == eventId)
-                return;
-            localEventId = eventId;
-            localReportSequence = 0L;
-            localLiveBonusUsed.Clear();
+            if (localEventId != eventId)
+            {
+                localEventId = eventId;
+                localReportSequence = 0L;
+                localLiveBonusUsed.Clear();
+            }
+
+            if (!TryGetPrivateBaseline(eventId, player?.GetPlayerID() ?? 0L, out long serverSequence, out float serverBonusUsed))
+                return false;
+
+            localReportSequence = Math.Max(localReportSequence, serverSequence);
+            if (eventId >= 0L)
+                localLiveBonusUsed[eventId] = Mathf.Max(GetLocalRuntimeBonusUsed(eventId), serverBonusUsed);
+            return true;
+        }
+
+        private static bool TryGetPrivateBaseline(long eventId, long playerId, out long sequence, out float liveBonusUsed)
+        {
+            sequence = 0L;
+            liveBonusUsed = 0f;
+            BloodMoonParticipantDetailSnapshot detail = BloodMoonParticipantDetails.ClientOwn;
+            if (eventId < 0L || playerId == 0L || detail == null || detail.EventId != eventId || detail.PlayerId != playerId)
+                return false;
+
+            sequence = Math.Max(0L, detail.LastSkillReportSequence);
+            liveBonusUsed = Mathf.Max(0f, detail.LiveSkillBonusUsed);
+            return true;
+        }
+
+        private static float GetLocalRuntimeBonusUsed(long eventId)
+        {
+            return localLiveBonusUsed.TryGetValue(eventId, out float value) ? value : 0f;
         }
 
         private static void RefreshEligibleSkills()
