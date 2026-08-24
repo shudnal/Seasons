@@ -1,4 +1,5 @@
 using HarmonyLib;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -91,11 +92,11 @@ namespace Seasons.BloodMoon
 
     internal static class BloodMoonAttackContext
     {
-        [System.ThreadStatic]
+        [ThreadStatic]
         internal static Character Attacker;
-        [System.ThreadStatic]
+        [ThreadStatic]
         internal static bool AllowedCharacterHit;
-        [System.ThreadStatic]
+        [ThreadStatic]
         internal static BloodMoonHitAttributionData Attribution;
 
         internal static bool IsActive => Attacker != null || Attribution != null;
@@ -210,7 +211,7 @@ namespace Seasons.BloodMoon
                 BloodMoonAttackContext.End();
         }
 
-        private static System.Exception Finalizer(System.Exception __exception)
+        private static Exception Finalizer(Exception __exception)
         {
             if (BloodMoonAttackContext.Attribution == null)
                 BloodMoonAttackContext.End();
@@ -319,7 +320,7 @@ namespace Seasons.BloodMoon
                 BloodMoonAttackContext.End();
         }
 
-        private static System.Exception Finalizer(System.Exception __exception, bool __state)
+        private static Exception Finalizer(Exception __exception, bool __state)
         {
             if (__state)
                 BloodMoonAttackContext.End();
@@ -379,7 +380,7 @@ namespace Seasons.BloodMoon
                 BloodMoonAttackContext.End();
         }
 
-        private static System.Exception Finalizer(System.Exception __exception, bool __state)
+        private static Exception Finalizer(Exception __exception, bool __state)
         {
             if (__state)
                 BloodMoonAttackContext.End();
