@@ -2,6 +2,7 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using static Seasons.Seasons;
 
 namespace Seasons.BloodMoon
@@ -15,6 +16,12 @@ namespace Seasons.BloodMoon
             ObjectCreationHandling = ObjectCreationHandling.Replace
         };
 
+        private sealed class Candidate
+        {
+            internal string Path;
+            internal BloodMoonEventState State;
+        }
+
         internal static string GetStatePath(long worldUid)
         {
             return Path.Combine(configDirectory, StateDirectoryName, $"{worldUid}.json");
@@ -24,32 +31,46 @@ namespace Seasons.BloodMoon
         {
             BloodMoonEventState clean = CreateClean(worldUid);
             string path = GetStatePath(worldUid);
-            string[] candidates = { path, path + ".new", path + ".old" };
+            string[] candidatePaths = { path, path + ".new", path + ".old" };
             bool anyFile = false;
+            List<Candidate> valid = new List<Candidate>();
 
-            foreach (string candidate in candidates)
+            foreach (string candidatePath in candidatePaths)
             {
-                if (!File.Exists(candidate))
+                if (!File.Exists(candidatePath))
                     continue;
                 anyFile = true;
-                if (!TryLoadCandidate(candidate, worldUid, out BloodMoonEventState state))
-                    continue;
-
-                Normalize(state);
-                bool reconciled = BloodMoonRecoverySchedule.ReconcileLoadedState(state);
-                LogInfo($"[BloodMoon.Persistence] Loaded event {state.EventId}, phase {state.Phase}, revision {state.Revision} from '{candidate}'.");
-                if (reconciled || !string.Equals(candidate, path, StringComparison.Ordinal))
-                {
-                    if (!string.Equals(candidate, path, StringComparison.Ordinal))
-                        LogWarning($"[BloodMoon.Persistence] Recovered state from fallback '{candidate}'. Rewriting canonical snapshot.");
-                    Save(state);
-                }
-                return state;
+                if (TryLoadCandidate(candidatePath, worldUid, out BloodMoonEventState state))
+                    valid.Add(new Candidate { Path = candidatePath, State = state });
             }
 
-            if (anyFile)
-                LogError($"[BloodMoon.Persistence] No valid state snapshot could be recovered for world {worldUid}.");
-            return clean;
+            if (valid.Count == 0)
+            {
+                if (anyFile)
+                    LogError($"[BloodMoon.Persistence] No valid state snapshot could be recovered for world {worldUid}.");
+                return clean;
+            }
+
+            // UpdatedAt is the durable state-change timestamp and remains monotonic across event replacement,
+            // where Revision intentionally starts over. EventId and Revision are deterministic tie breakers.
+            Candidate selected = valid
+                .OrderByDescending(candidate => candidate.State.UpdatedAt)
+                .ThenByDescending(candidate => candidate.State.EventId)
+                .ThenByDescending(candidate => candidate.State.Revision)
+                .First();
+
+            BloodMoonEventState loaded = selected.State;
+            Normalize(loaded);
+            bool reconciled = BloodMoonRecoverySchedule.ReconcileLoadedState(loaded);
+            LogInfo($"[BloodMoon.Persistence] Loaded event {loaded.EventId}, phase {loaded.Phase}, revision {loaded.Revision} from '{selected.Path}'.");
+
+            if (reconciled || !string.Equals(selected.Path, path, StringComparison.Ordinal))
+            {
+                if (!string.Equals(selected.Path, path, StringComparison.Ordinal))
+                    LogWarning($"[BloodMoon.Persistence] Recovered newest valid state from '{selected.Path}'. Rewriting canonical snapshot.");
+                Save(loaded);
+            }
+            return loaded;
         }
 
         private static bool TryLoadCandidate(string path, long worldUid, out BloodMoonEventState state)
