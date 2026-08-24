@@ -36,11 +36,12 @@ namespace Seasons.BloodMoon
                     continue;
 
                 Normalize(state);
-                BloodMoonRecoverySchedule.ReconcileForcedEnd(state);
+                bool reconciled = BloodMoonRecoverySchedule.ReconcileLoadedState(state);
                 LogInfo($"[BloodMoon.Persistence] Loaded event {state.EventId}, phase {state.Phase}, revision {state.Revision} from '{candidate}'.");
-                if (!string.Equals(candidate, path, StringComparison.Ordinal))
+                if (reconciled || !string.Equals(candidate, path, StringComparison.Ordinal))
                 {
-                    LogWarning($"[BloodMoon.Persistence] Recovered state from fallback '{candidate}'. Rewriting canonical snapshot.");
+                    if (!string.Equals(candidate, path, StringComparison.Ordinal))
+                        LogWarning($"[BloodMoon.Persistence] Recovered state from fallback '{candidate}'. Rewriting canonical snapshot.");
                     Save(state);
                 }
                 return state;
