@@ -1,5 +1,6 @@
 using Newtonsoft.Json;
 using System;
+using System.Linq;
 
 namespace Seasons.BloodMoon
 {
@@ -20,6 +21,8 @@ namespace Seasons.BloodMoon
                 CombatPoints = participant.CombatPoints,
                 DisplayProgress = participant.DisplayProgress,
                 Contribution = participant.Contribution,
+                LiveSkillBonusUsed = participant.LiveSkillBonusEquivalent?.Values.Sum() ?? 0f,
+                LastSkillReportSequence = participant.LastSkillReportSequence,
                 MarkedAt = participant.MarkedAt,
                 FightingAt = participant.FightingAt,
                 GoalReachedAt = participant.GoalReachedAt,
@@ -72,6 +75,7 @@ namespace Seasons.BloodMoon
                 CombatPoints = ClientOwn.CombatPoints,
                 DisplayProgress = ClientOwn.DisplayProgress,
                 Contribution = ClientOwn.Contribution,
+                LastSkillReportSequence = ClientOwn.LastSkillReportSequence,
                 MarkedAt = ClientOwn.MarkedAt,
                 FightingAt = ClientOwn.FightingAt,
                 GoalReachedAt = ClientOwn.GoalReachedAt,
