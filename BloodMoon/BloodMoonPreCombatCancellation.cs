@@ -43,5 +43,15 @@ namespace Seasons.BloodMoon
                 return __instance?.State?.ResolutionCancelledBeforeCombat != true;
             }
         }
+
+        [HarmonyPatch(typeof(BloodMoonController), "ReplayResolvedOutcomes")]
+        private static class ReplayResolvedOutcomesPatch
+        {
+            [HarmonyPriority(Priority.First)]
+            private static bool Prefix(BloodMoonController __instance)
+            {
+                return __instance?.State?.ResolutionCancelledBeforeCombat != true;
+            }
+        }
     }
 }
