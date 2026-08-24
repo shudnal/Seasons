@@ -22,75 +22,81 @@ namespace Seasons.BloodMoon
                 return;
 
             PruneMissingExtras(state);
-            int serverRemaining = Mathf.Max(0, BloodMoonConfig.ServerExtraEnemyHardCap.Value - state.ExtraEnemyZdos.Count);
-            HashSet<string> activeKeys = new HashSet<string>();
+            PruneServerLeases(state, now);
 
-            foreach (BloodMoonGroupState group in state.Groups.Values)
+            int hardCap = Math.Max(0, BloodMoonConfig.ServerExtraEnemyHardCap.Value);
+            int reservedServer = state.SpawnLeases.Values.Sum(lease => Math.Max(0, lease.Allowance));
+            int serverAvailable = Math.Max(0, hardCap - state.ExtraEnemyZdos.Count - reservedServer);
+            HashSet<string> relevantLeaseKeys = new HashSet<string>();
+
+            foreach (BloodMoonGroupState group in state.Groups.Values.OrderBy(group => group.GroupId))
             {
+                int activeMembers = group.MemberPlayerIds.Count(id => state.Participants.TryGetValue(id, out BloodMoonParticipantState participant) && participant.IsCombatActive);
+                int groupCap = BloodMoonConfig.GetGroupExtraEnemyCap(activeMembers);
                 int groupExisting = state.ExtraEnemyZdos.Count(id => GetMarkedGroupId(id) == group.GroupId);
-                int groupRemaining = Mathf.Max(0, BloodMoonConfig.GroupExtraEnemyCap.Value - groupExisting);
-                if (groupRemaining <= 0 || serverRemaining <= 0)
+                int groupReserved = state.SpawnLeases.Values.Where(lease => lease.GroupId == group.GroupId).Sum(lease => Math.Max(0, lease.Allowance));
+                int groupAvailable = Math.Max(0, groupCap - groupExisting - groupReserved);
+
+                List<BloodMoonZoneOwnership.ZoneClaim> claims = BloodMoonZoneOwnership.GetRelevantClaims(state, group, now);
+                if (claims.Count == 0)
                     continue;
 
-                List<(Vector2i Zone, long Peer)> zones = new List<(Vector2i, long)>();
-                foreach (long playerId in group.MemberPlayerIds)
+                foreach (BloodMoonZoneOwnership.ZoneClaim claim in claims)
                 {
-                    if (!BloodMoonController.Instance.TryGetConnectedPosition(playerId, out Vector3 position))
-                        continue;
-                    long peer = BloodMoonController.Instance.GetPeerForPlayer(playerId);
-                    if (peer == 0L)
-                        continue;
-                    Vector2i zone = ZoneSystem.GetZone(position);
-                    if (!zones.Any(entry => entry.Zone == zone))
-                        zones.Add((zone, peer));
-                }
+                    string key = MakeLeaseKey(group.GroupId, claim.Zone.x, claim.Zone.y);
+                    relevantLeaseKeys.Add(key);
 
-                if (zones.Count == 0)
-                    continue;
-
-                int budget = Mathf.Min(groupRemaining, serverRemaining);
-                int perZone = Mathf.Max(1, Mathf.CeilToInt(budget / (float)zones.Count));
-                foreach ((Vector2i zone, long peer) in zones)
-                {
-                    if (budget <= 0 || serverRemaining <= 0)
-                        break;
-                    string key = MakeLeaseKey(group.GroupId, zone.x, zone.y);
-                    activeKeys.Add(key);
-                    int allowance = Mathf.Min(perZone, budget, serverRemaining);
-                    if (!state.SpawnLeases.TryGetValue(key, out BloodMoonSpawnLeaseState lease) || lease.ExpiresAt <= now || lease.OwnerPeerId != peer || lease.GroupRevision != group.Revision)
+                    if (state.SpawnLeases.TryGetValue(key, out BloodMoonSpawnLeaseState existing))
                     {
-                        lease = new BloodMoonSpawnLeaseState
+                        if (existing.OwnerPeerId != claim.PeerId || existing.OwnerSessionId != claim.PeerId || existing.GroupRevision != group.Revision)
                         {
-                            EventId = state.EventId,
-                            GroupId = group.GroupId,
-                            GroupRevision = group.Revision,
-                            ZoneX = zone.x,
-                            ZoneY = zone.y,
-                            OwnerPeerId = peer,
-                            OwnerSessionId = peer,
-                            LeaseRevision = ++state.LeaseSequence,
-                            Anchor = group.Anchor,
-                            Allowance = allowance,
-                            GroupCap = BloodMoonConfig.GroupExtraEnemyCap.Value,
-                            ServerHardCap = BloodMoonConfig.ServerExtraEnemyHardCap.Value,
-                            PoolRevision = 1,
-                            ExpiresAt = now + Mathf.Max(2f, BloodMoonConfig.SpawnLeaseSeconds.Value)
-                        };
-                        state.SpawnLeases[key] = lease;
+                            serverAvailable += Math.Max(0, existing.Allowance);
+                            groupAvailable += Math.Max(0, existing.Allowance);
+                            state.SpawnLeases.Remove(key);
+                        }
+                        else
+                        {
+                            existing.Anchor = group.Anchor;
+                            existing.GroupCap = groupCap;
+                            existing.ServerHardCap = hardCap;
+                            existing.ExpiresAt = now + Math.Max(2f, BloodMoonConfig.SpawnLeaseSeconds.Value);
+                            BloodMoonNetwork.SendSpawnLease(claim.PeerId, existing);
+                            continue;
+                        }
                     }
-                    else
+
+                    if (groupAvailable <= 0 || serverAvailable <= 0)
+                        continue;
+
+                    int remainingClaims = Math.Max(1, claims.Count - claims.IndexOf(claim));
+                    int allowance = Math.Max(1, Mathf.CeilToInt(Math.Min(groupAvailable, serverAvailable) / (float)remainingClaims));
+                    allowance = Math.Min(allowance, Math.Min(groupAvailable, serverAvailable));
+
+                    BloodMoonSpawnLeaseState lease = new BloodMoonSpawnLeaseState
                     {
-                        lease.Anchor = group.Anchor;
-                        lease.Allowance = allowance;
-                        lease.ExpiresAt = now + Mathf.Max(2f, BloodMoonConfig.SpawnLeaseSeconds.Value);
-                    }
-                    BloodMoonNetwork.SendSpawnLease(peer, lease);
-                    budget -= allowance;
-                    serverRemaining -= allowance;
+                        EventId = state.EventId,
+                        GroupId = group.GroupId,
+                        GroupRevision = group.Revision,
+                        ZoneX = claim.Zone.x,
+                        ZoneY = claim.Zone.y,
+                        OwnerPeerId = claim.PeerId,
+                        OwnerSessionId = claim.PeerId,
+                        LeaseRevision = ++state.LeaseSequence,
+                        Anchor = group.Anchor,
+                        Allowance = allowance,
+                        GroupCap = groupCap,
+                        ServerHardCap = hardCap,
+                        PoolRevision = 1,
+                        ExpiresAt = now + Math.Max(2f, BloodMoonConfig.SpawnLeaseSeconds.Value)
+                    };
+                    state.SpawnLeases[key] = lease;
+                    groupAvailable -= allowance;
+                    serverAvailable -= allowance;
+                    BloodMoonNetwork.SendSpawnLease(claim.PeerId, lease);
                 }
             }
 
-            foreach (string key in state.SpawnLeases.Keys.Where(key => !activeKeys.Contains(key) || state.SpawnLeases[key].ExpiresAt + 30d < now).ToList())
+            foreach (string key in state.SpawnLeases.Keys.Where(key => !relevantLeaseKeys.Contains(key)).ToList())
                 state.SpawnLeases.Remove(key);
         }
 
@@ -106,8 +112,10 @@ namespace Seasons.BloodMoon
 
         internal static void TickClient(float dt)
         {
+            BloodMoonZoneOwnership.TickClient(dt);
             if (!BloodMoonInteractionRules.IsEventCombatLive || Player.m_localPlayer == null || ZDOMan.instance == null)
                 return;
+
             clientSpawnTimer -= dt;
             if (clientSpawnTimer > 0f)
                 return;
@@ -122,6 +130,7 @@ namespace Seasons.BloodMoon
                     clientLeases.Remove(entry.Key);
                     continue;
                 }
+
                 Vector2i zone = new Vector2i(lease.ZoneX, lease.ZoneY);
                 if (!OwnsLoadedZone(zone))
                     continue;
@@ -143,132 +152,192 @@ namespace Seasons.BloodMoon
 
         private static void TrySpawnFromLease(BloodMoonSpawnLeaseState lease, Vector2i zone)
         {
-            string prefabName = BloodMoonConfig.TestEnemyPrefab.Value?.Trim();
-            GameObject prefab = string.IsNullOrEmpty(prefabName) || ZNetScene.instance == null ? null : ZNetScene.instance.GetPrefab(prefabName);
-            if (prefab == null || prefab.GetComponent<MonsterAI>() == null)
+            GameObject prefab = ResolveSpawnPrefab();
+            if (prefab == null)
                 return;
 
-            for (int attempt = 0; attempt < 12; ++attempt)
+            List<Player> targets = BloodMoonInteractionRules.GetLoadedActiveParticipants(preferFighting: false)
+                .Where(player => Utils.DistanceXZ(player.transform.position, ZoneSystem.GetZonePos(zone)) <= 180f)
+                .ToList();
+            if (targets.Count == 0)
+                return;
+
+            bool interior = targets.Any(player => player.InInterior());
+            bool spawned = interior
+                ? TrySpawnInterior(prefab, lease, zone, targets)
+                : TrySpawnSurface(prefab, lease, zone, targets);
+
+            if (spawned)
+                lease.Allowance--;
+        }
+
+        private static GameObject ResolveSpawnPrefab()
+        {
+            string prefabName = BloodMoonConfig.TestEnemyPrefab.Value?.Trim();
+            GameObject prefab = string.IsNullOrEmpty(prefabName) || ZNetScene.instance == null ? null : ZNetScene.instance.GetPrefab(prefabName);
+            return prefab != null && prefab.GetComponent<MonsterAI>() != null ? prefab : null;
+        }
+
+        private static bool TrySpawnSurface(GameObject prefab, BloodMoonSpawnLeaseState lease, Vector2i zone, List<Player> targets)
+        {
+            for (int attempt = 0; attempt < 16; ++attempt)
             {
-                Vector2 offset = UnityEngine.Random.insideUnitCircle.normalized * UnityEngine.Random.Range(40f, 75f);
-                Vector3 point = lease.Anchor + new Vector3(offset.x, 0f, offset.y);
+                Player target = targets[UnityEngine.Random.Range(0, targets.Count)];
+                Vector2 direction = UnityEngine.Random.insideUnitCircle.normalized;
+                Vector3 point = target.transform.position + new Vector3(direction.x, 0f, direction.y) * UnityEngine.Random.Range(40f, 75f);
                 if (ZoneSystem.GetZone(point) != zone || !ZoneSystem.instance.FindFloor(point, out float height))
                     continue;
                 point.y = height + 0.5f;
-                if (!IsSpawnPointAllowed(point))
+                if (Character.InInterior(point) || !IsSurfaceSpawnPointAllowed(point, targets) || !HasPath(prefab, point, target.transform.position))
                     continue;
-                GameObject spawned = UnityEngine.Object.Instantiate(prefab, point, Quaternion.identity);
-                ZNetView nview = spawned.GetComponent<ZNetView>();
-                if (nview == null || !nview.IsValid())
-                {
-                    UnityEngine.Object.Destroy(spawned);
-                    return;
-                }
-                ZDO zdo = nview.GetZDO();
-                zdo.Set(EventMarker, lease.EventId);
-                zdo.Set(GroupMarker, lease.GroupId);
-                zdo.Set(RoleMarker, (int)(Player.m_localPlayer.InInterior() ? BloodMoonExtraEnemyRole.Interior : BloodMoonExtraEnemyRole.Surface));
-                MonsterAI ai = spawned.GetComponent<MonsterAI>();
-                if (ai != null)
-                {
-                    ai.m_eventCreature = false;
-                    ai.m_despawnInDay = false;
-                }
-                lease.Allowance--;
-                BloodMoonNetwork.SendSpawnReport(lease.EventId, lease.GroupId, lease.GroupRevision, lease.LeaseRevision, zdo.m_uid);
-                LogInfo($"[BloodMoon.Spawn] Spawned {prefab.name} {zdo.m_uid} for group {lease.GroupId} zone {zone}.");
-                return;
+                return SpawnMarked(prefab, point, lease, zone, BloodMoonExtraEnemyRole.Surface);
             }
-
-            // Interior fallback uses authored CreatureSpawner positions but never calls CreatureSpawner.Spawn().
-            foreach (CreatureSpawner spawner in CreatureSpawner.m_creatureSpawners)
-            {
-                if (spawner == null || spawner.m_nview == null || !spawner.m_nview.IsOwner() || ZoneSystem.GetZone(spawner.transform.position) != zone)
-                    continue;
-                Vector3 point = spawner.transform.position;
-                if (!IsSpawnPointAllowed(point))
-                    continue;
-                GameObject spawned = UnityEngine.Object.Instantiate(prefab, point, Quaternion.identity);
-                ZNetView nview = spawned.GetComponent<ZNetView>();
-                if (nview == null || !nview.IsValid())
-                {
-                    UnityEngine.Object.Destroy(spawned);
-                    return;
-                }
-                ZDO zdo = nview.GetZDO();
-                zdo.Set(EventMarker, lease.EventId);
-                zdo.Set(GroupMarker, lease.GroupId);
-                zdo.Set(RoleMarker, (int)BloodMoonExtraEnemyRole.Interior);
-                lease.Allowance--;
-                BloodMoonNetwork.SendSpawnReport(lease.EventId, lease.GroupId, lease.GroupRevision, lease.LeaseRevision, zdo.m_uid);
-                return;
-            }
+            return false;
         }
 
-        private static bool IsSpawnPointAllowed(Vector3 point)
+        private static bool TrySpawnInterior(GameObject prefab, BloodMoonSpawnLeaseState lease, Vector2i zone, List<Player> targets)
         {
-            if (Player.m_localPlayer == null)
+            List<Player> interiorTargets = targets.Where(player => player.InInterior()).ToList();
+            if (interiorTargets.Count == 0)
                 return false;
-            float distance = Utils.DistanceXZ(Player.m_localPlayer.transform.position, point);
-            if (distance < 35f || distance > 90f)
+
+            foreach (CreatureSpawner spawner in CreatureSpawner.m_creatureSpawners.OrderBy(_ => UnityEngine.Random.value))
+            {
+                if (spawner == null || spawner.m_nview == null || !spawner.m_nview.IsValid() || !spawner.m_nview.IsOwner())
+                    continue;
+                Vector3 point = spawner.transform.position;
+                if (ZoneSystem.GetZone(point) != zone || !Character.InInterior(point))
+                    continue;
+
+                Player target = interiorTargets.OrderBy(player => Vector3.Distance(player.transform.position, point)).FirstOrDefault();
+                if (target == null || !HasPath(prefab, point, target.transform.position))
+                    continue;
+                return SpawnMarked(prefab, point, lease, zone, BloodMoonExtraEnemyRole.Interior);
+            }
+            return false;
+        }
+
+        private static bool IsSurfaceSpawnPointAllowed(Vector3 point, List<Player> targets)
+        {
+            float nearest = targets.Min(player => Utils.DistanceXZ(player.transform.position, point));
+            if (nearest < 35f || nearest > 90f)
                 return false;
-            if (EffectArea.IsPointInsideArea(point, EffectArea.Type.PlayerBase) || EffectArea.IsPointInsideArea(point, EffectArea.Type.NoMonsters))
-                return false;
+
             Camera camera = Utils.GetMainCamera();
             if (camera != null && GeometryUtility.TestPlanesAABB(GeometryUtility.CalculateFrustumPlanes(camera), new Bounds(point, Vector3.one * 2f)))
                 return false;
+
+            // PlayerBase and NoMonsters are intentionally ignored for Blood Moon event extras.
             return true;
         }
 
-        internal static void AcceptSpawnReport(BloodMoonEventState state, long sender, long groupId, int groupRevision, int leaseRevision, ZDOID spawnedId, double now)
+        private static bool HasPath(GameObject prefab, Vector3 from, Vector3 to)
+        {
+            BaseAI ai = prefab.GetComponent<BaseAI>();
+            Character character = prefab.GetComponent<Character>();
+            if (ai == null || character == null || character.m_flying || Pathfinding.instance == null)
+                return true;
+            return Pathfinding.instance.HavePath(from, to, ai.m_pathAgentType);
+        }
+
+        private static bool SpawnMarked(GameObject prefab, Vector3 point, BloodMoonSpawnLeaseState lease, Vector2i zone, BloodMoonExtraEnemyRole role)
+        {
+            GameObject spawned = UnityEngine.Object.Instantiate(prefab, point, Quaternion.identity);
+            ZNetView nview = spawned.GetComponent<ZNetView>();
+            if (nview == null || !nview.IsValid())
+            {
+                UnityEngine.Object.Destroy(spawned);
+                return false;
+            }
+
+            ZDO zdo = nview.GetZDO();
+            zdo.Set(EventMarker, lease.EventId);
+            zdo.Set(GroupMarker, lease.GroupId);
+            zdo.Set(RoleMarker, (int)role);
+
+            MonsterAI ai = spawned.GetComponent<MonsterAI>();
+            if (ai != null)
+            {
+                ai.m_eventCreature = false;
+                ai.m_despawnInDay = false;
+            }
+
+            BloodMoonNetwork.SendSpawnReport(lease.EventId, lease.GroupId, lease.GroupRevision, zone.x, zone.y, lease.LeaseRevision, zdo.m_uid);
+            LogInfo($"[BloodMoon][event:{lease.EventId}][zone:{zone}][spawn] {prefab.name} {zdo.m_uid} group={lease.GroupId} lease={lease.LeaseRevision}.");
+            return true;
+        }
+
+        internal static void AcceptSpawnReport(BloodMoonEventState state, long sender, long groupId, int groupRevision, int zoneX, int zoneY, int leaseRevision, ZDOID spawnedId, double now)
         {
             if (state == null || state.SpawnsStopped || spawnedId.IsNone())
                 return;
-            string leaseKey = state.SpawnLeases.Keys.FirstOrDefault(key => state.SpawnLeases[key].GroupId == groupId && state.SpawnLeases[key].LeaseRevision == leaseRevision);
-            if (leaseKey == null)
+
+            string leaseKey = MakeLeaseKey(groupId, zoneX, zoneY);
+            if (!state.SpawnLeases.TryGetValue(leaseKey, out BloodMoonSpawnLeaseState lease))
                 return;
-            BloodMoonSpawnLeaseState lease = state.SpawnLeases[leaseKey];
-            if (lease.OwnerPeerId != sender || lease.EventId != state.EventId || lease.GroupRevision != groupRevision || lease.ExpiresAt < now)
+            if (lease.OwnerPeerId != sender || lease.EventId != state.EventId || lease.GroupRevision != groupRevision || lease.LeaseRevision != leaseRevision || lease.ExpiresAt < now || lease.Allowance <= 0)
                 return;
             if (!state.Groups.TryGetValue(groupId, out BloodMoonGroupState group) || group.Revision != groupRevision)
                 return;
-            if (state.ExtraEnemyZdos.Count >= BloodMoonConfig.ServerExtraEnemyHardCap.Value || state.ExtraEnemyZdos.Count(id => GetMarkedGroupId(id) == groupId) >= BloodMoonConfig.GroupExtraEnemyCap.Value)
+
+            int groupCap = BloodMoonConfig.GetGroupExtraEnemyCap(group.MemberPlayerIds.Count(id => state.Participants.TryGetValue(id, out BloodMoonParticipantState participant) && participant.IsCombatActive));
+            if (state.ExtraEnemyZdos.Count >= Math.Max(0, BloodMoonConfig.ServerExtraEnemyHardCap.Value) || state.ExtraEnemyZdos.Count(id => GetMarkedGroupId(id) == groupId) >= groupCap)
             {
                 DestroyZdo(spawnedId);
                 return;
             }
+
             ZDO zdo = ZDOMan.instance.GetZDO(spawnedId);
-            if (zdo == null || zdo.GetLong(EventMarker, -1L) != state.EventId || zdo.GetLong(GroupMarker, -1L) != groupId)
+            if (zdo == null || zdo.GetLong(EventMarker, -1L) != state.EventId || zdo.GetLong(GroupMarker, -1L) != groupId || zdo.GetSector() != new Vector2i(zoneX, zoneY))
                 return;
+
+            lease.Allowance--;
             state.ExtraEnemyZdos.Add(spawnedId.ToString());
             BloodMoonPersistence.Save(state);
         }
 
         internal static void StopServerLeases(BloodMoonEventState state)
         {
-            if (state == null)
-                return;
-            state.SpawnLeases.Clear();
+            state?.SpawnLeases.Clear();
             clientLeases.Clear();
+            BloodMoonZoneOwnership.Reset();
         }
 
         internal static void CleanupExtraEnemies(BloodMoonEventState state)
         {
             if (state == null || ZDOMan.instance == null)
                 return;
-            foreach (string text in state.ExtraEnemyZdos.ToArray())
+
+            foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values
+                .Where(zdo => zdo.GetLong(EventMarker, -1L) == state.EventId)
+                .ToArray())
             {
-                if (TryParseZdoId(text, out ZDOID id))
-                    DestroyZdo(id);
+                DestroyZdo(zdo.m_uid);
             }
+
             state.ExtraEnemyZdos.Clear();
             state.SpawnLeases.Clear();
+            clientLeases.Clear();
+            BloodMoonZoneOwnership.Reset();
         }
 
         internal static void Recover(BloodMoonEventState state)
         {
-            if (state == null)
+            if (state == null || ZDOMan.instance == null)
                 return;
+
+            foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values.ToArray())
+            {
+                long markedEvent = zdo.GetLong(EventMarker, -1L);
+                if (markedEvent < 0L)
+                    continue;
+
+                if (markedEvent == state.EventId && state.IsCombatLive)
+                    state.ExtraEnemyZdos.Add(zdo.m_uid.ToString());
+                else
+                    DestroyZdo(zdo.m_uid);
+            }
+
             PruneMissingExtras(state);
             if (!state.IsCombatLive)
                 CleanupExtraEnemies(state);
@@ -278,6 +347,7 @@ namespace Seasons.BloodMoon
         {
             clientLeases.Clear();
             clientSpawnTimer = 0f;
+            BloodMoonZoneOwnership.Reset();
         }
 
         internal static long GetMarkedGroupId(string zdoId)
@@ -285,6 +355,12 @@ namespace Seasons.BloodMoon
             if (!TryParseZdoId(zdoId, out ZDOID id) || ZDOMan.instance == null)
                 return -1L;
             return ZDOMan.instance.GetZDO(id)?.GetLong(GroupMarker, -1L) ?? -1L;
+        }
+
+        private static void PruneServerLeases(BloodMoonEventState state, double now)
+        {
+            foreach (string key in state.SpawnLeases.Keys.Where(key => state.SpawnLeases[key].ExpiresAt <= now || state.SpawnLeases[key].EventId != state.EventId).ToList())
+                state.SpawnLeases.Remove(key);
         }
 
         private static void PruneMissingExtras(BloodMoonEventState state)
@@ -323,7 +399,7 @@ namespace Seasons.BloodMoon
         private static bool Prefix(CharacterDrop __instance, ref List<KeyValuePair<GameObject, int>> __result)
         {
             Character character = __instance.GetComponent<Character>();
-            if (!BloodMoonInteractionRules.IsBloodMoonExtra(character))
+            if (!BloodMoonInteractionRules.IsBloodMoonSpawned(character))
                 return true;
             __result = new List<KeyValuePair<GameObject, int>>();
             return false;
@@ -333,11 +409,19 @@ namespace Seasons.BloodMoon
     [HarmonyPatch(typeof(Ragdoll), nameof(Ragdoll.Setup))]
     internal static class BloodMoonExtraRagdollPatch
     {
-        private static void Postfix(Ragdoll __instance)
+        private static void Prefix(Ragdoll __instance, CharacterDrop characterDrop)
         {
-            ZNetView nview = __instance.GetComponent<ZNetView>();
-            if (nview?.GetZDO() != null && nview.GetZDO().GetLong(EventMarker, -1L) == BloodMoonNetwork.ClientGlobal.EventId)
-                __instance.m_ttl = Mathf.Min(__instance.m_ttl, 2f);
+            Character character = characterDrop != null ? characterDrop.GetComponent<Character>() : null;
+            if (!BloodMoonInteractionRules.IsBloodMoonSpawned(character) || __instance.m_nview == null || !__instance.m_nview.IsValid())
+                return;
+
+            ZDO source = character.m_nview.GetZDO();
+            ZDO ragdoll = __instance.m_nview.GetZDO();
+            ragdoll.Set(EventMarker, source.GetLong(EventMarker, -1L));
+            ragdoll.Set(GroupMarker, source.GetLong(GroupMarker, -1L));
+            ragdoll.Set(RoleMarker, source.GetInt(RoleMarker, 0));
+            __instance.m_ttl = __instance.m_ttl <= 0f ? 2f : Mathf.Min(__instance.m_ttl, 2f);
+            __instance.m_dropItems = false;
         }
     }
 }
