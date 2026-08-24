@@ -10,11 +10,11 @@ namespace Seasons.BloodMoon
 
         internal static bool IsStale(Object source, ZNetView nview)
         {
-            if (BloodMoonInteractionRules.IsEventCombatLive)
-                return false;
+            bool combatLive = BloodMoonInteractionRules.IsEventCombatLive;
+            long currentEventId = BloodMoonNetwork.ClientGlobal.EventId;
 
             if (source != null && BloodMoonHitAttribution.TryGet(source, nview, out _))
-                return true;
+                return !combatLive;
 
             if (nview == null || !nview.IsValid())
                 return false;
@@ -25,7 +25,10 @@ namespace Seasons.BloodMoon
 
             long eventId = zdo.GetLong(EventMarker, -1L);
             int sourceType = zdo.GetInt(SourceTypeMarker, 0);
-            return eventId >= 0L && sourceType != (int)BloodMoonCombatSourceType.None;
+            if (eventId < 0L || sourceType == (int)BloodMoonCombatSourceType.None)
+                return false;
+
+            return !combatLive || eventId != currentEventId;
         }
     }
 
