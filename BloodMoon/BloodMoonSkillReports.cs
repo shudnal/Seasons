@@ -9,7 +9,7 @@ namespace Seasons.BloodMoon
         {
             BloodMoonController controller = BloodMoonController.Instance;
             BloodMoonEventState state = controller?.State;
-            if (state == null || state.EventId != eventId || !state.IsCombatLive || sequence <= 0L || !float.IsFinite(baseEquivalent) || !float.IsFinite(liveBonusEquivalent))
+            if (state == null || state.EventId != eventId || !state.IsCombatLive || sequence <= 0L || !IsFinite(baseEquivalent) || !IsFinite(liveBonusEquivalent))
                 return;
             if (!state.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant) || !participant.IsCombatActive)
                 return;
@@ -26,6 +26,8 @@ namespace Seasons.BloodMoon
             BloodMoonPersistence.Save(state);
             BloodMoonNetwork.Publish(state, state.UpdatedAt);
         }
+
+        private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
 
         private static bool ValidateSender(long sender, long playerId)
         {
