@@ -108,11 +108,13 @@ namespace Seasons.BloodMoon
             SendToServer(RpcZoneClaim, pkg);
         }
 
-        internal static void SendSpawnReport(long eventId, long groupId, int groupRevision, int leaseRevision, ZDOID spawnedId)
+        internal static void SendSpawnReport(long eventId, long groupId, int groupRevision, int zoneX, int zoneY, int leaseRevision, ZDOID spawnedId)
         {
             ZPackage pkg = CreateHeader(eventId, GetLocalPlayerId());
             pkg.Write(groupId);
             pkg.Write(groupRevision);
+            pkg.Write(zoneX);
+            pkg.Write(zoneY);
             pkg.Write(leaseRevision);
             pkg.Write(spawnedId);
             SendToServer(RpcSpawnReport, pkg);
@@ -190,7 +192,6 @@ namespace Seasons.BloodMoon
         }
 
         private static bool CanSendFromServer() => ZNet.instance != null && ZNet.instance.IsServer() && ZRoutedRpc.instance != null;
-
         private static long GetLocalPlayerId() => Player.m_localPlayer != null ? Player.m_localPlayer.GetPlayerID() : 0L;
 
         private static void OnDefeated(long sender, ZPackage pkg)
@@ -213,7 +214,7 @@ namespace Seasons.BloodMoon
         {
             if (!ReadHeader(pkg, out long eventId, out long playerId) || ZNet.instance == null || !ZNet.instance.IsServer())
                 return;
-            BloodMoonController.Instance?.OnZoneClaim(sender, eventId, playerId, pkg.ReadInt(), pkg.ReadInt());
+            BloodMoonZoneOwnership.AcceptClaim(sender, eventId, playerId, pkg.ReadInt(), pkg.ReadInt());
         }
 
         private static void OnSpawnLease(long sender, ZPackage pkg)
@@ -242,13 +243,18 @@ namespace Seasons.BloodMoon
 
         private static void OnSpawnReport(long sender, ZPackage pkg)
         {
-            if (!ReadHeader(pkg, out long eventId, out long playerId) || ZNet.instance == null || !ZNet.instance.IsServer())
+            if (!ReadHeader(pkg, out long eventId, out _) || ZNet.instance == null || !ZNet.instance.IsServer())
                 return;
             long groupId = pkg.ReadLong();
             int groupRevision = pkg.ReadInt();
+            int zoneX = pkg.ReadInt();
+            int zoneY = pkg.ReadInt();
             int leaseRevision = pkg.ReadInt();
             ZDOID spawnedId = pkg.ReadZDOID();
-            BloodMoonController.Instance?.OnSpawnReport(sender, eventId, playerId, groupId, groupRevision, leaseRevision, spawnedId);
+            BloodMoonEventState state = BloodMoonController.Instance?.State;
+            if (state == null || state.EventId != eventId)
+                return;
+            BloodMoonSpawner.AcceptSpawnReport(state, sender, groupId, groupRevision, zoneX, zoneY, leaseRevision, spawnedId, seasonState.GetTotalSeconds());
         }
 
         private static void OnFade(long sender, ZPackage pkg)
