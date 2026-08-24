@@ -17,7 +17,7 @@ namespace Seasons.BloodMoon
                 return false;
 
             ZDO enemyZdo = ZDOMan.instance.GetZDO(enemyId);
-            if (enemyZdo == null || enemyZdo.GetOwner() != sender || !IsEligibleBloodEnemyZdo(state, enemyZdo) || !IsObservedDead(enemyZdo))
+            if (enemyZdo == null || enemyZdo.GetOwner() != sender || !IsEligibleBloodEnemyZdo(state.EventId, enemyZdo) || !IsObservedDead(enemyZdo))
                 return false;
 
             serverPoints = BloodMoonCombat.GetPointsForEnemy(enemyId, 0f);
@@ -35,7 +35,7 @@ namespace Seasons.BloodMoon
                 return false;
 
             ZDO enemyZdo = ZDOMan.instance.GetZDO(enemyId);
-            return enemyZdo != null && enemyZdo.GetOwner() == sender && IsEligibleBloodEnemyZdo(state, enemyZdo);
+            return enemyZdo != null && enemyZdo.GetOwner() == sender && IsEligibleBloodEnemyZdo(state.EventId, enemyZdo);
         }
 
         internal static bool IsObservedDead(ZDO zdo)
@@ -45,7 +45,12 @@ namespace Seasons.BloodMoon
 
         internal static bool IsEligibleBloodEnemyZdo(BloodMoonEventState state, ZDO zdo)
         {
-            if (state == null || zdo == null || ZNetScene.instance == null)
+            return state != null && IsEligibleBloodEnemyZdo(state.EventId, zdo);
+        }
+
+        internal static bool IsEligibleBloodEnemyZdo(long eventId, ZDO zdo)
+        {
+            if (eventId < 0L || zdo == null || ZNetScene.instance == null)
                 return false;
 
             GameObject prefab = ZNetScene.instance.GetPrefab(zdo.GetPrefab());
@@ -58,7 +63,7 @@ namespace Seasons.BloodMoon
             if (faction == Character.Faction.Players || faction == Character.Faction.PlayerSpawned || faction == Character.Faction.TrainingDummy || faction == Character.Faction.Boss)
                 return false;
 
-            if (zdo.GetLong(BloodMoonSpawner.EventMarker, -1L) == state.EventId)
+            if (zdo.GetLong(BloodMoonSpawner.EventMarker, -1L) == eventId)
                 return true;
 
             // BaseAI.IsEnemy(monster, Player) reduced to dedicated-server data for an untamed MonsterAI.
