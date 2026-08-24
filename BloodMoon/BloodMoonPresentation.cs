@@ -111,6 +111,8 @@ namespace Seasons.BloodMoon
 
             if (!player.m_knownTexts.TryGetValue(key, out string existing) || !string.Equals(existing, chronicle, StringComparison.Ordinal))
                 player.AddKnownText(key, chronicle);
+            if (eventId >= 0L)
+                BloodMoonDreams.Record(player, eventId, chronicle);
             player.Message(MessageHud.MessageType.Center, chronicle);
         }
 
