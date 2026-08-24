@@ -23,6 +23,8 @@ namespace Seasons.BloodMoon
         {
             public int Schema = BloodMoonOutcomeQueue.Schema;
             public long WorldUid;
+            public long Revision;
+            public long UpdatedAtUtcTicks;
             public Dictionary<string, PendingOutcome> Pending = new Dictionary<string, PendingOutcome>();
         }
 
@@ -33,6 +35,13 @@ namespace Seasons.BloodMoon
             public long PlayerId;
             public string RewardPayload = string.Empty;
             public string Chronicle = string.Empty;
+        }
+
+        private sealed class Candidate
+        {
+            internal string Path;
+            internal Store Store;
+            internal long FileTicks;
         }
 
         private static readonly JsonSerializerSettings serializerSettings = new JsonSerializerSettings
@@ -279,30 +288,47 @@ namespace Seasons.BloodMoon
         private static Store Load(long worldUid)
         {
             string path = GetPath(worldUid);
-            foreach (string candidate in new[] { path, path + ".new", path + ".old" })
+            List<Candidate> valid = new List<Candidate>();
+            foreach (string candidatePath in new[] { path, path + ".new", path + ".old" })
             {
-                if (!File.Exists(candidate))
+                if (!File.Exists(candidatePath))
                     continue;
                 try
                 {
-                    Store loaded = JsonConvert.DeserializeObject<Store>(File.ReadAllText(candidate), serializerSettings);
+                    Store loaded = JsonConvert.DeserializeObject<Store>(File.ReadAllText(candidatePath), serializerSettings);
                     if (loaded == null || loaded.Schema != Schema || loaded.WorldUid != worldUid)
                         continue;
                     loaded.Pending ??= new Dictionary<string, PendingOutcome>();
-                    if (!string.Equals(candidate, path, StringComparison.Ordinal))
+                    valid.Add(new Candidate
                     {
-                        store = loaded;
-                        Save();
-                    }
-                    return loaded;
+                        Path = candidatePath,
+                        Store = loaded,
+                        FileTicks = File.GetLastWriteTimeUtc(candidatePath).Ticks
+                    });
                 }
                 catch (Exception ex)
                 {
-                    LogWarning($"[BloodMoon.Outcome] Failed to load '{candidate}': {ex.Message}");
+                    LogWarning($"[BloodMoon.Outcome] Failed to load '{candidatePath}': {ex.Message}");
                 }
             }
 
-            return new Store { WorldUid = worldUid };
+            if (valid.Count == 0)
+                return new Store { WorldUid = worldUid };
+
+            Candidate selected = valid
+                .OrderByDescending(candidate => candidate.Store.Revision)
+                .ThenByDescending(candidate => candidate.Store.UpdatedAtUtcTicks)
+                .ThenByDescending(candidate => candidate.FileTicks)
+                .First();
+
+            Store result = selected.Store;
+            if (!string.Equals(selected.Path, path, StringComparison.Ordinal))
+            {
+                LogWarning($"[BloodMoon.Outcome] Recovered newest valid outcome snapshot from '{selected.Path}'. Rewriting canonical snapshot.");
+                store = result;
+                Save();
+            }
+            return result;
         }
 
         private static void Save()
@@ -316,6 +342,8 @@ namespace Seasons.BloodMoon
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(path));
+                store.Revision++;
+                store.UpdatedAtUtcTicks = DateTime.UtcNow.Ticks;
                 File.WriteAllText(temporary, JsonConvert.SerializeObject(store, serializerSettings));
                 if (File.Exists(path))
                 {
