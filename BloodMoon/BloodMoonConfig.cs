@@ -12,6 +12,8 @@ namespace Seasons.BloodMoon
         internal static ConfigEntry<float> GoalPoints;
         internal static ConfigEntry<float> EnemyIncomingDamageMultiplier;
         internal static ConfigEntry<float> EnemyOutgoingDamageMultiplier;
+        internal static ConfigEntry<float> EnemyMovementSpeedMultiplier;
+        internal static ConfigEntry<float> EnemyTargetUpdateIntervalMultiplier;
         internal static ConfigEntry<float> EnemyHuntRange;
         internal static ConfigEntry<float> GroupMergeDistance;
         internal static ConfigEntry<float> GroupSplitDistance;
@@ -44,6 +46,8 @@ namespace Seasons.BloodMoon
             GoalPoints = Server("Blood Moon - Combat", "Goal points", 100f, "Combat points required for Goal Reached.");
             EnemyIncomingDamageMultiplier = Server("Blood Moon - Combat", "Enemy incoming damage multiplier", 1f, "Damage multiplier applied when a Blood Moon participant damages a Blood enemy.");
             EnemyOutgoingDamageMultiplier = Server("Blood Moon - Combat", "Enemy outgoing damage multiplier", 1f, "Damage multiplier applied when a Blood enemy damages a Blood Moon participant.");
+            EnemyMovementSpeedMultiplier = Server("Blood Moon - Combat", "Enemy movement speed multiplier", 1f, "Runtime movement speed multiplier for Blood enemies. Existing prefab and ZDO values are not modified.");
+            EnemyTargetUpdateIntervalMultiplier = Server("Blood Moon - Combat", "Enemy target update interval multiplier", 1f, "Runtime target-update interval multiplier for Blood enemies. Values below 1 make target decisions more frequent.");
             EnemyHuntRange = Server("Blood Moon - Combat", "Enemy hunt range", 200f, "Maximum XZ range used by Blood enemies when acquiring active participants.");
             GroupMergeDistance = Server("Blood Moon - Combat", "Group merge distance", 120f, "XZ distance used to merge active participants into combat groups.");
             GroupSplitDistance = Server("Blood Moon - Combat", "Group split distance", 160f, "XZ distance used as group split hysteresis.");
