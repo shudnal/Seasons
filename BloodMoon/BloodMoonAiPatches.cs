@@ -13,6 +13,23 @@ namespace Seasons.BloodMoon
         internal static bool IgnoreNoMonsterAreas => BloodAiDepth > 0;
     }
 
+    internal static class BloodMoonAiTargeting
+    {
+        internal static Player SelectParticipantTarget(BaseAI ai)
+        {
+            if (ai == null || ai.m_character == null)
+                return null;
+
+            float huntRange = Mathf.Max(0f, BloodMoonConfig.EnemyHuntRange.Value);
+            return BloodMoonInteractionRules.GetLoadedActiveParticipants(preferFighting: false)
+                .Where(player => BaseAI.IsEnemy(ai.m_character, player))
+                .Where(player => Utils.DistanceXZ(ai.transform.position, player.transform.position) <= huntRange)
+                .OrderBy(player => BloodMoonInteractionRules.GetParticipant(player.GetPlayerID())?.GoalReached == true ? 1 : 0)
+                .ThenBy(player => Utils.DistanceXZ(ai.transform.position, player.transform.position))
+                .FirstOrDefault();
+        }
+    }
+
     [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.FindEnemy))]
     internal static class BloodMoonBaseAiFindEnemyPatch
     {
@@ -31,13 +48,7 @@ namespace Seasons.BloodMoon
             if (!BloodMoonInteractionRules.IsBloodEnemy(__instance.m_character))
                 return true;
 
-            float huntRange = Mathf.Max(0f, BloodMoonConfig.EnemyHuntRange.Value);
-            Player target = BloodMoonInteractionRules.GetLoadedActiveParticipants(preferFighting: true)
-                .Where(player => BaseAI.IsEnemy(__instance.m_character, player))
-                .Where(player => Utils.DistanceXZ(__instance.transform.position, player.transform.position) <= huntRange)
-                .OrderBy(player => Utils.DistanceXZ(__instance.transform.position, player.transform.position))
-                .FirstOrDefault();
-            __result = target;
+            __result = BloodMoonAiTargeting.SelectParticipantTarget(__instance);
             return false;
         }
     }
@@ -168,18 +179,7 @@ namespace Seasons.BloodMoon
                 return;
             }
 
-            if (__instance.m_targetCreature is Player current && BloodMoonInteractionRules.IsActiveParticipant(current))
-            {
-                __instance.m_lastKnownTargetPos = current.transform.position;
-                return;
-            }
-
-            float huntRange = Mathf.Max(0f, BloodMoonConfig.EnemyHuntRange.Value);
-            Player target = BloodMoonInteractionRules.GetLoadedActiveParticipants(preferFighting: true)
-                .Where(player => BaseAI.IsEnemy(__instance.m_character, player))
-                .Where(player => Utils.DistanceXZ(__instance.transform.position, player.transform.position) <= huntRange)
-                .OrderBy(player => Utils.DistanceXZ(__instance.transform.position, player.transform.position))
-                .FirstOrDefault();
+            Player target = BloodMoonAiTargeting.SelectParticipantTarget(__instance);
             __instance.m_targetCreature = target;
             if (target != null)
             {
