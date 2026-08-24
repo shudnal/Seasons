@@ -12,6 +12,7 @@ namespace Seasons.BloodMoon
             BloodMoonRecovery.ResetRuntime();
             BloodMoonHitAttribution.Reset();
             BloodMoonSpawner.ResetClientState();
+            BloodMoonBosses.ResetClientState();
             BloodMoonEnvironment.ReleaseForcedEnvironment();
             BloodMoonPresentation.CleanupTransientState();
             BloodMoonSkills.ResetLocal(-1L);
