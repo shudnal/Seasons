@@ -1,6 +1,8 @@
 using ConditionalConfigSync;
 using Newtonsoft.Json;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using static Seasons.Seasons;
 
 namespace Seasons.BloodMoon
@@ -83,11 +85,35 @@ namespace Seasons.BloodMoon
             {
                 EventId = state.EventId,
                 Revision = state.Revision,
-                Participants = new System.Collections.Generic.List<BloodMoonParticipantState>(state.Participants.Values)
+                Participants = state.Participants.Values
+                    .OrderBy(participant => participant.PlayerId)
+                    .Select(CreatePublicParticipant)
+                    .ToList()
             };
 
             GlobalStateJson.AssignValueSafeIfChanged(JsonConvert.SerializeObject(global));
             ParticipantStateJson.AssignValueSafeIfChanged(JsonConvert.SerializeObject(participants));
+        }
+
+        private static BloodMoonParticipantState CreatePublicParticipant(BloodMoonParticipantState source)
+        {
+            return new BloodMoonParticipantState
+            {
+                PlayerId = source.PlayerId,
+                PlayerName = source.PlayerName,
+                Phase = source.Phase,
+                ExitReason = source.ExitReason,
+                GoalReached = source.GoalReached,
+                AutoCompleted = source.AutoCompleted,
+                JoinedLate = source.JoinedLate,
+                CombatPoints = source.CombatPoints,
+                DisplayProgress = source.DisplayProgress,
+                MarkedAt = source.MarkedAt,
+                FightingAt = source.FightingAt,
+                GoalReachedAt = source.GoalReachedAt,
+                ExitedAt = source.ExitedAt,
+                ResolvedAt = source.ResolvedAt
+            };
         }
 
         internal static void SendDefeated(long eventId, long playerId)
@@ -318,9 +344,12 @@ namespace Seasons.BloodMoon
         {
             try
             {
-                ClientGlobal = string.IsNullOrEmpty(GlobalStateJson.Value)
+                BloodMoonGlobalSnapshot snapshot = string.IsNullOrEmpty(GlobalStateJson.Value)
                     ? new BloodMoonGlobalSnapshot()
                     : JsonConvert.DeserializeObject<BloodMoonGlobalSnapshot>(GlobalStateJson.Value) ?? new BloodMoonGlobalSnapshot();
+                if (snapshot.EventId == ClientGlobal.EventId && snapshot.Revision < ClientGlobal.Revision)
+                    return;
+                ClientGlobal = snapshot;
                 BloodMoonPresentation.OnGlobalSnapshot(ClientGlobal);
             }
             catch (Exception ex)
@@ -333,9 +362,12 @@ namespace Seasons.BloodMoon
         {
             try
             {
-                ClientParticipants = string.IsNullOrEmpty(ParticipantStateJson.Value)
+                BloodMoonParticipantSnapshot snapshot = string.IsNullOrEmpty(ParticipantStateJson.Value)
                     ? new BloodMoonParticipantSnapshot()
                     : JsonConvert.DeserializeObject<BloodMoonParticipantSnapshot>(ParticipantStateJson.Value) ?? new BloodMoonParticipantSnapshot();
+                if (snapshot.EventId == ClientParticipants.EventId && snapshot.Revision < ClientParticipants.Revision)
+                    return;
+                ClientParticipants = snapshot;
             }
             catch (Exception ex)
             {
