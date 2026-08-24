@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.Linq;
-using UnityEngine;
 
 namespace Seasons.BloodMoon
 {
@@ -20,7 +19,7 @@ namespace Seasons.BloodMoon
             get
             {
                 BloodMoonEventPhase phase = BloodMoonNetwork.ClientGlobal.Phase;
-                return phase == BloodMoonEventPhase.Active || phase == BloodMoonEventPhase.AutoCompleting;
+                return BloodMoonNetwork.ClientGlobal.BloodBehaviorEnabled && (phase == BloodMoonEventPhase.Active || phase == BloodMoonEventPhase.AutoCompleting);
             }
         }
 
@@ -29,8 +28,7 @@ namespace Seasons.BloodMoon
             Player player = Player.m_localPlayer;
             if (player == null || BloodMoonNetwork.ClientParticipants.EventId != BloodMoonNetwork.ClientGlobal.EventId)
                 return null;
-            long playerId = player.GetPlayerID();
-            return BloodMoonNetwork.ClientParticipants.Participants?.FirstOrDefault(participant => participant.PlayerId == playerId);
+            return GetParticipant(player.GetPlayerID());
         }
 
         internal static bool IsLocalParticipantActiveOrMarked()
@@ -56,13 +54,13 @@ namespace Seasons.BloodMoon
         {
             if (character == null || character is Player || character.IsDead() || character.IsBoss() || character.IsTamed())
                 return false;
-            if (character.GetBaseAI() is not MonsterAI)
+            if (character.m_nview == null || !character.m_nview.IsValid() || character.GetBaseAI() is not MonsterAI)
                 return false;
             Character.Faction faction = character.GetFaction();
             return faction != Character.Faction.Players && faction != Character.Faction.PlayerSpawned && faction != Character.Faction.TrainingDummy;
         }
 
-        internal static bool IsBloodMoonExtra(Character character)
+        internal static bool IsBloodMoonSpawned(Character character)
         {
             if (character == null || character.m_nview == null || !character.m_nview.IsValid())
                 return false;
@@ -70,45 +68,78 @@ namespace Seasons.BloodMoon
             return zdo != null && zdo.GetLong(BloodMoonSpawner.EventMarker, -1L) == BloodMoonNetwork.ClientGlobal.EventId;
         }
 
+        internal static bool IsBloodMoonExtra(Character character) => IsBloodMoonSpawned(character);
+
         internal static bool IsBloodEnemy(Character character)
         {
             if (!IsEventCombatLive || !IsEligibleExistingMonster(character))
                 return false;
-            if (IsBloodMoonExtra(character))
+            if (IsBloodMoonSpawned(character))
                 return true;
 
-            foreach (Player player in Player.GetAllPlayers())
+            foreach (Player player in GetLoadedActiveParticipants(preferFighting: false))
             {
-                BloodMoonParticipantState participant = GetParticipant(player.GetPlayerID());
-                if (participant != null && participant.IsCombatActive && BaseAI.IsEnemy(character, player))
+                if (BaseAI.IsEnemy(character, player))
                     return true;
             }
             return false;
         }
 
-        internal static bool IsLegalTarget(Character attacker, Character target)
+        internal static bool IsActiveParticipant(Player player)
+        {
+            return player != null && IsActiveParticipant(player.GetPlayerID());
+        }
+
+        internal static bool IsActiveParticipant(long playerId)
+        {
+            return GetParticipant(playerId)?.IsCombatActive == true;
+        }
+
+        internal static bool CanTarget(Character attacker, Character target)
         {
             if (!IsEventCombatLive || attacker == null || target == null)
                 return true;
 
-            if (attacker is Player attackerPlayer && IsActiveParticipant(attackerPlayer.GetPlayerID()))
-            {
-                if (target is Player targetPlayer)
-                    return !IsActiveParticipant(targetPlayer.GetPlayerID());
-                return IsBloodEnemy(target);
-            }
+            bool attackerParticipant = attacker is Player attackerPlayer && IsActiveParticipant(attackerPlayer);
+            bool attackerBlood = IsBloodEnemy(attacker);
+            bool targetParticipant = target is Player targetPlayer && IsActiveParticipant(targetPlayer);
+            bool targetBlood = IsBloodEnemy(target);
 
-            if (IsBloodEnemy(attacker))
-            {
-                if (target is Player player)
-                    return IsActiveParticipant(player.GetPlayerID());
-                return !IsEligibleExistingMonster(target) || !IsBloodEnemy(target);
-            }
-
-            if (target is Player protectedParticipant && IsActiveParticipant(protectedParticipant.GetPlayerID()))
+            if (attackerParticipant)
+                return targetBlood;
+            if (attackerBlood)
+                return targetParticipant;
+            if (targetBlood || targetParticipant)
                 return false;
-
             return true;
+        }
+
+        internal static bool CanDamage(Character attacker, Character target, HitData hit)
+        {
+            if (!IsEventCombatLive || target == null)
+                return true;
+
+            bool targetParticipant = target is Player targetPlayer && IsActiveParticipant(targetPlayer);
+            bool targetBlood = IsBloodEnemy(target);
+            if (!targetParticipant && !targetBlood)
+            {
+                if (attacker is Player participant && IsActiveParticipant(participant))
+                    return false;
+                if (IsBloodEnemy(attacker))
+                    return false;
+                return true;
+            }
+
+            if (attacker == null)
+                return false;
+            return CanTarget(attacker, target);
+        }
+
+        internal static bool CanReceiveProgress(Character target, HitData hit)
+        {
+            if (!IsEventCombatLive || !IsBloodEnemy(target) || hit == null)
+                return false;
+            return hit.GetAttacker() is Player player && IsActiveParticipant(player);
         }
 
         internal static bool CanCreditProgress(long playerId)
@@ -124,11 +155,6 @@ namespace Seasons.BloodMoon
             return BloodMoonNetwork.ClientParticipants.Participants.FirstOrDefault(participant => participant.PlayerId == playerId);
         }
 
-        internal static bool IsActiveParticipant(long playerId)
-        {
-            return GetParticipant(playerId)?.IsCombatActive == true;
-        }
-
         internal static List<Player> GetLoadedActiveParticipants(bool preferFighting)
         {
             List<Player> fighting = new List<Player>();
@@ -136,7 +162,7 @@ namespace Seasons.BloodMoon
             foreach (Player player in Player.GetAllPlayers())
             {
                 BloodMoonParticipantState participant = GetParticipant(player.GetPlayerID());
-                if (participant == null || !participant.IsCombatActive || player.IsDead())
+                if (participant == null || !participant.IsCombatActive || player.IsDead() || player.InDebugFlyMode() || player.InGhostMode())
                     continue;
                 if (participant.GoalReached)
                     goalReached.Add(player);
