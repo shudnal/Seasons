@@ -1,6 +1,7 @@
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using UnityEngine;
 using static Seasons.Seasons;
@@ -10,6 +11,7 @@ namespace Seasons.BloodMoon
     internal static class BloodMoonRecovery
     {
         private const string RecoveryDataKey = "Seasons.BloodMoon.Recovery";
+        private const string RestedRemovalPrefix = "Seasons.BloodMoon.RestedRemoved.";
         private const float StageOneDuration = 15f;
         private const float StageTwoDuration = 10f;
 
@@ -169,7 +171,23 @@ namespace Seasons.BloodMoon
 
         internal static void RemoveRested(Player player)
         {
-            player?.GetSEMan()?.RemoveStatusEffect(SEMan.s_statusEffectRested);
+            if (player == null)
+                return;
+
+            long worldUid = GetCurrentWorldUid();
+            long eventId = BloodMoonNetwork.ClientGlobal.EventId;
+            if (worldUid == 0L || eventId < 0L)
+            {
+                player.GetSEMan()?.RemoveStatusEffect(SEMan.s_statusEffectRested);
+                return;
+            }
+
+            string key = RestedRemovalPrefix + worldUid.ToString(CultureInfo.InvariantCulture) + "." + eventId.ToString(CultureInfo.InvariantCulture);
+            if (player.m_customData.ContainsKey(key))
+                return;
+
+            player.GetSEMan()?.RemoveStatusEffect(SEMan.s_statusEffectRested);
+            player.m_customData[key] = "1";
         }
 
         internal static void ResetEvent(long eventId)
