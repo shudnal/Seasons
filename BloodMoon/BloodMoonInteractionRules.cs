@@ -152,7 +152,8 @@ namespace Seasons.BloodMoon
         {
             if (BloodMoonNetwork.ClientParticipants.EventId != BloodMoonNetwork.ClientGlobal.EventId || BloodMoonNetwork.ClientParticipants.Participants == null)
                 return null;
-            return BloodMoonNetwork.ClientParticipants.Participants.FirstOrDefault(participant => participant.PlayerId == playerId);
+            BloodMoonParticipantState routing = BloodMoonNetwork.ClientParticipants.Participants.FirstOrDefault(participant => participant.PlayerId == playerId);
+            return BloodMoonParticipantDetails.MergeOwnDetail(routing);
         }
 
         internal static List<Player> GetLoadedActiveParticipants(bool preferFighting)
