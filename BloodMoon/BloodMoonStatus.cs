@@ -1,5 +1,4 @@
 using HarmonyLib;
-using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
@@ -27,24 +26,64 @@ namespace Seasons.BloodMoon
         }
     }
 
+    internal sealed class SE_BloodMoonRecovery : StatusEffect
+    {
+        internal const string EffectName = "SE_Seasons_BloodMoonRecovery";
+        internal static readonly int EffectHash = EffectName.GetStableHashCode();
+
+        public override string GetTooltipString()
+        {
+            Player player = Player.m_localPlayer;
+            if (!BloodMoonRecovery.TryGetStatus(player, out bool stageOne, out float remaining, out float multiplier))
+                return "Blood Moon recovery";
+
+            string protection = stageOne ? "Full damage protection" : $"Incoming damage: {multiplier * 100f:0}%";
+            return $"Blood Moon recovery\n{protection}\nRemaining: {Mathf.CeilToInt(remaining)}s";
+        }
+
+        public override string GetIconText()
+        {
+            return BloodMoonRecovery.TryGetStatus(Player.m_localPlayer, out _, out float remaining, out _)
+                ? Mathf.CeilToInt(remaining).ToString()
+                : string.Empty;
+        }
+    }
+
     internal static class BloodMoonStatus
     {
         internal static void EnsureRegistered(ObjectDB objectDb)
         {
-            if (objectDb == null || objectDb.m_StatusEffects == null || objectDb.m_StatusEffects.Any(effect => effect != null && effect.name == SE_BloodMoon.EffectName))
+            if (objectDb == null || objectDb.m_StatusEffects == null)
                 return;
 
-            StatusEffect effect = ScriptableObject.CreateInstance<SE_BloodMoon>();
-            effect.name = SE_BloodMoon.EffectName;
-            effect.m_nameHash = SE_BloodMoon.EffectHash;
-            effect.m_name = "Blood Moon";
-            effect.m_tooltip = "Survive the Blood Moon.";
-            effect.m_startMessage = "The Blood Moon has marked you.";
-            effect.m_startMessageType = MessageHud.MessageType.Center;
-            effect.m_stopMessage = string.Empty;
-            effect.m_icon = Seasons.iconFall;
-            effect.m_ttl = 0f;
-            objectDb.m_StatusEffects.Add(effect);
+            if (!objectDb.m_StatusEffects.Any(effect => effect != null && effect.name == SE_BloodMoon.EffectName))
+            {
+                StatusEffect effect = ScriptableObject.CreateInstance<SE_BloodMoon>();
+                effect.name = SE_BloodMoon.EffectName;
+                effect.m_nameHash = SE_BloodMoon.EffectHash;
+                effect.m_name = "Blood Moon";
+                effect.m_tooltip = "Survive the Blood Moon.";
+                effect.m_startMessage = "The Blood Moon has marked you.";
+                effect.m_startMessageType = MessageHud.MessageType.Center;
+                effect.m_stopMessage = string.Empty;
+                effect.m_icon = Seasons.iconFall;
+                effect.m_ttl = 0f;
+                objectDb.m_StatusEffects.Add(effect);
+            }
+
+            if (!objectDb.m_StatusEffects.Any(effect => effect != null && effect.name == SE_BloodMoonRecovery.EffectName))
+            {
+                StatusEffect recovery = ScriptableObject.CreateInstance<SE_BloodMoonRecovery>();
+                recovery.name = SE_BloodMoonRecovery.EffectName;
+                recovery.m_nameHash = SE_BloodMoonRecovery.EffectHash;
+                recovery.m_name = "Blood Moon recovery";
+                recovery.m_tooltip = "Temporary protection after Defeated.";
+                recovery.m_startMessage = string.Empty;
+                recovery.m_stopMessage = string.Empty;
+                recovery.m_icon = Seasons.iconFall;
+                recovery.m_ttl = 0f;
+                objectDb.m_StatusEffects.Add(recovery);
+            }
         }
 
         internal static void UpdateLocal()
@@ -53,12 +92,19 @@ namespace Seasons.BloodMoon
             if (player == null || player.GetSEMan() == null)
                 return;
 
-            bool shouldHave = BloodMoonInteractionRules.IsLocalParticipantActiveOrMarked();
-            bool has = player.GetSEMan().HaveStatusEffect(SE_BloodMoon.EffectHash);
-            if (shouldHave && !has)
+            bool shouldHaveBloodMoon = BloodMoonInteractionRules.IsLocalParticipantActiveOrMarked();
+            bool hasBloodMoon = player.GetSEMan().HaveStatusEffect(SE_BloodMoon.EffectHash);
+            if (shouldHaveBloodMoon && !hasBloodMoon)
                 player.GetSEMan().AddStatusEffect(SE_BloodMoon.EffectHash);
-            else if (!shouldHave && has)
+            else if (!shouldHaveBloodMoon && hasBloodMoon)
                 player.GetSEMan().RemoveStatusEffect(SE_BloodMoon.EffectHash);
+
+            bool shouldHaveRecovery = BloodMoonRecovery.HasProtection(player);
+            bool hasRecovery = player.GetSEMan().HaveStatusEffect(SE_BloodMoonRecovery.EffectHash);
+            if (shouldHaveRecovery && !hasRecovery)
+                player.GetSEMan().AddStatusEffect(SE_BloodMoonRecovery.EffectHash);
+            else if (!shouldHaveRecovery && hasRecovery)
+                player.GetSEMan().RemoveStatusEffect(SE_BloodMoonRecovery.EffectHash);
         }
 
         internal static void RemoveLocal()
@@ -66,6 +112,13 @@ namespace Seasons.BloodMoon
             Player player = Player.m_localPlayer;
             if (player?.GetSEMan() != null && player.GetSEMan().HaveStatusEffect(SE_BloodMoon.EffectHash))
                 player.GetSEMan().RemoveStatusEffect(SE_BloodMoon.EffectHash);
+        }
+
+        internal static void RemoveRecoveryLocal()
+        {
+            Player player = Player.m_localPlayer;
+            if (player?.GetSEMan() != null && player.GetSEMan().HaveStatusEffect(SE_BloodMoonRecovery.EffectHash))
+                player.GetSEMan().RemoveStatusEffect(SE_BloodMoonRecovery.EffectHash);
         }
     }
 
