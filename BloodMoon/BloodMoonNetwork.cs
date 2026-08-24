@@ -214,7 +214,7 @@ namespace Seasons.BloodMoon
 
         private static bool ReadHeader(ZPackage pkg, out long eventId, out long playerId)
         {
-            eventId = -1;
+            eventId = -1L;
             playerId = 0L;
             if (pkg == null || pkg.ReadInt() != ProtocolVersion)
                 return false;
@@ -230,8 +230,20 @@ namespace Seasons.BloodMoon
             ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.instance.GetServerPeerID(), method, pkg);
         }
 
-        private static bool CanSendFromServer() => ZNet.instance != null && ZNet.instance.IsServer() && ZRoutedRpc.instance != null;
-        private static long GetLocalPlayerId() => Player.m_localPlayer != null ? Player.m_localPlayer.GetPlayerID() : 0L;
+        private static bool CanSendFromServer()
+        {
+            return ZNet.instance != null && ZNet.instance.IsServer() && ZRoutedRpc.instance != null;
+        }
+
+        private static bool IsFromServer(long sender)
+        {
+            return ZRoutedRpc.instance != null && sender == ZRoutedRpc.instance.GetServerPeerID();
+        }
+
+        private static long GetLocalPlayerId()
+        {
+            return Player.m_localPlayer != null ? Player.m_localPlayer.GetPlayerID() : 0L;
+        }
 
         private static void OnDefeated(long sender, ZPackage pkg)
         {
@@ -269,7 +281,7 @@ namespace Seasons.BloodMoon
 
         private static void OnSpawnLease(long sender, ZPackage pkg)
         {
-            if (!ReadHeader(pkg, out long eventId, out _) || ZNet.instance == null || ZNet.instance.IsServer())
+            if (!ReadHeader(pkg, out long eventId, out _) || ZNet.instance == null || ZNet.instance.IsServer() || !IsFromServer(sender) || ZDOMan.instance == null)
                 return;
             BloodMoonSpawnLeaseState lease = new BloodMoonSpawnLeaseState
             {
@@ -309,7 +321,7 @@ namespace Seasons.BloodMoon
 
         private static void OnFade(long sender, ZPackage pkg)
         {
-            if (!ReadHeader(pkg, out long eventId, out _) || ZNet.instance == null || ZNet.instance.IsServer())
+            if (!ReadHeader(pkg, out long eventId, out _) || ZNet.instance == null || ZNet.instance.IsServer() || !IsFromServer(sender))
                 return;
             bool begin = pkg.ReadBool();
             BloodMoonPresentation.SetResolutionFade(begin);
@@ -333,7 +345,7 @@ namespace Seasons.BloodMoon
 
         private static void OnClientAction(long sender, ZPackage pkg)
         {
-            if (!ReadHeader(pkg, out long eventId, out _) || ZNet.instance == null || ZNet.instance.IsServer())
+            if (!ReadHeader(pkg, out long eventId, out _) || ZNet.instance == null || ZNet.instance.IsServer() || !IsFromServer(sender))
                 return;
             string action = pkg.ReadString();
             string payload = pkg.ReadString();
