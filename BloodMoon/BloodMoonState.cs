@@ -162,6 +162,7 @@ namespace Seasons.BloodMoon
         public BloodMoonScheduleSnapshot Schedule;
         public long LastCreatedEventId = -1;
         public long LastResolvedEventId = -1;
+        public double FirstEnabledAt;
         public int Revision;
         public int GroupSequence;
         public int LeaseSequence;
