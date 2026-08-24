@@ -35,7 +35,7 @@ namespace Seasons.BloodMoon
 
             if (lastPhase != snapshot.Phase)
             {
-                LogInfo($"[BloodMoon.Presentation] Phase {lastPhase} -> {snapshot.Phase}.");
+                LogInfo($"[BloodMoon][event:{snapshot.EventId}][phase] Presentation {lastPhase} -> {snapshot.Phase}.");
                 TriggerPhaseHook(snapshot.Phase);
                 lastPhase = snapshot.Phase;
             }
@@ -52,10 +52,9 @@ namespace Seasons.BloodMoon
 
         internal static void OnWorldChanged()
         {
-            lastPhase = BloodMoonEventPhase.Dormant;
+            CleanupTransientState();
             BloodMoonEnvironment.CleanupRegistration();
             BloodMoonEnvironment.EnsureRegistered();
-            BloodMoonStatus.RemoveLocal();
         }
 
         internal static void OnEnrolled()
@@ -76,7 +75,10 @@ namespace Seasons.BloodMoon
             BloodMoonStatus.RemoveLocal();
             BloodMoonEnvironment.ReleaseForcedEnvironment();
             if (behaviour != null)
+            {
+                behaviour.VisualFactor = 0f;
                 behaviour.SetFade(0f);
+            }
         }
 
         internal static string BuildChronicle(BloodMoonParticipantState participant)
@@ -85,14 +87,15 @@ namespace Seasons.BloodMoon
                 return string.Empty;
             string outcome = participant.ExitReason switch
             {
-                BloodMoonParticipantExitReason.Defeated => "Defeated",
-                BloodMoonParticipantExitReason.Withdrawn => "Withdrawn",
-                BloodMoonParticipantExitReason.Disconnected => "Disconnected",
+                BloodMoonParticipantExitReason.Defeated => participant.GoalReached ? "Success, later defeated" : "Defeated",
+                BloodMoonParticipantExitReason.Withdrawn => participant.GoalReached ? "Success, later withdrawn" : "Withdrawn",
+                BloodMoonParticipantExitReason.Disconnected => participant.GoalReached ? "Success, later disconnected" : "Disconnected",
                 _ when participant.GoalReached => "Success",
                 _ when participant.AutoCompleted => "Survived until dawn",
                 _ => "Survived"
             };
-            return $"Blood Moon — {outcome}\nCombat progress: {participant.DisplayProgress:0.#}%\nCombat points: {participant.CombatPoints:0.##}";
+            float combatProgress = Mathf.Clamp(participant.CombatPoints / Mathf.Max(1f, BloodMoonConfig.GoalPoints.Value) * 100f, 0f, 100f);
+            return $"Blood Moon — {outcome}\nCombat progress: {combatProgress:0.#}%\nDisplayed progress: {participant.DisplayProgress:0.#}%\nCombat points: {participant.CombatPoints:0.##}";
         }
 
         internal static void PublishChronicle(string chronicle)
@@ -100,14 +103,31 @@ namespace Seasons.BloodMoon
             Player player = Player.m_localPlayer;
             if (player == null || string.IsNullOrWhiteSpace(chronicle))
                 return;
-            string key = $"Blood Moon {DateTime.Now:yyyy-MM-dd HH:mm}";
-            player.AddKnownText(key, chronicle);
+
+            long eventId = BloodMoonNetwork.ClientGlobal.EventId;
+            if (eventId < 0L && BloodMoonController.Instance?.State != null)
+                eventId = BloodMoonController.Instance.State.EventId;
+            string key = eventId >= 0L ? $"Blood Moon {eventId}" : "Blood Moon";
+
+            if (!player.m_knownTexts.TryGetValue(key, out string existing) || !string.Equals(existing, chronicle, StringComparison.Ordinal))
+                player.AddKnownText(key, chronicle);
             player.Message(MessageHud.MessageType.Center, chronicle);
+        }
+
+        internal static void CleanupTransientState()
+        {
+            lastPhase = BloodMoonEventPhase.Dormant;
+            BloodMoonStatus.RemoveLocal();
+            if (behaviour != null)
+            {
+                behaviour.VisualFactor = 0f;
+                behaviour.SetFade(0f);
+            }
         }
 
         internal static void Cleanup()
         {
-            BloodMoonStatus.RemoveLocal();
+            CleanupTransientState();
             BloodMoonEnvironment.CleanupRegistration();
             if (behaviour != null)
             {
@@ -118,9 +138,9 @@ namespace Seasons.BloodMoon
 
         private static void TriggerPhaseHook(BloodMoonEventPhase phase)
         {
-            if (!BloodMoonConfig.MusicEnabled.Value || MusicMan.instance == null)
+            if (BloodMoonConfig.MusicEnabled == null || !BloodMoonConfig.MusicEnabled.Value || MusicMan.instance == null)
                 return;
-            // Intentionally no track names here. The hook remains stable for owner-provided music assets.
+            // Track names are intentionally absent until owner-provided Blood Moon music assets exist.
             if (phase == BloodMoonEventPhase.Forewarning || phase == BloodMoonEventPhase.Marked || phase == BloodMoonEventPhase.Active || phase == BloodMoonEventPhase.Resolving)
                 LogInfo($"[BloodMoon.Music] Hook: {phase}.");
         }
