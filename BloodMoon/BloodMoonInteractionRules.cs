@@ -35,12 +35,18 @@ namespace Seasons.BloodMoon
         internal static bool IsLocalParticipantActiveOrMarked()
         {
             BloodMoonParticipantState participant = GetLocalParticipant();
-            return participant != null && (participant.Phase == BloodMoonParticipantPhase.Marked || participant.IsCombatActive);
+            if (participant == null)
+                return false;
+            if (Player.m_localPlayer != null && BloodMoonRecovery.IsLocallyExited(Player.m_localPlayer.GetPlayerID()))
+                return false;
+            return participant.Phase == BloodMoonParticipantPhase.Marked || participant.IsCombatActive;
         }
 
         internal static bool CanSleep(Player player)
         {
             if (!IsEventMarkedOrLater || player == null)
+                return true;
+            if (player == Player.m_localPlayer && BloodMoonRecovery.IsLocallyExited(player.GetPlayerID()))
                 return true;
             BloodMoonParticipantState participant = GetParticipant(player.GetPlayerID());
             return participant == null || participant.IsTerminal;
@@ -93,6 +99,8 @@ namespace Seasons.BloodMoon
 
         internal static bool IsActiveParticipant(long playerId)
         {
+            if (Player.m_localPlayer != null && Player.m_localPlayer.GetPlayerID() == playerId && BloodMoonRecovery.IsLocallyExited(playerId))
+                return false;
             return GetParticipant(playerId)?.IsCombatActive == true;
         }
 
@@ -163,7 +171,7 @@ namespace Seasons.BloodMoon
         internal static bool CanCreditProgress(long playerId)
         {
             BloodMoonParticipantState participant = GetParticipant(playerId);
-            return IsEventCombatLive && participant != null && participant.IsCombatActive;
+            return IsEventCombatLive && participant != null && participant.IsCombatActive && IsActiveParticipant(playerId);
         }
 
         internal static BloodMoonParticipantState GetParticipant(long playerId)
@@ -181,7 +189,7 @@ namespace Seasons.BloodMoon
             foreach (Player player in Player.GetAllPlayers())
             {
                 BloodMoonParticipantState participant = GetParticipant(player.GetPlayerID());
-                if (participant == null || !participant.IsCombatActive || player.IsDead() || player.IsTeleporting() || player.InDebugFlyMode() || player.InGhostMode())
+                if (participant == null || !participant.IsCombatActive || !IsActiveParticipant(player) || player.IsDead() || player.IsTeleporting() || player.InDebugFlyMode() || player.InGhostMode())
                     continue;
                 if (participant.GoalReached)
                     goalReached.Add(player);
