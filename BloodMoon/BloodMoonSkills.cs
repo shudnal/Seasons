@@ -17,6 +17,7 @@ namespace Seasons.BloodMoon
         [Serializable]
         private sealed class RewardEnvelope
         {
+            public long WorldUid;
             public long EventId;
             public Dictionary<int, float> BonusBySkill = new Dictionary<int, float>();
         }
@@ -42,7 +43,6 @@ namespace Seasons.BloodMoon
         private static HashSet<Skills.SkillType> cachedEligibleSkills = new HashSet<Skills.SkillType>();
         private static readonly HashSet<string> loggedUnknownAliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<long, float> localLiveBonusUsed = new Dictionary<long, float>();
-        private static readonly Dictionary<long, float> lastCombatActivity = new Dictionary<long, float>();
         private static long localEventId = -1L;
         private static long localReportSequence;
         private static int rewardApplicationDepth;
@@ -53,24 +53,13 @@ namespace Seasons.BloodMoon
             return cachedEligibleSkills.Contains(skill);
         }
 
-        internal static void RecordCombatSkillFromHit(Player player, Character target)
-        {
-            if (player == null || target == null || !BloodMoonInteractionRules.IsBloodEnemy(target))
-                return;
-            lastCombatActivity[player.GetPlayerID()] = Time.realtimeSinceStartup;
-        }
-
-        internal static void RecordCombatActivity(Player player)
-        {
-            if (player != null)
-                lastCombatActivity[player.GetPlayerID()] = Time.realtimeSinceStartup;
-        }
-
         internal static string SerializeCompletionReward(BloodMoonParticipantState participant)
         {
+            BloodMoonEventState state = BloodMoonController.Instance?.State;
             RewardEnvelope envelope = new RewardEnvelope
             {
-                EventId = BloodMoonController.Instance?.State?.EventId ?? BloodMoonNetwork.ClientGlobal.EventId
+                WorldUid = state?.WorldUid ?? GetCurrentWorldUid(),
+                EventId = state?.EventId ?? BloodMoonNetwork.ClientGlobal.EventId
             };
 
             if (participant == null || !CompletionRewardsEnabled())
@@ -120,10 +109,11 @@ namespace Seasons.BloodMoon
                 return;
             }
 
-            if (envelope == null || envelope.EventId < 0L || envelope.BonusBySkill == null || envelope.BonusBySkill.Count == 0)
+            long currentWorldUid = GetCurrentWorldUid();
+            if (envelope == null || envelope.WorldUid == 0L || envelope.WorldUid != currentWorldUid || envelope.EventId < 0L || envelope.BonusBySkill == null || envelope.BonusBySkill.Count == 0)
                 return;
 
-            string recordKey = RewardRecordPrefix + envelope.EventId.ToString(CultureInfo.InvariantCulture);
+            string recordKey = RewardRecordPrefix + envelope.WorldUid.ToString(CultureInfo.InvariantCulture) + "." + envelope.EventId.ToString(CultureInfo.InvariantCulture);
             RewardApplicationRecord record = ReadApplicationRecord(player, recordKey);
             if (record == null)
             {
@@ -156,7 +146,7 @@ namespace Seasons.BloodMoon
                 }
                 record.Completed = true;
                 player.m_customData[recordKey] = JsonConvert.SerializeObject(record);
-                LogInfo($"[BloodMoon.Skill] Applied completion reward for event {envelope.EventId} to {player.GetPlayerName()}.");
+                LogInfo($"[BloodMoon.Skill] Applied completion reward for world {envelope.WorldUid}, event {envelope.EventId} to {player.GetPlayerName()}.");
             }
             finally
             {
@@ -194,7 +184,6 @@ namespace Seasons.BloodMoon
             localEventId = eventId;
             localReportSequence = 0L;
             localLiveBonusUsed.Clear();
-            lastCombatActivity.Clear();
         }
 
         private static void BeforeRaise(Player player, Skills.SkillType skillType, ref float value, out RaiseState state)
@@ -325,6 +314,8 @@ namespace Seasons.BloodMoon
                 skill.m_accumulator = NextRequirement(level) * fraction;
             }
 
+            if (player.m_skills.m_useSkillCap)
+                player.m_skills.RebalanceSkills(type);
             if (Mathf.Floor(clamped) > Mathf.Floor(before))
                 player.OnSkillLevelup(type, skill.m_level);
         }
@@ -361,7 +352,6 @@ namespace Seasons.BloodMoon
             localEventId = eventId;
             localReportSequence = 0L;
             localLiveBonusUsed.Clear();
-            lastCombatActivity.Clear();
         }
 
         private static void RefreshEligibleSkills()
@@ -405,6 +395,11 @@ namespace Seasons.BloodMoon
             if (dictionary == null || value <= 0f)
                 return;
             dictionary[key] = dictionary.TryGetValue(key, out float current) ? current + value : value;
+        }
+
+        private static long GetCurrentWorldUid()
+        {
+            return ZNet.m_world != null ? ZNet.m_world.m_uid : 0L;
         }
 
         [HarmonyPatch(typeof(Player), nameof(Player.RaiseSkill))]
