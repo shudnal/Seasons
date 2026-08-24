@@ -11,8 +11,10 @@ namespace Seasons.BloodMoon
     {
         private static readonly MethodInfo TrySpawnSurfaceMethod = AccessTools.Method(typeof(BloodMoonSpawner), "TrySpawnSurface",
             new[] { typeof(GameObject), typeof(BloodMoonSpawnLeaseState), typeof(Vector2i), typeof(List<Player>) });
-        private static readonly MethodInfo TrySpawnInteriorMethod = AccessTools.Method(typeof(BloodMoonSpawner), "TrySpawnInterior",
-            new[] { typeof(GameObject), typeof(BloodMoonSpawnLeaseState), typeof(Vector2i), typeof(List<Player>) });
+        private static readonly MethodInfo HasPathMethod = AccessTools.Method(typeof(BloodMoonSpawner), "HasPath",
+            new[] { typeof(GameObject), typeof(Vector3), typeof(Vector3) });
+        private static readonly MethodInfo SpawnMarkedMethod = AccessTools.Method(typeof(BloodMoonSpawner), "SpawnMarked",
+            new[] { typeof(GameObject), typeof(Vector3), typeof(BloodMoonSpawnLeaseState), typeof(Vector2i), typeof(BloodMoonExtraEnemyRole) });
 
         [HarmonyPriority(Priority.First)]
         private static bool Prefix(BloodMoonSpawnLeaseState lease, Vector2i zone)
@@ -37,26 +39,26 @@ namespace Seasons.BloodMoon
             bool spawned;
             if (interiorTargets.Count == 0)
             {
-                spawned = Invoke(TrySpawnSurfaceMethod, prefab, lease, zone, surfaceTargets);
+                spawned = TrySpawnSurface(prefab, lease, zone, surfaceTargets);
             }
             else if (surfaceTargets.Count == 0)
             {
-                spawned = Invoke(TrySpawnInteriorMethod, prefab, lease, zone, interiorTargets);
+                spawned = TrySpawnInterior(prefab, lease, zone, interiorTargets);
             }
             else
             {
                 Player selected = targets[Random.Range(0, targets.Count)];
                 if (selected.InInterior())
                 {
-                    spawned = Invoke(TrySpawnInteriorMethod, prefab, lease, zone, interiorTargets);
+                    spawned = TrySpawnInterior(prefab, lease, zone, interiorTargets);
                     if (!spawned)
-                        spawned = Invoke(TrySpawnSurfaceMethod, prefab, lease, zone, surfaceTargets);
+                        spawned = TrySpawnSurface(prefab, lease, zone, surfaceTargets);
                 }
                 else
                 {
-                    spawned = Invoke(TrySpawnSurfaceMethod, prefab, lease, zone, surfaceTargets);
+                    spawned = TrySpawnSurface(prefab, lease, zone, surfaceTargets);
                     if (!spawned)
-                        spawned = Invoke(TrySpawnInteriorMethod, prefab, lease, zone, interiorTargets);
+                        spawned = TrySpawnInterior(prefab, lease, zone, interiorTargets);
                 }
             }
 
@@ -65,11 +67,58 @@ namespace Seasons.BloodMoon
             return false;
         }
 
-        private static bool Invoke(MethodInfo method, GameObject prefab, BloodMoonSpawnLeaseState lease, Vector2i zone, List<Player> targets)
+        private static bool TrySpawnSurface(GameObject prefab, BloodMoonSpawnLeaseState lease, Vector2i zone, List<Player> targets)
         {
-            if (method == null || targets == null || targets.Count == 0)
+            if (TrySpawnSurfaceMethod == null || targets == null || targets.Count == 0)
                 return false;
-            return method.Invoke(null, new object[] { prefab, lease, zone, targets }) is bool result && result;
+            return TrySpawnSurfaceMethod.Invoke(null, new object[] { prefab, lease, zone, targets }) is bool result && result;
+        }
+
+        private static bool TrySpawnInterior(GameObject prefab, BloodMoonSpawnLeaseState lease, Vector2i zone, List<Player> targets)
+        {
+            if (HasPathMethod == null || SpawnMarkedMethod == null || targets == null || targets.Count == 0)
+                return false;
+
+            foreach (CreatureSpawner spawner in CreatureSpawner.m_creatureSpawners
+                .Where(spawner => spawner != null && spawner.m_nview != null && spawner.m_nview.IsValid() && spawner.m_nview.IsOwner())
+                .Where(spawner => ZoneSystem.GetZone(spawner.transform.position) == zone && Character.InInterior(spawner.transform.position))
+                .OrderBy(spawner => Vector3.Distance(spawner.transform.position, lease.Anchor)))
+            {
+                Player target = targets
+                    .Where(player => SameInteriorContext(spawner.transform.position, player.transform.position))
+                    .OrderBy(player => Vector3.Distance(player.transform.position, spawner.transform.position))
+                    .FirstOrDefault();
+                if (target == null)
+                    continue;
+
+                bool hasPath = HasPathMethod.Invoke(null, new object[] { prefab, spawner.transform.position, target.transform.position }) is bool path && path;
+                if (!hasPath)
+                    continue;
+
+                if (SpawnMarkedMethod.Invoke(null, new object[]
+                {
+                    prefab,
+                    spawner.transform.position,
+                    lease,
+                    zone,
+                    BloodMoonExtraEnemyRole.Interior
+                }) is bool spawned && spawned)
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool SameInteriorContext(Vector3 first, Vector3 second)
+        {
+            if (!Character.InInterior(first) || !Character.InInterior(second))
+                return false;
+
+            Location firstLocation = Location.GetLocation(first);
+            Location secondLocation = Location.GetLocation(second);
+            if (firstLocation != null || secondLocation != null)
+                return firstLocation != null && object.ReferenceEquals(firstLocation, secondLocation);
+
+            return ZoneSystem.GetZone(first) == ZoneSystem.GetZone(second);
         }
     }
 }
