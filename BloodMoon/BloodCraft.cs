@@ -249,24 +249,37 @@ namespace Seasons.BloodMoon
         {
             int multiplier = gui.m_multiCrafting ? gui.m_multiCraftAmount : 1;
             int amount = Mathf.Max(1, recipe.m_amount) * Mathf.Max(1, multiplier);
-            ItemDrop.ItemData item = recipe.m_item.m_itemData.Clone();
-            item.m_dropPrefab = recipe.m_item.gameObject;
-            item.m_stack = amount;
-            item.m_quality = 1;
-            item.m_variant = gui.m_craftVariant;
-            item.m_worldLevel = (byte)Game.m_worldLevel;
-            item.m_crafterID = player.GetPlayerID();
-            item.m_crafterName = player.GetPlayerName();
-            Mark(item, BloodMoonNetwork.ClientGlobal.EventId, player.GetPlayerID());
+            ItemDrop.ItemData template = recipe.m_item.m_itemData.Clone();
+            template.m_dropPrefab = recipe.m_item.gameObject;
+            template.m_stack = amount;
+            template.m_quality = 1;
+            template.m_variant = gui.m_craftVariant;
+            template.m_worldLevel = (byte)Game.m_worldLevel;
+            template.m_crafterID = player.GetPlayerID();
+            template.m_crafterName = player.GetPlayerName();
+            Mark(template, BloodMoonNetwork.ClientGlobal.EventId, player.GetPlayerID());
 
             Inventory inventory = player.GetInventory();
-            if (!CanAddTemporary(inventory, item))
+            if (!CanAddTemporary(inventory, template))
             {
                 player.Message(MessageHud.MessageType.Center, "$inventory_full");
                 return;
             }
-            if (!inventory.AddItem(item))
-                return;
+
+            int remaining = amount;
+            int maxStack = Mathf.Max(1, template.m_shared.m_maxStackSize);
+            while (remaining > 0)
+            {
+                int chunkAmount = Mathf.Min(remaining, maxStack);
+                ItemDrop.ItemData chunk = template.Clone();
+                chunk.m_stack = chunkAmount;
+                if (!inventory.AddItem(chunk))
+                {
+                    LogWarning($"[BloodMoon.Craft] Temporary craft insertion stopped after an unexpected inventory rejection for {recipe.m_item.gameObject.name}.");
+                    return;
+                }
+                remaining -= chunkAmount;
+            }
 
             FinishCraft(gui, player);
             LogInfo($"[BloodMoon.Craft] Crafted temporary {recipe.m_item.gameObject.name} x{amount} for event {BloodMoonNetwork.ClientGlobal.EventId}.");
