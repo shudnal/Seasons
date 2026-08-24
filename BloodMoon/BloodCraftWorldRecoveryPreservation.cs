@@ -26,32 +26,41 @@ namespace Seasons.BloodMoon
             return player != null && player == Player.m_localPlayer && (depth > 0 || ZNet.instance == null);
         }
 
+        private static void Begin(out Scope state)
+        {
+            state = new Scope { Active = true };
+            depth++;
+        }
+
+        private static void End(Scope state)
+        {
+            if (state == null || !state.Active)
+                return;
+            state.Active = false;
+            depth = System.Math.Max(0, depth - 1);
+        }
+
         [HarmonyPatch(typeof(BloodMoonController), "EnsureWorldLoaded")]
         private static class EnsureWorldLoadedPatch
         {
-            private static void Prefix(out Scope __state)
-            {
-                __state = new Scope { Active = true };
-                depth++;
-            }
-
-            private static void Postfix(Scope __state)
-            {
-                End(__state);
-            }
-
+            private static void Prefix(out Scope __state) => Begin(out __state);
+            private static void Postfix(Scope __state) => End(__state);
             private static System.Exception Finalizer(System.Exception __exception, Scope __state)
             {
                 End(__state);
                 return __exception;
             }
+        }
 
-            private static void End(Scope state)
+        [HarmonyPatch(typeof(BloodMoonController), "CleanupClientWorldState")]
+        private static class CleanupClientWorldStatePatch
+        {
+            private static void Prefix(out Scope __state) => Begin(out __state);
+            private static void Postfix(Scope __state) => End(__state);
+            private static System.Exception Finalizer(System.Exception __exception, Scope __state)
             {
-                if (state == null || !state.Active)
-                    return;
-                state.Active = false;
-                depth = System.Math.Max(0, depth - 1);
+                End(__state);
+                return __exception;
             }
         }
 
