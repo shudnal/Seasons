@@ -105,9 +105,17 @@ namespace Seasons.BloodMoon
                 return;
 
             long eventId = BloodMoonNetwork.ClientGlobal.EventId;
-            if (eventId < 0L && BloodMoonController.Instance?.State != null)
-                eventId = BloodMoonController.Instance.State.EventId;
-            string key = eventId >= 0L ? $"Blood Moon {eventId}" : "Blood Moon";
+            BloodMoonEventState controllerState = BloodMoonController.Instance?.State;
+            if (eventId < 0L && controllerState != null)
+                eventId = controllerState.EventId;
+
+            long worldUid = ZNet.m_world != null ? ZNet.m_world.m_uid : 0L;
+            if (worldUid == 0L && controllerState != null)
+                worldUid = controllerState.WorldUid;
+
+            string key = eventId >= 0L && worldUid != 0L
+                ? $"Blood Moon {worldUid}:{eventId}"
+                : eventId >= 0L ? $"Blood Moon {eventId}" : "Blood Moon";
 
             bool changed = !player.m_knownTexts.TryGetValue(key, out string existing) || !string.Equals(existing, chronicle, StringComparison.Ordinal);
             if (changed)
