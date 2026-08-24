@@ -1,3 +1,4 @@
+using HarmonyLib;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -15,42 +16,105 @@ namespace Seasons.BloodMoon
         internal static readonly int ParkingTimestampMarker = "Seasons.BloodMoon.ParkingTimestamp".GetStableHashCode();
 
         private const int ParkingSchema = 1;
+        private const float DiscoveryReportInterval = 1.5f;
+        private const float DiscoveryMaxDistance = 160f;
+        private const float EncounterWithdrawDistance = 120f;
+
         private static readonly Dictionary<ZDOID, double> pendingUntil = new Dictionary<ZDOID, double>();
-        private static double nextScan;
+        private static readonly Dictionary<ZDOID, float> nextClientDiscoveryAt = new Dictionary<ZDOID, float>();
+        private static long clientDiscoveryEventId = -1L;
+        private static double nextMarkerScan;
 
         internal static void Tick(BloodMoonEventState state, double now)
         {
-            if (state == null || ZNet.instance == null || !ZNet.instance.IsServer() || ZDOMan.instance == null || ZNetScene.instance == null)
+            if (state == null || ZNet.instance == null || !ZNet.instance.IsServer() || ZDOMan.instance == null)
                 return;
 
             ReassertPending(state, now);
-            if (!state.IsCombatLive || now < nextScan)
+            if (!state.IsCombatLive || now < nextMarkerScan)
                 return;
-            nextScan = now + 2d;
+            nextMarkerScan = now + 2d;
 
-            foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values.ToArray())
+            foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values
+                .Where(zdo => zdo.GetLong(ParkedEventMarker, -1L) == state.EventId)
+                .ToArray())
             {
-                if (!IsAliveBossZdo(zdo))
-                    continue;
-
-                long parkedEventId = zdo.GetLong(ParkedEventMarker, -1L);
-                if (parkedEventId >= 0L)
-                {
-                    if (parkedEventId == state.EventId)
-                        EnsureTransactionFromMarker(state, zdo);
-                    continue;
-                }
-
-                Vector3 position = zdo.GetPosition();
-                bool interior = Character.InInterior(position);
-                if (interior || !zdo.Persistent)
-                {
-                    WithdrawAffectedPlayers(state, position, interior ? "interior boss encounter" : "nonpersistent boss encounter");
-                    continue;
-                }
-
-                Park(state, zdo, now);
+                EnsureTransactionFromMarker(state, zdo);
             }
+        }
+
+        internal static void ReportLoadedBoss(Character boss)
+        {
+            Player player = Player.m_localPlayer;
+            long eventId = BloodMoonNetwork.ClientGlobal.EventId;
+            if (boss == null || player == null || eventId < 0L || !BloodMoonInteractionRules.IsEventCombatLive ||
+                !BloodMoonInteractionRules.IsActiveParticipant(player) || !boss.IsBoss() || boss.IsDead() ||
+                boss.m_nview == null || !boss.m_nview.IsValid())
+                return;
+
+            if (clientDiscoveryEventId != eventId)
+            {
+                clientDiscoveryEventId = eventId;
+                nextClientDiscoveryAt.Clear();
+            }
+
+            if (Utils.DistanceXZ(player.transform.position, boss.transform.position) > DiscoveryMaxDistance)
+                return;
+
+            ZDO zdo = boss.m_nview.GetZDO();
+            if (zdo == null || zdo.m_uid.IsNone())
+                return;
+
+            float now = Time.realtimeSinceStartup;
+            if (nextClientDiscoveryAt.TryGetValue(zdo.m_uid, out float next) && now < next)
+                return;
+            nextClientDiscoveryAt[zdo.m_uid] = now + DiscoveryReportInterval;
+
+            BloodMoonNetwork.SendBossDiscovery(eventId, player.GetPlayerID(), zdo.m_uid, boss.InInterior(), zdo.GetPrefab());
+        }
+
+        internal static void AcceptDiscovery(long sender, long eventId, long playerId, ZDOID bossId, bool observedInterior, int observedPrefabHash)
+        {
+            BloodMoonController controller = BloodMoonController.Instance;
+            BloodMoonEventState state = controller?.State;
+            if (state == null || !state.IsCombatLive || state.EventId != eventId || ZDOMan.instance == null || bossId.IsNone())
+                return;
+            if (!TryValidateDiscoverySender(state, sender, playerId, out Vector3 reporterPosition))
+                return;
+
+            ZDO zdo = ZDOMan.instance.GetZDO(bossId);
+            if (!IsAliveBossZdo(zdo) || zdo.GetPrefab() != observedPrefabHash)
+                return;
+
+            long parkedEvent = zdo.GetLong(ParkedEventMarker, -1L);
+            if (parkedEvent >= 0L)
+            {
+                if (parkedEvent == state.EventId)
+                    EnsureTransactionFromMarker(state, zdo);
+                return;
+            }
+
+            Vector3 bossPosition = zdo.GetPosition();
+            if (Utils.DistanceXZ(reporterPosition, bossPosition) > DiscoveryMaxDistance)
+                return;
+
+            bool interior = Character.InInterior(bossPosition);
+            if (interior != observedInterior)
+                LogWarning($"[BloodMoon][event:{eventId}][boss:{bossId}] discovery interior mismatch client={observedInterior} server={interior}; server ZDO position wins.");
+
+            if (interior || !zdo.Persistent)
+            {
+                WithdrawAffectedPlayers(state, bossPosition, interior ? "interior boss encounter" : "nonpersistent boss encounter");
+                return;
+            }
+
+            Park(state, zdo, seasonState.GetTotalSeconds());
+        }
+
+        internal static void ResetClientState()
+        {
+            nextClientDiscoveryAt.Clear();
+            clientDiscoveryEventId = -1L;
         }
 
         internal static bool ParkNearest(BloodMoonEventState state, Vector3 point, double now)
@@ -207,6 +271,32 @@ namespace Seasons.BloodMoon
             BloodMoonPersistence.Save(state);
         }
 
+        private static bool TryValidateDiscoverySender(BloodMoonEventState state, long sender, long playerId, out Vector3 position)
+        {
+            position = Vector3.zero;
+            if (state == null || playerId == 0L || ZNet.instance == null || ZRoutedRpc.instance == null || ZDOMan.instance == null ||
+                !state.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant) || !participant.IsCombatActive)
+                return false;
+
+            if (sender == ZRoutedRpc.instance.GetServerPeerID())
+            {
+                Player player = Player.m_localPlayer;
+                if (player == null || player.GetPlayerID() != playerId)
+                    return false;
+                position = player.transform.position;
+                return true;
+            }
+
+            ZNetPeer peer = ZNet.instance.GetPeer(sender);
+            if (peer == null || peer.m_characterID.IsNone())
+                return false;
+            ZDO playerZdo = ZDOMan.instance.GetZDO(peer.m_characterID);
+            if (playerZdo == null || playerZdo.GetLong(ZDOVars.s_playerID, 0L) != playerId)
+                return false;
+            position = playerZdo.GetPosition();
+            return true;
+        }
+
         private static BloodMoonBossParkingState ResolveTransaction(BloodMoonEventState state, ZDO zdo)
         {
             string id = zdo.m_uid.ToString();
@@ -314,11 +404,20 @@ namespace Seasons.BloodMoon
                 return;
             foreach (BloodMoonParticipantState participant in state.Participants.Values.Where(item => item.IsCombatActive).ToArray())
             {
-                if (!BloodMoonController.Instance.TryGetConnectedPosition(participant.PlayerId, out Vector3 position) || Utils.DistanceXZ(position, bossPosition) > 120f)
+                if (!BloodMoonController.Instance.TryGetConnectedPosition(participant.PlayerId, out Vector3 position) || Utils.DistanceXZ(position, bossPosition) > EncounterWithdrawDistance)
                     continue;
                 BloodMoonController.Instance.WithdrawLocalOrRequested(participant.PlayerId);
                 LogWarning($"[BloodMoon][event:{state.EventId}][boss] withdrew player {participant.PlayerId}: {reason}.");
             }
+        }
+    }
+
+    [HarmonyPatch(typeof(Character), nameof(Character.CustomFixedUpdate))]
+    internal static class BloodMoonBossDiscoveryPatch
+    {
+        private static void Postfix(Character __instance)
+        {
+            BloodMoonBosses.ReportLoadedBoss(__instance);
         }
     }
 }
