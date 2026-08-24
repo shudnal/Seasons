@@ -64,7 +64,7 @@ namespace Seasons.BloodMoon
             Location firstLocation = Location.GetLocation(first);
             Location secondLocation = Location.GetLocation(second);
             if (firstLocation != null || secondLocation != null)
-                return firstLocation != null && ReferenceEquals(firstLocation, secondLocation);
+                return firstLocation != null && object.ReferenceEquals(firstLocation, secondLocation);
 
             return ZoneSystem.GetZone(first) == ZoneSystem.GetZone(second);
         }
