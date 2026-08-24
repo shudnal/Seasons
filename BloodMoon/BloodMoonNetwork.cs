@@ -17,6 +17,7 @@ namespace Seasons.BloodMoon
         private const string RpcDefeated = "Seasons.BloodMoon.Defeated";
         private const string RpcEnemyDeath = "Seasons.BloodMoon.EnemyDeath";
         private const string RpcSkillGain = "Seasons.BloodMoon.SkillGain";
+        private const string RpcBossDiscovery = "Seasons.BloodMoon.BossDiscovery";
         private const string RpcZoneClaim = "Seasons.BloodMoon.ZoneClaim";
         private const string RpcSpawnLease = "Seasons.BloodMoon.SpawnLease";
         private const string RpcSpawnReport = "Seasons.BloodMoon.SpawnReport";
@@ -64,6 +65,7 @@ namespace Seasons.BloodMoon
             rpc.Register<ZPackage>(RpcDefeated, OnDefeated);
             rpc.Register<ZPackage>(RpcEnemyDeath, OnEnemyDeath);
             rpc.Register<ZPackage>(RpcSkillGain, OnSkillGain);
+            rpc.Register<ZPackage>(RpcBossDiscovery, OnBossDiscovery);
             rpc.Register<ZPackage>(RpcZoneClaim, OnZoneClaim);
             rpc.Register<ZPackage>(RpcSpawnLease, OnSpawnLease);
             rpc.Register<ZPackage>(RpcSpawnReport, OnSpawnReport);
@@ -147,6 +149,15 @@ namespace Seasons.BloodMoon
             pkg.Write(baseEquivalent);
             pkg.Write(liveBonusEquivalent);
             SendToServer(RpcSkillGain, pkg);
+        }
+
+        internal static void SendBossDiscovery(long eventId, long playerId, ZDOID bossId, bool observedInterior, int observedPrefabHash)
+        {
+            ZPackage pkg = CreateHeader(eventId, playerId);
+            pkg.Write(bossId);
+            pkg.Write(observedInterior);
+            pkg.Write(observedPrefabHash);
+            SendToServer(RpcBossDiscovery, pkg);
         }
 
         internal static void SendZoneClaim(long eventId, Vector2i zone)
@@ -280,6 +291,16 @@ namespace Seasons.BloodMoon
             float baseEquivalent = pkg.ReadSingle();
             float liveBonusEquivalent = pkg.ReadSingle();
             BloodMoonSkillReports.Accept(sender, eventId, playerId, sequence, skill, baseEquivalent, liveBonusEquivalent);
+        }
+
+        private static void OnBossDiscovery(long sender, ZPackage pkg)
+        {
+            if (!ReadHeader(pkg, out long eventId, out long playerId) || ZNet.instance == null || !ZNet.instance.IsServer())
+                return;
+            ZDOID bossId = pkg.ReadZDOID();
+            bool observedInterior = pkg.ReadBool();
+            int observedPrefabHash = pkg.ReadInt();
+            BloodMoonBosses.AcceptDiscovery(sender, eventId, playerId, bossId, observedInterior, observedPrefabHash);
         }
 
         private static void OnZoneClaim(long sender, ZPackage pkg)
