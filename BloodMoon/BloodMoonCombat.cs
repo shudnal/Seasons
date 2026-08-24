@@ -282,13 +282,13 @@ namespace Seasons.BloodMoon
         }
     }
 
-    [HarmonyPatch(typeof(Character), nameof(Character.RaiseSkill))]
+    [HarmonyPatch(typeof(Player), nameof(Player.RaiseSkill))]
     internal static class BloodMoonAttackSkillCreditGuardPatch
     {
         [HarmonyPriority(Priority.First)]
-        private static bool Prefix(Character __instance)
+        private static bool Prefix(Player __instance)
         {
-            if (!BloodMoonAttackContext.IsActive || __instance is not Player)
+            if (!BloodMoonAttackContext.IsActive)
                 return true;
             return BloodMoonAttackContext.CanCredit;
         }
