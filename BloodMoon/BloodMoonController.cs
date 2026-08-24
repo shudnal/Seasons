@@ -426,15 +426,13 @@ namespace Seasons.BloodMoon
 
         internal void OnEnemyDeathReport(long sender, long eventId, long playerId, ZDOID enemyId, float clientPoints)
         {
-            if (!ValidateSender(sender, eventId, playerId, out BloodMoonParticipantState participant) || !participant.IsCombatActive || enemyId.IsNone())
+            _ = clientPoints;
+            if (!BloodMoonEnemyDeathReports.TryValidate(sender, eventId, playerId, enemyId, out float points) ||
+                !State.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant) || !participant.IsCombatActive)
                 return;
 
             string key = enemyId.ToString();
             if (!State.ReportedEnemyDeaths.Add(key))
-                return;
-
-            float points = BloodMoonCombat.GetPointsForEnemy(enemyId, clientPoints);
-            if (points <= 0f)
                 return;
 
             AwardPoints(participant, points, seasonState.GetTotalSeconds());
