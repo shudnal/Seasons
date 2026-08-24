@@ -13,6 +13,7 @@ namespace Seasons.BloodMoon
 
         private const string RpcDefeated = "Seasons.BloodMoon.Defeated";
         private const string RpcEnemyDeath = "Seasons.BloodMoon.EnemyDeath";
+        private const string RpcSkillGain = "Seasons.BloodMoon.SkillGain";
         private const string RpcZoneClaim = "Seasons.BloodMoon.ZoneClaim";
         private const string RpcSpawnLease = "Seasons.BloodMoon.SpawnLease";
         private const string RpcSpawnReport = "Seasons.BloodMoon.SpawnReport";
@@ -50,6 +51,7 @@ namespace Seasons.BloodMoon
             registeredRpc = rpc;
             rpc.Register<ZPackage>(RpcDefeated, OnDefeated);
             rpc.Register<ZPackage>(RpcEnemyDeath, OnEnemyDeath);
+            rpc.Register<ZPackage>(RpcSkillGain, OnSkillGain);
             rpc.Register<ZPackage>(RpcZoneClaim, OnZoneClaim);
             rpc.Register<ZPackage>(RpcSpawnLease, OnSpawnLease);
             rpc.Register<ZPackage>(RpcSpawnReport, OnSpawnReport);
@@ -57,6 +59,7 @@ namespace Seasons.BloodMoon
             rpc.Register<ZPackage>(RpcFadeAck, OnFadeAck);
             rpc.Register<ZPackage>(RpcResync, OnResync);
             rpc.Register<ZPackage>(RpcClientAction, OnClientAction);
+            BloodMoonHitAttribution.RegisterRpc(rpc);
             LogInfo("[BloodMoon.Sync] Routed RPC handlers registered.");
         }
 
@@ -98,6 +101,16 @@ namespace Seasons.BloodMoon
             pkg.Write(enemyId);
             pkg.Write(points);
             SendToServer(RpcEnemyDeath, pkg);
+        }
+
+        internal static void SendSkillGain(long eventId, long playerId, long sequence, Skills.SkillType skill, float baseEquivalent, float liveBonusEquivalent)
+        {
+            ZPackage pkg = CreateHeader(eventId, playerId);
+            pkg.Write(sequence);
+            pkg.Write((int)skill);
+            pkg.Write(baseEquivalent);
+            pkg.Write(liveBonusEquivalent);
+            SendToServer(RpcSkillGain, pkg);
         }
 
         internal static void SendZoneClaim(long eventId, Vector2i zone)
@@ -208,6 +221,17 @@ namespace Seasons.BloodMoon
             ZDOID enemyId = pkg.ReadZDOID();
             float points = pkg.ReadSingle();
             BloodMoonController.Instance?.OnEnemyDeathReport(sender, eventId, playerId, enemyId, points);
+        }
+
+        private static void OnSkillGain(long sender, ZPackage pkg)
+        {
+            if (!ReadHeader(pkg, out long eventId, out long playerId) || ZNet.instance == null || !ZNet.instance.IsServer())
+                return;
+            long sequence = pkg.ReadLong();
+            Skills.SkillType skill = (Skills.SkillType)pkg.ReadInt();
+            float baseEquivalent = pkg.ReadSingle();
+            float liveBonusEquivalent = pkg.ReadSingle();
+            BloodMoonController.Instance?.OnSkillGainReport(sender, eventId, playerId, sequence, skill, baseEquivalent, liveBonusEquivalent);
         }
 
         private static void OnZoneClaim(long sender, ZPackage pkg)
