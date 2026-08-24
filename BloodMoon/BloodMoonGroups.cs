@@ -54,7 +54,7 @@ namespace Seasons.BloodMoon
                 }
 
                 group.MemberPlayerIds = component.OrderBy(id => id).ToList();
-                group.Anchor = SelectRealMemberAnchor(group.MemberPlayerIds, positions);
+                group.Anchor = SelectRealMemberAnchor(state.EventId, group.MemberPlayerIds, positions, group.Anchor);
                 group.UpdatedAt = now;
                 group.ExtraEnemyCount = state.ExtraEnemyZdos.Count(id => BloodMoonSpawner.GetMarkedGroupId(id) == group.GroupId);
                 next[group.GroupId] = group;
@@ -125,14 +125,15 @@ namespace Seasons.BloodMoon
             return result;
         }
 
-        private static Vector3 SelectRealMemberAnchor(List<long> memberIds, Dictionary<long, Vector3> positions)
+        private static Vector3 SelectRealMemberAnchor(long eventId, List<long> memberIds, Dictionary<long, Vector3> positions, Vector3 previousAnchor)
         {
             List<KeyValuePair<long, Vector3>> members = memberIds
                 .Where(positions.ContainsKey)
+                .Where(id => !BloodMoonSpatialState.IsAnchorSuspended(eventId, id))
                 .Select(id => new KeyValuePair<long, Vector3>(id, positions[id]))
                 .ToList();
             if (members.Count == 0)
-                return Vector3.zero;
+                return previousAnchor;
             if (members.Count == 1)
                 return members[0].Value;
 
