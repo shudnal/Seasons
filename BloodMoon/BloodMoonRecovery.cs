@@ -16,6 +16,7 @@ namespace Seasons.BloodMoon
         [Serializable]
         private sealed class PersistedRecovery
         {
+            public long WorldUid;
             public long EventId;
             public bool StageOne;
             public float Remaining;
@@ -24,6 +25,7 @@ namespace Seasons.BloodMoon
 
         private sealed class RecoveryState
         {
+            internal long WorldUid;
             internal long EventId;
             internal bool StageOne;
             internal float Remaining;
@@ -82,13 +84,16 @@ namespace Seasons.BloodMoon
         internal static bool HasProtection(Player player)
         {
             EnsureLoaded(player);
-            return player != null && recovery.ContainsKey(player.GetPlayerID());
+            if (player == null || !recovery.TryGetValue(player.GetPlayerID(), out RecoveryState state))
+                return false;
+            long worldUid = GetCurrentWorldUid();
+            return worldUid != 0L && state.WorldUid == worldUid;
         }
 
         internal static float GetIncomingDamageMultiplier(Player player)
         {
             EnsureLoaded(player);
-            if (player == null || !recovery.TryGetValue(player.GetPlayerID(), out RecoveryState state))
+            if (player == null || !recovery.TryGetValue(player.GetPlayerID(), out RecoveryState state) || state.WorldUid != GetCurrentWorldUid())
                 return 1f;
             return state.StageOne ? 0f : 0.25f;
         }
@@ -112,7 +117,7 @@ namespace Seasons.BloodMoon
             stageOne = false;
             remaining = 0f;
             multiplier = 1f;
-            if (player == null || !recovery.TryGetValue(player.GetPlayerID(), out RecoveryState state))
+            if (player == null || !recovery.TryGetValue(player.GetPlayerID(), out RecoveryState state) || state.WorldUid != GetCurrentWorldUid())
                 return false;
             stageOne = state.StageOne;
             remaining = Mathf.Max(0f, state.Remaining);
@@ -127,6 +132,10 @@ namespace Seasons.BloodMoon
                 return;
             EnsureLoaded(player);
             if (!recovery.TryGetValue(player.GetPlayerID(), out RecoveryState state))
+                return;
+
+            long worldUid = GetCurrentWorldUid();
+            if (worldUid == 0L || state.WorldUid != worldUid)
                 return;
 
             state.Remaining -= Mathf.Max(0f, dt);
@@ -168,17 +177,29 @@ namespace Seasons.BloodMoon
             locallyExited.RemoveWhere(item => item.EventId == eventId);
         }
 
+        internal static void ResetRuntime()
+        {
+            recovery.Clear();
+            locallyExited.Clear();
+            BloodMoonStatus.RemoveRecoveryLocal();
+        }
+
         private static void BeginRecovery(Player player, long eventId, bool resetExisting)
         {
             if (player == null || eventId < 0L)
                 return;
+            long worldUid = GetCurrentWorldUid();
+            if (worldUid == 0L)
+                return;
+
             long playerId = player.GetPlayerID();
             EnsureLoaded(player);
-            if (!resetExisting && recovery.TryGetValue(playerId, out RecoveryState existing) && existing.EventId == eventId)
+            if (!resetExisting && recovery.TryGetValue(playerId, out RecoveryState existing) && existing.WorldUid == worldUid && existing.EventId == eventId)
                 return;
 
             RecoveryState state = new RecoveryState
             {
+                WorldUid = worldUid,
                 EventId = eventId,
                 StageOne = true,
                 Remaining = StageOneDuration,
@@ -207,7 +228,10 @@ namespace Seasons.BloodMoon
                 return;
             }
 
-            if (persisted == null || persisted.EventId < 0L || persisted.Remaining <= 0f || persisted.SavedUtcTicks <= 0L)
+            long worldUid = GetCurrentWorldUid();
+            if (worldUid == 0L)
+                return;
+            if (persisted == null || persisted.WorldUid != worldUid || persisted.EventId < 0L || persisted.Remaining <= 0f || persisted.SavedUtcTicks <= 0L)
             {
                 player.m_customData.Remove(RecoveryDataKey);
                 return;
@@ -229,6 +253,7 @@ namespace Seasons.BloodMoon
 
             recovery[player.GetPlayerID()] = new RecoveryState
             {
+                WorldUid = persisted.WorldUid,
                 EventId = persisted.EventId,
                 StageOne = stageOne,
                 Remaining = remaining,
@@ -242,6 +267,7 @@ namespace Seasons.BloodMoon
                 return;
             player.m_customData[RecoveryDataKey] = JsonConvert.SerializeObject(new PersistedRecovery
             {
+                WorldUid = state.WorldUid,
                 EventId = state.EventId,
                 StageOne = state.StageOne,
                 Remaining = Mathf.Max(0f, state.Remaining),
@@ -255,7 +281,13 @@ namespace Seasons.BloodMoon
                 return;
             recovery.Remove(player.GetPlayerID());
             player.m_customData.Remove(RecoveryDataKey);
+            BloodMoonStatus.RemoveRecoveryLocal();
             LogInfo($"[BloodMoon.Recovery] Protection ended for {player.GetPlayerName()}.");
+        }
+
+        private static long GetCurrentWorldUid()
+        {
+            return ZNet.m_world != null ? ZNet.m_world.m_uid : 0L;
         }
 
         private static void RestoreCombatResources(Player player)
