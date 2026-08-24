@@ -48,11 +48,8 @@ namespace Seasons.BloodMoon
 
         internal static void AcceptClaim(long sender, long eventId, long playerId, int zoneX, int zoneY)
         {
-            BloodMoonController controller = BloodMoonController.Instance;
-            BloodMoonEventState state = controller?.State;
-            if (state == null || !state.IsCombatLive || state.EventId != eventId || !state.Participants.ContainsKey(playerId))
-                return;
-            if (!ValidatePeerPlayer(sender, playerId))
+            BloodMoonEventState state = BloodMoonController.Instance?.State;
+            if (state == null || !state.IsCombatLive || state.EventId != eventId || !ValidatePeerPlayer(sender, playerId))
                 return;
 
             Vector2i zone = new Vector2i(zoneX, zoneY);
@@ -114,8 +111,10 @@ namespace Seasons.BloodMoon
 
         private static void Prune(long eventId, double now)
         {
+            long serverPeerId = ZRoutedRpc.instance != null ? ZRoutedRpc.instance.GetServerPeerID() : 0L;
             foreach (Vector2i zone in serverClaims
-                .Where(pair => pair.Value.EventId != eventId || now - pair.Value.LastSeen > ClaimLifetimeSeconds || ZNet.instance?.GetPeer(pair.Value.PeerId) == null && pair.Value.PeerId != ZRoutedRpc.instance?.GetServerPeerID())
+                .Where(pair => pair.Value.EventId != eventId || now - pair.Value.LastSeen > ClaimLifetimeSeconds ||
+                    pair.Value.PeerId != serverPeerId && (ZNet.instance == null || ZNet.instance.GetPeer(pair.Value.PeerId) == null))
                 .Select(pair => pair.Key)
                 .ToList())
             {
