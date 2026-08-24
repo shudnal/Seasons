@@ -116,7 +116,7 @@ namespace Seasons.BloodMoon
             if (sourceObject == null)
                 return false;
             if (runtimeSources.TryGetValue(sourceObject.GetInstanceID(), out attribution))
-                return attribution.EventId == BloodMoonNetwork.ClientGlobal.EventId;
+                return true;
 
             ZDO zdo = nview != null && nview.IsValid() ? nview.GetZDO() : null;
             if (zdo == null)
@@ -124,7 +124,7 @@ namespace Seasons.BloodMoon
 
             long eventId = zdo.GetLong(EventMarker, -1L);
             BloodMoonCombatSourceType sourceType = (BloodMoonCombatSourceType)zdo.GetInt(SourceTypeMarker, 0);
-            if (eventId != BloodMoonNetwork.ClientGlobal.EventId || !IsKnownSourceType(sourceType))
+            if (eventId < 0L || !IsKnownSourceType(sourceType))
                 return false;
 
             attribution = new BloodMoonHitAttributionData
