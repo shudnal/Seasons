@@ -1,3 +1,5 @@
+using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -7,11 +9,25 @@ namespace Seasons.BloodMoon
 {
     internal static class BloodMoonRecovery
     {
+        private const string RecoveryDataKey = "Seasons.BloodMoon.Recovery";
+        private const float StageOneDuration = 15f;
+        private const float StageTwoDuration = 10f;
+
+        [Serializable]
+        private sealed class PersistedRecovery
+        {
+            public long EventId;
+            public bool StageOne;
+            public float Remaining;
+            public long SavedUtcTicks;
+        }
+
         private sealed class RecoveryState
         {
             internal long EventId;
-            internal bool StageOne = true;
-            internal float Remaining = 15f;
+            internal bool StageOne;
+            internal float Remaining;
+            internal float SaveTimer;
         }
 
         private static readonly Dictionary<long, RecoveryState> recovery = new Dictionary<long, RecoveryState>();
@@ -23,16 +39,16 @@ namespace Seasons.BloodMoon
                 return false;
             long playerId = player.GetPlayerID();
             long eventId = BloodMoonNetwork.ClientGlobal.EventId;
-            if (eventId < 0 || locallyExited.Contains((eventId, playerId)))
+            if (eventId < 0L || locallyExited.Contains((eventId, playerId)))
                 return false;
 
             locallyExited.Add((eventId, playerId));
             RestoreCombatResources(player);
             RemoveDamagingDots(player);
-            recovery[playerId] = new RecoveryState { EventId = eventId, StageOne = true, Remaining = 15f };
+            BeginRecovery(player, eventId, resetExisting: true);
             BloodCraft.CleanupLocal(player);
             BloodMoonStatus.RemoveLocal();
-            LogInfo($"[BloodMoon.Recovery] Intercepted defeat for {player.GetPlayerName()} ({playerId}).");
+            LogInfo($"[BloodMoon][event:{eventId}][player:{playerId}] Intercepted Defeated and started recovery.");
             return true;
         }
 
@@ -41,11 +57,11 @@ namespace Seasons.BloodMoon
             if (player == null)
                 return;
             long playerId = player.GetPlayerID();
-            locallyExited.Add((BloodMoonNetwork.ClientGlobal.EventId, playerId));
+            long eventId = BloodMoonNetwork.ClientGlobal.EventId;
+            locallyExited.Add((eventId, playerId));
             RestoreCombatResources(player);
             RemoveDamagingDots(player);
-            if (!recovery.ContainsKey(playerId))
-                recovery[playerId] = new RecoveryState { EventId = BloodMoonNetwork.ClientGlobal.EventId, StageOne = true, Remaining = 15f };
+            BeginRecovery(player, eventId, resetExisting: false);
             BloodMoonStatus.RemoveLocal();
         }
 
@@ -59,37 +75,86 @@ namespace Seasons.BloodMoon
 
         internal static bool IsLocallyExited(long playerId)
         {
-            return locallyExited.Contains((BloodMoonNetwork.ClientGlobal.EventId, playerId));
+            long eventId = BloodMoonNetwork.ClientGlobal.EventId;
+            return eventId >= 0L && locallyExited.Contains((eventId, playerId));
+        }
+
+        internal static bool HasProtection(Player player)
+        {
+            EnsureLoaded(player);
+            return player != null && recovery.ContainsKey(player.GetPlayerID());
         }
 
         internal static float GetIncomingDamageMultiplier(Player player)
         {
+            EnsureLoaded(player);
             if (player == null || !recovery.TryGetValue(player.GetPlayerID(), out RecoveryState state))
                 return 1f;
             return state.StageOne ? 0f : 0.25f;
         }
 
+        internal static bool ApplyIncomingDamageProtection(Player player, HitData hit)
+        {
+            if (player == null || hit == null || !HasProtection(player))
+                return true;
+
+            float multiplier = GetIncomingDamageMultiplier(player);
+            if (multiplier <= 0f)
+                return false;
+            if (!Mathf.Approximately(multiplier, 1f))
+                hit.ApplyModifier(multiplier);
+            return true;
+        }
+
+        internal static bool TryGetStatus(Player player, out bool stageOne, out float remaining, out float multiplier)
+        {
+            EnsureLoaded(player);
+            stageOne = false;
+            remaining = 0f;
+            multiplier = 1f;
+            if (player == null || !recovery.TryGetValue(player.GetPlayerID(), out RecoveryState state))
+                return false;
+            stageOne = state.StageOne;
+            remaining = Mathf.Max(0f, state.Remaining);
+            multiplier = state.StageOne ? 0f : 0.25f;
+            return true;
+        }
+
         internal static void TickClientProtection(float dt)
         {
             Player player = Player.m_localPlayer;
-            if (player == null || !recovery.TryGetValue(player.GetPlayerID(), out RecoveryState state))
+            if (player == null)
+                return;
+            EnsureLoaded(player);
+            if (!recovery.TryGetValue(player.GetPlayerID(), out RecoveryState state))
                 return;
 
-            state.Remaining -= dt;
+            state.Remaining -= Mathf.Max(0f, dt);
+            state.SaveTimer -= Mathf.Max(0f, dt);
+
             if (state.StageOne)
             {
                 bool stabilized = player.IsOnGround() || player.IsSwimming() || player.IsAttached();
                 if (stabilized || state.Remaining <= 0f)
                 {
+                    float overdue = Mathf.Min(0f, state.Remaining);
                     state.StageOne = false;
-                    state.Remaining = 10f;
-                    LogInfo($"[BloodMoon.Recovery] Stage 2 started for {player.GetPlayerName()}.");
+                    state.Remaining = Mathf.Max(0f, StageTwoDuration + overdue);
+                    state.SaveTimer = 0f;
+                    LogInfo($"[BloodMoon][event:{state.EventId}][player:{player.GetPlayerID()}] Recovery stage 2 started.");
                 }
             }
-            else if (state.Remaining <= 0f)
+
+            if (!state.StageOne && state.Remaining <= 0f)
             {
-                recovery.Remove(player.GetPlayerID());
-                LogInfo($"[BloodMoon.Recovery] Protection ended for {player.GetPlayerName()}.");
+                EndRecovery(player);
+                return;
+            }
+
+            if (state.SaveTimer <= 0f)
+            {
+                state.SaveTimer = 1f;
+                Persist(player, state);
             }
         }
 
@@ -101,6 +166,96 @@ namespace Seasons.BloodMoon
         internal static void ResetEvent(long eventId)
         {
             locallyExited.RemoveWhere(item => item.EventId == eventId);
+        }
+
+        private static void BeginRecovery(Player player, long eventId, bool resetExisting)
+        {
+            if (player == null || eventId < 0L)
+                return;
+            long playerId = player.GetPlayerID();
+            EnsureLoaded(player);
+            if (!resetExisting && recovery.TryGetValue(playerId, out RecoveryState existing) && existing.EventId == eventId)
+                return;
+
+            RecoveryState state = new RecoveryState
+            {
+                EventId = eventId,
+                StageOne = true,
+                Remaining = StageOneDuration,
+                SaveTimer = 0f
+            };
+            recovery[playerId] = state;
+            Persist(player, state);
+        }
+
+        private static void EnsureLoaded(Player player)
+        {
+            if (player == null || recovery.ContainsKey(player.GetPlayerID()))
+                return;
+            if (!player.m_customData.TryGetValue(RecoveryDataKey, out string json) || string.IsNullOrWhiteSpace(json))
+                return;
+
+            PersistedRecovery persisted;
+            try
+            {
+                persisted = JsonConvert.DeserializeObject<PersistedRecovery>(json);
+            }
+            catch (Exception ex)
+            {
+                LogWarning($"[BloodMoon.Recovery] Invalid persisted recovery record removed: {ex.Message}");
+                player.m_customData.Remove(RecoveryDataKey);
+                return;
+            }
+
+            if (persisted == null || persisted.EventId < 0L || persisted.Remaining <= 0f || persisted.SavedUtcTicks <= 0L)
+            {
+                player.m_customData.Remove(RecoveryDataKey);
+                return;
+            }
+
+            double elapsed = Math.Max(0d, TimeSpan.FromTicks(Math.Max(0L, DateTime.UtcNow.Ticks - persisted.SavedUtcTicks)).TotalSeconds);
+            bool stageOne = persisted.StageOne;
+            float remaining = persisted.Remaining - (float)elapsed;
+            if (stageOne && remaining <= 0f)
+            {
+                stageOne = false;
+                remaining = StageTwoDuration + remaining;
+            }
+            if (remaining <= 0f)
+            {
+                player.m_customData.Remove(RecoveryDataKey);
+                return;
+            }
+
+            recovery[player.GetPlayerID()] = new RecoveryState
+            {
+                EventId = persisted.EventId,
+                StageOne = stageOne,
+                Remaining = remaining,
+                SaveTimer = 0f
+            };
+        }
+
+        private static void Persist(Player player, RecoveryState state)
+        {
+            if (player == null || state == null)
+                return;
+            player.m_customData[RecoveryDataKey] = JsonConvert.SerializeObject(new PersistedRecovery
+            {
+                EventId = state.EventId,
+                StageOne = state.StageOne,
+                Remaining = Mathf.Max(0f, state.Remaining),
+                SavedUtcTicks = DateTime.UtcNow.Ticks
+            });
+        }
+
+        private static void EndRecovery(Player player)
+        {
+            if (player == null)
+                return;
+            recovery.Remove(player.GetPlayerID());
+            player.m_customData.Remove(RecoveryDataKey);
+            LogInfo($"[BloodMoon.Recovery] Protection ended for {player.GetPlayerName()}.");
         }
 
         private static void RestoreCombatResources(Player player)
