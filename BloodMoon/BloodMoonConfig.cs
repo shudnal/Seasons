@@ -10,6 +10,7 @@ namespace Seasons.BloodMoon
         internal static ConfigEntry<int> AutumnDay;
         internal static ConfigEntry<string> TestEnemyPrefab;
         internal static ConfigEntry<float> GoalPoints;
+        internal static ConfigEntry<float> ProgressShareRadius;
         internal static ConfigEntry<float> EnemyIncomingDamageMultiplier;
         internal static ConfigEntry<float> EnemyOutgoingDamageMultiplier;
         internal static ConfigEntry<float> EnemyMovementSpeedMultiplier;
@@ -50,6 +51,7 @@ namespace Seasons.BloodMoon
 
             TestEnemyPrefab = Server("Blood Moon - Combat", "Extra enemy prefab", "Draugr", "Explicit bootstrap prefab used for Blood Moon extra enemies until the automatic pool contract is implemented.");
             GoalPoints = Server("Blood Moon - Combat", "Goal points", 100f, "Combat points required for Goal Reached.");
+            ProgressShareRadius = Server("Blood Moon - Combat", "Progress share radius", 120f, "XZ radius around the credited participant used to share an enemy death with active members of the same combat group.");
             EnemyIncomingDamageMultiplier = Server("Blood Moon - Combat", "Enemy incoming damage multiplier", 1f, "Damage multiplier applied when a Blood Moon participant damages a Blood enemy.");
             EnemyOutgoingDamageMultiplier = Server("Blood Moon - Combat", "Enemy outgoing damage multiplier", 1f, "Damage multiplier applied when a Blood enemy damages a Blood Moon participant.");
             EnemyMovementSpeedMultiplier = Server("Blood Moon - Combat", "Enemy movement speed multiplier", 1f, "Runtime movement speed multiplier for Blood enemies. Existing prefab and ZDO values are not modified.");
