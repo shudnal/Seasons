@@ -13,8 +13,8 @@ namespace Seasons.BloodMoon
             bool combatLive = BloodMoonInteractionRules.IsEventCombatLive;
             long currentEventId = BloodMoonNetwork.ClientGlobal.EventId;
 
-            if (source != null && BloodMoonHitAttribution.TryGet(source, nview, out _))
-                return !combatLive;
+            if (source != null && BloodMoonHitAttribution.TryGet(source, nview, out BloodMoonHitAttributionData attribution))
+                return !combatLive || attribution.EventId != currentEventId;
 
             if (nview == null || !nview.IsValid())
                 return false;
