@@ -95,17 +95,33 @@ namespace Seasons.BloodMoon
             return GetParticipant(playerId)?.IsCombatActive == true;
         }
 
+        internal static bool IsParticipantCombatSource(Character character)
+        {
+            return character is Player player && IsActiveParticipant(player) || BloodMoonSummons.IsBloodSummon(character);
+        }
+
+        internal static bool TryGetParticipantSourcePlayerId(Character character, out long playerId)
+        {
+            playerId = 0L;
+            if (character is Player player && IsActiveParticipant(player))
+            {
+                playerId = player.GetPlayerID();
+                return playerId != 0L;
+            }
+            return BloodMoonSummons.TryGetOwnerPlayerId(character, out playerId);
+        }
+
         internal static bool CanTarget(Character attacker, Character target)
         {
             if (!IsEventCombatLive || attacker == null || target == null)
                 return true;
 
-            bool attackerParticipant = attacker is Player attackerPlayer && IsActiveParticipant(attackerPlayer);
+            bool attackerParticipantSource = IsParticipantCombatSource(attacker);
             bool attackerBlood = IsBloodEnemy(attacker);
             bool targetParticipant = target is Player targetPlayer && IsActiveParticipant(targetPlayer);
             bool targetBlood = IsBloodEnemy(target);
 
-            if (attackerParticipant)
+            if (attackerParticipantSource)
                 return targetBlood;
             if (attackerBlood)
                 return targetParticipant;
@@ -123,9 +139,7 @@ namespace Seasons.BloodMoon
             bool targetBlood = IsBloodEnemy(target);
             if (!targetParticipant && !targetBlood)
             {
-                if (attacker is Player participant && IsActiveParticipant(participant))
-                    return false;
-                if (IsBloodEnemy(attacker))
+                if (IsParticipantCombatSource(attacker) || IsBloodEnemy(attacker))
                     return false;
                 return true;
             }
@@ -139,7 +153,8 @@ namespace Seasons.BloodMoon
         {
             if (!IsEventCombatLive || !IsBloodEnemy(target) || hit == null)
                 return false;
-            return hit.GetAttacker() is Player player && IsActiveParticipant(player);
+            Character attacker = hit.GetAttacker();
+            return TryGetParticipantSourcePlayerId(attacker, out long playerId) && CanCreditProgress(playerId);
         }
 
         internal static bool CanCreditProgress(long playerId)
