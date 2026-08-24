@@ -26,15 +26,13 @@ Read current game methods from `shudnal/assemblies_combined` before patching.
 
 Determine the minimal reliable architecture for:
 
-- global Blood Moon monster activation;
-- additional event spawning;
+- dynamic global Blood Moon behavior on existing monsters;
+- marked additional event spawning;
 - target/damage isolation without personal visibility layers;
 - `Defeated` without `Player.OnDeath`;
-- ordinary-monster world preservation;
-- active boss suspension/restore;
-- mounted/attached and unsupported contexts.
-
-A failed candidate is valid evidence.
+- far-sector outdoor boss parking/restore;
+- ordinary interior and ship/ocean participation;
+- interior spawn and interior-boss fallback.
 
 # 2. Temporary model
 
@@ -42,7 +40,6 @@ A failed candidate is valid evidence.
 internal enum BloodMoonSpikeParticipantPhase
 {
     None,
-    Deferred,
     Fighting,
     GoalReached,
     Exited
@@ -55,28 +52,28 @@ internal enum BloodMoonSpikeOutcome
     Defeated,
     Withdrawn
 }
-
-internal enum BloodMoonSpikeOrigin
-{
-    ConvertedExisting,
-    CloneOfSuspendedOriginal,
-    Spawned,
-    SuspendedOriginal,
-    SuspendedBoss
-}
 ```
 
 One central policy:
 
 ```text
+IsEligibleExistingMonster
 IsBloodEnemy
+IsBloodMoonSpawned
 IsActiveParticipant
 CanTarget
 CanDamage
 CanReceiveProgress
 ```
 
-Temporary ZDO markers include eventId/origin/originalZDOID.
+Markers:
+
+```text
+Seasons.BloodMoon.SpawnedEventId
+Seasons.BloodMoon.GroupId
+Seasons.BloodMoon.ParkedEventId
+Seasons.BloodMoon.OriginalPosition
+```
 
 # 3. Debug controls
 
@@ -86,99 +83,86 @@ Minimum:
 seasons bloodmoon spike status
 seasons bloodmoon spike reset
 seasons bloodmoon spike activate
-seasons bloodmoon spike convert <radius>
-seasons bloodmoon spike mode <direct|clone>
 seasons bloodmoon spike spawn <prefab>
 seasons bloodmoon spike defeat
 seasons bloodmoon spike withdraw
-seasons bloodmoon spike suspendboss
+seasons bloodmoon spike parkboss
 seasons bloodmoon spike restoreboss
 seasons bloodmoon spike cleanup
-seasons bloodmoon spike dump
+seasons bloodmoon spike dumpmonsters
+seasons bloodmoon spike dumpbosses
 ```
 
 Multiplayer-changing commands admin-only.
 
-# 4. Spike A — direct conversion
+# 4. Spike A — dynamic existing monsters
 
-Test an existing ordinary hostile MonsterAI:
+Do not add conversion-origin ZDO marker to existing monsters.
 
-- mark as Blood enemy;
-- force aggressive Player-only target selection;
-- lower effective health through incoming damage multiplier;
-- lower outgoing damage through multiplier;
-- no building/tamed/NPC/boss/ordinary damage;
-- no loot;
-- short ragdoll;
-- survivor cleanup;
-- owner migration;
-- restart marker recovery.
+While spike Active, test policy-based behavior on every loaded eligible existing MonsterAI:
 
-Record consequences:
+- considered Blood enemy dynamically;
+- Player-only target selection;
+- no static/building/tamed/NPC/boss/monster targets;
+- high aggression/no flee while target exists;
+- event incoming/outgoing damage multipliers;
+- optional temporary red VFX;
+- ordinary loot and ragdoll remain;
+- death removes the real monster normally;
+- survivor remains and reverts when spike ends;
+- no permanent max-health/shared-prefab mutation;
+- owner migration/restart behavior;
+- minimal cleanup of event-created target/alert/VFX state.
 
-- death removes real entity;
-- position/health changed;
-- starred/modded behavior;
-- whether this tradeoff is acceptable.
+Build diagnostic eligibility table for:
 
-# 5. Spike B — suspend original + blood clone
-
-For the same existing creature:
-
-1. mark original suspended;
-2. globally hide/suspend it identically for all clients;
-3. do not change owner;
-4. disable AI/combat/collision/physics only as needed;
-5. spawn blood clone at same position/rotation/level;
-6. kill/delete clone;
-7. restore original exactly;
-8. test unload/reload/restart/nonpersistent.
-
-No per-client visibility or hidden remote simulation is needed: suspension is global.
-
-Compare:
-
-- implementation complexity;
-- component restoration;
-- performance;
-- modded prefabs;
-- ZDO persistence;
-- visual flash at swap;
-- world preservation.
-
-# 6. Spike C — eligibility and dynamic scan
-
-Build a diagnostic scanner only.
-
-Classify nearby:
-
-- hostile MonsterAI;
+- hostile ground monster;
 - passive animal;
 - tamed;
 - boss;
-- Dvergr neutral/aggravated;
-- trader/NPC;
+- neutral/aggravated Dvergr;
+- trader/named NPC;
 - PlayerSpawned summon;
 - fish/bird;
-- modded Character.
+- starred creature;
+- modded MonsterAI.
 
-Print inclusion reason/exclusion reason.
+Record inclusion/exclusion reason.
 
-Test periodic scan and ordinary spawn appearing after activation. No whole-world per-frame scan.
+# 5. Spike B — marked additional spawns
 
-# 7. Spike D — target and damage matrix
+Spawn one configured prefab through a custom spike spawner.
+
+Write marker before combat participation:
+
+```text
+SpawnedEventId
+GroupId
+```
+
+Prove:
+
+- marked enemy uses same Blood behavior;
+- ordinary loot is suppressed only for marked extra;
+- existing unmarked Blood enemy still drops ordinary loot;
+- marked ragdoll cleanup works;
+- resolution deletes all surviving marked ZDO server-side;
+- stale marked ZDO is deleted on simulated restart/recovery;
+- cleanup uses a copied collection and never deletes ordinary ZDO.
+
+# 6. Spike C — target and damage matrix
 
 Blood enemy:
 
-- targets only Fighting/GoalReached Player;
-- never static target/building/tamed/NPC/boss/ordinary creature;
-- ignores Deferred/Exited;
-- high aggression/no flee while target exists.
+- targets only `Fighting`/`GoalReached` Player;
+- never static target/building/tamed/NPC/boss/other monster;
+- ignores `Exited`;
+- no flee while valid target exists.
 
 Participant attack:
 
 - damages only current-event Blood enemy;
-- no building/tree/ore/crop/tamed/boss/ordinary damage;
+- no building/tree/ore/crop/tamed/boss/ordinary object damage;
 - forbidden target receives no status/stagger/skill credit.
 
 Test:
@@ -189,14 +173,13 @@ Test:
 - AoE;
 - trap/turret;
 - environmental damage to Blood enemy;
+- delayed attribution;
 - GoalReached target priority;
-- Defeated/Withdrawn body-blocking.
+- terminal Player body blocking remains vanilla.
 
-Determine whether terminal Player↔Blood enemy collision needs pairwise ignore.
+# 7. Spike D — Defeated and recovery
 
-# 8. Spike E — Defeated and recovery
-
-Patch owner-side `Character.CheckDeath` only for local Player in Fighting/GoalReached.
+Patch owner-side `Character.CheckDeath` only for local Player in `Fighting`/`GoalReached`.
 
 Prove:
 
@@ -232,80 +215,118 @@ Stage 2: 10s, incoming multiplier 0.25
 
 Test grounded, fall, >15s air, swimming, attached, mounted, lava and direct forced `Player.OnDeath`.
 
-No vanilla SoftDeath status. Use temporary custom debug status text.
+No vanilla `SoftDeath` status. Use temporary custom debug status text.
 
-# 9. Spike F — edge and contexts
-
-## Edge
-
-Use `ZoneSystemVariantController.IsBeyondWorldEdge` with positive offset:
-
-- outcome Withdrawn;
-- no transform changes;
-- Blood event rules removed before edge death.
-
-## Interior/dungeon and ship/ocean
-
-At activation:
-
-- Player Deferred;
-- red presentation may remain;
-- no spawn anchor/target/safe defeat;
-- leaving to supported land → Fighting.
-
-Test Fighting→unsupported:
-
-- candidate terminal Withdrawn;
-- compare against suspend/resume only enough to confirm exploit/complexity tradeoff.
+# 8. Spike E — contexts and interior spawn
 
 ## Mounted/attached
 
 - no forced detach;
-- Blood enemy targets Player, not mount;
+- Blood enemy targets Player, not tamed mount;
 - tamed mount takes no damage;
-- Player can Defeated in place;
-- no special visibility/ownership bridge.
+- Player can become `Defeated` in place.
+
+## Ship/ocean
+
+- Player remains `Fighting`;
+- land spawner may fail naturally;
+- existing sea MonsterAI can qualify;
+- no forced movement or withdrawal merely for being at sea.
 
 ## Teleport
 
-Pause spawn during transition; re-evaluate destination.
+- temporarily pause spawn-anchor use;
+- continue Fighting after destination loads;
+- edge check still applies.
 
-# 10. Spike G — boss handling
+## Ordinary interior/dungeon
 
-Test two candidates on at least one vanilla boss.
+- Player remains `Fighting`;
+- existing dungeon monsters qualify normally;
+- test additional spawn without `Heightmap/GetGroundData`:
+  - candidate around Player;
+  - `Pathfinding.FindValidPoint` using prefab agent type;
+  - require full path to Player;
+  - preserve same interior/high-Y context;
+  - no spawn if no valid point.
 
-## A. In-place global stasis
+Record whether vanilla `CreatureSpawner` positions or registered dungeon spawners can improve candidate selection without mutating their state.
 
-- ZDO event marker;
-- stop AI/attacks;
-- hide visual/audio/HUD globally;
-- disable combat colliders/physics safely;
-- preserve owner/position/rotation/health/level;
-- stop conflicting boss event/environment;
-- restore under fade/debug command;
-- restart recovery.
+## Interior boss
 
-## B. ZDO parking
+Test Queen or another interior boss and report the minimal safe policy:
 
-- save position/rotation/owner;
-- mark eventId;
-- authoritative move to reserved inactive far sector;
-- prevent old owner transform overwrite;
-- restore;
-- restart recovery.
+- do not far-park while `Character.InInterior()`;
+- compare group/Player Boss Encounter Hold versus skipping Blood Moon for affected Player;
+- ordinary boss fight must not receive free Blood Craft damage, Bloodlust advantage or safe `Defeated` promise;
+- after boss encounter ends before 05:45, determine whether event participation can start/resume cleanly.
 
-For both:
+Do not invent a personal visibility layer.
 
+# 9. Spike F — OfferingBowl block
+
+From 18:00-equivalent debug state:
+
+- block `OfferingBowl.UseItem` when `m_bossPrefab != null`;
+- block item-stand `OfferingBowl.Interact`;
+- guard `OfferingBowl.RPC_SpawnBoss` authoritatively;
+- do not block item-producing bowls;
+- do not consume inventory items or existing item-stand attachments;
+- test a spawn queued before the block: allow it to complete and park boss if Active.
+
+# 10. Spike G — far-sector boss parking
+
+Far-sector parking is the primary candidate. Do not implement in-place stasis unless parking fails for a documented reason.
+
+Test at least one vanilla persistent outdoor boss.
+
+## Parking transaction
+
+1. detect loaded alive outdoor boss;
+2. write event marker and original position;
+3. take server ZDO ownership;
+4. if server has live instance, move transform/rigidbody consistently and zero velocities;
+5. move ZDO to deterministic reserved far XZ sector with normal finite Y;
+6. force/observe sector invalidation and client unload;
+7. do not change rotation;
+8. do not restore old peer owner.
+
+Never use `y < -5000` because `ZSyncTransform` rescues such objects.
+
+## Restore
+
+- scan all ZDO with marker, including unloaded boss;
+- take server ownership;
+- restore original position;
+- force sync;
+- clear marker last;
+- verify instance recreation when arena is active;
+- optional short AI grace/appearance effect;
+- idempotent after simulated crash at each transaction step.
+
+## Required cases
+
+- owner participant/other peer/server;
+- old owner attempts another transform update;
 - multiple bosses;
-- owner disconnect;
-- boss projectile/AOE;
-- summons/minions;
-- new altar summon attempt;
-- no defeat key/loot;
-- restore without nearby Player;
-- optional appearance animation.
+- restore with no nearby Player;
+- restart while parked;
+- stale marker outside active event;
+- boss dies during transition;
+- persistent vanilla boss;
+- nonpersistent modded boss;
+- boss loaded after Active begins;
+- interior boss excluded;
+- HUD/music/forced event clear after unload and resume after restore;
+- projectiles/AOE/summons left in arena;
+- boss minions becoming ordinary Blood enemies.
 
-Recommend production mechanism from evidence. If neither reliable, propose fallback: postpone global Blood Moon while active boss exists, but do not silently choose it.
+For nonpersistent boss compare:
+
+- temporary `Persistent=true` with original flag;
+- encounter hold/fallback.
+
+Do not declare generic modded support without evidence that custom runtime-only state survives unload/recreate.
 
 # 11. Evidence report
 
@@ -319,18 +340,20 @@ Include:
 
 - Seasons base commit;
 - `assemblies_combined` commit;
-- patches tried;
-- single/listen/dedicated tests;
-- direct vs clone decision;
+- exact patches tried;
+- single/listen/dedicated results;
 - eligibility table;
+- existing-vs-extra loot/cleanup evidence;
 - damage matrix;
 - Defeated/recovery results;
-- mounted/context results;
-- boss A/B results;
-- restart/owner results;
+- mounted/ship/interior results;
+- interior spawn findings;
+- OfferingBowl race results;
+- boss parking ownership/persistence/restart results;
+- interior/nonpersistent boss recommendation;
 - CPU/network observations;
 - rejected approaches;
-- recommended production patch set;
+- minimal production patch set;
 - required doc updates;
 - whether spike code should be deleted or promoted.
 
@@ -340,13 +363,15 @@ Run Codex review on draft PR. Do not merge before owner runtime review.
 
 Answer with runtime evidence:
 
-1. Direct conversion or clone preservation?
-2. Exact eligibility predicate?
-3. Can global suspension restore original reliably?
-4. Can Blood target/damage routing stay centralized?
-5. Can CheckDeath create Defeated without vanilla death side effects?
-6. Does 15s + 10s recovery behave correctly?
-7. Do mounted/attached work without forced movement?
-8. Is terminal Withdrawn correct for unsupported context?
-9. Can boss stasis or parking preserve state/restart?
-10. What minimal production architecture is justified?
+1. Exact eligibility predicate?
+2. Can existing monsters use dynamic Blood behavior without persistent mutation?
+3. Can marked extras alone lose loot and be safely deleted?
+4. Can target/damage routing remain centralized?
+5. Can CheckDeath produce Defeated without vanilla death side effects?
+6. Does 15s + 10s recovery work?
+7. Do mounted/attached/ship/ocean remain functional?
+8. Can additional enemies spawn in interiors through navmesh/path checks?
+9. Does OfferingBowl block avoid item loss and races?
+10. Can far-sector parking preserve vanilla boss state across owner migration/restart?
+11. What fallback is required for interior/nonpersistent/modded boss?
+12. What minimal production architecture is justified?

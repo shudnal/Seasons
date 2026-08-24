@@ -1,4 +1,4 @@
-# Blood Moon — Blood Craft, personal cleanup and world preservation
+# Blood Moon — Blood Craft, ordinary monsters and boss preservation
 
 Обязательная часть задачи `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
 
@@ -19,7 +19,7 @@ Blood Craft — не награда, а временный инструмент 
 
 - custom tabs: не вмешиваться;
 - Craft: добавить runtime clone eligible recipe рядом с ordinary recipe;
-- blood clone имеет отдельную identity, red subdued UI, no requirements;
+- blood clone имеет отдельную identity, subdued red UI и no requirements;
 - shared original recipe не мутировать;
 - actual craft validates clone identity;
 - Upgrade: не дублировать список; temporary `ItemData` row/button red, upgrade free.
@@ -39,110 +39,185 @@ Seasons.BloodCraft.OwnerPlayerId
 - `ItemDrop.Awake` уничтожает dropped temporary item;
 - `Interactable.UseItem` не принимает temporary item в world objects;
 - запрет container/ship storage/item stand/armour stand/trade/external inventory;
-- stale cleanup on Inventory.Load;
-- fallback vanilla death removes before TombStone;
+- stale cleanup on `Inventory.Load`;
+- fallback vanilla death removes temporary items before TombStone;
 - stack merge temporary/permanent или different owner/event запрещён.
 
 ## Personal exit cleanup
 
-При `Defeated` или `Withdrawn` Blood Craft право прекращается.
+При `Defeated` или `Withdrawn`:
 
-Предпочтительное правило:
-
-- немедленно удалить temporary items этого Player;
-- unequip them safely;
-- ordinary gear остаётся в inventory и может быть надето вручную;
+- немедленно safely unequip и удалить все temporary items Player-а;
+- ordinary gear остаётся;
 - consumed food/mead effects остаются;
-- temporary projectiles/AOE/summons owner-а удалить.
-
-Это предотвращает использование бесплатной armour/weapons после личного выхода.
+- temporary projectile/AOE/summon owner-а удаляется;
+- re-entry отсутствует.
 
 # 27. Attack attribution
 
 Главное правило — participant phase, не только marker item.
 
-- обычное и Blood Craft оружие Fighting/GoalReached Player повреждает только Blood enemies;
+- обычное и Blood Craft оружие `Fighting`/`GoalReached` Player повреждает только Blood enemies;
 - projectile/AOE получает `eventId` и source attribution при создании;
 - delayed hit не зависит от later equipment/phase/owner;
-- Blood Craft marker дополнительно отвечает за временность/owner;
 - ordinary traps/turrets не становятся Blood source;
 - combat summon, созданный active Player, может стать Blood entity и удаляется при personal/global exit.
 
-# 28. Ordinary monster preservation
+# 28. Existing monsters — принятое прямое преобразование
 
-Остаётся выбрать:
+Suspension+clone не используется.
 
-1. direct conversion;
-2. global suspension original + blood clone.
+Существующий eligible non-boss monster становится Blood enemy динамически, пока global event Active:
 
-Если используется suspension:
+```text
+Blood Moon Active
+AND IsEligibleExistingMonster(character)
+```
 
-- никакой per-client visibility;
-- original скрыт/неинтерактивен одинаково для всех;
-- owner не снимается;
-- AI/physics/colliders/render state восстанавливаются;
-- ZDO marker + event persistence обеспечивают restart cleanup;
-- clone получает no-loot event rules.
+Не нужен ZDO marker conversion origin.
 
-Если используется direct conversion, это осознанно допускает смерть и перемещение реального ordinary creature во время события.
+Следствия:
 
-# 29. Boss suspension
+- existing monster сохраняет ordinary loot;
+- ordinary ragdoll/death flow сохраняется;
+- killed existing monster не восстанавливается;
+- survivor может изменить position/health и после event продолжает существовать;
+- max health/shared prefab не мутируются;
+- Blood behavior реализуется conditional policy/patches и исчезает при окончании global Active;
+- cleanup existing survivor не удаляет ZDO, а только снимает event VFX и очищает event-created transient target/hunt state, если это необходимо.
 
-Цель: убрать active bosses из боя на время Blood Moon, сохранив health/ZDO/state.
+Это осознанный компромисс в пользу простоты. Ordinary loot existing creature не считается отдельной event reward; это обычная награда за реально существовавшего монстра.
 
-Сравнить два механизма.
+# 29. Additional spawned enemies
 
-## A. Global in-place stasis — рекомендованный первый кандидат
+Только специально заспавненные событием объекты имеют marker:
 
-- mark boss ZDO with eventId;
-- globally hide visual/audio/HUD;
-- suspend AI/attacks/damage;
-- disable combat colliders/physics safely;
-- keep position/rotation/owner/ZDO;
-- stop conflicting boss RandEvent/environment;
-- restore under end fade;
-- optional vanilla spawn/appearance effect on restore.
+```text
+Seasons.BloodMoon.SpawnedEventId
+Seasons.BloodMoon.GroupId
+Seasons.BloodMoon.Role
+```
 
-Преимущество: не менять sector/ownership/transform ZDO.
+Marker определяет:
 
-## B. Server ZDO parking
+- no ordinary loot;
+- fast ragdoll cleanup;
+- server-side destruction всех оставшихся marked ZDO при resolution;
+- stale cleanup после crash/restart.
 
-- save original position/rotation and previous owner;
-- mark ZDO;
-- transfer authoritative control to server if required;
-- move to reserved inactive sector beyond world;
-- restore marker-recorded transform under fade;
-- scan ZDO markers on restart to restore.
+Итерировать копию ZDO collection, не изменять source dictionary во время enumeration.
 
-Риски:
+# 30. Boss sacrifices с 18:00
 
-- owner/ZSyncTransform race;
-- active-area/sector behavior;
-- nonpersistent modded bosses;
-- lingering projectile/summon/event bookkeeping.
+Фактический boss altar — `OfferingBowl`.
 
-## Common requirements
+Блокировать только `OfferingBowl` с `m_bossPrefab != null`:
 
-- multiple simultaneous bosses;
-- restart during event;
-- owner disconnect;
-- block new boss summoning during Active;
-- clean/neutralize lingering boss projectiles/AOE/summons;
-- preserve health, level, defeat keys and location state;
-- no boss loot or defeat event during suspension;
-- restoration even if no Player remains near arena.
+- `UseItem`;
+- `Interact` для item-stand altars;
+- `RPC_SpawnBoss` как authoritative race guard.
 
-Runtime spike decides A/B/fallback. Far-map parking is not accepted without evidence.
+Offerings не потребляются; уже размещённые item-stand attachments не удаляются.
 
-# 30. No personal parallel world
+Если spawn был queued до 18:00, не отменять его после уже совершённого списания offerings. Позволить spawn завершиться; если к этому моменту Active начался и boss outdoor, немедленно park его.
+
+# 31. Far-sector boss ZDO parking — основной кандидат
+
+## 31.1. Markers
+
+Минимум:
+
+```text
+Seasons.BloodMoon.ParkedEventId
+Seasons.BloodMoon.ParkingSchema
+Seasons.BloodMoon.OriginalPosition
+```
+
+Rotation можно не сохранять, если она не меняется. Для диагностики допустимы prefab hash, timestamp и original persistent flag.
+
+## 31.2. Parking protocol
+
+Для каждого loaded active outdoor boss:
+
+1. убедиться, что boss жив, не interior и не parked;
+2. записать marker/original position до перемещения;
+3. server принимает ownership ZDO;
+4. если live instance существует на server, синхронно переместить transform/rigidbody и обнулить velocities;
+5. установить ZDO position в зарезервированный far XZ sector;
+6. force-send/invalidated-sector sync, чтобы clients быстро выгрузили instance;
+7. оставить rotation без изменений;
+8. не восстанавливать старый peer owner после event — vanilla ownership handoff выполнится позднее.
+
+Parking position:
+
+- далеко за world edge и всеми active/distant areas;
+- finite normal Y;
+- не использовать `y < -5000`, поскольку `ZSyncTransform` имеет out-of-world rescue;
+- уникальный deterministic slot для каждого одновременно parked boss.
+
+## 31.3. Persistence
+
+Vanilla persistent boss — основной поддерживаемый случай.
+
+Nonpersistent modded boss нельзя безусловно перемещать: owner-side `ZNetScene.RemoveObjects` может уничтожить его ZDO после выхода из active area. Варианты после spike:
+
+- временно force `Persistent=true` с сохранением original flag;
+- либо не park unsupported boss и использовать encounter hold/fallback.
+
+Не принимать первый вариант без runtime проверки custom state/restart.
+
+## 31.4. Restore
+
+Под fade или при fail-safe recovery:
+
+1. server scan всех ZDO с parking marker;
+2. принять ownership при необходимости;
+3. вернуть `OriginalPosition`;
+4. force sync/sector invalidation;
+5. очистить marker только после успешного восстановления;
+6. дать recreated boss короткую AI grace при необходимости;
+7. optional appearance effect — только косметика, не условие корректности.
+
+Если crash произошёл между marker и move или между restore и marker clear, повторная операция должна быть idempotent.
+
+Startup policy:
+
+- matching active event → оставить parked;
+- no active event/stale event/corrupt snapshot → восстановить все marked bosses до обычной игры.
+
+## 31.5. Что parking не убирает автоматически
+
+Boss instance/HUD/forced event исчезают после выгрузки active instance, но отдельные объекты остаются:
+
+- projectiles;
+- persistent AOE;
+- boss-created summons/minions;
+- altar delayed spawn queue.
+
+Их нужно удалить, нейтрализовать или классифицировать отдельно. Existing eligible minion может стать обычным Blood enemy.
+
+## 31.6. Interior boss
+
+Loaded boss с `Character.InInterior()` не park.
+
+Raw unloaded ZDO не имеет надёжного универсального interior marker; high-Y может использоваться только как conservative diagnostic heuristic, не как единственная истина.
+
+Особенно проверить Queen и modded interior bosses. Политика Player-ов в active unparked interior boss encounter остаётся обязательным решением файла `09`.
+
+## 31.7. Scope
+
+Parking можно переиспользовать только для self-contained persistent transform ZDO.
+
+Не применять автоматически к ships, portals, multi-ZDO assemblies, parented objects или модовым сущностям с runtime-only state.
+
+# 32. No personal parallel world
 
 Explicitly rejected:
 
-- per-client hiding ordinary monsters;
-- per-client hiding Blood enemies;
-- layer-aware ownership pools;
+- per-client hiding;
+- layer-aware ownership;
 - invisible hitbox transparency;
-- `SetOwner(0)` parking;
-- first-contact layer switch.
+- first-contact layer switch;
+- clone preservation ordinary monsters.
 
-Все игроки видят общий набор Blood Moon противников. Сложность переносится в global event rules, а не в сетевую иллюзию.
+Все клиенты видят один общий Blood Moon event.

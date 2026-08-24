@@ -29,7 +29,7 @@ suppression/environment flags
 
 ## Sequenced channel
 
-Только редкие server→client transitions, если гарантии очереди подходят:
+Только редкие server→client transitions, если фактические гарантии очереди подходят:
 
 ```text
 Marked
@@ -41,14 +41,14 @@ ReleaseClient
 
 ## Собственные RPC
 
-- owner→server blood-enemy death report;
+- owner→server extra-spawned enemy death report;
 - owner→server `Defeated` report;
 - targeted participant state/progress;
 - snapshot/resync;
 - fade ACK;
 - diagnostics.
 
-Progress не отправлять на каждый hit; разумный лимит около 4 обновлений/сек.
+Progress не отправлять на каждый hit; разумный лимит около четырёх обновлений в секунду.
 
 # 9. Identity
 
@@ -71,10 +71,10 @@ schema/protocol version
 eventId and schedule
 event phase/resolution step
 last started/resolved/skipped IDs
-participant phase/outcome/context
+participant phase/outcome
 progress/contribution
-boss suspension records
-managed ordinary/blood entity IDs
+parked boss ZDOIDs
+extra-spawned enemy IDs or recoverable ZDO markers
 Defeated/Withdrawn flags
 revision
 ```
@@ -87,11 +87,11 @@ World marker привязан к world UID. Transient active state — atomic si
 
 При corrupted snapshot:
 
-- cleanup blood objects and markers;
-- restore bosses/ordinary suspended state;
-- clear own force environment;
-- mark current event skipped/resolved without reward;
-- never move Player.
+- удалить stale extra-spawned Blood Moon ZDO;
+- восстановить все ZDO с boss parking marker;
+- очистить временный AI/VFX/status/force environment;
+- пометить текущий event skipped/resolved без reward;
+- никогда не перемещать Player.
 
 # 11. Participant lifecycle
 
@@ -99,31 +99,19 @@ World marker привязан к world UID. Transient active state — atomic si
 
 Игроки онлайн с 18:00 получают `Marked`. Late join до resolution регистрируется в текущем event.
 
+С 18:00 запрещаются новые boss sacrifices. Уже принятый до 18:00 delayed summon не должен терять offerings: он либо завершается до Active, либо созданный boss немедленно паркуется.
+
 ## Active start
 
-В 23:00:
+В 23:00 enrolled Player сразу переходит в `Fighting`.
 
-- supported Player → `Fighting`;
-- interior/dungeon или ship/ocean → `Deferred`;
-- mounted/attached Player → `Fighting`;
-- boss globally suspended before ordinary combat starts.
+- mounted/attached не отсоединяются;
+- ship/ocean остаётся полноценным участием, но land-spawner может не найти поверхность;
+- обычный interior остаётся полноценным участием; existing dungeon monsters становятся Blood enemies, а дополнительный interior spawn исследуется отдельно;
+- teleport временно исключает Player из spawn-anchor расчёта, затем состояние продолжается в destination;
+- active unparked interior boss encounter требует отдельной политики из файла `09`.
 
-Нет `AwaitingContact`.
-
-`Deferred` не получает safe-defeat promise и не является target/spawn anchor. При выходе в supported context до forced end он может впервые перейти в `Fighting`.
-
-## Leaving supported context after Fighting
-
-Это остаётся preimplementation decision.
-
-Рекомендуемый простой вариант:
-
-- brief teleport transition только приостанавливает spawner;
-- если destination = interior/dungeon или ship/ocean, participant получает terminal `Withdrawn`;
-- Blood Craft personal cleanup выполняется;
-- re-entry отсутствует.
-
-Так бесплатная экипировка и dream-collapse protection не переносятся в обычный dungeon/ocean gameplay.
+Нет `AwaitingContact`, `Deferred` или персональной layer-видимости.
 
 ## Terminal outcomes
 
@@ -135,8 +123,6 @@ Defeated / Exited
 Withdrawn / Exited
 Disconnected
 ```
-
-`Deferred` не terminal и может удерживать событие до утра, позволяя игроку добраться до поддерживаемого контекста.
 
 ## Defeated
 
@@ -150,9 +136,16 @@ Disconnected
 - respawn;
 - inventory/food changes.
 
-## Re-entry
+После personal exit:
 
-В первой версии отсутствует.
+- Player больше не является целью;
+- не может повреждать Blood enemies;
+- не получает progress;
+- Bloodlust modifiers снимаются;
+- future Blood Craft items/projectiles/summons этого Player очищаются;
+- re-entry отсутствует.
+
+Body blocking не запрещается специально.
 
 ## Empty server
 

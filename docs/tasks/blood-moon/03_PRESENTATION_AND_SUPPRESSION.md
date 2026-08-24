@@ -20,41 +20,54 @@ Text/DreamText допускается дополнительно, но не вм
 При входе:
 
 1. enroll players;
-2. остановить текущий RandEvent;
+2. остановить текущий ordinary RandEvent;
 3. заблокировать новые RandEvent;
 4. заблокировать сон;
 5. добавить собственный Blood Moon status;
 6. начать линейный red blend;
-7. открыть Blood Craft после его реализации.
+7. открыть Blood Craft после его реализации;
+8. заблокировать новые boss sacrifices.
+
+## Boss sacrifice block
+
+Фактический boss altar — `OfferingBowl`, а не `BossStone`.
+
+Проверять минимум:
+
+- `OfferingBowl.UseItem` для inventory offerings;
+- `OfferingBowl.Interact` для item-stand altars;
+- `OfferingBowl.RPC_SpawnBoss` как authoritative/race guard.
+
+Блокировать только bowls с `m_bossPrefab != null`; item-producing offerings не затрагивать.
+
+Если sacrifice был принят до 18:00 и `DelayedSpawnBoss` уже queued, не отнимать offerings отменой: позволить spawn завершиться и немедленно park созданного boss, если Active уже начался.
 
 ## Status text
 
-Не добавлять vanilla `SoftDeath`.
+Vanilla `SoftDeath` status не добавлять.
 
-Собственный status должен прямо сообщать смысл:
+Собственный status прямо сообщает:
 
 ```text
 Когда здоровье иссякнет, кровавая горячка оборвётся.
 Ты не оставишь могилу и не потеряешь навыки.
 ```
 
-Эта формулировка показывается только для `Fighting`/`GoalReached`.
+Для `GoalReached` отдельно объяснить, что full buff остаётся и можно помогать другим.
 
-Для `Deferred`:
-
-```text
-Кровавая охота не достигает тебя здесь.
-Обычные опасности остаются настоящими.
-```
+Для terminal personal exit Bloodlust status снимается; recovery protection показывается собственным коротким status/tooltip.
 
 # 14. Active — 23:00
 
 - forced Blood Moon environment;
-- supported Player сразу → `Fighting`;
-- activation/conversion nearby monsters;
-- additional spawner;
-- no personal visibility layers;
-- все клиенты видят одних и тех же Blood Moon противников.
+- все enrolled Player → `Fighting`, кроме отдельно решаемого active unparked interior-boss encounter;
+- eligible existing monsters получают dynamic Blood Moon behavior;
+- additional marked enemies spawn to cap;
+- outdoor active bosses паркуются в far sector;
+- персональной visibility/collision layer нет;
+- все клиенты видят одних и тех же противников.
+
+Mounted/attached не отсоединяются. Ship/ocean и обычный interior сохраняют Active state; отсутствие подходящей spawn point лишь уменьшает дополнительный spawn.
 
 # 15. RandEventSystem
 
@@ -62,13 +75,13 @@ Blood Moon — собственная система.
 
 С 18:00 до полного resolution:
 
-- остановить current random/forced event через штатный путь;
-- блокировать новые;
-- не позволять им перезаписать environment/music;
-- restore в cleanup;
+- остановить current ordinary random event через штатный путь;
+- блокировать новые random events;
+- с 23:00 не позволять boss forced event/environment/music перезаписать Blood Moon;
+- restore систему в cleanup;
 - не запускать новый raid немедленно после Blood Moon.
 
-Boss suspension обрабатывается отдельно; не использовать уничтожение boss bookkeeping как замену.
+После парковки boss instance исчезает из active area; его EnemyHud и forced boss event должны естественно погаснуть. Всё равно проверить это runtime и не полагаться только на визуальный HUD.
 
 # 16. Environment
 

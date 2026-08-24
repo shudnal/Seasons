@@ -2,32 +2,52 @@
 
 Обязательная часть задачи `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
 
-> **Статус:** production-код пока не начинать. Персональная parallel-world architecture отвергнута. Сначала выполнить global-event spike и закрыть вопросы ниже.
+> **Статус:** production-код пока не начинать. Персональная layer-архитектура и clone preservation ordinary monsters отвергнуты. Выполнить global-event spike и закрыть небольшой набор вопросов ниже.
 
-# 35. Окончательно принятые решения
+# 37. Окончательно принятые решения
 
-## 35.1. Общий мир
+## 37.1. Общий мир
 
 Нет:
 
-- персональной видимости;
-- invisible ordinary monsters;
-- observers fighting-air UX;
+- персональной visibility;
+- hidden ordinary monsters;
 - cross-layer colliders;
-- layer-aware owner transfer;
+- layer-aware ownership;
 - first-contact transition;
 - `AwaitingContact`;
-- `SetOwner(0)` parking ordinary entities.
+- clone original + blood copy.
 
-Все клиенты видят одних и тех же Blood Moon противников.
+Все клиенты видят общий набор Blood Moon противников.
 
-## 35.2. Active start
+## 37.2. Active
 
-В 23:00 supported Player сразу получает `Fighting`.
+В 23:00 Player сразу получает `Fighting`, кроме отдельно решаемого active unparked interior-boss encounter.
 
-Nearby eligible monsters получают Blood Moon treatment, additional enemies spawn to cap.
+Ship/ocean, mount, attached и normal interior не являются общей причиной выхода из события.
 
-## 35.3. Defeated
+## 37.3. Existing monsters
+
+Принято dynamic direct conversion:
+
+- любой eligible existing non-boss MonsterAI считается Blood enemy во время Active;
+- existing monster не получает origin marker;
+- ordinary loot/ragdoll сохраняются;
+- killed existing monster не восстанавливается;
+- survivor не удаляется при cleanup;
+- event behavior исчезает вместе с global Active;
+- permanent max health/shared prefab не меняются.
+
+## 37.4. Extra spawns
+
+Только custom-spawned enemy получает `SpawnedEventId` marker.
+
+- no loot;
+- fast ragdoll;
+- delete surviving/stale marked ZDO;
+- ordinary existing ZDO никогда не удалять этим cleanup.
+
+## 37.5. Defeated
 
 ```csharp
 BloodMoonParticipantOutcome.Defeated
@@ -41,252 +61,189 @@ BloodMoonParticipantOutcome.Defeated
 - no position/rotation/parent/velocity changes;
 - terminal, no re-entry.
 
-## 35.4. No SoftDeath status
+## 37.6. No vanilla SoftDeath
 
-Vanilla `SoftDeath` status не добавляется.
+Безопасность поражения объясняет собственный status effect.
 
-Собственный status effect объясняет:
+## 37.7. DoT и recovery
 
-```text
-исчерпание здоровья разрывает кровавую горячку;
-могила не создаётся;
-навыки не теряются.
-```
-
-## 35.5. DoT
-
-Очищать только вычислимо damaging:
+Очищать только:
 
 - `SE_Burning`;
 - `SE_Poison`;
 - `SE_Smoke`;
 - negative-tick `SE_Stats`.
 
-Unknown modded effects не удалять эвристически.
-
-## 35.6. Recovery
-
-Stage 1:
+Recovery:
 
 ```text
-full immunity
-until IsOnGround || IsSwimming || IsAttached
-max 15 sec
+Stage 1: full immunity until IsOnGround || IsSwimming || IsAttached, max 15 sec
+Stage 2: 10 sec, incoming multiplier 0.25
 ```
 
-Stage 2:
+## 37.8. Withdrawn
 
-```text
-10 sec
-75% reduction
-multiplier 0.25
-```
+До edge/tidal danger использовать `IsBeyondWorldEdge(..., positiveOffset)` и terminal `Withdrawn`.
 
-Lava remains dangerous after grace.
+Body blocking остаётся vanilla.
 
-## 35.7. Withdrawn
+## 37.9. Boss summon block
 
-До edge/tidal danger использовать existing `IsBeyondWorldEdge(..., positiveOffset)` и terminal outcome:
+С 18:00 boss-producing `OfferingBowl` не принимает новые sacrifices. Guard local paths и authoritative `RPC_SpawnBoss`.
 
-```csharp
-Withdrawn
-```
+## 37.10. Boss parking
 
-No re-entry.
+Far-sector server ZDO parking принят как основной кандидат для loaded outdoor persistent boss. Runtime spike должен доказать точный ownership/persistence/restart protocol, но in-place stasis больше не является равноправной продуктовой альтернативой.
 
-## 35.8. Context
+# 38. Eligibility ordinary monsters — требуется финальная граница
 
-- interior/dungeon: visuals, no spawn while Deferred;
-- ship/ocean: visuals, no spawn while Deferred;
-- mounted/attached: supported, no forced detach;
-- boss: globally suspended during event;
-- teleport: short spawn pause + destination re-evaluation.
+Фраза «все монстры кроме боссов» технически должна получить predicate.
 
-# 36. Главный remaining decision: existing monsters
-
-## Option A — direct conversion
-
-Самый простой и прямо соответствует «все монстры вокруг становятся кровавыми».
-
-Need decide whether acceptable:
-
-- real monster can die without loot;
-- rare/starred creature may disappear;
-- survivor moves/loses health;
-- event alters ordinary local ecology.
-
-## Option B — suspend original + event clone
-
-Gameplay выглядит так же, но ordinary state is preserved.
-
-Need prove:
-
-- global suspension/restore;
-- no ownership changes;
-- no stale collider/renderer/AI;
-- nonpersistent/restart behavior;
-- acceptable performance.
-
-**Current recommendation:** spike both; use direct conversion only if the world-state tradeoff is explicitly accepted. Use suspension+clone if implementation is stable enough.
-
-# 37. Eligibility predicate
-
-Need close exact rules.
-
-Recommended start:
+Рекомендуемая интерпретация:
 
 ```text
 valid Character + MonsterAI
-untamed
-non-boss
+not Player
+not boss
+not tamed
 hostile to at least one active participant
-not Dvergr/trader/NPC
+not trader/named friendly NPC
+not neutral non-aggravated Dvergr
 not PlayerSpawned/pre-existing summon
-not fish/bird/ambient
-not already managed
+not fish/bird/ambient entity
 ```
 
-Open:
+Так passive animals и мирные Dvergr не превращаются в источник обычного loot без исходной враждебности.
 
-- passive animals;
+Открыто:
+
 - aggravated Dvergr;
-- modded humanoid NPC;
-- summoned hostile entities;
-- unique/named creatures;
-- starred monsters.
+- unique/named hostile creature;
+- hostile modded NPC;
+- hostile PlayerSpawned creature;
+- creature без обычной faction semantics.
 
-# 38. Boss mechanism
+Нужен diagnostic dump inclusion/exclusion reason.
 
-User proposal: save position/rotation, move boss ZDO far beyond world, restore under fade.
+# 39. Far-sector parking — принятые требования и runtime checks
 
-Alternative: global in-place stasis.
+## Обязательный порядок
 
-## In-place stasis advantages
+1. detect loaded alive outdoor boss;
+2. записать marker/original position;
+3. server takes ZDO ownership;
+4. синхронизировать live transform/rigidbody и ZDO far position;
+5. zero velocity;
+6. force-send/sector invalidation;
+7. дождаться unload instance;
+8. restore marker-first/idempotent protocol under fade/recovery.
 
-- no ZDO sector move;
-- no ZSyncTransform owner race;
-- exact state/position preserved;
-- same marker/recovery mechanism as suspended originals.
+Не использовать very negative Y: `ZSyncTransform` имеет rescue ниже `-5000`.
 
-## Parking advantages
+Не восстанавливать old peer owner.
 
-- active instance naturally leaves active area;
-- fewer component restore details.
+## Persistent
 
-## Parking risks
+Основной production support — persistent boss.
 
-- server ownership transfer;
-- owner writing old transform;
-- nonpersistent modded boss;
-- active-area/sector and restart;
-- boss event/HUD/projectile/summon remains.
+Для nonpersistent modded boss открыто:
 
-**Recommendation:** test in-place first, parking second. Neither production-accepted without runtime evidence.
+- temporary `Persistent=true` с original flag;
+- либо encounter hold/fallback.
 
-Need also decide:
+## Interior
 
-- block boss altar during event;
-- lingering projectiles/AOE;
-- boss summons/minions;
-- multiple bosses;
-- optional reappearance animation.
+Boss с `Character.InInterior()` не park.
 
-# 39. Context after Fighting
+Это создаёт отдельный обязательный вопрос, прежде всего для Queen.
 
-At Active start unsupported Player is `Deferred` and may join later.
+# 40. Active unparked interior boss — главный оставшийся продуктовый выбор
 
-Open choice when already Fighting Player enters dungeon/ship/ocean.
+Оставить boss обычным, одновременно применяя Blood Moon damage rules, нельзя без противоречий:
 
-## A. Suspend/resume personal fight
+- participant attacks по общему правилу должны повреждать только Blood enemies;
+- free Blood Craft не должен использоваться для boss progression;
+- safe `Defeated` и Bloodlust buff не должны превращать boss fight в бесплатный режим.
 
-Pros: can return.
+Рекомендуемый простой вариант — **Boss Encounter Hold** для затронутой combat group/Player:
 
-Cons:
+- red atmosphere остаётся;
+- ordinary boss fight и его damage rules остаются vanilla;
+- Bloodlust modifiers/safe Defeated/Blood Craft combat право временно не действуют;
+- Blood enemies не спавнятся и existing ordinary monsters не получают Blood behavior относительно этой группы;
+- после boss HUD/nearby boss исчезает и проходит stability delay, Player впервые входит или возвращается в `Fighting`, если до 05:45 осталось время;
+- это не visibility layer, а временная приостановка личного event participation.
 
-- temporary free gear enters ordinary content;
-- safe-defeat promise overlaps real dungeon/ocean danger;
-- more state switching.
+Альтернатива — полностью отложить Blood Moon для такого Player до утра. Нужен выбор владельца после spike Queen/interior.
 
-## B. Terminal Withdrawn — recommended
+# 41. Interior custom spawn
 
-- cleanup temporary personal state/items;
-- normal world rules;
-- no re-entry;
-- simplest and clearest.
+Existing dungeon monsters автоматически становятся Blood enemies.
 
-Teleport itself is not terminal; decide after destination.
+Для additional spawn исследовать:
 
-# 40. Defeated/Withdrawn interaction with remaining event
+1. выбрать candidate point вокруг Player в тех же interior coordinates;
+2. `Pathfinding.FindValidPoint` с agent type prefab-а;
+3. require full `HavePath` до Player;
+4. не использовать surface `Heightmap/GetGroundData` path;
+5. проверять same interior/high-Y context;
+6. по возможности исключать прямую камеру/слишком близкую точку;
+7. если valid point нет — не spawn.
 
-All see blood enemies, but terminal Player:
+Это runtime вопрос, не повод исключать все interiors.
 
-- cannot damage them;
-- is not target;
-- does not receive progress;
-- no Bloodlust buff;
-- Blood Craft personal cleanup.
+# 42. Event-created AI state
 
-Open minor physics question:
+Dynamic policy предпочтительнее persistent field mutation.
 
-- allow body collision;
-- or ignore collision between terminal Player and Blood enemies to prevent body-blocking.
+Нужно определить минимальный cleanup:
 
-This is much smaller than rejected parallel-layer physics and can be tested independently.
+- event VFX;
+- event-only target override;
+- forced `SetAlerted`/hunt state, если он действительно записывается;
+- attack/projectile attribution caches.
 
-# 41. Blood Craft personal exit
+Не обещать точное восстановление всей pre-event AI history. Hostile survivor после события может остаться рядом/alerted по обычным правилам.
 
-Recommended:
+# 43. Boss residual objects
 
-- immediate removal of all temporary items on Defeated/Withdrawn;
-- safe unequip;
-- ordinary gear remains;
-- consumed food/mead effects remain;
-- event projectile/AOE/summon of that Player removed.
+Parking boss ZDO не переносит автоматически:
 
-Need test equipment mods/custom slots.
+- projectiles;
+- AOE;
+- summons/minions;
+- delayed altar invocation.
 
-# 42. Blood enemy sources and scaling
+Нужно выбрать source-aware cleanup/neutralization.
 
-Need settle:
+Рекомендуется короткая restore grace для recreated boss, чтобы он не атаковал до окончания fade.
 
-- existing-monster scan radius;
-- scan interval;
-- conversion/clone cap;
-- additional spawn composition;
-- incoming multiplier instead of max-health mutation;
-- outgoing multiplier;
+# 44. Balance/runtime only
+
+Не блокируют архитектуру, но требуют playtest:
+
+- group radii/hysteresis;
+- extra spawn min/max distance;
+- scan/cache interval;
+- group/server caps;
+- Blood enemy incoming/outgoing multipliers;
 - speed/aggression;
-- whether world hazards damage Blood enemies (recommended no);
-- physical collision with ordinary/tamed (damage no; collision can remain unless problematic).
+- mounted rider reachability;
+- sea/interior density.
 
-# 43. Boss and random-event ordering
+# 45. Production gate
 
-Recommended sequence at 23:00:
+До production закрыть runtime evidence для:
 
-1. begin transition/brief combat freeze;
-2. stop RandEventSystem;
-3. suspend bosses and block new summons;
-4. remove/neutralize lingering boss attacks;
-5. activate nearby monsters;
-6. spawn additional Blood enemies;
-7. enter Player Fighting;
-8. release control.
+1. exact eligibility predicate;
+2. dynamic direct conversion and ordinary loot;
+3. marked extra cleanup;
+4. boss ownership transfer and far parking;
+5. persistent/restart restore;
+6. interior/nonpersistent boss fallback;
+7. interior additional spawn;
+8. lingering boss attack cleanup;
+9. Defeated + recovery;
+10. centralized damage routing.
 
-Need verify exact order under multiplayer.
-
-# 44. Production gate
-
-Before production:
-
-1. choose direct conversion or suspension+clone;
-2. finalize monster predicate;
-3. choose boss stasis/parking;
-4. decide Fighting→unsupported context;
-5. decide terminal-player collision;
-6. prove Defeated + recovery;
-7. prove target/damage routing;
-8. prove mounted/attached;
-9. prove restart cleanup;
-10. update all docs from spike evidence.
-
-Only `10_GLOBAL_EVENT_RUNTIME_SPIKE.md` may create code before this gate is closed.
+Только `10_GLOBAL_EVENT_RUNTIME_SPIKE.md` может создавать debug code до снятия gate.

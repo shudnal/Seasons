@@ -4,28 +4,30 @@
 
 > **Статус:** preimplementation design. Production-код Blood Moon пока не начинать.
 
-От идеи персональных параллельных слоёв мира принято отказаться. Она давала сильный визуальный образ, но требовала хрупкой сетевой логики видимости, коллизий, ownership, projectile/AOE routing и совместимости с большим количеством игровых и модовых систем.
+От персональных параллельных слоёв мира принято отказаться. Blood Moon — единое глобальное состояние, одинаковое для всех клиентов.
 
-Новая базовая модель глобальна и одинакова для всех клиентов:
+Базовая модель:
 
 ```text
+18:00
+→ Marked, запрет сна и новых boss sacrifices
+→ Blood Craft после его реализации
+→ линейное покраснение текущей среды
+
 23:00
-→ подходящие обычные монстры рядом с игроками получают Blood Moon behavior
-→ дополнительно спавнятся Blood Moon противники
-→ все Blood Moon противники видимы всем
+→ forced Blood Moon environment
+→ существующие подходящие небоссовые монстры получают Blood Moon behavior
+→ дополнительно спавнятся временные Blood Moon монстры
+→ все противники видимы всем
 → они охотятся только на активных участников
 → участники наносят урон только Blood Moon противникам
-→ база, tamed, NPC, боссы и обычная экономика мира не участвуют
+
+05:45 или раннее завершение
+→ cleanup
+→ восстановление запаркованных боссов
+→ fade + DreamText
+→ перевод времени к 06:00
 ```
-
-Перед production-разработкой нужно закрыть оставшиеся вопросы и выполнить изолированный runtime-spike:
-
-```text
-docs/tasks/blood-moon/09_PREIMPLEMENTATION_DECISIONS_AND_SPIKES.md
-docs/tasks/blood-moon/10_GLOBAL_EVENT_RUNTIME_SPIKE.md
-```
-
-Старую ветку и задачу `spike/blood-moon-parallel-layer` не использовать: они относятся к отвергнутой архитектуре.
 
 Рабочий репозиторий:
 
@@ -39,7 +41,7 @@ https://github.com/shudnal/Seasons
 feat/blood-moon
 ```
 
-При чтении кода Valheim первым источником использовать:
+При чтении игрового кода первым источником использовать:
 
 ```text
 https://github.com/shudnal/assemblies_combined
@@ -59,65 +61,59 @@ https://github.com/shudnal/assemblies_combined
 10. `docs/tasks/blood-moon/09_PREIMPLEMENTATION_DECISIONS_AND_SPIKES.md`
 11. `docs/tasks/blood-moon/10_GLOBAL_EVENT_RUNTIME_SPIKE.md`
 
-При конфликте файлы `09` и `10` имеют приоритет для ещё не закрытых технических решений.
+При конфликте файлы `09` и `10` имеют приоритет для ещё не закрытых runtime-решений.
 
 Не использовать старые вне-репозиторные `BloodMoon_Design_Document.md` и `BloodMoon_Codex_Implementation_Brief.md`.
 
 ## 2. Цель Blood Moon
 
-Blood Moon — ежегодная кульминация осени, один раз примерно за 40 игровых дней при стандартной длине года.
+Blood Moon — ежегодная кульминация осени, один раз примерно за 40 игровых дней при стандартных настройках.
 
 Событие должно быть коротким мясным боевым эпизодом:
 
 - высокая плотность относительно слабых противников;
 - временное усиление игрока;
-- бесплатный временный Blood Craft известных боевых предметов;
+- бесплатный временный Blood Craft уже известных боевых предметов;
 - простая цель — заполнить Bloodlust реальным боем;
-- поражение не создаёт могилу, не вызывает respawn и не отнимает навыки;
+- `Defeated` не создаёт могилу, не вызывает respawn и не отнимает навыки;
 - единственный постоянный механический результат — опыт боевых навыков;
 - никаких материалов, валюты, декора, world keys или иных постоянных наград.
 
-Ключевая формула после отказа от персональных слоёв:
+## 3. Принятые решения
 
-> Кровавая ночь охватывает реальных существ вокруг игроков, но временно меняет правила их боя. Мир остаётся общим, а последствия события должны быть минимальны.
-
-## 3. Планируемый цикл
-
-```text
-предвестия последних осенних ночей
-→ Marked в 18:00
-→ Blood Craft и линейное покраснение среды
-→ Active в 23:00
-→ forced Blood Moon environment
-→ остановка RandEventSystem
-→ активация/добавление Blood Moon противников
-→ Fighting
-→ server-authoritative Bloodlust progress
-→ Success / Defeated / Withdrawn / Disconnected / forced morning
-→ cleanup
-→ fade + DreamText
-→ перевод времени к 06:00
-→ восстановление погоды, боссов и обычных систем
-```
-
-## 4. Уже принятые изменения
-
-- `AwaitingContact` и `FirstBloodContactRecord` больше не нужны.
 - Персональной visibility/collision layer нет.
-- В 23:00 поддерживаемый Player сразу входит в `Fighting`.
-- Vanilla `SoftDeath` status не добавляется.
-- Безопасность поражения объясняется собственным Blood Moon status effect.
-- Outcome безопасного поражения называется `Defeated`.
-- `Player.OnDeath` для такого поражения не вызывается.
-- Любое обычное `health <= 0` в активном Blood Moon бою приводит к dream collapse.
+- `AwaitingContact` и `FirstBloodContactRecord` не нужны.
+- В 23:00 Player сразу входит в `Fighting`, кроме отдельно решаемого активного unparked interior-boss encounter.
+- Vanilla `SoftDeath` status не добавляется; безопасное поражение объясняет собственный Blood Moon status.
+- Outcome безопасного поражения — `BloodMoonParticipantOutcome.Defeated`.
+- `Player.OnDeath` для `Defeated` не вызывается.
+- Любое обычное `health <= 0` во время активного Blood Moon боя приводит к dream collapse.
 - Health, stamina и eitr восстанавливаются полностью; food и adrenaline не меняются.
 - Удаляются только вычислимо определяемые damaging DoT.
 - После `Defeated`: полная защита до стабилизации, максимум 15 секунд; затем 10 секунд 75% снижения входящего урона.
-- При приближении к краю мира участник получает terminal outcome `Withdrawn` до действия edge/tidal death.
+- При приближении к краю мира участник получает terminal `Withdrawn` до edge/tidal death.
 - Re-entry в первой версии отсутствует.
-- Mounted и generic attached не требуют отдельного слоя и не должны принудительно отсоединяться.
-- Interior/dungeon и ship/ocean получают визуал, но не являются spawn anchors.
-- Босс на время события должен быть глобально убран из боя с последующим восстановлением состояния; точный механизм проверяется spike.
+- Mounted, attached, ship/ocean и обычные interiors не требуют отдельного слоя или forced detach.
+- Body blocking terminal Player-ом не запрещается специально.
+- Все подходящие существующие небоссовые монстры считаются Blood enemies динамически, пока событие активно.
+- Существующие монстры сохраняют обычный loot и не удаляются при cleanup.
+- Только дополнительные custom-spawned монстры получают `SpawnedEventId`; для них loot подавляется, ragdoll быстро очищается, а выжившие ZDO удаляются в конце/при stale recovery.
+- Призывание новых боссов блокируется с 18:00 через `OfferingBowl`.
+- Основной кандидат для активных outdoor bosses — server-authoritative far-sector ZDO parking с marker и восстановлением исходной позиции.
+
+## 4. До старта production-кода осталось
+
+Обязательные продуктовые решения сведены к небольшому набору:
+
+1. точный eligibility predicate обычных монстров;
+2. политика для активного босса в interior, прежде всего Queen;
+3. fallback для nonpersistent или нестандартного modded boss;
+4. способ дополнительного spawn в interiors;
+5. точный cleanup принудительно выставленных AI targets/visual state;
+6. runtime-проверка boss parking ownership/persistence/restart;
+7. balance: caps, интервалы, incoming/outgoing multipliers и агрессивность.
+
+Пункты 6–7 проверяются изолированным spike, а не требуют возвращения к отвергнутой layer-архитектуре.
 
 ## 5. Процесс
 

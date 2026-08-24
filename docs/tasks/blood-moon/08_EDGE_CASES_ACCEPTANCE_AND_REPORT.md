@@ -2,7 +2,7 @@
 
 Обязательная часть задачи `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
 
-# 31. Обязательные edge cases
+# 33. Обязательные edge cases
 
 ## Lifecycle/network
 
@@ -20,44 +20,76 @@
 ## Visual/system
 
 - every forewarning night has visible non-text effect;
-- current RandEvent at 18:00;
+- ordinary RandEvent active at 18:00;
 - new RandEvent blocked;
+- boss forced event remains coherent before parking and clears after parking;
 - force env lease conflict;
 - missing `Fader`/`Ashlands_FaderFX`;
 - world unload every phase.
 
 ## Existing monsters
 
-- direct conversion candidate;
-- suspension+clone candidate;
+- eligible hostile ground MonsterAI;
+- passive animal;
+- tamed;
+- boss;
+- neutral and aggravated Dvergr;
+- trader/named NPC;
+- `PlayerSpawned` summon;
 - starred monster;
 - modded MonsterAI;
-- neutral Dvergr/NPC excluded;
-- tamed excluded;
-- PlayerSpawned summon excluded;
-- new ordinary spawn during event;
+- newly loaded/spawned ordinary monster during Active;
 - owner migration/disconnect;
-- surviving converted monster cleanup;
-- killed converted monster world-state consequence;
-- nonpersistent original unload/restart.
+- survivor after event;
+- killed existing monster keeps ordinary loot/ragdoll;
+- no permanent max-health/shared-prefab mutation;
+- event-created target/hunt/VFX state does not remain stale.
 
-## Boss
+## Additional spawned enemies
 
-- vanilla boss active at 23:00;
+- marker written before combat participation;
+- no ordinary loot;
+- fast ragdoll;
+- surviving ZDO deleted at resolution;
+- stale marked ZDO deleted on recovery;
+- cleanup iterates a copy safely;
+- no accidental deletion of ordinary existing monster.
+
+## Boss sacrifice
+
+- inventory offering blocked at/after 18:00;
+- item-stand altar interaction blocked;
+- `RPC_SpawnBoss` race guarded;
+- non-boss OfferingBowl item rewards still work;
+- already placed attachments remain;
+- pre-18 queued spawn does not lose offerings and is parked if Active.
+
+## Boss parking
+
+- vanilla persistent outdoor boss active at 23:00;
 - multiple bosses;
-- boss owner participant/server/other peer;
+- boss owner server/client/other peer;
+- owner transfer and old-owner transform race;
+- live server instance transform and ZDO position stay consistent;
+- far XZ/normal Y does not trigger out-of-world rescue;
+- clients unload instance;
+- HUD/music/forced event clear;
 - boss projectile/AOE in flight;
-- boss summon/minion;
-- boss event/environment/music/HUD;
-- new summoning attempt during event;
-- restart while suspended/parked;
+- boss summons/minions;
+- restart while parked;
 - restore with no nearby Player;
-- modded/nonpersistent boss;
-- restore health/level/position/rotation exactly where required.
+- marker left after crash before/after move;
+- restore position/rotation/health/level;
+- dead/destroying boss not parked;
+- modded persistent boss;
+- nonpersistent boss fallback;
+- interior/Queen boss excluded;
+- boss loaded after Active begins;
+- optional recreation/appearance effect.
 
 ## Defeated/recovery
 
-- direct blood hit;
+- direct Blood hit;
 - fall after knockback;
 - environmental health loss;
 - lava;
@@ -78,19 +110,22 @@
 
 ## Context
 
-- interior/dungeon at 23:00;
-- ship/ocean at 23:00;
-- Deferred exits to land;
-- Fighting enters dungeon/ship;
-- teleport in progress;
+- outdoor;
+- ship/ocean with no valid land spawn;
+- sea monster conversion;
+- normal interior with existing monsters;
+- interior custom navmesh spawn;
+- active unparked interior boss;
+- teleport in progress/destination;
 - mounted;
 - generic attached;
 - edge safety offset → Withdrawn;
-- Defeated/Withdrawn cannot damage or be targeted by Blood enemies.
+- Exited Player body collision remains vanilla;
+- Exited Player cannot damage or be targeted by Blood enemies.
 
 ## Damage routing
 
-- Blood enemy ignores building/tamed/NPC/boss/ordinary monster;
+- Blood enemy ignores building/tamed/NPC/boss/other monster;
 - Player attack damages only Blood enemy;
 - no building/tree/ore/crop damage;
 - ordinary trap/turret cannot farm Blood enemy;
@@ -107,65 +142,67 @@
 - drop destroyed;
 - TombStone fallback;
 - personal cleanup on Defeated/Withdrawn;
-- consumed food effect remains.
+- consumed food effect remains;
+- custom equipment slots do not retain temporary item.
 
-# 32. Runtime-spike acceptance
+# 34. Runtime-spike acceptance
 
 `10_GLOBAL_EVENT_RUNTIME_SPIKE.md` должен ответить:
 
-1. Direct conversion или suspension+clone?
-2. Какой точный eligibility predicate безопасен?
-3. Можно ли globally suspend/restore ordinary Character без owner changes?
-4. Можно ли safely suspend active boss in place?
-5. Если нет — надёжен ли ZDO parking?
-6. Сохраняются ли boss health/state/restart recovery?
-7. Работает ли CheckDeath-based Defeated без vanilla death side effects?
-8. Корректны ли 15s stabilization cap + 10s 75% protection?
-9. Работает ли event target/damage routing для melee/projectile/AOE?
-10. Поддерживаются ли mounted/attached без forced detach?
-11. Как вести Fighting→unsupported context?
-12. Каков минимальный production patch set?
+1. Точный eligibility predicate обычных монстров.
+2. Можно ли реализовать dynamic direct conversion без persistent instance mutation.
+3. Надёжно ли различаются ordinary existing и marked extra spawns.
+4. Работает ли centralized target/damage routing.
+5. Работает ли CheckDeath-based Defeated без vanilla death side effects.
+6. Корректны ли 15s stabilization cap + 10s 75% protection.
+7. Поддерживаются ли mounted/attached/ship/ocean/interior без forced movement.
+8. Как спавнить extras в interior через navmesh/path validation.
+9. Надёжен ли far-sector boss parking для vanilla persistent boss.
+10. Какой fallback нужен interior/nonpersistent/modded boss.
+11. Как очищать lingering boss attacks/summons.
+12. Каков минимальный production patch set.
 
-# 33. Production acceptance
+# 35. Production acceptance
 
 После снятия gate первый vertical slice готов только если:
 
 - state machines/server authority/persistence работают;
 - no personal layer code;
 - no vanilla SoftDeath status;
-- custom status честно описывает safe defeat only when active;
+- custom status честно описывает `Defeated`;
 - event can be debug-run end-to-end;
 - visible forewarning;
 - Marked 18:00, Active 23:00, end 05:45;
+- OfferingBowl boss summon block from 18:00;
 - RandEvent blocked/restored;
 - environment/VFX cleanup;
-- existing monster strategy реализована согласно spike;
-- additional spawn caps;
+- direct existing-monster rules;
+- extra-spawn markers and cleanup;
 - target/damage matrix centralized;
-- no loot/long ragdoll;
+- existing loot preserved; extra loot suppressed;
 - progress exactly once;
 - GoalReached behavior;
 - Defeated dream collapse;
 - Withdrawn edge behavior;
-- boss suspend/restore;
+- boss parking/restore and documented fallback;
 - no Player transform changes;
-- no material/world-state rewards;
+- no material/world-state event rewards beyond ordinary loot of existing creatures;
 - build result and manual multiplayer checklist documented;
 - draft PR + Codex review;
 - PR not merged.
 
-# 34. Report
+# 36. Report
 
-Codex должен указать:
+Codex указывает:
 
-- commits and files;
-- architecture;
+- commits/files/architecture;
 - CCS/RPC decision;
 - exact `assemblies_combined` commit;
 - build result;
 - runtime scenarios actually tested;
 - untested multiplayer/VFX clearly stated;
-- boss and ordinary-monster strategy evidence;
-- known limitations;
+- eligibility and interior-spawn findings;
+- boss parking ownership/persistence/restart evidence;
+- known limitations/fallbacks;
 - draft PR/review result;
 - next continuation point.

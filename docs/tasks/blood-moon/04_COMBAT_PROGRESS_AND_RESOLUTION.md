@@ -17,7 +17,7 @@ Server-only grouping:
 
 В группы входят `Fighting` и `GoalReached`.
 
-`Deferred`, `Exited`, `Resolved`, disconnected не входят.
+`Exited`, `Resolved` и disconnected не входят.
 
 Map markers отсутствуют.
 
@@ -25,71 +25,81 @@ Map markers отсутствуют.
 
 В 23:00 используются два источника:
 
-1. подходящие существующие монстры вокруг active groups;
-2. дополнительные event spawns до cap.
+1. все подходящие существующие небоссовые монстры, реально загруженные рядом с active groups;
+2. дополнительные custom-spawned enemies до group/server cap.
 
-## 19.1. Existing monster strategy — open spike
+## 19.1. Прямая динамическая конверсия — принято
 
-Сравнить:
+Suspend+clone отвергнут как ненужная сложность.
 
-### Direct conversion
-
-Existing entity получает event marker и временные правила.
-
-Плюсы: максимально просто.
-
-Минусы:
-
-- убитое реальное существо исчезает без loot;
-- surviving creature меняет position/health/AI history;
-- можно потерять редкое/starred/modded creature.
-
-### Suspend original + blood copy
-
-Original глобально скрывается/замораживается для всех клиентов без owner changes, blood copy спавнится на его месте.
-
-Плюсы:
-
-- состояние обычного мира сохраняется;
-- clone можно безопасно убивать/удалять;
-- тот же механизм пригоден для bosses.
-
-Минусы:
-
-- нужно надёжно suspend/restore render, colliders, AI, physics;
-- restart/unload/nonpersistent cases сложнее.
-
-Runtime spike обязан сравнить оба. Для первой production версии direct conversion допустим только после сознательного принятия world-state tradeoff.
-
-## 19.2. Eligibility candidate
-
-Стартовая рекомендация:
-
-- valid untamed `MonsterAI`;
-- hostile к хотя бы одному active Player;
-- не Player;
-- не boss;
-- не tamed;
-- не trader/NPC/Dvergr-neutral;
-- не `PlayerSpawned`/pre-existing summon;
-- не fish/bird/ambient-only creature;
-- не already managed/blood.
-
-Точный predicate фиксируется после scan реальных prefabs.
-
-## 19.3. Dynamic scan
-
-Периодически обрабатывать новые ordinary spawns, вошедшие в interaction radius. Не сканировать весь world каждый frame.
-
-## 19.4. Markers
+Существующий eligible monster считается Blood enemy по текущему event state, а не за счёт необратимого изменения prefab/instance данных:
 
 ```text
-Seasons.BloodMoon.EventId
-Seasons.BloodMoon.GroupId
-Seasons.BloodMoon.Origin
-Seasons.BloodMoon.Role
-Seasons.BloodMoon.OriginalZDOID (если clone)
+Blood Moon Active
+AND IsEligibleExistingMonster(character)
 ```
+
+По возможности поведение реализуется conditionally через patches/policy:
+
+- Player-only target selection;
+- no flee/idle при наличии цели;
+- event damage multipliers;
+- event visual treatment;
+- no damage ordinary world.
+
+Не менять permanent max health. Не мутировать shared prefab.
+
+После event existing survivor автоматически возвращается к vanilla behavior, когда global Active выключен. Cleanup должен снять event VFX и очистить только target/hunt state, принудительно созданный самим Blood Moon.
+
+Если existing monster погиб во время события:
+
+- это обычная смерть реального существа;
+- ordinary loot разрешён;
+- ordinary ragdoll/cleanup остаются;
+- объект не восстанавливается.
+
+## 19.2. Дополнительные event spawns
+
+Только custom-spawned противники получают marker:
+
+```text
+Seasons.BloodMoon.SpawnedEventId
+Seasons.BloodMoon.GroupId
+Seasons.BloodMoon.Role
+```
+
+Для них:
+
+- ordinary loot подавляется;
+- ragdoll быстро очищается, default 2 seconds;
+- выжившие ZDO удаляются server-side при resolution;
+- stale marker другого/завершённого event удаляется при recovery/load.
+
+В конце server итерирует copy коллекции ZDO, чтобы безопасно уничтожить marked extras без изменения dictionary во время enumeration.
+
+## 19.3. Eligibility — остаётся закрыть
+
+Рекомендуемый старт:
+
+- valid `Character` + `MonsterAI`;
+- non-boss;
+- untamed;
+- hostile к хотя бы одному active participant;
+- не trader/именованный NPC;
+- не neutral non-aggravated Dvergr;
+- не `PlayerSpawned`/pre-existing summon;
+- не fish/bird/ambient entity.
+
+Нужно отдельно подтвердить passive animals, aggravated Dvergr, unique creatures и modded humanoid NPC.
+
+## 19.4. Dynamic discovery
+
+Не требуется помечать все ZDO мира.
+
+- active loaded character автоматически квалифицируется через policy;
+- вновь созданный vanilla monster во время события автоматически становится Blood enemy;
+- periodic scan нужен только для VFX/cached AI hooks и diagnostic bookkeeping;
+- не сканировать весь world каждый frame.
 
 ## 19.5. Aggression
 
@@ -97,47 +107,27 @@ Blood enemy:
 
 - всегда ищет active participant;
 - не flee/idle при наличии допустимой цели;
-- игнорирует PlayerBase/NoMonsters для spawn;
+- игнорирует PlayerBase/NoMonsters для additional spawn;
 - не выбирает static targets;
-- не выбирает tamed/NPC/boss/ordinary monster;
-- GoalReached target имеет меньший score, пока есть Fighting.
-
-Не мутировать shared prefab.
+- не выбирает tamed/NPC/boss/другого monster;
+- GoalReached target имеет меньший score, пока есть Fighting;
+- обычные event-creature despawn rules не должны заставлять его уходить из-за остановленного RandEventSystem.
 
 ## 19.6. Health/damage
 
-Не менять permanent max health existing entity.
+Меньшая живучесть задаётся event-specific incoming damage multiplier.
 
-Желаемая меньшая живучесть задаётся через event-specific incoming damage multiplier. Меньший outgoing damage — через event-specific outgoing multiplier.
+Меньший исходящий урон — event-specific outgoing multiplier.
 
-Это одинаково работает для converted и spawned enemies.
-
-## 19.7. Loot/ragdoll
-
-Blood enemy:
-
-- no ordinary loot;
-- no economy contribution;
-- ragdoll cleanup default 2 seconds;
-- remaining spawned/copy enemies deleted at resolution.
+Existing health/max health не переписываются.
 
 # 20. Damage routing
 
-## Enemy
-
-Разрешено только:
+Разрешено:
 
 ```text
 Blood enemy → Fighting/GoalReached Player
-```
-
-## Participant
-
-Разрешено только:
-
-```text
-Fighting/GoalReached Player attack
-→ Blood enemy current eventId
+Fighting/GoalReached Player attack → Blood enemy
 ```
 
 Запрещены:
@@ -146,14 +136,14 @@ Fighting/GoalReached Player attack
 - crops;
 - trees/ores/resource objects;
 - tamed;
-- ordinary creatures;
+- ordinary NPC;
 - bosses;
-- nonparticipants;
-- event enemies stale/other eventId.
+- nonparticipants/Exited;
+- traps/turrets/environment как способ убивать Blood enemies по умолчанию.
 
-Traps/turrets/environment не должны убивать Blood enemies по умолчанию.
+Фильтровать candidate hit до status/stagger/skill credit; final damage guard оставить.
 
-Фильтровать candidate hit до status/stagger/skill credit, final guard оставить.
+Projectile/AOE/summon должен сохранять event/source attribution при создании, если исходное `HitData`/attacker недостаточны после owner migration.
 
 # 21. Progress
 
@@ -165,12 +155,13 @@ DisplayedBloodlustProgress
 CombatContribution
 ```
 
-Kills/share:
+Kill/share:
 
-- server validates enemy ZDO and exactly-once death;
+- server validates enemy identity и exactly-once death;
 - points получают active members группы в configured radius;
 - не только last hit;
-- GoalReached actions могут идти в stats, но не progress.
+- GoalReached actions могут идти в stats, но не progress;
+- kills existing и marked extra enemies учитываются одинаково, стоимость задаёт server.
 
 At 100%:
 
@@ -226,7 +217,7 @@ outcome = Defeated
 - `SE_Smoke`;
 - `SE_Stats` с `m_tickInterval > 0 && m_healthPerTick < 0`.
 
-Не использовать `RemoveAllStatusEffects`. Unknown modded DoT не удалять автоматически без доказуемого признака.
+Не использовать `RemoveAllStatusEffects`. Unknown modded DoT не удалять автоматически.
 
 ## Recovery protection
 
@@ -238,8 +229,6 @@ until IsOnGround || IsSwimming || IsAttached
 hard cap 15 seconds
 ```
 
-Покрывает fall damage текущей траектории.
-
 Stage 2:
 
 ```text
@@ -247,8 +236,6 @@ Stage 2:
 75% incoming reduction
 final multiplier 0.25
 ```
-
-После этого lava/water/world damage полностью vanilla.
 
 Direct `Player.OnDeath`/scripted removal не перехватывать. Admin HP reduction естественно приводит к Defeated.
 
@@ -262,17 +249,18 @@ ZoneSystemVariantController.IsBeyondWorldEdge(position, positiveSafetyOffset)
 
 → phase `Exited`, outcome `Withdrawn`.
 
-Не менять transform. После снятия Blood Moon protection обычные edge rules снова действуют.
+No transform changes. Re-entry отсутствует.
 
 # 24. Contexts
 
 - outdoor ground: Fighting;
 - mounted/attached: Fighting, no forced detach;
-- teleport: временно не spawn; destination re-evaluate;
-- interior/dungeon at Active start: Deferred;
-- ship/ocean at Active start: Deferred;
-- выход Deferred Player в supported context: Fighting;
-- вход уже Fighting Player в unsupported context: решение в `09`, рекомендован terminal Withdrawn.
+- ship/ocean: Fighting; land additional spawner может не найти поверхность, existing sea monsters продолжают работать;
+- ordinary interior/dungeon: Fighting; existing monsters становятся Blood enemies, custom interior spawn исследуется через navmesh/path validity;
+- teleport: временно pause spawn, затем продолжить в destination;
+- active unparked interior boss: отдельное обязательное решение из `09`.
+
+Body blocking Exited Player-ом остаётся vanilla.
 
 # 25. Early/morning resolution
 
@@ -280,28 +268,28 @@ Early end:
 
 - хотя бы один Player был enrolled;
 - все enrolled имеют terminal Success/Defeated/Withdrawn/Disconnected.
-- Deferred не terminal и удерживает event до forced end.
 
 05:45 forced resolution.
 
 Prepare:
 
 1. freeze enrollment;
-2. stop scan/spawn;
+2. stop additional spawn;
 3. freeze outcomes;
 4. fade request + timeout.
 
 Resolve under fade:
 
-1. delete blood spawned/copies;
-2. clear converted/suspended ordinary state;
-3. restore bosses;
-4. clean Blood Craft;
-5. remove force environment/VFX;
-6. restore RandEventSystem;
-7. time → 06:00;
-8. remove Rested;
-9. publish DreamText;
-10. release input.
+1. disable global Blood Moon monster behavior;
+2. delete marked extra enemy ZDO;
+3. clear event-created target/VFX/runtime state on existing monsters;
+4. restore parked bosses;
+5. clean Blood Craft;
+6. remove force environment/VFX;
+7. restore RandEventSystem;
+8. time → 06:00;
+9. remove Rested;
+10. publish DreamText;
+11. release input.
 
 No Player transform changes.
