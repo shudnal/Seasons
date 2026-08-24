@@ -18,6 +18,16 @@ namespace Seasons.BloodMoon
     {
         private static bool Prefix(BaseAI __instance, ref Character __result)
         {
+            if (BloodMoonSummons.IsBloodSummon(__instance.m_character))
+            {
+                __result = Character.GetAllCharacters()
+                    .Where(character => character != null && !character.IsDead() && !character.m_aiSkipTarget && BloodMoonInteractionRules.IsBloodEnemy(character))
+                    .Where(character => BaseAI.IsEnemy(__instance.m_character, character) && __instance.CanSenseTarget(character))
+                    .OrderBy(character => Utils.DistanceXZ(__instance.transform.position, character.transform.position))
+                    .FirstOrDefault();
+                return false;
+            }
+
             if (!BloodMoonInteractionRules.IsBloodEnemy(__instance.m_character))
                 return true;
 
@@ -99,25 +109,40 @@ namespace Seasons.BloodMoon
         {
             internal bool Active;
             internal bool Restored;
+            internal bool BloodEnemy;
+            internal bool ParticipantSummon;
             internal bool AttackPlayerObjects;
         }
 
         private static void Prefix(MonsterAI __instance, ref float dt, out TargetState __state)
         {
             __state = new TargetState();
-            if (!BloodMoonInteractionRules.IsBloodEnemy(__instance.m_character))
+            bool bloodEnemy = BloodMoonInteractionRules.IsBloodEnemy(__instance.m_character);
+            bool participantSummon = BloodMoonSummons.IsBloodSummon(__instance.m_character);
+            if (!bloodEnemy && !participantSummon)
                 return;
 
             __state.Active = true;
+            __state.BloodEnemy = bloodEnemy;
+            __state.ParticipantSummon = participantSummon;
             __state.AttackPlayerObjects = __instance.m_attackPlayerObjects;
             __instance.m_attackPlayerObjects = false;
             __instance.m_targetStatic = null;
 
-            float intervalMultiplier = Mathf.Max(0.05f, BloodMoonConfig.EnemyTargetUpdateIntervalMultiplier.Value);
-            dt /= intervalMultiplier;
+            if (bloodEnemy)
+            {
+                float intervalMultiplier = Mathf.Max(0.05f, BloodMoonConfig.EnemyTargetUpdateIntervalMultiplier.Value);
+                dt /= intervalMultiplier;
+            }
 
-            if (__instance.m_targetCreature != null && !BloodMoonInteractionRules.CanTarget(__instance.m_character, __instance.m_targetCreature))
-                __instance.m_targetCreature = null;
+            if (__instance.m_targetCreature != null)
+            {
+                bool valid = bloodEnemy
+                    ? BloodMoonInteractionRules.CanTarget(__instance.m_character, __instance.m_targetCreature)
+                    : BloodMoonInteractionRules.IsBloodEnemy(__instance.m_targetCreature);
+                if (!valid)
+                    __instance.m_targetCreature = null;
+            }
         }
 
         private static void Postfix(MonsterAI __instance, TargetState __state)
@@ -127,6 +152,21 @@ namespace Seasons.BloodMoon
 
             Restore(__instance, __state);
             __instance.m_targetStatic = null;
+
+            if (__state.ParticipantSummon)
+            {
+                if (__instance.m_targetCreature != null && !BloodMoonInteractionRules.IsBloodEnemy(__instance.m_targetCreature))
+                    __instance.m_targetCreature = null;
+                if (__instance.m_targetCreature == null)
+                    __instance.m_targetCreature = __instance.FindEnemy();
+                if (__instance.m_targetCreature != null)
+                {
+                    __instance.m_lastKnownTargetPos = __instance.m_targetCreature.transform.position;
+                    __instance.m_beenAtLastPos = false;
+                    __instance.m_timeSinceSensedTargetCreature = 0f;
+                }
+                return;
+            }
 
             if (__instance.m_targetCreature is Player current && BloodMoonInteractionRules.IsActiveParticipant(current))
             {
