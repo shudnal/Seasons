@@ -1,5 +1,6 @@
 using Newtonsoft.Json;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using static Seasons.Seasons;
 
@@ -23,26 +24,51 @@ namespace Seasons.BloodMoon
         {
             BloodMoonEventState clean = CreateClean(worldUid);
             string path = GetStatePath(worldUid);
-            if (!File.Exists(path))
-                return clean;
+            string[] candidates = { path, path + ".new", path + ".old" };
+            bool anyFile = false;
 
+            foreach (string candidate in candidates)
+            {
+                if (!File.Exists(candidate))
+                    continue;
+                anyFile = true;
+                if (!TryLoadCandidate(candidate, worldUid, out BloodMoonEventState state))
+                    continue;
+
+                Normalize(state);
+                LogInfo($"[BloodMoon.Persistence] Loaded event {state.EventId}, phase {state.Phase}, revision {state.Revision} from '{candidate}'.");
+                if (!string.Equals(candidate, path, StringComparison.Ordinal))
+                {
+                    LogWarning($"[BloodMoon.Persistence] Recovered state from fallback '{candidate}'. Rewriting canonical snapshot.");
+                    Save(state);
+                }
+                return state;
+            }
+
+            if (anyFile)
+                LogError($"[BloodMoon.Persistence] No valid state snapshot could be recovered for world {worldUid}.");
+            return clean;
+        }
+
+        private static bool TryLoadCandidate(string path, long worldUid, out BloodMoonEventState state)
+        {
+            state = null;
             try
             {
-                BloodMoonEventState state = JsonConvert.DeserializeObject<BloodMoonEventState>(File.ReadAllText(path), serializerSettings);
+                state = JsonConvert.DeserializeObject<BloodMoonEventState>(File.ReadAllText(path), serializerSettings);
                 if (state == null || state.Schema != BloodMoonStateSchema.Current || state.WorldUid != worldUid)
                 {
                     LogWarning($"[BloodMoon.Persistence] Ignoring incompatible state file '{path}'.");
-                    return clean;
+                    state = null;
+                    return false;
                 }
-
-                Normalize(state);
-                LogInfo($"[BloodMoon.Persistence] Loaded event {state.EventId}, phase {state.Phase}, revision {state.Revision}.");
-                return state;
+                return true;
             }
             catch (Exception ex)
             {
                 LogError($"[BloodMoon.Persistence] Failed to load '{path}': {ex}");
-                return clean;
+                state = null;
+                return false;
             }
         }
 
@@ -71,9 +97,10 @@ namespace Seasons.BloodMoon
             catch (Exception ex)
             {
                 LogError($"[BloodMoon.Persistence] Failed to save '{path}': {ex}");
+                // Keep a successfully written .new file for Load() recovery. Only remove an empty/invalid temporary file.
                 try
                 {
-                    if (File.Exists(temporary))
+                    if (File.Exists(temporary) && new FileInfo(temporary).Length == 0L)
                         File.Delete(temporary);
                 }
                 catch
@@ -115,17 +142,17 @@ namespace Seasons.BloodMoon
 
         private static void Normalize(BloodMoonEventState state)
         {
-            state.Participants ??= new System.Collections.Generic.Dictionary<long, BloodMoonParticipantState>();
-            state.Groups ??= new System.Collections.Generic.Dictionary<long, BloodMoonGroupState>();
-            state.SpawnLeases ??= new System.Collections.Generic.Dictionary<string, BloodMoonSpawnLeaseState>();
-            state.ReportedEnemyDeaths ??= new System.Collections.Generic.HashSet<string>();
-            state.ExtraEnemyZdos ??= new System.Collections.Generic.HashSet<string>();
-            state.ParkedBosses ??= new System.Collections.Generic.Dictionary<string, BloodMoonBossParkingState>();
+            state.Participants ??= new Dictionary<long, BloodMoonParticipantState>();
+            state.Groups ??= new Dictionary<long, BloodMoonGroupState>();
+            state.SpawnLeases ??= new Dictionary<string, BloodMoonSpawnLeaseState>();
+            state.ReportedEnemyDeaths ??= new HashSet<string>();
+            state.ExtraEnemyZdos ??= new HashSet<string>();
+            state.ParkedBosses ??= new Dictionary<string, BloodMoonBossParkingState>();
 
             foreach (BloodMoonParticipantState participant in state.Participants.Values)
             {
-                participant.SkillContribution ??= new System.Collections.Generic.Dictionary<int, float>();
-                participant.LiveSkillBonusEquivalent ??= new System.Collections.Generic.Dictionary<int, float>();
+                participant.SkillContribution ??= new Dictionary<int, float>();
+                participant.LiveSkillBonusEquivalent ??= new Dictionary<int, float>();
             }
         }
     }
