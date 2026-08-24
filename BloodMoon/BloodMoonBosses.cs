@@ -1,3 +1,4 @@
+using HarmonyLib;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,12 +10,18 @@ namespace Seasons.BloodMoon
     internal static class BloodMoonBosses
     {
         internal static readonly int ParkedEventMarker = "Seasons.BloodMoon.ParkedEventId".GetStableHashCode();
+        internal static readonly int ParkingSchemaMarker = "Seasons.BloodMoon.ParkingSchema".GetStableHashCode();
+        internal static readonly int OriginalPositionMarker = "Seasons.BloodMoon.OriginalPosition".GetStableHashCode();
+        internal static readonly int OriginalPrefabHashMarker = "Seasons.BloodMoon.OriginalPrefabHash".GetStableHashCode();
+        internal static readonly int ParkingTimestampMarker = "Seasons.BloodMoon.ParkingTimestamp".GetStableHashCode();
+
+        private const int ParkingSchema = 1;
         private static readonly Dictionary<ZDOID, double> pendingUntil = new Dictionary<ZDOID, double>();
         private static double nextScan;
 
         internal static void Tick(BloodMoonEventState state, double now)
         {
-            if (state == null || ZNet.instance == null || !ZNet.instance.IsServer() || ZDOMan.instance == null)
+            if (state == null || ZNet.instance == null || !ZNet.instance.IsServer() || ZDOMan.instance == null || ZNetScene.instance == null)
                 return;
 
             ReassertPending(state, now);
@@ -24,17 +31,24 @@ namespace Seasons.BloodMoon
 
             foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values.ToArray())
             {
-                if (!IsBossZdo(zdo) || zdo.GetFloat(ZDOVars.s_health, 1f) <= 0f)
-                    continue;
-                string id = zdo.m_uid.ToString();
-                if (state.ParkedBosses.ContainsKey(id) || zdo.GetLong(ParkedEventMarker, -1L) == state.EventId)
+                if (!IsAliveBossZdo(zdo))
                     continue;
 
-                if (!zdo.Persistent)
+                long parkedEventId = zdo.GetLong(ParkedEventMarker, -1L);
+                if (parkedEventId >= 0L)
                 {
-                    WithdrawAffectedPlayers(state, zdo.GetPosition());
+                    if (parkedEventId == state.EventId)
+                        EnsureTransactionFromMarker(state, zdo);
                     continue;
                 }
+
+                Vector3 position = zdo.GetPosition();
+                if (Character.InInterior(position) || !zdo.Persistent)
+                {
+                    WithdrawAffectedPlayers(state, position, Character.InInterior(position) ? "interior boss encounter" : "nonpersistent boss encounter");
+                    continue;
+                }
+
                 Park(state, zdo, now);
             }
         }
@@ -43,12 +57,15 @@ namespace Seasons.BloodMoon
         {
             if (state == null || ZDOMan.instance == null)
                 return false;
+
             ZDO zdo = ZDOMan.instance.m_objectsByID.Values
-                .Where(IsBossZdo)
+                .Where(IsAliveBossZdo)
+                .Where(item => item.Persistent && !Character.InInterior(item.GetPosition()))
                 .OrderBy(item => Utils.DistanceXZ(item.GetPosition(), point))
                 .FirstOrDefault();
-            if (zdo == null || !zdo.Persistent)
+            if (zdo == null)
                 return false;
+
             Park(state, zdo, now);
             return true;
         }
@@ -56,13 +73,14 @@ namespace Seasons.BloodMoon
         private static void Park(BloodMoonEventState state, ZDO zdo, double now)
         {
             string id = zdo.m_uid.ToString();
-            if (state.ParkedBosses.ContainsKey(id))
+            if (state.ParkedBosses.ContainsKey(id) || zdo.GetLong(ParkedEventMarker, -1L) == state.EventId)
                 return;
 
+            Vector3 originalPosition = zdo.GetPosition();
             BloodMoonBossParkingState transaction = new BloodMoonBossParkingState
             {
                 ZdoId = id,
-                OriginalPosition = zdo.GetPosition(),
+                OriginalPosition = originalPosition,
                 OriginalRotation = zdo.GetRotation(),
                 OriginalOwner = zdo.GetOwner(),
                 OriginalDataRevision = zdo.DataRevision,
@@ -70,7 +88,11 @@ namespace Seasons.BloodMoon
                 WasLoaded = ZNetScene.instance?.FindInstance(zdo.m_uid) != null
             };
 
-            // Marker and sidecar state are durable before ownership/position mutation.
+            // Durable marker-first transaction. Sidecar and ZDO independently retain the restore position.
+            zdo.Set(ParkingSchemaMarker, ParkingSchema);
+            zdo.Set(OriginalPositionMarker, originalPosition);
+            zdo.Set(OriginalPrefabHashMarker, zdo.GetPrefab());
+            zdo.Set(ParkingTimestampMarker, (long)now);
             zdo.Set(ParkedEventMarker, state.EventId);
             state.ParkedBosses[id] = transaction;
             BloodMoonPersistence.Save(state);
@@ -79,18 +101,45 @@ namespace Seasons.BloodMoon
             Reassert(zdo, parked);
             pendingUntil[zdo.m_uid] = now + 5d;
             SynchronizeLoadedInstance(zdo, parked);
-            LogInfo($"[BloodMoon.Boss] Parked {zdo.m_uid} from {transaction.OriginalPosition} to {parked}.");
+            LogInfo($"[BloodMoon][event:{state.EventId}][boss:{zdo.m_uid}] parked from {originalPosition} to {parked}.");
         }
 
         internal static void RestoreAll(BloodMoonEventState state)
         {
             if (state == null || ZDOMan.instance == null)
                 return;
-            foreach (BloodMoonBossParkingState transaction in state.ParkedBosses.Values.ToArray())
-                Restore(state, transaction);
+
+            foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values.Where(HasParkingMarker).ToArray())
+            {
+                BloodMoonBossParkingState transaction = ResolveTransaction(state, zdo);
+                if (transaction != null)
+                    Restore(state, transaction);
+            }
+
             state.ParkedBosses.Clear();
             pendingUntil.Clear();
             BloodMoonPersistence.Save(state);
+        }
+
+        internal static bool RestoreNearest(BloodMoonEventState state, Vector3 point)
+        {
+            if (state == null || ZDOMan.instance == null)
+                return false;
+
+            ZDO zdo = ZDOMan.instance.m_objectsByID.Values
+                .Where(HasParkingMarker)
+                .OrderBy(item => Utils.DistanceXZ(ReadOriginalPosition(item), point))
+                .FirstOrDefault();
+            if (zdo == null)
+                return false;
+
+            BloodMoonBossParkingState transaction = ResolveTransaction(state, zdo);
+            if (transaction == null)
+                return false;
+            Restore(state, transaction);
+            state.ParkedBosses.Remove(transaction.ZdoId);
+            BloodMoonPersistence.Save(state);
+            return true;
         }
 
         private static void Restore(BloodMoonEventState state, BloodMoonBossParkingState transaction)
@@ -104,16 +153,26 @@ namespace Seasons.BloodMoon
                 return;
             }
 
+            Vector3 originalPosition = transaction.OriginalPosition;
+            if (originalPosition == Vector3.zero && zdo.GetInt(ParkingSchemaMarker, 0) == ParkingSchema)
+                originalPosition = ReadOriginalPosition(zdo);
+
             zdo.SetOwner(ZDOMan.GetSessionID());
-            zdo.SetPosition(transaction.OriginalPosition);
-            zdo.SetRotation(transaction.OriginalRotation);
+            zdo.SetPosition(originalPosition);
+            SynchronizeLoadedInstance(zdo, originalPosition);
             ZDOMan.instance.ForceSendZDO(id);
-            SynchronizeLoadedInstance(zdo, transaction.OriginalPosition);
-            if (transaction.OriginalOwner != 0L)
-                zdo.SetOwner(transaction.OriginalOwner);
+
+            // Clear the durable transaction markers last. Do not restore a stale peer owner.
             zdo.Set(ParkedEventMarker, -1L);
+            zdo.Set(ParkingSchemaMarker, 0);
+            zdo.Set(OriginalPositionMarker, Vector3.zero);
+            zdo.Set(OriginalPrefabHashMarker, 0);
+            zdo.Set(ParkingTimestampMarker, 0L);
+            ZDOMan.instance.ForceSendZDO(id);
+
             transaction.Restored = true;
-            LogInfo($"[BloodMoon.Boss] Restored {id} to {transaction.OriginalPosition}.");
+            pendingUntil.Remove(id);
+            LogInfo($"[BloodMoon][event:{state.EventId}][boss:{id}] restored to {originalPosition}.");
         }
 
         internal static void Recover(BloodMoonEventState state)
@@ -121,19 +180,64 @@ namespace Seasons.BloodMoon
             if (state == null || ZDOMan.instance == null)
                 return;
 
-            foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values.Where(item => item.GetLong(ParkedEventMarker, -1L) == state.EventId).ToArray())
+            double now = SeasonState.IsActive ? seasonState.GetTotalSeconds() : 0d;
+            foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values.Where(HasParkingMarker).ToArray())
             {
-                string id = zdo.m_uid.ToString();
-                if (!state.ParkedBosses.TryGetValue(id, out BloodMoonBossParkingState transaction))
+                long markedEventId = zdo.GetLong(ParkedEventMarker, -1L);
+                BloodMoonBossParkingState transaction = ResolveTransaction(state, zdo);
+                if (transaction == null)
                 {
-                    LogError($"[BloodMoon.Recovery] Parked boss marker {id} has no transaction record; leaving it untouched for manual recovery.");
+                    LogError($"[BloodMoon.Recovery] Cannot restore parked boss {zdo.m_uid}: durable original position is missing.");
                     continue;
                 }
-                if (state.Phase == BloodMoonEventPhase.Resolving || state.Phase == BloodMoonEventPhase.Resolved || state.Phase == BloodMoonEventPhase.Dormant)
-                    Restore(state, transaction);
+
+                bool matchingActiveEvent = markedEventId == state.EventId && state.IsCombatLive;
+                if (matchingActiveEvent)
+                {
+                    state.ParkedBosses[transaction.ZdoId] = transaction;
+                    pendingUntil[zdo.m_uid] = now + 5d;
+                    Reassert(zdo, GetParkingPosition(zdo.m_uid));
+                }
                 else
-                    pendingUntil[zdo.m_uid] = seasonState.GetTotalSeconds() + 5d;
+                {
+                    LogWarning($"[BloodMoon.Recovery] Restoring stale parked boss {zdo.m_uid} from event {markedEventId}.");
+                    Restore(state, transaction);
+                    state.ParkedBosses.Remove(transaction.ZdoId);
+                }
             }
+
+            BloodMoonPersistence.Save(state);
+        }
+
+        private static BloodMoonBossParkingState ResolveTransaction(BloodMoonEventState state, ZDO zdo)
+        {
+            string id = zdo.m_uid.ToString();
+            if (state.ParkedBosses.TryGetValue(id, out BloodMoonBossParkingState transaction))
+                return transaction;
+            return EnsureTransactionFromMarker(state, zdo);
+        }
+
+        private static BloodMoonBossParkingState EnsureTransactionFromMarker(BloodMoonEventState state, ZDO zdo)
+        {
+            if (zdo.GetInt(ParkingSchemaMarker, 0) != ParkingSchema)
+                return null;
+
+            Vector3 originalPosition = ReadOriginalPosition(zdo);
+            if (originalPosition == Vector3.zero)
+                return null;
+
+            BloodMoonBossParkingState transaction = new BloodMoonBossParkingState
+            {
+                ZdoId = zdo.m_uid.ToString(),
+                OriginalPosition = originalPosition,
+                OriginalRotation = zdo.GetRotation(),
+                OriginalOwner = 0L,
+                OriginalDataRevision = zdo.DataRevision,
+                OriginalOwnerRevision = zdo.OwnerRevision,
+                WasLoaded = ZNetScene.instance?.FindInstance(zdo.m_uid) != null
+            };
+            state.ParkedBosses[transaction.ZdoId] = transaction;
+            return transaction;
         }
 
         private static void ReassertPending(BloodMoonEventState state, double now)
@@ -145,12 +249,14 @@ namespace Seasons.BloodMoon
                     pendingUntil.Remove(pending.Key);
                     continue;
                 }
+
                 ZDO zdo = ZDOMan.instance.GetZDO(pending.Key);
                 if (zdo == null || zdo.GetLong(ParkedEventMarker, -1L) != state.EventId)
                 {
                     pendingUntil.Remove(pending.Key);
                     continue;
                 }
+
                 Vector3 parked = GetParkingPosition(zdo.m_uid);
                 Reassert(zdo, parked);
                 SynchronizeLoadedInstance(zdo, parked);
@@ -182,13 +288,23 @@ namespace Seasons.BloodMoon
             }
         }
 
-        private static bool IsBossZdo(ZDO zdo)
+        private static bool IsAliveBossZdo(ZDO zdo)
         {
             if (zdo == null || ZNetScene.instance == null)
                 return false;
             GameObject prefab = ZNetScene.instance.GetPrefab(zdo.GetPrefab());
             Character character = prefab != null ? prefab.GetComponent<Character>() : null;
-            return character != null && character.IsBoss();
+            return character != null && character.IsBoss() && zdo.GetFloat(ZDOVars.s_health, 1f) > 0f;
+        }
+
+        private static bool HasParkingMarker(ZDO zdo)
+        {
+            return zdo != null && zdo.GetLong(ParkedEventMarker, -1L) >= 0L;
+        }
+
+        private static Vector3 ReadOriginalPosition(ZDO zdo)
+        {
+            return zdo.GetVec3(OriginalPositionMarker, Vector3.zero);
         }
 
         private static Vector3 GetParkingPosition(ZDOID id)
@@ -197,7 +313,7 @@ namespace Seasons.BloodMoon
             return new Vector3(600000f + offset, 200f, 600000f + offset * 0.37f);
         }
 
-        private static void WithdrawAffectedPlayers(BloodMoonEventState state, Vector3 bossPosition)
+        private static void WithdrawAffectedPlayers(BloodMoonEventState state, Vector3 bossPosition, string reason)
         {
             if (BloodMoonController.Instance == null)
                 return;
@@ -206,8 +322,20 @@ namespace Seasons.BloodMoon
                 if (!BloodMoonController.Instance.TryGetConnectedPosition(participant.PlayerId, out Vector3 position) || Utils.DistanceXZ(position, bossPosition) > 120f)
                     continue;
                 BloodMoonController.Instance.WithdrawLocalOrRequested(participant.PlayerId);
-                LogWarning($"[BloodMoon.Boss] Withdrew {participant.PlayerName} because nearby boss is nonpersistent/unparkable.");
+                LogWarning($"[BloodMoon][event:{state.EventId}][boss] withdrew player {participant.PlayerId}: {reason}.");
             }
+        }
+    }
+
+    [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.FixedUpdate))]
+    internal static class BloodMoonBossServerTickPatch
+    {
+        private static void Postfix()
+        {
+            BloodMoonController controller = BloodMoonController.Instance;
+            if (controller?.State == null || ZNet.instance == null || !ZNet.instance.IsServer() || !SeasonState.IsActive)
+                return;
+            BloodMoonBosses.Tick(controller.State, seasonState.GetTotalSeconds());
         }
     }
 }
