@@ -21,6 +21,7 @@ namespace Seasons.BloodMoon
         private const float RelevantZoneDistance = 180f;
         private static readonly Dictionary<Vector2i, ZoneClaim> serverClaims = new Dictionary<Vector2i, ZoneClaim>();
         private static readonly HashSet<int> spawnSystemPrefabHashes = new HashSet<int>();
+        private static readonly List<ZDO> sectorZdos = new List<ZDO>();
         private static ZNetScene cachedPrefabScene;
         private static float localReportTimer;
 
@@ -104,6 +105,7 @@ namespace Seasons.BloodMoon
             localReportTimer = 0f;
             cachedPrefabScene = null;
             spawnSystemPrefabHashes.Clear();
+            sectorZdos.Clear();
         }
 
         internal static string Dump(BloodMoonEventState state)
@@ -143,8 +145,9 @@ namespace Seasons.BloodMoon
             if (spawnSystemPrefabHashes.Count == 0)
                 return false;
 
-            return ZDOMan.instance.m_objectsByID.Values.Any(zdo =>
-                zdo != null && zdo.GetOwner() == sender && zdo.GetSector() == zone && spawnSystemPrefabHashes.Contains(zdo.GetPrefab()));
+            sectorZdos.Clear();
+            ZDOMan.instance.FindSectorObjects(zone, 0, 0, sectorZdos);
+            return sectorZdos.Any(zdo => zdo != null && zdo.GetOwner() == sender && spawnSystemPrefabHashes.Contains(zdo.GetPrefab()));
         }
 
         private static void EnsureSpawnSystemPrefabHashes()
