@@ -2,7 +2,6 @@ using HarmonyLib;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using static Seasons.Seasons;
 
 namespace Seasons.BloodMoon
 {
@@ -67,6 +66,7 @@ namespace Seasons.BloodMoon
 
         internal static void Capture(UnityEngine.Object sourceObject, Character owner, ZNetView nview)
         {
+            RegisterRpc(ZRoutedRpc.instance);
             if (sourceObject == null || owner == null || !BloodMoonInteractionRules.IsEventCombatLive)
                 return;
 
@@ -93,6 +93,7 @@ namespace Seasons.BloodMoon
                 SourcePlayerId = playerId
             };
             runtimeSources[sourceObject.GetInstanceID()] = attribution;
+            BloodMoonAttributionLifetime.Ensure(sourceObject);
 
             ZDO zdo = nview != null && nview.IsValid() ? nview.GetZDO() : null;
             if (zdo != null && nview.IsOwner())
@@ -129,6 +130,7 @@ namespace Seasons.BloodMoon
                 SourcePlayerId = zdo.GetLong(SourcePlayerMarker, 0L)
             };
             runtimeSources[sourceObject.GetInstanceID()] = attribution;
+            BloodMoonAttributionLifetime.Ensure(sourceObject);
             return true;
         }
 
@@ -146,11 +148,21 @@ namespace Seasons.BloodMoon
 
         internal static void QueueForTarget(BloodMoonHitAttributionData attribution, Character target)
         {
+            RegisterRpc(ZRoutedRpc.instance);
             if (attribution == null || target == null || target.m_nview == null || !target.m_nview.IsValid())
                 return;
 
             ZDO targetZdo = target.m_nview.GetZDO();
             if (targetZdo == null)
+                return;
+
+            long targetPeer = targetZdo.GetOwner();
+            if (targetPeer == ZDOMan.GetSessionID())
+            {
+                AddPending(attribution, target.GetZDOID());
+                return;
+            }
+            if (targetPeer == 0L || ZRoutedRpc.instance == null)
                 return;
 
             ZPackage pkg = new ZPackage();
@@ -160,12 +172,7 @@ namespace Seasons.BloodMoon
             pkg.Write(attribution.SourceCharacterId);
             pkg.Write((int)attribution.SourceType);
             pkg.Write(attribution.SourcePlayerId);
-
-            long targetPeer = targetZdo.GetOwner();
-            if (targetPeer == ZDOMan.GetSessionID())
-                AddPending(attribution, target.GetZDOID());
-            else if (targetPeer != 0L && ZRoutedRpc.instance != null)
-                ZRoutedRpc.instance.InvokeRoutedRPC(targetPeer, RpcName, pkg);
+            ZRoutedRpc.instance.InvokeRoutedRPC(targetPeer, RpcName, pkg);
         }
 
         internal static bool TryConsume(Character target, HitData hit, out BloodMoonHitAttributionData attribution)
@@ -208,10 +215,7 @@ namespace Seasons.BloodMoon
             if (pkg == null || pkg.ReadInt() != BloodMoonNetwork.ProtocolVersion)
                 return;
 
-            BloodMoonHitAttributionData attribution = new BloodMoonHitAttributionData
-            {
-                EventId = pkg.ReadLong()
-            };
+            BloodMoonHitAttributionData attribution = new BloodMoonHitAttributionData { EventId = pkg.ReadLong() };
             ZDOID target = pkg.ReadZDOID();
             attribution.SourceCharacterId = pkg.ReadZDOID();
             attribution.SourceType = (BloodMoonCombatSourceType)pkg.ReadInt();
@@ -231,11 +235,7 @@ namespace Seasons.BloodMoon
                 queue = new Queue<PendingHit>();
                 pendingHits.Add(key, queue);
             }
-            queue.Enqueue(new PendingHit
-            {
-                Attribution = attribution,
-                ExpiresAt = Time.realtimeSinceStartup + PendingLifetime
-            });
+            queue.Enqueue(new PendingHit { Attribution = attribution, ExpiresAt = Time.realtimeSinceStartup + PendingLifetime });
         }
 
         private static void PrunePending()
@@ -252,6 +252,24 @@ namespace Seasons.BloodMoon
         }
     }
 
+    internal sealed class BloodMoonAttributionLifetime : MonoBehaviour
+    {
+        private UnityEngine.Object source;
+
+        internal static void Ensure(UnityEngine.Object sourceObject)
+        {
+            if (sourceObject is not Component component)
+                return;
+            BloodMoonAttributionLifetime lifetime = component.gameObject.GetComponent<BloodMoonAttributionLifetime>() ?? component.gameObject.AddComponent<BloodMoonAttributionLifetime>();
+            lifetime.source = sourceObject;
+        }
+
+        private void OnDestroy()
+        {
+            BloodMoonHitAttribution.Cleanup(source);
+        }
+    }
+
     [HarmonyPatch(typeof(Projectile), nameof(Projectile.Setup))]
     internal static class BloodMoonProjectileSetupAttributionPatch
     {
@@ -261,12 +279,6 @@ namespace Seasons.BloodMoon
         }
     }
 
-    [HarmonyPatch(typeof(Projectile), nameof(Projectile.OnDestroy))]
-    internal static class BloodMoonProjectileDestroyAttributionPatch
-    {
-        private static void Prefix(Projectile __instance) => BloodMoonHitAttribution.Cleanup(__instance);
-    }
-
     [HarmonyPatch(typeof(Aoe), nameof(Aoe.Setup))]
     internal static class BloodMoonAoeSetupAttributionPatch
     {
@@ -274,11 +286,5 @@ namespace Seasons.BloodMoon
         {
             BloodMoonHitAttribution.Capture(__instance, owner, __instance.m_nview);
         }
-    }
-
-    [HarmonyPatch(typeof(Aoe), nameof(Aoe.OnDisable))]
-    internal static class BloodMoonAoeDisableAttributionPatch
-    {
-        private static void Prefix(Aoe __instance) => BloodMoonHitAttribution.Cleanup(__instance);
     }
 }
