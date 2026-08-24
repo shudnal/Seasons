@@ -109,11 +109,13 @@ namespace Seasons.BloodMoon
                 eventId = BloodMoonController.Instance.State.EventId;
             string key = eventId >= 0L ? $"Blood Moon {eventId}" : "Blood Moon";
 
-            if (!player.m_knownTexts.TryGetValue(key, out string existing) || !string.Equals(existing, chronicle, StringComparison.Ordinal))
+            bool changed = !player.m_knownTexts.TryGetValue(key, out string existing) || !string.Equals(existing, chronicle, StringComparison.Ordinal);
+            if (changed)
                 player.AddKnownText(key, chronicle);
             if (eventId >= 0L)
                 BloodMoonDreams.Record(player, eventId, chronicle);
-            player.Message(MessageHud.MessageType.Center, chronicle);
+            if (changed)
+                player.Message(MessageHud.MessageType.Center, chronicle);
         }
 
         internal static void CleanupTransientState()
