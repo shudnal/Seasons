@@ -146,6 +146,9 @@ namespace Seasons.BloodMoon
         internal static void RestoreOverlay(EnvSetup env, EnvOverlayState state)
         {
             state?.Restore(env);
+            // EnvMan.SetEnv owns environment-object activation and may have disabled the Blood Moon
+            // cloud clone after the prefix. Reapply our independent visual lease after vanilla finishes.
+            SetParticleFactor(GetVisualFactor());
         }
 
         private static void SetRedChannel(EnvSetup env)
@@ -208,14 +211,19 @@ namespace Seasons.BloodMoon
 
         private static void SetParticleFactor(float factor)
         {
+            float clamped = Mathf.Clamp01(factor);
+            bool active = clamped > 0f;
+            if (clonedFaderFx != null && clonedFaderFx.activeSelf != active)
+                clonedFaderFx.SetActive(active);
+
             foreach (ParticleState state in particleStates)
             {
                 if (state.System == null)
                     continue;
                 ParticleSystem.EmissionModule emission = state.System.emission;
-                emission.rateOverTimeMultiplier = state.OriginalRateOverTime * Mathf.Clamp01(factor);
-                emission.enabled = factor > 0f;
-                if (factor <= 0f)
+                emission.rateOverTimeMultiplier = state.OriginalRateOverTime * clamped;
+                emission.enabled = active;
+                if (!active)
                     state.System.Clear();
             }
         }
