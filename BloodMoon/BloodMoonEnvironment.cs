@@ -263,7 +263,8 @@ namespace Seasons.BloodMoon
 
             internal void Restore(EnvSetup env)
             {
-                if (env == null) return;
+                if (env == null)
+                    return;
                 env.m_ambColorNight = ambNight; env.m_ambColorDay = ambDay;
                 env.m_fogColorNight = fogNight; env.m_fogColorMorning = fogMorning; env.m_fogColorDay = fogDay; env.m_fogColorEvening = fogEvening;
                 env.m_fogColorSunNight = fogSunNight; env.m_fogColorSunMorning = fogSunMorning; env.m_fogColorSunDay = fogSunDay; env.m_fogColorSunEvening = fogSunEvening;
@@ -298,6 +299,12 @@ namespace Seasons.BloodMoon
         private static void Postfix(EnvSetup env, BloodMoonEnvironment.EnvOverlayState __state)
         {
             BloodMoonEnvironment.RestoreOverlay(env, __state);
+        }
+
+        private static Exception Finalizer(Exception __exception, EnvSetup env, BloodMoonEnvironment.EnvOverlayState __state)
+        {
+            BloodMoonEnvironment.RestoreOverlay(env, __state);
+            return __exception;
         }
     }
 }
