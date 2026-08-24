@@ -227,12 +227,18 @@ namespace Seasons.BloodMoon
             if (!BloodMoonAttackContext.IsActive)
                 return true;
 
-            bool allowed = BloodMoonAttackContext.Attribution != null
-                ? BloodMoonHitAttribution.CanDamage(BloodMoonAttackContext.Attribution, __instance)
+            BloodMoonHitAttributionData attribution = BloodMoonAttackContext.Attribution;
+            bool allowed = attribution != null
+                ? BloodMoonHitAttribution.CanDamage(attribution, __instance)
                 : BloodMoonInteractionRules.CanDamage(BloodMoonAttackContext.Attacker, __instance, hit);
-            if (allowed && BloodMoonInteractionRules.IsBloodEnemy(__instance))
+            if (!allowed)
+                return false;
+
+            if (attribution != null)
+                BloodMoonHitAttribution.QueueForTarget(attribution, __instance);
+            if (BloodMoonInteractionRules.IsBloodEnemy(__instance))
                 BloodMoonAttackContext.AllowedCharacterHit = true;
-            return allowed;
+            return true;
         }
     }
 
@@ -293,7 +299,6 @@ namespace Seasons.BloodMoon
             {
                 if (target == null || !BloodMoonHitAttribution.CanDamage(attribution, target))
                     return false;
-                BloodMoonHitAttribution.QueueForTarget(attribution, target);
                 BloodMoonAttackContext.Begin(attribution);
                 BloodMoonAttackContext.AllowedCharacterHit = BloodMoonInteractionRules.IsBloodEnemy(target);
                 __state = true;
@@ -363,7 +368,6 @@ namespace Seasons.BloodMoon
             Character target = hitObject != null ? hitObject.GetComponent<Character>() : null;
             if (target == null || !BloodMoonHitAttribution.CanDamage(attribution, target))
                 return;
-            BloodMoonHitAttribution.QueueForTarget(attribution, target);
             BloodMoonAttackContext.Begin(attribution);
             BloodMoonAttackContext.AllowedCharacterHit = BloodMoonInteractionRules.IsBloodEnemy(target);
             __state = true;
