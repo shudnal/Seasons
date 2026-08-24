@@ -108,6 +108,23 @@ namespace Seasons.BloodMoon
     }
 
     [Serializable]
+    internal sealed class BloodMoonParticipantDetailSnapshot
+    {
+        public int Schema = BloodMoonStateSchema.Current;
+        public long EventId = -1L;
+        public int Revision;
+        public long PlayerId;
+        public float CombatPoints;
+        public float DisplayProgress;
+        public float Contribution;
+        public double MarkedAt;
+        public double FightingAt;
+        public double GoalReachedAt;
+        public double ExitedAt;
+        public double ResolvedAt;
+    }
+
+    [Serializable]
     internal sealed class BloodMoonGroupState
     {
         public long GroupId;
