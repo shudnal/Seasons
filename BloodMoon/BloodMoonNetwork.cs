@@ -231,7 +231,7 @@ namespace Seasons.BloodMoon
             Skills.SkillType skill = (Skills.SkillType)pkg.ReadInt();
             float baseEquivalent = pkg.ReadSingle();
             float liveBonusEquivalent = pkg.ReadSingle();
-            BloodMoonController.Instance?.OnSkillGainReport(sender, eventId, playerId, sequence, skill, baseEquivalent, liveBonusEquivalent);
+            BloodMoonSkillReports.Accept(sender, eventId, playerId, sequence, skill, baseEquivalent, liveBonusEquivalent);
         }
 
         private static void OnZoneClaim(long sender, ZPackage pkg)
