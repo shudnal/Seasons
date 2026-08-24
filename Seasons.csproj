@@ -183,6 +183,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Assets\blood_moon.png" />
     <EmbeddedResource Include="Assets\season_fall.png" />
     <EmbeddedResource Include="Assets\season_spring.png" />
     <EmbeddedResource Include="Assets\season_summer.png" />
