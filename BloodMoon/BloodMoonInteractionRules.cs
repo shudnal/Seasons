@@ -163,7 +163,7 @@ namespace Seasons.BloodMoon
             foreach (Player player in Player.GetAllPlayers())
             {
                 BloodMoonParticipantState participant = GetParticipant(player.GetPlayerID());
-                if (participant == null || !participant.IsCombatActive || player.IsDead() || player.InDebugFlyMode() || player.InGhostMode())
+                if (participant == null || !participant.IsCombatActive || player.IsDead() || player.IsTeleporting() || player.InDebugFlyMode() || player.InGhostMode())
                     continue;
                 if (participant.GoalReached)
                     goalReached.Add(player);
