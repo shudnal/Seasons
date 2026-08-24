@@ -17,12 +17,12 @@ namespace Seasons.BloodMoon
         }
 
         [HarmonyPatch(typeof(Player), nameof(Player.GetAvailableRecipes))]
-        [HarmonyPriority(Priority.Last)]
         private static class PlayerGetAvailableRecipesSafetyPatch
         {
-            private static void Postfix(ref List<Recipe> available)
+            [HarmonyPriority(Priority.Last)]
+            private static void Postfix(ref List<Recipe> __result)
             {
-                available?.RemoveAll(recipe => BloodCraft.IsBloodRecipe(recipe) && UsesPersistentWorldSpawner(recipe.m_item?.m_itemData));
+                __result?.RemoveAll(recipe => BloodCraft.IsBloodRecipe(recipe) && UsesPersistentWorldSpawner(recipe.m_item?.m_itemData));
             }
         }
 
