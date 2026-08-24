@@ -1,30 +1,80 @@
-# Blood Moon — Blood Craft, ordinary monsters and boss preservation
+# Blood Moon — Blood Craft, world preservation and boss parking
 
-Обязательная часть задачи `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
+Обязательная часть `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
 
-# 27. Blood Craft
+## 1. Blood Craft purpose
 
-Blood Craft — не награда, а временный инструмент для тестирования других боевых билдов.
+Blood Craft — временный инструмент события, не награда.
 
-- только already known recipes;
-- оружие, armour, trinkets, ammo и разрешённые consumables;
-- no blood currency/drop loop;
-- доступен в Marked и active personal participation;
-- временные items исчезают;
-- consumed food/mead effects могут остаться;
-- free upgrade только temporary item;
-- permanent item нельзя бесплатно upgrade.
+Цель:
 
-## Craft UI
+- дать попробовать уже известные боевые предметы без resource cost;
+- позволить сменить build;
+- прокачать непривычный combat skill;
+- ничего материального не вынести утром.
 
-- custom tabs: не вмешиваться;
-- Craft: добавить runtime clone eligible recipe рядом с ordinary recipe;
-- blood clone имеет отдельную identity, subdued red UI и no requirements;
-- shared original recipe не мутировать;
-- actual craft validates clone identity;
-- Upgrade: не дублировать список; temporary `ItemData` row/button red, upgrade free.
+Нет blood currency/drop loop. Подготовка должна быть простой и доступной с 18:00.
 
-## Marker
+## 2. Eligible content
+
+Только already known recipes.
+
+Предпочтительные categories:
+
+- weapons;
+- shields;
+- armour;
+- trinkets;
+- ammo;
+- battle consumables;
+- configured food/mead.
+
+Не включать:
+
+- construction pieces;
+- stations;
+- ships;
+- portals;
+- progression/quest items;
+- world objects;
+- recipes, которые Player ещё не знает.
+
+## 3. Craft UI
+
+### Custom tabs
+
+Если active tab не vanilla Craft/Upgrade:
+
+- не менять список;
+- не менять requirements;
+- не перекрашивать UI;
+- не вмешиваться в другой мод.
+
+### Craft
+
+После vanilla list известных recipes:
+
+- original permanent recipe остаётся;
+- для eligible recipe добавить runtime Blood Craft clone;
+- clone имеет отдельную identity/localized marker;
+- row и selected Craft button — subdued red;
+- requirements free;
+- shared original `Recipe` не мутируется;
+- clones очищаются при rebuild/close/world unload;
+- actual craft path проверяет clone identity, не цвет UI.
+
+### Upgrade
+
+Список не дублировать.
+
+После формирования `RecipeDataPair`:
+
+- если selected `ItemData` — temporary Blood Craft, row/button red;
+- upgrade free;
+- marker/owner/eventId сохраняются;
+- ordinary permanent item нельзя бесплатно upgrade.
+
+## 4. Item marker
 
 ```text
 Seasons.BloodCraft.Schema
@@ -32,119 +82,142 @@ Seasons.BloodCraft.EventId
 Seasons.BloodCraft.OwnerPlayerId
 ```
 
-## Inventory-only invariant
+Fail-safe:
 
-> Blood Craft item существует только в поддерживаемом inventory своего owner и текущего eventId.
+- stale eventId;
+- wrong owner;
+- missing/corrupt schema
 
-- `ItemDrop.Awake` уничтожает dropped temporary item;
-- `Interactable.UseItem` не принимает temporary item в world objects;
-- запрет container/ship storage/item stand/armour stand/trade/external inventory;
-- stale cleanup on `Inventory.Load`;
-- fallback vanilla death removes temporary items before TombStone;
-- stack merge temporary/permanent или different owner/event запрещён.
+→ item удалить.
 
-## Personal exit cleanup
+## 5. Inventory-only invariant
+
+> Blood Craft item может существовать только в поддерживаемом inventory своего owner и соответствующего eventId.
+
+### Drop
+
+`ItemDrop.Awake` уничтожает temporary item.
+
+### World sinks
+
+`Interactable.UseItem` и конкретные consumers не принимают temporary item:
+
+- ItemStand;
+- ArmorStand;
+- Fermenter;
+- CookingStation;
+- Smelter;
+- Catapult;
+- другие world objects.
+
+Не блокировать нормальное использование Player:
+
+- equip;
+- fire ammo;
+- drink;
+- eat;
+- throw permitted weapon.
+
+### External inventories
+
+Запретить:
+
+- containers;
+- ship storage;
+- trade;
+- tombstone;
+- external/custom equipment inventories чужого owner;
+- transfer другому Player.
+
+Использовать owner invariant и soft compatibility, а не hard dependencies.
+
+### Stack merge
+
+Vanilla `m_customData` не является безопасной stack boundary.
+
+Запретить:
+
+- temporary + permanent;
+- different eventId;
+- different ownerId.
+
+Предпочтительно точечно переопределить stack compatibility/merge path. Virtual inventory — только запасной путь.
+
+## 6. Personal cleanup
 
 При `Defeated` или `Withdrawn`:
 
-- немедленно safely unequip и удалить все temporary items Player-а;
-- ordinary gear остаётся;
-- consumed food/mead effects остаются;
-- temporary projectile/AOE/summon owner-а удаляется;
-- re-entry отсутствует.
+1. безопасно unequip temporary items;
+2. удалить temporary items из всех supported owner inventories;
+3. refresh equipment visual;
+4. ordinary gear оставить;
+5. consumed food/mead effects оставить;
+6. temporary Blood Craft projectile/AOE/summon удалить или лишить дальнейшего credit;
+7. re-entry отсутствует.
 
-Не пытаться автоматически восстанавливать прежний комплект ordinary equipment: custom slots и изменённый inventory делают это хрупким. Recovery protection даёт Player время вручную экипироваться.
+Fallback vanilla death удаляет temporary items до TombStone transfer.
 
-# 28. Attack attribution
+`Inventory.Load` очищает stale markers после crash/Alt+F4.
 
-Главное правило — participant phase, не только marker item.
+## 7. Attack attribution
 
-- обычное и Blood Craft оружие `Fighting`/`GoalReached` Player повреждает только Blood enemies;
-- projectile/AOE получает `eventId` и source attribution при создании;
-- delayed hit не зависит от later equipment/phase/owner;
-- ordinary traps/turrets не становятся Blood source;
-- combat summon, созданный active Player, может стать Blood entity и удаляется при personal/global exit.
+Participant phase является главным правом damage, item marker — правом временности.
 
-# 29. Existing monsters — принятое прямое преобразование
+- ordinary и Blood Craft weapon active participant повреждает только Blood enemies;
+- projectile/AOE записывает immutable `eventId`/source при создании;
+- позднее изменение equipment/owner/participant phase не меняет attribution;
+- owner exit не отменяет уже летящий damage, но прекращает skill/progress credit;
+- global end блокирует stale Blood source через target policy;
+- ordinary traps/turrets не становятся Blood source.
 
-Suspension+clone не используется.
+## 8. Existing monsters and world state
 
-Существующий eligible non-boss monster становится Blood enemy динамически, пока global event Active:
+Existing eligible MonsterAI:
 
-```text
-Blood Moon Active
-AND alive Character with MonsterAI
-AND not boss/tamed/Players/PlayerSpawned/TrainingDummy
-AND BaseAI.IsEnemy(monster, at least one active participant)
-```
+- динамически считается Blood enemy;
+- не получает conversion marker;
+- сохраняет ordinary loot;
+- погибает реально;
+- survivor остаётся;
+- max health/shared prefab/ZDO hunt state не меняются;
+- после event runtime policy просто выключается.
 
-Не нужен ZDO marker conversion origin.
+Это осознанный компромисс в пользу совместимости и простоты.
 
-Следствия:
+Only event extras имеют `SpawnedEventId` и удаляются.
 
-- existing monster сохраняет ordinary loot;
-- ordinary ragdoll/death flow сохраняется;
-- killed existing monster не восстанавливается;
-- survivor может изменить position/health и после event продолжает существовать;
-- max health/shared prefab не мутируются;
-- `m_huntPlayer`, persistent alert fields и другие ZDO AI-настройки не меняются Blood Moon;
-- target/flee/damage behavior задаётся conditional policy/patches и исчезает при окончании Active;
-- cleanup existing survivor не удаляет ZDO и не пытается восстановить pre-event AI history; удаляются только event VFX/transient caches.
+## 9. Boss sacrifice block
 
-Это осознанный компромисс в пользу простоты. Ordinary loot existing creature не считается отдельной event reward; это обычная награда за реально существовавшего монстра.
-
-# 30. Additional spawned enemies
-
-Только специально заспавненные событием объекты имеют marker:
-
-```text
-Seasons.BloodMoon.SpawnedEventId
-Seasons.BloodMoon.GroupId
-Seasons.BloodMoon.Role
-```
-
-Marker определяет:
-
-- no ordinary loot;
-- fast ragdoll cleanup;
-- server-side destruction всех оставшихся marked ZDO при resolution;
-- stale cleanup после crash/restart.
-
-Итерировать копию ZDO collection, не изменять source dictionary во время enumeration.
-
-# 31. Boss sacrifices с 18:00
-
-Фактический boss altar — `OfferingBowl`.
-
-Блокировать только `OfferingBowl` с `m_bossPrefab != null`:
+С 18:00 блокировать boss-producing `OfferingBowl`:
 
 - `UseItem`;
-- `Interact` для item-stand altars;
-- `RPC_SpawnBoss` как authoritative race guard.
+- item-stand `Interact`;
+- authoritative `RPC_SpawnBoss`.
 
-Offerings не потребляются; уже размещённые item-stand attachments не удаляются.
+Только если `m_bossPrefab != null`.
 
-Если spawn был queued до 18:00, не отменять его после уже совершённого списания offerings. Позволить spawn завершиться; если к этому моменту Active начался и boss persistent/outdoor, немедленно park его. Если boss нельзя park, затронутые encounter Players получают `Withdrawn`.
+Queued spawn до 18:00 не отменять после item consumption.
 
-# 32. Far-sector boss ZDO parking — принято для persistent outdoor boss
+## 10. Persistent outdoor boss parking
 
-## 32.1. Scope
+### Scope
 
-Автоматически park только boss, который:
+Park только:
 
-- жив и загружен/наблюдается в текущем encounter;
-- `Character.IsBoss()`/boss prefab подтверждён;
-- не `Character.InInterior()`;
-- имеет `ZDO.Persistent == true`;
-- не имеет актуального parking marker.
+- alive boss;
+- outdoor/not interior;
+- `ZDO.Persistent == true`.
 
-Nonpersistent boss не park и не получает временный `Persistent=true`. Если позже появятся обращения по конкретному модовому boss, совместимость рассматривается отдельно.
+Не park:
 
-Player, находящийся в encounter с interior или nonpersistent/unparkable boss, получает terminal `Withdrawn`; Blood Craft очищается, re-entry этой ночью отсутствует. Другие Players/groups продолжают Blood Moon.
+- nonpersistent boss;
+- interior boss;
+- ships/portals/multi-ZDO assemblies;
+- unknown object merely resembling boss.
 
-## 32.2. Markers
+Для unsupported encounter affected Players получают `Withdrawn`.
 
-Минимум:
+### Markers
 
 ```text
 Seasons.BloodMoon.ParkedEventId
@@ -152,103 +225,89 @@ Seasons.BloodMoon.ParkingSchema
 Seasons.BloodMoon.OriginalPosition
 ```
 
-Rotation не сохранять и не менять. Для diagnostics допустимы prefab hash и timestamp.
+Optional diagnostics:
 
-## 32.3. Parking protocol
+```text
+OriginalPrefabHash
+ParkingTimestamp
+```
 
-1. подтвердить alive persistent outdoor boss;
-2. записать marker/original position до перемещения;
-3. server принимает ownership ZDO;
-4. если server имеет live instance, синхронно переместить transform/rigidbody и обнулить velocities;
-5. установить ZDO position в deterministic reserved far XZ sector с нормальным finite Y;
-6. force-send/sector invalidation, чтобы clients выгрузили instance;
-7. не восстанавливать старый peer owner после event.
+Rotation не сохранять, если не меняется.
 
-Не использовать `y < -5000`, поскольку `ZSyncTransform` имеет out-of-world rescue.
+### Deterministic slot
 
-Каждый одновременно parked boss получает отдельный slot.
+- far XZ beyond world edge and all active/distant areas;
+- finite normal Y;
+- не использовать `y < -5000`;
+- separate slot per ZDOID to avoid overlap.
 
-## 32.4. Что требуется сохранить
+### Network-safe parking transaction
 
-Корректность определяется минимально:
+1. server validates ZDO/prefab/persistence/interior evidence;
+2. write marker + original position first;
+3. server `SetOwner(serverSessionId)`;
+4. set far position;
+5. if listen host has local live instance after ownership transfer, synchronize local transform/rigidbody or guard against stale owner sync;
+6. zero body/serialized velocities where available;
+7. `ForceSendZDO`;
+8. keep pending authoritative parking record briefly;
+9. reassert server owner/far position/force-send until old owner has observed higher `OwnerRevision` and object unloads.
 
-- тот же boss ZDO не уничтожен;
-- marker переживает restart;
-- после restore ZDO возвращён в `OriginalPosition`;
-- при загрузке arena создаётся валидный boss instance;
-- defeat key/loot/death flow не срабатывали во время parking.
+Причина: queued old-owner ZDO package with higher `DataRevision` can race the first server write. Reassertion is narrower and safer than global patch `ZDOMan.RPC_ZDOData`.
 
-Не требуется сохранять или восстанавливать:
+### Restore
 
-- текущую animation state;
+1. scan all ZDO markers from copied collection;
+2. server takes owner;
+3. set original position;
+4. force-send/sector invalidation;
+5. clear marker last;
+6. do not restore old peer owner.
+
+Correctness requires:
+
+- same persistent ZDO;
+- original position;
+- health/level/ZDO data preserved;
+- no boss death/loot/key.
+
+Не требуется exact:
+
+- animation;
 - target;
 - velocity;
-- attack coroutine;
-- client-only effects/HUD state;
-- runtime-only поля модовых компонентов.
+- coroutine;
+- HUD;
+- client-only effects;
+- runtime-only mod fields.
 
-Health/level/custom state сохраняются только в той мере, в которой сам prefab уже хранит их в ZDO. Точная иммерсивная непрерывность boss fight не является требованием.
+### Restart
 
-## 32.5. Restore
+- matching active event → leave parked;
+- no active/stale/corrupt event → restore immediately;
+- marker-first/clear-last makes operation idempotent.
 
-Под fade или при fail-safe recovery:
+### Residual objects
 
-1. server scan всех ZDO с parking marker;
-2. принять ownership при необходимости;
-3. вернуть `OriginalPosition`;
-4. force sync/sector invalidation;
-5. очистить marker только после успешного восстановления;
-6. optional appearance effect/короткая AI grace допустимы, но не обязательны.
+Boss projectile/AOE/summon/delayed effects специально не чистятся. Они завершают свой lifecycle.
 
-Операции idempotent:
+Boss minion, проходящий generic MonsterAI predicate, может стать Blood enemy.
 
-- crash после marker, но до move → restore к original position;
-- crash после restore, но до marker clear → повторный restore безопасен;
-- stale marker без active event → restore при world startup.
+## 11. Interior/nonpersistent boss
 
-## 32.6. Lingering boss objects
+Не park и не force `Persistent=true`.
 
-Parking не переносит projectiles, AOE, summons/minions или delayed effects.
+Affected Player определяется по observed boss HUD/live encounter + server validation.
 
-Специальный source-aware cleanup для них не реализуется. Они продолжают собственный lifecycle и со временем исчезают/погибают. Общая target/damage policy остаётся защитой от запрещённого взаимодействия, если источник можно определить.
+Outcome:
 
-Boss minion, который сам проходит ordinary eligibility predicate, может стать обычным Blood enemy.
+```text
+Withdrawn
+```
 
-## 32.7. Discovery without server live instance
+- Bloodlust/Blood Craft personal cleanup;
+- ordinary boss fight vanilla;
+- no re-entry;
+- другие groups продолжают Blood Moon.
 
-Dedicated server может не иметь live `Character`, даже когда boss instance существует у owner peer.
-
-Spike должен выбрать минимальную схему:
-
-- client/owner report boss ZDOID и `InInterior()` observation;
-- server validation prefab/`IsBoss`/`Persistent`/position/event phase;
-- authoritative parking выполняет только server;
-- client report никогда не задаёт outcome или parking position.
-
-# 33. Interior additional spawn
-
-Existing dungeon monsters автоматически становятся Blood enemies.
-
-Для extras использовать только уже загруженные `CreatureSpawner` как authored candidate positions:
-
-1. spawner относится к той же loaded interior/location области;
-2. candidate не слишком близко и по возможности вне прямой камеры;
-3. выбранный enemy prefab имеет полный path от candidate до Player;
-4. при необходимости допустим небольшой navmesh snap около самого spawner point;
-5. не вызывать `CreatureSpawner.Spawn()` и не менять его connection/respawn bookkeeping;
-6. не генерировать случайные navmesh points как fallback;
-7. если подходящего spawner point нет — extra spawn пропускается.
-
-Появление противника из другой комнаты считается желательным результатом, если существует полный путь.
-
-# 34. No personal parallel world
-
-Explicitly rejected:
-
-- per-client hiding;
-- layer-aware ownership;
-- invisible hitbox transparency;
-- first-contact layer switch;
-- clone preservation ordinary monsters.
-
-Все клиенты видят один общий Blood Moon event.
+Compatibility с конкретным modded boss добавляется только по обращениям.

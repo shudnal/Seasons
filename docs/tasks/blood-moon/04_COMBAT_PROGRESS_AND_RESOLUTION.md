@@ -1,85 +1,68 @@
-# Blood Moon — combat, progress, defeat and resolution
+# Blood Moon — combat, AI, progress, defeat and resolution
 
-Обязательная часть задачи `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
+Обязательная часть `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
 
-# 18. Hidden combat groups
+## 1. Hidden combat groups
 
 Server-only grouping:
 
-- recompute 3–5 seconds;
-- connected components by distance;
-- merge default 120 m;
-- split default 160 m;
-- stable ID by maximum member overlap;
-- cap from participant count;
+- recompute каждые 3–5 секунд;
+- connected components по XZ-distance;
+- merge default 120 м;
+- split default 160 м;
+- stable group ID по максимальному пересечению members;
+- group cap от active participant count;
 - server hard cap;
-- spawn anchor = real member, not geometric center.
+- spawn anchor — реальный member, не geometric center;
+- map markers отсутствуют.
 
-В группы входят `Fighting` и `GoalReached`.
+В группу входят:
 
-`Exited`, `Resolved` и disconnected не входят.
+```text
+Fighting
+GoalReached
+```
 
-Map markers отсутствуют.
+Не входят:
 
-# 19. Blood Moon enemies
+```text
+Exited
+Resolved
+Disconnected
+```
 
-В 23:00 используются два источника:
+GoalReached Player имеет меньший target priority, пока в группе есть Fighting Player.
 
-1. все загруженные eligible небоссовые `MonsterAI`;
-2. дополнительные custom-spawned enemies до group/server cap.
+## 2. Existing monsters: dynamic Blood behavior
 
-## 19.1. Прямая динамическая конверсия — принято
-
-Suspend+clone отвергнут.
-
-Существующий monster считается Blood enemy по текущему event state и общим игровым признакам:
+Existing Character является Blood enemy, когда:
 
 ```text
 Blood Moon Active
-AND Character alive/valid
-AND has MonsterAI
-AND not boss
-AND not tamed
-AND faction not Players/PlayerSpawned/TrainingDummy
-AND BaseAI.IsEnemy(monster, at least one Fighting/GoalReached Player)
+alive and valid
+has MonsterAI
+not boss
+not tamed
+faction not Players/PlayerSpawned/TrainingDummy
+vanilla BaseAI.IsEnemy(monster, at least one active participant)
 ```
 
-Это generic predicate без hardcoded prefab names:
+Не добавлять conversion marker.
 
-- passive animal исключается штатной faction semantics;
-- neutral Dvergr исключается, aggravated Dvergr допускается, если vanilla считает его врагом;
-- named/modded hostile MonsterAI допускается;
-- Player summon исключается faction `PlayerSpawned`;
-- fish/bird/ambient objects обычно не имеют подходящего hostile `MonsterAI` и не проходят predicate.
+Следствия:
 
-Нужен diagnostic dump inclusion/exclusion reason, но продуктовая граница считается принятой.
+- passive animals и neutral Dvergr остаются обычными;
+- aggravated Dvergr включается только когда vanilla считает его врагом;
+- hostile starred/unique/modded MonsterAI включается автоматически;
+- ordinary loot/ragdoll сохраняются;
+- killed existing monster не восстанавливается;
+- survivor не удаляется;
+- current health/position могут измениться как результат реального боя;
+- shared prefab, max health и persistent ZDO AI settings не мутируются.
 
-Поведение существующего monster реализуется conditionally через policy/patches:
+## 3. Extra spawned enemies
 
-- Player-only target selection;
-- no flee/idle при наличии допустимой цели;
-- event damage multipliers;
-- event visual treatment;
-- no damage ordinary world.
-
-Не вызывать persistent setters вроде `SetHuntPlayer(true)`, не менять ZDO alert/hunt fields и shared prefab. Vanilla AI может естественно оставить survivor рядом/alerted после события — точное восстановление pre-event AI history не требуется.
-
-Если existing monster погиб во время события:
-
-- это обычная смерть реального существа;
-- ordinary loot разрешён;
-- ordinary ragdoll/cleanup остаются;
-- объект не восстанавливается.
-
-Если existing monster пережил событие:
-
-- его ZDO не удаляется;
-- global Blood behavior прекращается вместе с Active;
-- cleanup удаляет только Blood Moon VFX и собственные transient caches.
-
-## 19.2. Дополнительные event spawns
-
-Только custom-spawned противники получают marker:
+Только event-created enemy получает:
 
 ```text
 Seasons.BloodMoon.SpawnedEventId
@@ -87,73 +70,244 @@ Seasons.BloodMoon.GroupId
 Seasons.BloodMoon.Role
 ```
 
-Marker должен быть записан до полноценного combat participation.
+Marker устанавливается сразу после instantiate и до дальнейшей combat participation.
 
-Для marked extras:
+Для marked extra:
 
-- ordinary loot подавляется;
-- ragdoll быстро очищается, default 2 seconds;
-- выжившие ZDO удаляются server-side при resolution;
-- stale marker другого/завершённого event удаляется при recovery/load.
+- no ordinary loot;
+- ragdoll cleanup, default 2 sec;
+- delete surviving ZDO при resolution;
+- delete stale marked ZDO при recovery;
+- lowering cap не удаляет живых;
+- existing unmarked monster никогда не удаляется extra cleanup.
 
-Server итерирует copy коллекции ZDO и никогда не удаляет unmarked ordinary ZDO.
+## 4. Zone-owner spawner
 
-## 19.3. Dynamic discovery
+Dedicated server не выполняет zone `SpawnSystem`.
 
-Не требуется помечать все существующие ZDO мира.
+Server:
 
-- любой loaded eligible Character автоматически квалифицируется через policy;
-- newly loaded/spawned ordinary monster во время Active автоматически становится Blood enemy;
-- periodic scan нужен только для VFX, diagnostics и cached runtime helpers;
-- не сканировать весь world каждый frame.
+- определяет group/cap/pool;
+- выбирает coordinator peer;
+- отправляет targeted assignment.
 
-## 19.4. Aggression
+Coordinator client:
 
-Blood enemy:
+- использует локальную surface/interior информацию;
+- создаёт extra;
+- ставит marker;
+- сообщает ZDOID.
 
-- всегда ищет active participant;
-- не flee/idle при наличии допустимой цели;
-- игнорирует PlayerBase/NoMonsters только для additional spawn;
-- не выбирает static targets;
-- не выбирает tamed/NPC/boss/другого monster;
-- GoalReached target имеет меньший score, пока есть Fighting;
-- ordinary event-creature despawn rules не должны удалять его из-за остановленного RandEventSystem.
+### Surface
 
-## 19.5. Health/damage
+Использовать собственный scheduler с проверками:
 
-Меньшая живучесть задаётся event-specific incoming damage multiplier.
+- min/max distance;
+- не в камере/слишком близко;
+- валидная terrain/nav point;
+- игнор обычного PlayerBase/NoMonsters suppression для event extras;
+- path feasibility where appropriate.
 
-Меньший исходящий урон — event-specific outgoing multiplier.
+### Interior
 
-Existing health/max health не переписываются.
+Использовать только позиции загруженных `CreatureSpawner`:
 
-# 20. Damage routing
+- same interior/location context;
+- full path к Player;
+- optional small navmesh snap около authored point;
+- не вызывать `CreatureSpawner.Spawn()`;
+- не менять его ZDO connection/respawn bookkeeping;
+- random navmesh fallback отсутствует;
+- no valid candidate → no extra spawn.
 
-Разрешено:
+## 5. Central interaction policy
+
+Одна точка:
+
+```csharp
+internal static class BloodMoonInteractionRules
+{
+    internal static bool IsEligibleExistingMonster(Character character);
+    internal static bool IsBloodEnemy(Character character);
+    internal static bool IsBloodMoonSpawned(Character character);
+    internal static bool IsActiveParticipant(Player player);
+    internal static bool CanTarget(Character attacker, Character target);
+    internal static bool CanDamage(Character attacker, IDamageable target, HitData hit);
+    internal static bool CanReceiveProgress(Character target, HitData hit);
+}
+```
+
+Не дублировать матрицу в разных patches.
+
+### Разрешено
 
 ```text
 Blood enemy → Fighting/GoalReached Player
-Fighting/GoalReached Player attack → Blood enemy
+Fighting/GoalReached Player source → current-event Blood enemy
 ```
 
-Запрещены:
+### Запрещено
 
-- buildings;
-- crops;
-- trees/ores/resource objects;
-- tamed;
-- ordinary NPC;
-- bosses;
-- nonparticipants/Exited;
-- traps/turrets/environment как способ убивать Blood enemies по умолчанию.
+- Blood enemy → building/static target/tamed/NPC/boss/other monster/Exited Player;
+- participant attack → building/crop/tree/ore/resource/tamed/NPC/boss/non-Blood enemy/other Player;
+- trap/turret/environment → Blood enemy по умолчанию.
 
-Фильтровать candidate hit до status/stagger/skill credit; final damage guard оставить.
+Forbidden target не получает:
 
-Projectile/AOE/summon должен сохранять event/source attribution при создании, если исходного `HitData.m_attacker` недостаточно после delayed hit или owner migration.
+- damage;
+- pushback;
+- stagger;
+- status effect;
+- skill credit;
+- aggravation.
 
-Lingering projectile/AOE/summon запаркованного boss специально не удаляется. Он завершает собственный lifecycle; если source всё ещё определяется как ordinary boss, общая damage policy не должна превращать его в Blood source.
+## 6. BaseAI/MonsterAI patch architecture
 
-# 21. Progress
+### 6.1. Не использовать persistent state methods
+
+Для existing monsters не вызывать:
+
+```text
+SetHuntPlayer(true)
+SetAggravated(...)
+persistent event-creature flag
+permanent faction/level/max-health changes
+```
+
+`SetHuntPlayer` и `SetAlerted` пишут ZDO.
+
+### 6.2. Enemy selection
+
+Для blood enemy owner:
+
+- prefix `BaseAI.FindEnemy` может вернуть nearest valid active participant;
+- использовать configurable hunt range;
+- исключить debug-fly/ghost;
+- не искать ordinary enemies/tamed/NPC.
+
+Eligibility должна использовать vanilla hostility без recursion через patched result.
+
+### 6.3. Target update
+
+В `MonsterAI.UpdateTarget`:
+
+- временно подавить `m_attackPlayerObjects`;
+- очистить/не разрешить `m_targetStatic`;
+- проверить current `m_targetCreature` через central policy;
+- при потере цели reacquire valid participant;
+- держать `m_lastKnownTargetPos`;
+- не позволять обычному give-up permanently завершить hunt, пока valid target существует.
+
+Не копировать весь `UpdateTarget`, если можно выполнить узкие prefix/postfix/transpiler hooks.
+
+### 6.4. Alerted/hunt semantics
+
+Предпочтительно:
+
+- runtime override `HuntPlayer()`/`IsAlerted()` для Blood enemy;
+- не записывать `s_huntPlayer`/`s_alert` в ZDO;
+- custom Blood VFX показывает состояние;
+- после Active condition false, vanilla state продолжает работать.
+
+### 6.5. Flee/idle/no-monster area
+
+Узко обойти для Blood enemy:
+
+- `fleeIfNotAlerted`;
+- `fleeIfLowHealth`;
+- `fleeIfHurtWhenTargetCantBeReached`;
+- Pheromone flee;
+- NoMonsterArea / PlayerBase avoidance;
+- idle/consume branch при наличии valid participant.
+
+Не обязательно отменять физические hazard decisions вроде выхода из lava, если это не мешает gameplay.
+
+### 6.6. Static targets
+
+Поскольку `MonsterAI.UpdateTarget` отдельно ищет `StaticTarget`, одного patch `BaseAI.IsEnemy` недостаточно. Static-target branch должна быть выключена для Blood enemy.
+
+### 6.7. Speed/aggression
+
+Применять через runtime modifiers:
+
+- movement speed;
+- target update interval;
+- hunt/sense range;
+- attack cadence only if later needed.
+
+Не менять shared item attacks/prefab fields.
+
+## 7. Damage routing
+
+Главный final guard — owner-side `Character.RPC_Damage`.
+
+Guard должен выполняться после owner/attacker resolution, но до:
+
+- `m_seman.OnDamaged`;
+- aggravation;
+- block/pushback;
+- status effect;
+- resistance/armor;
+- stagger;
+- `ApplyDamage`.
+
+### Multipliers
+
+```text
+participant → Blood enemy:
+    hit *= Blood enemy incoming multiplier
+
+Blood enemy → participant:
+    hit *= Blood enemy outgoing multiplier
+```
+
+Current config читается на каждый hit.
+
+### Early candidate filtering
+
+Дополнительно фильтровать в:
+
+- `Attack.DoMeleeAttack`;
+- `Attack.DoAreaAttack`;
+- `Projectile.OnHit`/AOE;
+- `Aoe`.
+
+Это нужно, чтобы forbidden collider:
+
+- не считался успешным hit;
+- не останавливал projectile;
+- не давал skill raise;
+- не получал status/stagger/push.
+
+Final `RPC_Damage` guard остаётся defense in depth.
+
+## 8. Projectile/AOE/summon attribution
+
+При первичном spawn записать immutable:
+
+```text
+eventId
+source type: Participant | BloodEnemy
+source Player/Character ZDOID
+```
+
+`eventId` не меняется, даже если source Player позднее `Exited`.
+
+Правило:
+
+- пока global event Active и target допустим, delayed projectile/AOE может нанести damage;
+- если owner Player уже Exited, damage сохраняется, но progress/skill credit ему не начисляется;
+- после global event end target перестаёт быть Blood enemy/participant, поэтому final damage policy блокирует stale Blood source;
+- attribution не вычисляется по текущему weapon/phase в момент попадания.
+
+Combat summon, созданный active participant:
+
+- получает immutable event attribution;
+- атакует Blood enemies;
+- не даёт progress после owner exit;
+- удаляется при personal/global cleanup, если он temporary Blood Craft summon.
+
+## 9. Progress
 
 Разделить:
 
@@ -161,165 +315,147 @@ Lingering projectile/AOE/summon запаркованного boss специал
 CombatBloodlustPoints
 DisplayedBloodlustProgress
 CombatContribution
-GoalReached
-ExitReason
 ```
 
-Kill/share:
+Server validates each enemy death exactly once.
 
-- server validates enemy identity и exactly-once death;
-- points получают active members группы в configured radius;
-- не только last hit;
-- GoalReached actions могут идти в stats, но не progress;
-- kills existing и marked extra enemies учитываются одинаково, стоимость задаёт server.
+Points получают eligible group members в configured share radius. Основной progress не зависит только от last hit.
 
 At 100%:
 
-- phase → `GoalReached`;
-- `GoalReached=true` фиксируется необратимо для reward текущего eventId;
-- full buff remains;
-- lower aggro only while unfinished targets exist.
+```text
+GoalReached = true
+phase = GoalReached
+```
 
-Рекомендованная ещё подлежащая явному подтверждению семантика: последующий `Defeated`, `Withdrawn` или disconnect завершает участие и влияет на DreamText/statistics, но не снимает уже заработанный Success/reward.
+- Success фиксируется;
+- completion reward сохраняется;
+- full buff остаётся;
+- Player помогает группе;
+- поздний ExitReason хранится отдельно.
 
-Auto-complete:
+### Auto-complete
 
 ```text
 Displayed = max(combatProgress, automaticFloor)
 ```
 
-Не даёт points/contribution/reward/Success.
+Auto-complete:
 
-# 22. Defeated dream collapse
+- не добавляет combat points;
+- не добавляет contribution;
+- не создаёт GoalReached/Success;
+- не даёт reward.
 
-Owner-side `Character.CheckDeath` intercept:
+## 10. Defeated
+
+Owner-side `Character.CheckDeath`:
 
 ```text
-Player
+local Player
 phase Fighting/GoalReached
 health <= 0
 not already Exited
 ```
 
-No `Player.OnDeath`.
+Действия:
 
-Restore:
+- skip `Player.OnDeath`;
+- no grave/death point/ragdoll/respawn;
+- no inventory/food/transform changes;
+- health/stamina/eitr → current max;
+- food/adrenaline unchanged;
+- remove computed damaging DoT;
+- set `ExitReason=Defeated`;
+- phase → Exited;
+- preserve `GoalReached`;
+- notify server;
+- personal Blood Craft cleanup;
+- no re-entry.
 
-```text
-Health = max
-Stamina = max
-Eitr = max
-Food unchanged
-Adrenaline unchanged
-```
+### DoT cleanup
 
-Outcome:
-
-```text
-phase = Exited
-exit reason = Defeated
-```
-
-## DoT cleanup
-
-Удалять только вычислимо damaging effects:
+Удалять только:
 
 - `SE_Burning`;
 - `SE_Poison`;
 - `SE_Smoke`;
-- `SE_Stats` с `m_tickInterval > 0 && m_healthPerTick < 0`.
+- `SE_Stats` with `m_tickInterval > 0 && m_healthPerTick < 0`.
 
-Не использовать `RemoveAllStatusEffects`. Unknown modded DoT не удалять автоматически.
+Не использовать `RemoveAllStatusEffects`. Unknown modded DoT не удалять эвристически.
 
-## Recovery protection
+### Recovery
 
 Stage 1:
 
 ```text
 100% incoming protection
 until IsOnGround || IsSwimming || IsAttached
-hard cap 15 seconds
+max 15 seconds
 ```
 
 Stage 2:
 
 ```text
 10 seconds
-75% incoming reduction
-final multiplier 0.25
+incoming multiplier 0.25
 ```
 
-Recovery protection не зависит от global event phase и не обязана исчезать при morning resolution раньше собственного конечного срока.
+Recovery timer продолжает работать после global morning resolution.
 
-Direct `Player.OnDeath`/scripted removal не перехватывать. Admin HP reduction естественно приводит к `Defeated`.
+## 11. Withdrawn
 
-# 23. Edge withdrawal
+Terminal `Withdrawn`:
 
-До vanilla edge death:
+- edge-of-world safety offset;
+- Player в encounter с interior boss;
+- Player в encounter с nonpersistent/unparkable boss.
 
-```csharp
-ZoneSystemVariantController.IsBeyondWorldEdge(position, positiveSafetyOffset)
+Действия:
+
+- phase → Exited;
+- preserve GoalReached;
+- personal Blood Craft cleanup;
+- снять Bloodlust;
+- перестать быть target/progress recipient;
+- no re-entry;
+- no transform changes.
+
+## 12. Resolution
+
+Early end возможен, когда хотя бы один Player был enrolled и все имеют terminal state:
+
+```text
+GoalReached and no unfinished participants
+Defeated
+Withdrawn
+Disconnected
 ```
 
-→ phase `Exited`, exit reason `Withdrawn`.
+GoalReached Player остаётся активным, пока есть Fighting Player.
 
-No transform changes. Re-entry отсутствует.
+В 05:45 resolution начинается независимо от progress.
 
-# 24. Contexts
-
-- outdoor ground: `Fighting`;
-- mounted/attached: `Fighting`, no forced detach;
-- ship/ocean: `Fighting`; land additional spawner может не найти поверхность, existing sea monsters продолжают работать;
-- ordinary interior/dungeon: `Fighting`; existing monsters становятся Blood enemies;
-- additional interior spawn использует только позиции загруженных `CreatureSpawner`, относящихся к тому же interior/location, с полным path validation; если точки нет, spawn пропускается;
-- teleport: временно pause spawn-anchor use, затем продолжить в destination;
-- encounter с interior boss или nonpersistent/unparkable boss: affected Player получает terminal `Withdrawn`, personal Blood Craft cleanup и no re-entry.
-
-Body blocking Exited Player-ом остаётся vanilla.
-
-# 25. Live balance configs
-
-Runtime tuning должно применяться без перезапуска и без пересоздания event state:
-
-- incoming/outgoing multipliers — со следующего hit;
-- speed/aggression parameters — со следующего AI update;
-- spawn interval/radii — со следующего scheduler tick;
-- group merge/split distance — с немедленным или ближайшим group recompute;
-- увеличение cap разрешает новые spawns сразу;
-- уменьшение cap не удаляет уже живых marked extras, а блокирует новые до снижения count;
-- pool/weight change влияет только на новые extra spawns;
-- ragdoll cleanup delay влияет на последующие deaths.
-
-Calendar/schedule timestamps текущего event остаются замороженными и меняются только со следующего года.
-
-# 26. Early/morning resolution
-
-Early end:
-
-- хотя бы один Player был enrolled;
-- все enrolled имеют terminal Success/Defeated/Withdrawn/Disconnected.
-
-05:45 forced resolution.
-
-Prepare:
+### Prepare
 
 1. freeze enrollment;
-2. stop additional spawn;
-3. freeze outcomes;
-4. fade request + timeout.
+2. stop new group assignments/spawn;
+3. freeze result records;
+4. request client fade;
+5. wait ACK with timeout.
 
-Resolve under fade:
+### Resolve under fade
 
-1. disable global Blood Moon monster behavior;
-2. delete marked extra enemy ZDO;
-3. remove event VFX/transient caches from existing monsters;
+1. disable global Blood behavior;
+2. delete marked extra ZDO;
+3. clear event VFX/transient caches;
 4. restore parked bosses;
-5. clean Blood Craft;
-6. remove force environment/VFX;
+5. cleanup Blood Craft;
+6. remove force environment/clouds;
 7. restore RandEventSystem;
 8. time → 06:00;
 9. remove Rested;
-10. publish DreamText;
+10. publish DreamText/chronicle;
 11. release input.
 
-No Player transform changes. Boss residual projectiles/AOE/summons специально не итерируются и не удаляются.
+Player transform never changes.

@@ -1,171 +1,305 @@
 # Blood Moon — network, persistence and participants
 
-Обязательная часть задачи `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
+Обязательная часть `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
 
-# 8. CCS и RPC
+## 1. Транспорт: CCS для состояния, RPC для адресных действий
 
-До production implementation изучить:
+### 1.1. `CustomSyncedValue`: global current state
 
-- `Utils/CustomSyncedValuesSynchronizer.cs`;
-- CCS `CustomSyncedValue<T>`;
-- `SequencedCustomSyncedValue<T>`;
-- queue semantics.
+Использовать обычный CCS `CustomSyncedValue<string>` с versioned JSON snapshot.
 
-Предпочтительная гибридная схема:
+Причины:
 
-## CCS snapshot
+- server/source-of-truth broadcast всем клиентам;
+- current state автоматически приходит late join;
+- equal state подавляется;
+- pending updates coalesce до последнего состояния;
+- JSON позволяет расширять schema без жёсткой зависимости от assembly-qualified DTO type;
+- Seasons уже использует этот механизм для текущего сезона/дня и JSON-настроек.
 
-Низкочастотный self-contained snapshot:
+Рекомендуются два public state value.
+
+#### `Blood Moon global snapshot`
+
+```json
+{
+  "schemaVersion": 1,
+  "eventId": 123,
+  "revision": 17,
+  "phase": "Active",
+  "resolutionStep": "None",
+  "visualStartSeconds": 0,
+  "combatStartSeconds": 0,
+  "autoCompleteStartSeconds": 0,
+  "forcedEndSeconds": 0,
+  "morningTargetSeconds": 0,
+  "randEventSuppressed": true,
+  "forceEnvironmentActive": true
+}
+```
+
+#### `Blood Moon participants snapshot`
+
+Минимальный public routing state, нужный владельцам AI и UI:
+
+```json
+{
+  "schemaVersion": 1,
+  "eventId": 123,
+  "revision": 31,
+  "participants": [
+    {
+      "playerZdoId": "...",
+      "stablePlayerId": "...",
+      "phase": "Fighting",
+      "goalReached": false,
+      "exitReason": "None"
+    }
+  ]
+}
+```
+
+Отправлять только при participant transition или редком aggregate update, не на каждый hit.
+
+### 1.2. Почему не `SequencedCustomSyncedValue`
+
+Event state полностью восстанавливается из последнего snapshot + revision.
+
+Нет команды, где повторное равное значение само по себе обязано быть отдельным событием. Поэтому очередь sequenced values:
+
+- не даёт полезной семантики;
+- усложняет recovery;
+- может накопить лишние переходы;
+- не нужна для `Marked`, `Active`, `Resolving`, поскольку клиент может сразу применить актуальную phase.
+
+### 1.3. Собственные RPC
+
+Использовать для:
+
+- local Player → server: `Defeated` notification;
+- owner enemy → server: death/kill report;
+- client → server: boss discovery report;
+- server → selected peer: group spawn-coordinator assignment;
+- server → specific Player: personal progress/reward/detail snapshot;
+- client → server: fade ACK;
+- client → server: explicit resync request;
+- admin/debug commands;
+- optional targeted diagnostics.
+
+Каждый message содержит минимум:
 
 ```text
 protocolVersion
 eventId
-revision
-phase
-schedule
-resolutionStep
-suppression/environment flags
+sender/player identity
+object/group identity when applicable
+message-specific sequence/deduplication key
 ```
 
-## Sequenced channel
+## 2. `Defeated`: client-authoritative local transition
 
-Только редкие server→client transitions, если фактические гарантии очереди подходят:
+Valheim ожидает, что local Player полностью принадлежит его клиенту.
+
+Поэтому:
+
+1. local owner обнаруживает `health <= 0` в `Character.CheckDeath`;
+2. немедленно предотвращает `Player.OnDeath`;
+3. применяет local recovery;
+4. сохраняет local `Defeated`;
+5. отправляет server notification;
+6. server принимает terminal transition для этого sender-а;
+7. server обновляет public participants CCS snapshot;
+8. AI owners перестают выбирать Player целью.
+
+Сервер не проверяет здоровье:
+
+- оно уже client-owned;
+- round-trip опоздает относительно `CheckDeath`;
+- malicious client может лишь досрочно выйти из собственного события;
+- серверная “проверка” не добавит реальной безопасности.
+
+Server checks ограничены identity/event/idempotency.
+
+## 3. Enemy death reports
+
+`Character.OnDeath` выполняется на owner ZDO, который может быть клиентом.
+
+Owner сообщает:
 
 ```text
-Marked
-Active
-PrepareResolution
-PublishOutcome
-ReleaseClient
+eventId
+enemy ZDOID
+groupId
+attacker Player ZDOID, если доступен
+position
 ```
 
-## Собственные RPC
+Server:
 
-- owner→server extra-spawned enemy death report;
-- owner→server provisional `Defeated` report;
-- owner/client→server boss-presence report, когда server не имеет live instance;
-- targeted participant state/progress;
-- snapshot/resync;
-- fade ACK;
-- diagnostics.
+- проверяет, что enemy был Blood enemy текущего события;
+- дедуплицирует ZDOID;
+- определяет server-side point value;
+- раздаёт progress eligible group members;
+- не принимает от клиента готовое количество points.
 
-Progress не отправлять на каждый hit; разумный лимит около четырёх обновлений в секунду.
+Existing и marked extra enemies учитываются одинаково для progress. Различие marker влияет на loot/cleanup, не на trust model.
 
-Boss-presence report является low-trust фактом наблюдения. Сервер проверяет ZDOID, prefab, `IsBoss`, `Persistent`, позицию/контекст и допустимость текущей фазы; клиент не выбирает способ parking и не сообщает готовый outcome.
+## 4. Group spawn coordinator
 
-# 9. Identity
+Dedicated server не имеет live `Character` и не выполняет zone `SpawnSystem`.
 
-Различать:
+Server:
+
+1. строит hidden groups по peer/player positions;
+2. выбирает один ready peer, владеющий/обслуживающий нужную зону;
+3. отправляет targeted assignment:
 
 ```text
-stable profile/player ID
-current peer/session UID
-Player ZDOID
+eventId
+groupId
+groupRevision
+member Player ZDOIDs
+anchor position/member
+alive cap
+server hard-cap remainder
+spawn pool revision
 ```
 
-Stable ID нужен для persistence/outcome, peer UID — для RPC, ZDOID — для combat attribution.
+Selected client:
 
-# 10. Persistence
+- запускает scheduler только для назначенной group revision;
+- использует локальные `SpawnSystem`, terrain/interior/navmesh данные;
+- создаёт extra enemy;
+- немедленно ставит `SpawnedEventId`, `GroupId`, `Role`;
+- сообщает серверу созданный ZDOID.
+
+Server:
+
+- считает marker-ZDO;
+- не даёт нескольким coordinators превысить cap;
+- при disconnect/reassignment увеличивает group revision;
+- игнорирует report старой revision.
+
+Это повторяет проверенную базовую модель Valheim/Custom Raids:
+
+```text
+server decides event
+→ zone owner client performs actual spawn
+```
+
+## 5. Boss discovery and parking
+
+Dedicated server может иметь только ZDO, без live `Character`.
+
+### Discovery
+
+Client, видящий boss instance, сообщает:
+
+```text
+eventId
+boss ZDOID
+observed InInterior
+prefab hash/name для диагностики
+```
+
+Server проверяет:
+
+- ZDO существует;
+- prefab зарегистрирован;
+- prefab/character metadata указывает boss;
+- `Persistent == true`;
+- ZDO не stale/parked;
+- event Active;
+- report sender находится в разумной зоне encounter;
+- interior evidence согласуется настолько, насколько доступно.
+
+Client не выбирает parking slot и не переносит boss.
+
+### Parking network transaction
+
+Server:
+
+1. записывает marker/schema/original position;
+2. `zdo.SetOwner(ZDOMan.GetSessionID())`;
+3. увеличенный `OwnerRevision` делает server новым owner;
+4. записывает deterministic far position через `SetPosition`;
+5. эта запись меняет sector и server invalidates old sector for peers;
+6. вызывает `ZDOMan.ForceSendZDO(zdo.m_uid)`;
+7. в коротком pending-parking window повторно подтверждает server owner/far position и force-send, пока старый owner не успел принять новую revision и instance не выгрузился.
+
+Причина pending window: `RPC_ZDOData` принимает пакет с большей `DataRevision`; уже поставленный в очередь пакет старого owner теоретически может прийти после первого server update. Server должен выиграть revision race повторным authoritative write, а не патчить весь `RPC_ZDOData`.
+
+На dedicated server live instance обычно отсутствует. Код не должен зависеть от него.
+
+На listen/single-player host server и client живут в одном процессе; live instance может существовать. Если после transfer он стал локальным owner, его transform нужно согласовать с far ZDO либо удерживать parking guard до unload, чтобы `ZSyncTransform.OwnerSync` не записал старый transform обратно.
+
+### Force/sector behavior
+
+- `SetPosition` переносит ZDO между sector collections.
+- `ZDOSectorInvalidated` сообщает peers удалить старую sector-копию.
+- `ForceSendZDO` ставит ZDO первым в send list.
+- После выхода из active/distant areas `ZNetScene` уничтожает local instance.
+- Persistent ZDO сохраняется.
+- Nonpersistent boss не паркуется.
+
+### Restore
+
+1. server scan всех ZDO с parking marker;
+2. server берёт ownership;
+3. возвращает `OriginalPosition`;
+4. force-send;
+5. marker очищает последним;
+6. old peer owner не восстанавливает.
+
+Operation idempotent при crash между любыми шагами.
+
+## 6. Persistence
 
 Хранить минимум:
 
 ```text
 schema/protocol version
-eventId and schedule
+eventId and absolute schedule
 event phase/resolution step
-last started/resolved/skipped IDs
-participant phase/outcome
-progress/contribution/goalReached
+last started/resolved/skipped event IDs
+participant phases
+GoalReached
+ExitReason
+progress/contribution
+group IDs/revisions
+marked extra enemy IDs или recoverable ZDO markers
 parked boss ZDOIDs
-extra-spawned enemy IDs or recoverable ZDO markers
-Defeated/Withdrawn flags
 revision
 ```
 
-Не хранить position/rotation Player как restore anchor.
+World-bound state привязан к world UID.
 
-World marker привязан к world UID. Transient active state — atomic sidecar JSON или существующий безопасный механизм проекта.
+Рекомендуемая модель:
 
-Первое включение внутри текущего forewarning/final-night window пропускает текущий год, если admin явно не запустил debug event.
+- небольшой persistent world marker последних event IDs/schema;
+- atomic sidecar JSON для transient active event;
+- ZDO markers — источник восстановления extra enemies и bosses.
 
-При corrupted snapshot:
+## 7. Recovery
 
-- удалить stale extra-spawned Blood Moon ZDO;
-- восстановить все ZDO с boss parking marker по `OriginalPosition`;
-- очистить временный VFX/status/force environment;
-- пометить текущий event skipped/resolved без reward;
-- никогда не перемещать Player.
+### Valid active snapshot
 
-Nonpersistent boss не входит в parking persistence: он остаётся в обычном мире, а затронутые им participants получают `Withdrawn`.
+- восстановить phase/schedule/participants;
+- сопоставить reconnect stable ID с новым peer/Player ZDOID;
+- rebuild groups;
+- удалить stale marked extras другого eventId;
+- оставить matching parked bosses parked;
+- продолжить текущую phase или resolve, если forced end прошёл.
 
-# 11. Participant lifecycle
+### Missing/corrupt snapshot
 
-## Marked
+- удалить stale marked extras;
+- восстановить все parked bosses;
+- снять own force environment/VFX/status;
+- restore RandEventSystem;
+- пометить текущий annual event skipped/resolved без reward;
+- никогда не менять Player transform.
 
-Игроки онлайн с 18:00 получают `Marked`. Late join до resolution регистрируется в текущем event.
+### First install
 
-С 18:00 запрещаются новые boss sacrifices. Уже принятый до 18:00 delayed summon не должен терять offerings: он завершается; если созданный boss persistent/outdoor и Active уже начался, его паркуют.
-
-## Active start
-
-В 23:00 enrolled Player сразу переходит в `Fighting`, если он не находится в encounter с boss, который нельзя park.
-
-- mounted/attached не отсоединяются;
-- ship/ocean остаётся полноценным участием, но land-spawner может не найти поверхность;
-- обычный interior остаётся полноценным участием; existing dungeon monsters становятся Blood enemies, extras используют только подходящие позиции загруженных `CreatureSpawner`;
-- teleport временно исключает Player из spawn-anchor расчёта, затем состояние продолжается в destination;
-- encounter с interior boss или nonpersistent/unparkable boss приводит к terminal `Withdrawn` для затронутого Player.
-
-Нет `AwaitingContact`, `Deferred` или персональной layer-видимости.
-
-## Boss encounter detection
-
-Продуктовое правило принято, техническая валидация проверяется spike:
-
-- client `EnemyHud`/live `Character` может сообщить boss ZDOID;
-- server подтверждает nearby/loaded boss и его parking eligibility;
-- если boss persistent и outdoor — park;
-- если boss interior, nonpersistent или parking transaction отклонён — affected Player получает `Withdrawn`;
-- другие группы/игроки продолжают Blood Moon.
-
-## Terminal outcomes
-
-Для early completion:
-
-```text
-Success / GoalReached
-Defeated / Exited
-Withdrawn / Exited
-Disconnected
-```
-
-`goalReached` хранить отдельно от последующей причины выхода. Рекомендованная семантика: если Player уже достиг 100%, последующий `Defeated`, `Withdrawn` или disconnect завершает его участие, но не отнимает зафиксированный Success и полный completion reward.
-
-## Defeated
-
-Локальный owner перехватывает `Character.CheckDeath` до `Player.OnDeath`, затем сервер подтверждает outcome.
-
-Не создаются:
-
-- death point;
-- death effects/ragdoll;
-- TombStone;
-- respawn;
-- inventory/food changes.
-
-После personal exit:
-
-- Player больше не является целью;
-- не может повреждать Blood enemies;
-- не получает progress;
-- Bloodlust modifiers снимаются;
-- future Blood Craft items/projectiles/summons этого Player очищаются;
-- re-entry отсутствует.
-
-Body blocking не запрещается специально.
-
-Recovery protection является отдельным конечным личным состоянием и может пережить global morning resolution до собственного истечения. Disconnect/reconnect во время этого короткого окна должен иметь явно проверенную политику; предпочтительно сохранять server timestamp окончания либо безопасно завершать protection при reconnect.
-
-## Empty server
-
-Если в 23:00 никого нет, event остаётся доступным для late join до 05:45. Если никто не вошёл — `Unwitnessed/Resolved`, без клиентского fade/reward.
+Если Blood Moon впервые включён уже внутри forewarning/final-night window, текущий год пропускается, если admin явно не запустил событие debug-командой.

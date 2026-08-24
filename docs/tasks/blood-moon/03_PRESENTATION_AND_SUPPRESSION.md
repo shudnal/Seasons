@@ -1,142 +1,215 @@
-# Blood Moon — presentation, environment and suppression
+# Blood Moon — presentation, environment and world suppression
 
-Обязательная часть задачи `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
+Обязательная часть `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
 
-# 12. Forewarning
+## 1. Forewarning
 
-На каждой configured forewarning night нужен заметный не текстовый признак:
+Каждая configured forewarning night должна иметь заметное не текстовое изменение мира:
 
 - слабый красный environment overlay;
 - слабые красные облака;
-- интенсивность растёт к финальной ночи;
 - только ночью;
+- интенсивность растёт к финальной ночи;
 - утром полностью очищается;
-- без spawn, combat modifiers и блокировки сна.
+- без врагов, Bloodlust modifiers и блокировки сна.
 
-Text/DreamText допускается дополнительно, но не вместо изменения мира.
+Text/DreamText допускается как дополнительный слой.
 
-# 13. Marked — 18:00
+Первый Blood Moon не обязан быть полностью понятным. Неудачное первое знакомство допустимо и соответствует циклическому характеру Seasons и Valheim.
+
+## 2. Marked — 18:00
 
 При входе:
 
-1. enroll players;
-2. остановить текущий ordinary RandEvent;
-3. заблокировать новые RandEvent;
-4. заблокировать сон;
-5. добавить собственный Blood Moon status;
-6. начать линейный red blend;
-7. открыть Blood Craft после его реализации;
-8. заблокировать новые boss sacrifices.
+1. enroll current players;
+2. остановить current ordinary RandEvent;
+3. блокировать новые RandEvent;
+4. блокировать сон;
+5. блокировать новые boss sacrifices;
+6. добавить/обновить собственный Blood Moon status;
+7. открыть Blood Craft после реализации;
+8. начать linear red blend;
+9. синхронизировать global snapshot.
 
-## Boss sacrifice block
+### Status text
 
-Фактический boss altar — `OfferingBowl`, а не `BossStone`.
+Vanilla `SoftDeath` не добавлять.
 
-Проверять минимум:
+Marked объясняет:
 
-- `OfferingBowl.UseItem` для inventory offerings;
-- `OfferingBowl.Interact` для item-stand altars;
-- `OfferingBowl.RPC_SpawnBoss` как authoritative/race guard.
+- когда начнётся бой;
+- что сон недоступен;
+- что известные eligible предметы можно создать временно;
+- всё кровавое исчезнет утром.
 
-Блокировать только bowls с `m_bossPrefab != null`; item-producing offerings не затрагивать.
-
-Если sacrifice был принят до 18:00 и `DelayedSpawnBoss` уже queued, не отнимать offerings отменой. Позволить spawn завершиться. Persistent outdoor boss, появившийся во время Active, сразу паркуется; interior/nonpersistent boss остаётся обычным, а затронутый encounter Player получает `Withdrawn`.
-
-## Status text
-
-Vanilla `SoftDeath` status не добавлять.
-
-Собственный status прямо сообщает:
+Fighting status прямо сообщает:
 
 ```text
 Когда здоровье иссякнет, кровавая горячка оборвётся.
 Ты не оставишь могилу и не потеряешь навыки.
 ```
 
-Для `GoalReached` отдельно объяснить, что full buff остаётся и можно помогать другим.
+GoalReached сообщает:
 
-Для terminal personal exit Bloodlust status снимается; recovery protection показывается собственным коротким status/tooltip.
+- 100% достигнуто;
+- Success уже зафиксирован;
+- full buff остаётся;
+- можно помогать другим.
 
-# 14. Active — 23:00
+Recovery после `Defeated` имеет отдельный короткий status с оставшимся временем защиты.
+
+## 3. Boss sacrifice block
+
+Фактический altar — `OfferingBowl`, не `BossStone`.
+
+Блокировать только instances с:
+
+```csharp
+m_bossPrefab != null
+```
+
+Guard:
+
+- `OfferingBowl.UseItem`;
+- `OfferingBowl.Interact` для item-stand altars;
+- `OfferingBowl.RPC_SpawnBoss` как authoritative race guard.
+
+Не блокировать item-producing bowls.
+
+Offerings не расходуются. Уже размещённые attachments не удаляются.
+
+Queued до 18:00 spawn:
+
+- не отменять после возможного списания items;
+- позволить завершиться;
+- persistent outdoor boss, появившийся во время Active, немедленно park;
+- interior/nonpersistent encounter приводит к `Withdrawn` affected Player-ов.
+
+## 4. Active — 23:00
 
 - forced Blood Moon environment;
-- enrolled Player → `Fighting`;
-- affected Player в encounter с interior или nonpersistent/unparkable boss → terminal `Withdrawn`;
-- eligible existing monsters получают dynamic Blood Moon behavior;
-- additional marked enemies spawn to cap;
-- persistent outdoor active bosses паркуются в far sector;
-- персональной visibility/collision layer нет;
-- все клиенты видят одних и тех же противников.
+- enrolled Player → `Fighting`, кроме affected boss encounter;
+- persistent outdoor bosses паркуются;
+- eligible existing MonsterAI получают dynamic Blood behavior;
+- extra marked enemies spawn to cap;
+- все клиенты видят один общий мир;
+- mounted/attached/ship/ocean/ordinary interiors остаются допустимыми контекстами.
 
-Mounted/attached не отсоединяются. Ship/ocean и ordinary interior сохраняют Active state; отсутствие подходящей spawn point лишь уменьшает additional spawn.
+## 5. RandEventSystem
 
-# 15. RandEventSystem
-
-Blood Moon — собственная система.
+Blood Moon — самостоятельная система, не `RandomEvent`.
 
 С 18:00 до полного resolution:
 
-- остановить current ordinary random event через штатный путь;
-- блокировать новые random events;
-- с 23:00 не позволять boss forced event/environment/music перезаписать Blood Moon;
-- restore систему в cleanup;
-- не запускать новый raid немедленно после Blood Moon.
+- остановить current ordinary random event штатным `SetRandomEvent(null, ...)`/эквивалентом;
+- блокировать запуск новых random events;
+- не позволять forced event перезаписать Blood Moon environment/music;
+- restore в cleanup;
+- не форсировать новый raid сразу после Blood Moon.
 
-После parking boss instance исчезает из active area; EnemyHud и forced boss event должны естественно погаснуть. Проверить runtime, но не строить отдельную сохранительную систему HUD/music.
+Boss forced event должен погаснуть после выгрузки parked boss instance; это не заменяет explicit RandEvent suppression.
 
-Lingering boss projectile/AOE/summon специально не удаляются и завершают собственный lifecycle.
+## 6. Blood Moon EnvSetup
 
-# 16. Environment
+После готовности `EnvMan`:
 
-## Target EnvSetup
+1. найти `Fader`;
+2. clone без изменения original;
+3. имя `Seasons_BloodMoon`;
+4. для каждого `Color`:
+   ```csharp
+   color.r = 1.0f;
+   ```
+5. установить:
+   ```csharp
+   m_windMin = 1f;
+   m_windMax = 2f;
+   m_sunAngle = 70f;
+   ```
+6. зарегистрировать один раз;
+7. cleanup при world unload.
 
-Копия `Fader`:
-
-- уникальное имя `Seasons_BloodMoon`;
-- каждому `Color`: `r = 1.0f`, остальные каналы сохранить;
-- `m_windMin = 1f`;
-- `m_windMax = 2f`;
-- `m_sunAngle = 70f`.
-
-## Overlay 18:00–23:00
+## 7. Overlay 18:00–23:00
 
 ```text
-18:00 factor 0
-23:00 factor 1
+18:00 factor = 0
+23:00 factor = 1
 ```
 
-Порядок:
+Первая формула линейная по authoritative absolute schedule.
+
+Порядок в существующем transient `EnvMan.SetEnv` patch:
 
 ```text
-original env
-→ seasonal luminance
-→ Blood Moon overlay
+original current environment
+→ existing seasonal luminance
+→ Blood Moon overlay toward target
 → vanilla SetEnv
-→ restore original fields
+→ restore all original fields
 ```
 
-Overlay не зависит от `controlLightings` или texture controllers.
+Blood Moon overlay не зависит от `controlLightings` или texture controllers.
 
-## Forced env
+Сохранять/восстанавливать:
 
-С 23:00 использовать own force-environment lease:
+```text
+все изменяемые Color fields
+m_windMin
+m_windMax
+m_sunAngle
+```
+
+Не использовать reflection каждый кадр.
+
+## 8. Forced environment lease
+
+С 23:00:
+
+- прекратить old weather;
+- force `Seasons_BloodMoon`;
+- держать до resolution.
+
+Lease:
 
 - сохранить previous force value;
-- restore только если текущее значение всё ещё принадлежит Blood Moon;
-- не затирать override другого мода;
-- в resolution восстановить previous/empty.
+- считать Blood Moon owner только пока current force value равно собственному имени;
+- cleanup не затирает override, изменённый другим модом после нас;
+- restore previous/empty только если lease всё ещё принадлежит Blood Moon.
 
-## Cloud VFX
+## 9. Ashlands_FaderFX
 
-Клонировать `Ashlands_FaderFX`, оставить:
+Клонировать vanilla `Ashlands_FaderFX`.
+
+Оставить:
 
 ```text
 cloud
 cloud (1)
 ```
 
-Для нужных ParticleSystem использовать проверенный `main.startColor`, установить red channel `1.0f`, emission масштабировать по visual factor.
+Для ParticleSystem:
 
-# 17. Music/SFX
+- использовать проверенный `main.startColor`;
+- `r = 1.0f`;
+- сохранить original emission multipliers;
+- 18:00–23:00: `emission * visualFactor`;
+- Active: полная интенсивность;
+- cleanup: stop emitting + clear под fade.
 
-Финальная музыка позже. Архитектура предоставляет phase hooks, но не добавляет пустую сложную abstraction.
+Не искать prefab/objects каждый кадр.
+
+## 10. Music/SFX
+
+Финальные tracks добавляются после создания музыки владельцем.
+
+Оставить простые phase hooks:
+
+```text
+Forewarning
+Marked
+Active
+GoalReached cue
+Resolving
+```
+
+Не строить заранее сложную пустую audio abstraction.

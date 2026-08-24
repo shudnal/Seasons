@@ -1,33 +1,43 @@
 # Blood Moon — state, authority and schedule
 
-Обязательная часть задачи `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
+Обязательная часть `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
 
-> Production-код не начинать до закрытия `09_PREIMPLEMENTATION_DECISIONS_AND_SPIKES.md`.
+## 1. Серверная авторитетность
 
-# 3. Серверная авторитетность
+Сервер является источником истины для:
 
-Сервер определяет:
-
-- `eventId`, расписание и event phase;
-- enrollment и participant state;
-- скрытые combat groups;
-- global Blood Moon active state;
-- eligibility обычных монстров;
-- какие ZDO были дополнительно заспавнены событием;
-- spawn budget и caps;
-- progress, contribution и outcomes;
-- `Defeated`, `Withdrawn`, disconnect и Success;
-- раннее завершение и morning resolution;
+- `eventId`;
+- расписания и фазы события;
+- enrollment;
+- публичного participant state;
+- hidden combat groups;
+- spawn budget/caps/pool revision;
+- server-side progress и completion records;
+- early/morning resolution;
+- suppression `RandEventSystem`;
 - boss parking/restore;
-- cleanup.
+- cleanup marked extra ZDO;
+- persistence/recovery.
 
-Клиент отвечает за UI/VFX/environment и owner-side reports о событиях объектов, реально исполняемых на пире-владельце.
+Клиент-владелец Player является источником факта своего локального dream collapse:
 
-`Defeated` применяется локально до network round-trip, чтобы `Player.OnDeath` не успел сработать, затем сервер валидирует и публикует authoritative outcome.
+- он немедленно перехватывает `Character.CheckDeath`;
+- восстанавливает Player;
+- переводит себя в local `Defeated`;
+- отправляет server notification;
+- не ждёт network round-trip, чтобы не допустить `Player.OnDeath`.
 
-# 4. State machines
+Сервер не верифицирует нулевое HP. Он проверяет только:
 
-## 4.1. Event
+- sender соответствует собственному Player;
+- `eventId` актуален;
+- Player был активным участником;
+- terminal transition ещё не обработан;
+- сообщение не является duplicate/stale.
+
+Это защита целостности состояния, а не античит.
+
+## 2. Event state machine
 
 ```csharp
 internal enum BloodMoonEventPhase
@@ -43,9 +53,23 @@ internal enum BloodMoonEventPhase
 }
 ```
 
-`Enabled` остаётся config gate.
+`Enabled` остаётся config gate, а не phase.
 
-## 4.2. Participant
+Переходы выполняются только централизованными idempotent methods:
+
+```text
+Dormant → Forewarning
+Forewarning → Marked
+Marked → Active
+Active → AutoCompleting
+Active/AutoCompleting → Resolving
+Resolving → Resolved
+Dormant/Forewarning/Marked → Skipped
+```
+
+Резкий time skip должен либо последовательно выполнить пропущенные переходы, либо безопасно перейти в `Resolving`.
+
+## 3. Participant state
 
 ```csharp
 internal enum BloodMoonParticipantPhase
@@ -59,33 +83,34 @@ internal enum BloodMoonParticipantPhase
 }
 ```
 
-Outcome отдельно:
-
 ```csharp
-internal enum BloodMoonParticipantOutcome
+internal enum BloodMoonParticipantExitReason
 {
     None,
-    Success,
     Defeated,
     Withdrawn,
-    Disconnected,
-    HiddenAtBase,
-    HiddenInWild,
-    LateWitness,
-    Skipped
+    Disconnected
 }
 ```
 
-- `Fighting` — Player является допустимой целью, получает Bloodlust modifiers и может повреждать Blood enemies.
-- `GoalReached` — 100% достигнуто, полный buff остаётся.
-- `Exited` — terminal personal outcome уже зафиксирован.
-- `Defeated` не является vanilla death.
+Отдельно хранить:
 
-Ship/ocean, mount, generic attached и обычный interior сами по себе не меняют phase. Teleport лишь временно исключает Player из spawn-anchor расчёта.
+```csharp
+bool GoalReached;
+bool AutoCompleted;
+bool JoinedLate;
+BloodMoonParticipantExitReason ExitReason;
+```
 
-Активный unparked interior boss является отдельным ещё не закрытым encounter exception из файла `09`, а не общей системой персональных слоёв.
+### Инварианты
 
-## 4.3. Resolution
+- `GoalReached=true` необратимо для текущего `eventId`.
+- Completion reward и Success не отменяются поздним `Defeated`, `Withdrawn` или disconnect.
+- `Exited` означает прекращение personal participation, но не стирает `GoalReached`.
+- `Resolved` означает, что итог опубликован и personal temporary state очищен.
+- Re-entry после `Exited` в первой версии отсутствует.
+
+## 4. Resolution state machine
 
 ```csharp
 internal enum BloodMoonResolutionStep
@@ -94,10 +119,11 @@ internal enum BloodMoonResolutionStep
     FreezingEnrollment,
     StoppingSpawns,
     AwaitingClientFade,
-    CleaningSpawnedEnemies,
-    ClearingTemporaryMonsterState,
+    DisablingBloodBehavior,
+    CleaningExtraEnemies,
     RestoringBosses,
     CleaningTemporaryItems,
+    RestoringWorldSystems,
     AdvancingTime,
     PublishingOutcomes,
     ReleasingClients,
@@ -105,102 +131,52 @@ internal enum BloodMoonResolutionStep
 }
 ```
 
-Все операции idempotent.
+Каждый шаг повторно вызываем и безопасен после reconnect/restart/timeout.
 
-# 5. Central interaction policy
-
-Одна дешёвая точка правил:
-
-```csharp
-internal static class BloodMoonInteractionRules
-{
-    internal static bool IsEligibleExistingMonster(Character character);
-    internal static bool IsBloodEnemy(Character character);
-    internal static bool IsBloodMoonSpawned(Character character);
-    internal static bool IsActiveParticipant(Player player);
-    internal static bool CanTarget(Character attacker, Character target);
-    internal static bool CanDamage(Character attacker, IDamageable target, HitData hit);
-}
-```
-
-`IsBloodEnemy` не требует conversion marker для существующего монстра:
-
-```text
-Blood Moon Active
-AND eligible non-boss monster
-```
-
-Дополнительный marker означает только происхождение:
-
-```text
-Seasons.BloodMoon.SpawnedEventId == current eventId
-```
-
-Базовая матрица:
-
-| Источник | Цель | Результат |
-|---|---|---|
-| Blood enemy | Fighting/GoalReached Player | target/damage разрешены |
-| Blood enemy | Exited/обычный Player | запрещены |
-| Blood enemy | building/tamed/NPC/boss/другой monster | запрещены |
-| Fighting/GoalReached Player attack | Blood enemy текущего event | разрешено |
-| Fighting/GoalReached Player attack | boss/tamed/building/crop/resource/обычный объект | запрещено |
-| Exited Player | Blood enemy | запрещено |
-| trap/turret/world source | Blood enemy | по умолчанию запрещено |
-
-Body collision terminal Player-а отдельно не отключается, пока runtime не докажет реальную проблему.
-
-# 6. Event ID и markers
+## 5. Event ID
 
 ```csharp
 long eventId = eventWorldDay;
 ```
 
-Event ID входит в:
+`eventWorldDay` — мировой день, в котором в 18:00 началась финальная ночь.
 
-- runtime/persistence;
-- snapshots/RPC;
+`eventId` входит в:
+
+- CCS snapshots;
+- RPC;
 - participant records;
-- extra-spawned enemy marker;
-- death-report deduplication;
-- parked boss marker;
-- Blood Craft marker;
+- marked extra enemies;
+- parked bosses;
+- Blood Craft items;
+- projectile/AOE attribution;
+- deduplication;
+- persistence;
 - chronicle.
 
-Минимальные extra-spawn markers:
+Stale marker другого `eventId` не считается частью текущего события.
 
-```text
-Seasons.BloodMoon.SpawnedEventId
-Seasons.BloodMoon.GroupId
-Seasons.BloodMoon.Role
-```
-
-Минимальные boss parking markers:
-
-```text
-Seasons.BloodMoon.ParkedEventId
-Seasons.BloodMoon.OriginalPosition
-```
-
-Дополнительные fields допускаются для schema/persistence diagnostics.
-
-# 7. Schedule
+## 6. Календарь
 
 Defaults:
 
 ```text
 Forewarning start: autumn day 6
-Final event night: autumn day 9
-18:00 Marked
-23:00 Active
-04:15 auto-complete start
-05:45 forced end
-06:00 morning target
+Final Blood Moon night: autumn day 9
+Marked: 18:00
+Active: 23:00
+Auto-complete: 04:15
+Forced end: 05:45
+Morning target: 06:00
 ```
 
-При слишком короткой осени финальная ночь = последняя ночь осени.
+Если configured final day превышает длину осени, используется последняя ночь осени.
 
-Вычислять абсолютные timestamps один раз:
+Событие бывает один раз за игровой год.
+
+## 7. Абсолютное расписание
+
+При создании event record один раз вычислить:
 
 ```text
 visualStartSeconds
@@ -210,6 +186,35 @@ forcedEndSeconds
 morningTargetSeconds
 ```
 
-`m_smoothDayFraction` используется только для локальной визуальной интерполяции.
+Формула строится от:
 
-После создания event record расписание не меняется от hot reload конфигов.
+```text
+eventWorldDay
+dayLengthSecondsAtEventCreation
+```
+
+Переход через полночь выражается одной абсолютной шкалой.
+
+`m_smoothDayFraction` используется только для локальной визуальной интерполяции, не для authority.
+
+## 8. Hot reload
+
+В текущей ночи замораживаются:
+
+- event day;
+- effective final autumn day;
+- day length;
+- absolute timestamps;
+- `eventId`.
+
+На лету применяются:
+
+- damage multipliers — следующий hit;
+- speed/aggression — следующий AI update;
+- spawn interval/radius — следующий scheduler tick;
+- group distances — следующий group recompute;
+- cap: увеличение разрешает новые spawn; уменьшение не удаляет уже живых;
+- pool/weights — будущие spawn;
+- VFX intensities — следующий visual update.
+
+Отключение Blood Moon посреди события запускает безопасный `Resolving`, а не просто снимает boolean.
