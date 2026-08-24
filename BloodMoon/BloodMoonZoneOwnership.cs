@@ -85,7 +85,7 @@ namespace Seasons.BloodMoon
             List<Vector3> memberPositions = new List<Vector3>();
             foreach (long playerId in group.MemberPlayerIds)
             {
-                if (controller.TryGetConnectedPosition(playerId, out Vector3 position))
+                if (!BloodMoonSpatialState.IsAnchorSuspended(state.EventId, playerId) && controller.TryGetConnectedPosition(playerId, out Vector3 position))
                     memberPositions.Add(position);
             }
             if (memberPositions.Count == 0)
