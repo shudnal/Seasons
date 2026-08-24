@@ -1,5 +1,6 @@
 using HarmonyLib;
 using System;
+using static Seasons.Seasons;
 
 namespace Seasons.BloodMoon
 {
@@ -15,7 +16,7 @@ namespace Seasons.BloodMoon
             if (lease == null || ZNet.instance == null || ZNet.instance.IsServer() || !SeasonState.IsActive)
                 return;
 
-            double localNow = Seasons.seasonState.GetTotalSeconds();
+            double localNow = seasonState.GetTotalSeconds();
             double advertisedLifetime = Math.Max(2d, BloodMoonConfig.SpawnLeaseSeconds.Value);
             double serverNow = BloodMoonNetwork.ClientGlobal.ServerTime;
             double remaining = serverNow > 0d ? lease.ExpiresAt - serverNow : advertisedLifetime;
