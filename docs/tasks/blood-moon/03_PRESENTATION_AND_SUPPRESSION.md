@@ -1,211 +1,126 @@
-# Blood Moon — presentation, context and suppression
+# Blood Moon — presentation, environment and suppression
 
-Part of `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
+Обязательная часть задачи `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
 
-> Production implementation is blocked by files `09` and `10`.
+# 12. Forewarning
 
-# 9. Forewarning and Marked
+На каждой configured forewarning night нужен заметный не текстовый признак:
 
-## 9.1. Forewarning nights
+- слабый красный environment overlay;
+- слабые красные облака;
+- интенсивность растёт к финальной ночи;
+- только ночью;
+- утром полностью очищается;
+- без spawn, combat modifiers и блокировки сна.
 
-Text alone is insufficient. Every configured Forewarning night must have at least one in-world non-text signal:
+Text/DreamText допускается дополнительно, но не вместо изменения мира.
 
-- low-intensity Blood Moon environment overlay and/or cloud VFX;
-- night-only;
-- strength grows toward the final autumn night;
-- no force environment;
-- no blood enemies, combat modifiers, SoftDeath or sleep block;
-- no detailed tutorial.
+# 13. Marked — 18:00
 
-A rare DreamText may complement but not replace the visual signal. A confusing or unsuccessful first annual encounter is an acceptable Valheim outcome; the player can learn for the next cycle.
+При входе:
 
-## 9.2. Marked at 18:00
+1. enroll players;
+2. остановить текущий RandEvent;
+3. заблокировать новые RandEvent;
+4. заблокировать сон;
+5. добавить собственный Blood Moon status;
+6. начать линейный red blend;
+7. открыть Blood Craft после его реализации.
 
-At Marked entry:
+## Status text
 
-1. enroll current Players;
-2. stop/suppress ordinary random events;
-3. block sleep;
-4. add/update Blood Moon status;
-5. begin linear red transition;
-6. publish authoritative state;
-7. log transition once.
+Не добавлять vanilla `SoftDeath`.
 
-The status explains:
-
-- combat begins at 23:00;
-- sleep is unavailable;
-- defeat is safe from skill loss;
-- future Blood Craft is not advertised until actually implemented.
-
----
-
-# 10. Active presentation and context gates
-
-## 10.1. Supported outdoor context
-
-At 23:00 eligible Player enters `AwaitingContact`:
-
-- blood enemies become visible and may target the Player;
-- ordinary world remains visible/interactable until accepted first contact;
-- first contact switches to `Fighting` and full blood-only layer;
-- no transform change.
-
-## 10.2. Interior/dungeon
-
-- show Blood Moon redness/atmosphere;
-- use the selected forced-environment presentation only if it does not break interior rendering;
-- no blood enemy spawn;
-- no first contact/full layer;
-- re-evaluate after returning outdoors before forced end.
-
-## 10.3. Ship/ocean
-
-- show redness/forced environment;
-- no blood enemies/full layer;
-- do not detach Player or move ship;
-- re-evaluate on supported land.
-
-## 10.4. Generic attached
-
-- do not force detach;
-- may remain `AwaitingContact`;
-- first blood hit may enter `Fighting` without changing attach state;
-- runtime spike must verify collision/animation behavior.
-
-## 10.5. Mounted
-
-Do not force `StopDoodadControl`: vanilla saddle release eventually calls `AttachStop`, which moves Player to the mount’s detach offset.
-
-Preferred experiment is a `BloodBoundMount` bridge:
-
-- rider or current mount receiving a blood hit enters rider into Fighting;
-- mount takes zero blood damage;
-- mount remains visible/controllable to rider;
-- blood enemies target rider only;
-- ordinary enemies cannot attack mount while it is bridged;
-- mount does not attack blood enemies or generate progress;
-- voluntary dismount releases bridge.
-
-If unreliable, mounted Player remains engagement-deferred until voluntary dismount. Do not silently introduce forced movement.
-
-## 10.6. Active boss encounter
-
-Local product signal:
-
-```csharp
-EnemyHud.instance != null && EnemyHud.instance.ShowingBossHud()
-```
-
-While true:
-
-- defer blood enemy spawn/contact/full layer;
-- leave boss combat and bookkeeping intact;
-- preserve boss environment/music where possible and apply only compatible red overlay;
-- report context to server only as a low-trust delay signal.
-
-After boss HUD stays absent for a short stability delay, re-evaluate eligibility.
-
-## 10.7. Edge of world
-
-Before vanilla tidal/edge death becomes relevant, eject/withdraw Player based on:
-
-```csharp
-ZoneSystemVariantController.IsBeyondWorldEdge(position, safetyOffset)
-```
-
-Do not wait for `HitData.HitType.EdgeOfWorld`. The exact non-defeat outcome name remains open until the spike report.
-
----
-
-# 11. RandEventSystem suppression
-
-Blood Moon is not a `RandomEvent`.
-
-From 18:00 until resolution:
-
-- stop current ordinary random event through vanilla methods where possible;
-- block new ordinary/standalone random events;
-- prevent ordinary random-event env/music override from defeating Blood Moon;
-- do not corrupt boss/event-zone bookkeeping;
-- restore vanilla behavior idempotently at cleanup without forcing an immediate raid.
-
-Patches are active only while authoritative suppression is true and must clear on disable/world unload/errors.
-
-No map circles or event markers.
-
----
-
-# 12. Environment and VFX
-
-## 12.1. Blood Moon environment
-
-Clone vanilla `Fader` without mutating the original. Give the copy a unique internal name.
-
-For every `Color` field:
-
-```csharp
-color.r = 1f;
-```
-
-Set:
-
-```csharp
-m_windMin = 1f;
-m_windMax = 2f;
-m_sunAngle = 70f;
-```
-
-Values have already been checked in game by the owner.
-
-## 12.2. Overlay 18:00–23:00
-
-Linear factor:
+Собственный status должен прямо сообщать смысл:
 
 ```text
-18:00 = 0
-23:00 = 1
+Когда здоровье иссякнет, кровавая горячка оборвётся.
+Ты не оставишь могилу и не потеряешь навыки.
 ```
 
-Integrate into existing transient `EnvMan.SetEnv` pipeline:
+Эта формулировка показывается только для `Fighting`/`GoalReached`.
+
+Для `Deferred`:
 
 ```text
-original environment
-→ existing seasonal luminance
-→ Blood Moon target blend
+Кровавая охота не достигает тебя здесь.
+Обычные опасности остаются настоящими.
+```
+
+# 14. Active — 23:00
+
+- forced Blood Moon environment;
+- supported Player сразу → `Fighting`;
+- activation/conversion nearby monsters;
+- additional spawner;
+- no personal visibility layers;
+- все клиенты видят одних и тех же Blood Moon противников.
+
+# 15. RandEventSystem
+
+Blood Moon — собственная система.
+
+С 18:00 до полного resolution:
+
+- остановить current random/forced event через штатный путь;
+- блокировать новые;
+- не позволять им перезаписать environment/music;
+- restore в cleanup;
+- не запускать новый raid немедленно после Blood Moon.
+
+Boss suspension обрабатывается отдельно; не использовать уничтожение boss bookkeeping как замену.
+
+# 16. Environment
+
+## Target EnvSetup
+
+Копия `Fader`:
+
+- уникальное имя `Seasons_BloodMoon`;
+- каждому `Color`: `r = 1.0f`, остальные каналы сохранить;
+- `m_windMin = 1f`;
+- `m_windMax = 2f`;
+- `m_sunAngle = 70f`.
+
+## Overlay 18:00–23:00
+
+```text
+18:00 factor 0
+23:00 factor 1
+```
+
+Порядок:
+
+```text
+original env
+→ seasonal luminance
+→ Blood Moon overlay
 → vanilla SetEnv
 → restore original fields
 ```
 
-The overlay must not depend on `controlLightings` or texture controllers. Save/restore wind and sun-angle fields too. Avoid reflection in the hot path.
+Overlay не зависит от `controlLightings` или texture controllers.
 
-## 12.3. Forced environment after 23:00
+## Forced env
 
-In supported Active contexts, use the custom forced environment until resolution. Implement lease/ownership:
+С 23:00 использовать own force-environment lease:
 
-- remember previous force;
-- clear/restore only if current force still equals Blood Moon’s value;
-- do not overwrite another mod’s later force change.
+- сохранить previous force value;
+- restore только если текущее значение всё ещё принадлежит Blood Moon;
+- не затирать override другого мода;
+- в resolution восстановить previous/empty.
 
-Boss context is the exception: preserve boss readability/bookkeeping and use compatible overlay until boss HUD disappears.
+## Cloud VFX
 
-## 12.4. Clouds
+Клонировать `Ashlands_FaderFX`, оставить:
 
-Clone vanilla `Ashlands_FaderFX`; keep `cloud` and `cloud (1)` visual branches. Use `ParticleSystem.main.startColor`, set red channel to `1f`, and scale saved emission by current visual factor. Stop/clear under fade. Do not search/create every frame.
+```text
+cloud
+cloud (1)
+```
 
-Final music/SFX are deferred.
+Для нужных ParticleSystem использовать проверенный `main.startColor`, установить red channel `1.0f`, emission масштабировать по visual factor.
 
----
+# 17. Music/SFX
 
-# 13. Status presentation
-
-Blood Moon status must distinguish:
-
-- `Marked` — countdown and sleep block;
-- `AwaitingContact` — invasion visible, first accepted contact begins personal fight;
-- `Fighting` — progress and modifiers;
-- `GoalReached` — 100%, full buff remains, help others;
-- `Ejected` — blood combat ended, ordinary world restored;
-- recovery grace — full protection until stabilized, then 10 seconds at 75% reduction.
-
-Add vanilla `SoftDeath` during active combat only as a familiar visual indication. It is not the mechanism preventing skill loss. Dream collapse avoids `Player.OnDeath` entirely.
+Финальная музыка позже. Архитектура предоставляет phase hooks, но не добавляет пустую сложную abstraction.

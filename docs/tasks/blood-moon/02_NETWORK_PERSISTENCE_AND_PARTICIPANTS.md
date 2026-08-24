@@ -1,225 +1,159 @@
-# Blood Moon — network, persistence and participant lifecycle
+# Blood Moon — network, persistence and participants
 
-Part of `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
+Обязательная часть задачи `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
 
-> Production implementation is blocked by files `09` and `10`.
+# 8. CCS и RPC
 
-# 6. Network model
-
-## 6.1. Required CCS analysis
-
-Before production networking, inspect the exact Seasons/ConditionalConfigSync versions:
+До production implementation изучить:
 
 - `Utils/CustomSyncedValuesSynchronizer.cs`;
-- `CustomSyncedValue<T>`;
+- CCS `CustomSyncedValue<T>`;
 - `SequencedCustomSyncedValue<T>`;
-- initial/full sync;
-- queue ordering and replacement semantics;
-- server ownership and late-join behavior.
+- queue semantics.
 
-Document the selected scheme and do not duplicate guarantees already supplied by CCS.
+Предпочтительная гибридная схема:
 
-## 6.2. Expected hybrid split
+## CCS snapshot
 
-### Low-frequency current snapshot
-
-Use CCS when suitable for a self-contained current state:
+Низкочастотный self-contained snapshot:
 
 ```text
 protocolVersion
 eventId
 revision
-event phase
-frozen schedule
-resolution step
-suppression/visual state
+phase
+schedule
+resolutionStep
+suppression/environment flags
 ```
 
-### Targeted or owner reports
+## Sequenced channel
 
-Use routed RPC where target or direction matters:
+Только редкие server→client transitions, если гарантии очереди подходят:
 
-- first-contact owner report;
-- Defeated/dream-collapse owner report;
-- blood-enemy kill owner report;
-- targeted participant progress/outcome;
-- snapshot/resync request;
-- boss-context delay signal;
+```text
+Marked
+Active
+PrepareResolution
+PublishOutcome
+ReleaseClient
+```
+
+## Собственные RPC
+
+- owner→server blood-enemy death report;
+- owner→server `Defeated` report;
+- targeted participant state/progress;
+- snapshot/resync;
 - fade ACK;
 - diagnostics.
 
-Every report contains event and object identities. Clients do not submit trusted point values or final rewards.
+Progress не отправлять на каждый hit; разумный лимит около 4 обновлений/сек.
 
-## 6.3. Revision and stale data
+# 9. Identity
 
-Within an `eventId`, use a monotonic revision. Ignore:
-
-- older revisions;
-- stale event IDs;
-- transitions invalid from current state.
-
-Request a full snapshot after uncertainty or rejection.
-
-## 6.4. Identity
-
-Keep separate:
+Различать:
 
 ```text
 stable profile/player ID
-current ZNet peer/session UID
+current peer/session UID
 Player ZDOID
 ```
 
-- stable ID: persistence/outcome/reconnect;
-- peer UID: targeted RPC and optional ownership decisions;
-- Player ZDOID: combat attribution.
+Stable ID нужен для persistence/outcome, peer UID — для RPC, ZDOID — для combat attribution.
 
-Reconnect may change peer UID/ZDOID without creating a new annual participant.
+# 10. Persistence
 
-## 6.5. Provisional local transitions
-
-For first contact and dream collapse, waiting for server round-trip can make the first hit or real death incorrect.
-
-Allowed pattern:
-
-1. owner client validates local preconditions;
-2. applies the minimum reversible local state;
-3. sends report with `eventId`, revision and identities;
-4. server validates/deduplicates;
-5. server publishes authoritative state;
-6. rejection restores from snapshot and must also restore renderers/collision pairs/status cleanly.
-
-The spike must prove this path before production protocol is selected.
-
----
-
-# 7. Persistence and recovery
-
-Persist while an annual event is active:
+Хранить минимум:
 
 ```text
 schema/protocol version
-eventId and frozen schedule
-event phase and resolution step
+eventId and schedule
+event phase/resolution step
 last started/resolved/skipped IDs
-participant phase/outcome
-stable player ID / last peer UID / Player ZDOID
-engagement gate
-FirstBloodContactRecord
-combat progress/contribution
-ejection/recovery state
+participant phase/outcome/context
+progress/contribution
+boss suspension records
+managed ordinary/blood entity IDs
+Defeated/Withdrawn flags
 revision
 ```
 
-Do not persist position/rotation as an automatic restore anchor.
+Не хранить position/rotation Player как restore anchor.
 
-Use world UID, not only server name. Prefer a small world-bound marker plus an atomically replaced transient sidecar if that matches existing Seasons patterns.
+World marker привязан к world UID. Transient active state — atomic sidecar JSON или существующий безопасный механизм проекта.
 
-## 7.1. First enable in an existing world
+Первое включение внутри текущего forewarning/final-night window пропускает текущий год, если admin явно не запустил debug event.
 
-If Blood Moon is first enabled after the current year has already entered Forewarning/final-night window, mark the current annual event `Skipped` and wait for the next year. A debug command may explicitly override this for testing.
+При corrupted snapshot:
 
-## 7.2. Restart during event
+- cleanup blood objects and markers;
+- restore bosses/ordinary suspended state;
+- clear own force environment;
+- mark current event skipped/resolved without reward;
+- never move Player.
 
-On valid snapshot:
+# 11. Participant lifecycle
 
-1. restore event/participants;
-2. compare authoritative time with frozen schedule;
-3. remap stable Player IDs after reconnect;
-4. clear stale blood entities from another event ID;
-5. rebuild groups/context gates;
-6. continue valid phase or resolve if forced end passed;
-7. never duplicate contact, defeat, kill or reward.
+## Marked
 
-Use reconnect grace so loading peers are not immediately classified as disconnected.
+Игроки онлайн с 18:00 получают `Marked`. Late join до resolution регистрируется в текущем event.
 
-On invalid snapshot:
+## Active start
 
-- log exact cause;
-- remove temporary presentation/status/entities/force environment;
-- mark annual event resolved/skipped without reward;
-- do not replay it that year;
-- never move a Player.
+В 23:00:
 
----
+- supported Player → `Fighting`;
+- interior/dungeon или ship/ocean → `Deferred`;
+- mounted/attached Player → `Fighting`;
+- boss globally suspended before ordinary combat starts.
 
-# 8. Participant lifecycle
+Нет `AwaitingContact`.
 
-## 8.1. Enrollment
+`Deferred` не получает safe-defeat promise и не является target/spawn anchor. При выходе в supported context до forced end он может впервые перейти в `Fighting`.
 
-- online Players at 18:00 enter `Marked`;
-- late join before enrollment freeze joins current annual event;
-- after `FreezingEnrollment`, Player is `LateWitness` and does not hold resolution;
-- terminal outcome is not reset by reconnect;
-- empty server remains open for late join until forced end, but does not spawn without eligible participants.
+## Leaving supported context after Fighting
 
-## 8.2. Active and context gate
+Это остаётся preimplementation decision.
 
-At 23:00:
+Рекомендуемый простой вариант:
 
-- Player gets Blood Moon presentation;
-- context gate is evaluated;
-- eligible Player enters `AwaitingContact`;
-- interior/dungeon, ship/ocean and visible-boss contexts defer engagement and do not spawn blood enemies for that Player;
-- generic attached and mounted contexts follow the spike-specific policy from file `10`.
+- brief teleport transition только приостанавливает spawner;
+- если destination = interior/dungeon или ship/ocean, participant получает terminal `Withdrawn`;
+- Blood Craft personal cleanup выполняется;
+- re-entry отсутствует.
 
-## 8.3. First contact
+Так бесплатная экипировка и dream-collapse protection не переносятся в обычный dungeon/ocean gameplay.
 
-Accepted contact includes incoming/outgoing accepted hit, block, parry or fully mitigated hit. It creates:
+## Terminal outcomes
+
+Для early completion:
 
 ```text
-eventId
-stable Player ID
-peer UID
-Player ZDOID
-timestamp
-contact kind
-blood enemy ZDOID
-diagnostic position
+Success / GoalReached
+Defeated / Exited
+Withdrawn / Exited
+Disconnected
 ```
 
-It transitions exactly once:
+`Deferred` не terminal и может удерживать событие до утра, позволяя игроку добраться до поддерживаемого контекста.
 
-```text
-AwaitingContact → Fighting
-```
+## Defeated
 
-The first incoming hit must already use Fighting-layer defensive routing.
+Локальный owner перехватывает `Character.CheckDeath` до `Player.OnDeath`, затем сервер подтверждает outcome.
 
-## 8.4. Terminal outcomes
+Не создаются:
 
-Terminal for early resolution:
+- death point;
+- death effects/ragdoll;
+- TombStone;
+- respawn;
+- inventory/food changes.
 
-- `Success` / `GoalReached`;
-- `Defeated` / `Ejected`;
-- `Disconnected`.
+## Re-entry
 
-`GoalReached` remains in combat to help while unresolved participants exist.
+В первой версии отсутствует.
 
-`Ejected`:
+## Empty server
 
-- stays at the same transform and velocity;
-- does not create TombStone/respawn;
-- returns to ordinary presentation;
-- is not targeted by blood enemies;
-- cannot re-enter in the first release.
-
-## 8.5. Dream collapse
-
-Owner-side `Character.CheckDeath` is the candidate interception point after health reaches `<= 0` but before `Player.OnDeath`.
-
-For `Fighting`/`GoalReached`:
-
-- suppress `Player.OnDeath`;
-- restore current maximum health/stamina/eitr;
-- keep food/adrenaline;
-- clear damaging DoT effects without removing unrelated buffs;
-- set outcome `Defeated`, phase `Ejected`;
-- start recovery protection;
-- report to server exactly once.
-
-Direct scripted/admin `Player.OnDeath` is not intercepted. Ordinary admin HP reduction naturally follows the CheckDeath path.
-
-## 8.6. Re-entry
-
-None in the first version. Any future re-entry is a separate product decision and must not be prebuilt into the participant state machine beyond allowing a future transition extension.
+Если в 23:00 никого нет, event остаётся доступным для late join до 05:45. Если никто не вошёл — `Unwitnessed/Resolved`, без клиентского fade/reward.

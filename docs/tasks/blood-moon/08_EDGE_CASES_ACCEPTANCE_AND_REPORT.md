@@ -1,184 +1,171 @@
-# Blood Moon — validation, edge cases and reporting
+# Blood Moon — edge cases, acceptance and report
 
-Part of `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
+Обязательная часть задачи `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
 
-> Current acceptance target is the isolated runtime spike in file `10`, not production Blood Moon.
+# 31. Обязательные edge cases
 
-# 26. Mandatory spike scenarios
+## Lifecycle/network
 
-## 26.1. Modes
+- disabled;
+- single/listen/dedicated;
+- first enable before/inside event window;
+- restart in Marked/Active/Resolving;
+- time jump across phases;
+- late join/disconnect/reconnect;
+- stale RPC/eventId;
+- duplicate enemy death report;
+- cleanup twice;
+- config disable mid-event.
 
-- single-player;
-- listen server;
-- dedicated server with participant and observer;
-- late join;
-- owner migration;
-- owner disconnect;
-- stale/duplicate RPC.
+## Visual/system
 
-## 26.2. Layer matrix
+- every forewarning night has visible non-text effect;
+- current RandEvent at 18:00;
+- new RandEvent blocked;
+- force env lease conflict;
+- missing `Fader`/`Ashlands_FaderFX`;
+- world unload every phase.
 
-- participant AwaitingContact sees ordinary + blood;
-- participant Fighting sees blood but not ordinary creatures/tamed/boss;
-- observer sees ordinary + participant but not blood enemy;
-- participant/observer can each own ordinary or blood entity;
-- hidden owner entity continues required remote simulation;
-- no root GameObject disable;
-- render/audio/HUD/collision restore cleanly after transition.
+## Existing monsters
 
-## 26.3. Hit transparency
+- direct conversion candidate;
+- suspension+clone candidate;
+- starred monster;
+- modded MonsterAI;
+- neutral Dvergr/NPC excluded;
+- tamed excluded;
+- PlayerSpawned summon excluded;
+- new ordinary spawn during event;
+- owner migration/disconnect;
+- surviving converted monster cleanup;
+- killed converted monster world-state consequence;
+- nonpersistent original unload/restart.
 
-- hidden ordinary enemy between participant and blood target;
-- hidden blood enemy between observer and ordinary target;
-- melee;
-- arrow/bolt;
-- thrown projectile;
-- event projectile;
-- AoE;
-- status/stagger/skill-credit rejection for incompatible target;
-- delayed hit after source state/owner change.
+## Boss
 
-## 26.4. First contact
+- vanilla boss active at 23:00;
+- multiple bosses;
+- boss owner participant/server/other peer;
+- boss projectile/AOE in flight;
+- boss summon/minion;
+- boss event/environment/music/HUD;
+- new summoning attempt during event;
+- restart while suspended/parked;
+- restore with no nearby Player;
+- modded/nonpersistent boss;
+- restore health/level/position/rotation exactly where required.
 
-- incoming hit;
-- outgoing melee/projectile;
-- block;
-- parry;
-- fully mitigated hit;
-- lethal first hit;
-- miss/aggro/near projectile do not count;
-- local transition before same hit resolution;
-- server reject/resync;
-- exactly once.
+## Defeated/recovery
 
-## 26.5. Dream collapse
-
-- `Character.CheckDeath` intercepts health <=0;
-- `Player.OnDeath` not called;
-- no death point, effects, ragdoll, TombStone, food clear or respawn;
-- health/stamina/eitr full;
+- direct blood hit;
+- fall after knockback;
+- environmental health loss;
+- lava;
+- water/drowning;
+- already grounded;
+- airborne >15 sec;
+- swimming;
+- mounted/attached;
+- `SE_Burning`, `SE_Poison`, `SE_Smoke`;
+- negative-tick `SE_Stats`;
+- unknown modded DoT retained;
+- no `Player.OnDeath`, TombStone, death point, food clear or respawn;
+- health/stamina/eitr max;
 - food/adrenaline unchanged;
-- damaging DoT cleanup only;
-- outcome `Defeated` exactly once;
-- no re-entry;
-- airborne landing;
-- fall after blood knockback;
-- swimming/attached stabilization;
-- 10 seconds 75% reduction after stabilization;
-- lava behavior after grace;
+- stage1 ≤15 sec;
+- stage2 exactly 10 sec at 0.25 incoming multiplier;
 - direct forced `Player.OnDeath` remains vanilla.
 
-## 26.6. Contexts
+## Context
 
-- outdoor ground;
-- interior/dungeon atmosphere without enemies/layer;
-- ship/ocean atmosphere without enemies/layer;
-- generic attached first hit without detach;
-- mounted bridge hit on rider and mount;
-- voluntary dismount;
-- visible boss HUD deferral and later entry;
-- portal/teleport;
-- edge-of-world preventive exit;
-- Fighting Player entering unsupported context.
+- interior/dungeon at 23:00;
+- ship/ocean at 23:00;
+- Deferred exits to land;
+- Fighting enters dungeon/ship;
+- teleport in progress;
+- mounted;
+- generic attached;
+- edge safety offset → Withdrawn;
+- Defeated/Withdrawn cannot damage or be targeted by Blood enemies.
 
-## 26.7. Ordinary simulation
+## Damage routing
 
-- background simulation baseline;
-- optional AI suspension when owner is participant and no real-world witness;
-- AwaitingContact/Ejected as witnesses;
-- observer enters/leaves;
-- tamed/flying/swimming enemy;
-- bridged mount excluded;
-- resume correctness;
-- CPU/network comparison.
+- Blood enemy ignores building/tamed/NPC/boss/ordinary monster;
+- Player attack damages only Blood enemy;
+- no building/tree/ore/crop damage;
+- ordinary trap/turret cannot farm Blood enemy;
+- projectile/AOE delayed attribution;
+- no status/stagger/skill credit on forbidden target;
+- GoalReached aggro fallback.
 
----
+## Blood Craft future
 
-# 27. Spike acceptance criteria
+- custom tabs untouched;
+- recipe clones not leaked;
+- upgrade permanent item not free;
+- temporary/permanent stack never merges;
+- drop destroyed;
+- TombStone fallback;
+- personal cleanup on Defeated/Withdrawn;
+- consumed food effect remains.
 
-The spike is complete only when the report answers with runtime evidence:
+# 32. Runtime-spike acceptance
 
-1. Can local presentation be hidden independently of ZDO ownership?
-2. Can a hidden owner entity still simulate correctly for another peer?
-3. Can body/hitbox/projectile/AoE incompatibility be made transparent without global layer changes?
-4. Can accepted first contact switch the Player before the same hit is processed?
-5. Can the server validate/deduplicate provisional local contact?
-6. Can `Character.CheckDeath` produce `Defeated` without any `Player.OnDeath` side effect?
-7. Can damaging DoTs be cleared without removing buffs/food effects?
-8. Can recovery protection terminate correctly on ground, water and attached states?
-9. Can the mounted bridge work without forced dismount/transform change?
-10. Can boss/interior/ship contexts defer engagement without breaking their systems?
-11. Can preventive world-edge exit happen before edge death?
-12. Is background simulation acceptable?
-13. If not, is conditional AI suspension both necessary and safe?
-14. What exact minimal Harmony points are needed?
-15. Which desired behaviors are too fragile and should be simplified or dropped?
+`10_GLOBAL_EVENT_RUNTIME_SPIKE.md` должен ответить:
 
-Failure of a candidate is a valid spike result if evidence and fallback are documented.
+1. Direct conversion или suspension+clone?
+2. Какой точный eligibility predicate безопасен?
+3. Можно ли globally suspend/restore ordinary Character без owner changes?
+4. Можно ли safely suspend active boss in place?
+5. Если нет — надёжен ли ZDO parking?
+6. Сохраняются ли boss health/state/restart recovery?
+7. Работает ли CheckDeath-based Defeated без vanilla death side effects?
+8. Корректны ли 15s stabilization cap + 10s 75% protection?
+9. Работает ли event target/damage routing для melee/projectile/AOE?
+10. Поддерживаются ли mounted/attached без forced detach?
+11. Как вести Fighting→unsupported context?
+12. Каков минимальный production patch set?
 
----
+# 33. Production acceptance
 
-# 28. Spike branch and PR
+После снятия gate первый vertical slice готов только если:
 
-Work only in:
+- state machines/server authority/persistence работают;
+- no personal layer code;
+- no vanilla SoftDeath status;
+- custom status честно описывает safe defeat only when active;
+- event can be debug-run end-to-end;
+- visible forewarning;
+- Marked 18:00, Active 23:00, end 05:45;
+- RandEvent blocked/restored;
+- environment/VFX cleanup;
+- existing monster strategy реализована согласно spike;
+- additional spawn caps;
+- target/damage matrix centralized;
+- no loot/long ragdoll;
+- progress exactly once;
+- GoalReached behavior;
+- Defeated dream collapse;
+- Withdrawn edge behavior;
+- boss suspend/restore;
+- no Player transform changes;
+- no material/world-state rewards;
+- build result and manual multiplayer checklist documented;
+- draft PR + Codex review;
+- PR not merged.
 
-```text
-spike/blood-moon-parallel-layer
-```
+# 34. Report
 
-Base: current `feat/blood-moon`.
+Codex должен указать:
 
-Open draft PR:
-
-```text
-spike/blood-moon-parallel-layer → feat/blood-moon
-```
-
-Do not open/merge into `master`. Do not version-bump or edit release files.
-
-Run Codex code review on the spike PR. Fix correctness issues that invalidate experiments; do not polish experimental code into production prematurely.
-
----
-
-# 29. Required report
-
-Commit a report containing:
-
-- exact Seasons base commit;
+- commits and files;
+- architecture;
+- CCS/RPC decision;
 - exact `assemblies_combined` commit;
-- test environment and player count;
-- commands/config used;
-- patches and alternatives tried;
-- owner matrix;
-- result for every scenario above;
-- logs/screenshots where useful;
-- CPU/network observations;
-- confirmed production invariants;
-- rejected approaches and reasons;
-- fallback decisions;
-- recommended production architecture;
-- exact updates required in docs `01`–`09`;
-- whether each spike file should be deleted, kept as a diagnostic, or promoted selectively.
-
-Do not claim multiplayer, VFX or physics success without a real-game test.
-
----
-
-# 30. Production gate after spike
-
-Before production implementation, owner must explicitly accept:
-
-- local visibility/collision technique;
-- hit-transparency technique;
-- exact first-contact patch points;
-- dream-collapse DoT classifier;
-- stabilization rule;
-- mounted policy;
-- boss-context synchronization;
-- world-edge withdrawal outcome;
-- unsupported-context-after-contact policy;
-- background simulation or conditional suspension;
-- ordinary interaction restrictions;
-- projectile/AoE/summon attribution.
-
-Then replace the spike task with a new production task and start the first playable slice. Do not infer approval from a partially successful experiment.
+- build result;
+- runtime scenarios actually tested;
+- untested multiplayer/VFX clearly stated;
+- boss and ordinary-monster strategy evidence;
+- known limitations;
+- draft PR/review result;
+- next continuation point.

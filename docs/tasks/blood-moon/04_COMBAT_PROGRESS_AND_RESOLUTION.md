@@ -1,116 +1,163 @@
 # Blood Moon — combat, progress, defeat and resolution
 
-Part of `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
+Обязательная часть задачи `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
 
-> Production implementation is blocked by files `09` and `10`.
+# 18. Hidden combat groups
 
-# 14. Hidden combat grouping
+Server-only grouping:
 
-Server-only groups prevent full spawn budgets from multiplying around nearby Players.
-
-Planned rules:
-
-- recompute every 3–5 seconds;
+- recompute 3–5 seconds;
 - connected components by distance;
 - merge default 120 m;
-- split hysteresis default 160 m;
-- stable ID by largest member overlap;
-- per-group cap based on combat-capable participants;
+- split default 160 m;
+- stable ID by maximum member overlap;
+- cap from participant count;
 - server hard cap;
-- spawn anchor chosen from actual eligible members, never chain centroid;
-- no map/UI marker.
+- spawn/scan anchor = real member, not geometric center.
 
-`AwaitingContact`, `Fighting` and `GoalReached` may remain group members, but context-gated participants do not anchor spawns. `Ejected`, `Resolved` and terminal disconnected participants are excluded.
+В группы входят `Fighting` и `GoalReached`.
 
-Momentum, StallTime and production enemy roles are deferred.
+`Deferred`, `Exited`, `Resolved`, disconnected не входят.
 
----
+Map markers отсутствуют.
 
-# 15. First blood enemy prototype
+# 19. Blood Moon enemies
 
-Use one conservative vanilla melee enemy without persistent damaging status attacks.
+В 23:00 используются два источника:
 
-Custom spawner:
+1. подходящие существующие монстры вокруг active groups;
+2. дополнительные event spawns до cap.
 
-- independent from `RandEventSystem` event control;
-- ignores ordinary NoMonsters/PlayerBase spawn suppression;
-- still finds a valid supported surface point;
-- respects min/max distance, group cap and server cap;
-- does not spawn for interior/dungeon, ship/ocean or visible-boss context;
-- stops immediately during resolution;
-- marks ZDO before normal simulation.
+## 19.1. Existing monster strategy — open spike
 
-Markers:
+Сравнить:
+
+### Direct conversion
+
+Existing entity получает event marker и временные правила.
+
+Плюсы: максимально просто.
+
+Минусы:
+
+- убитое реальное существо исчезает без loot;
+- surviving creature меняет position/health/AI history;
+- можно потерять редкое/starred/modded creature.
+
+### Suspend original + blood copy
+
+Original глобально скрывается/замораживается для всех клиентов без owner changes, blood copy спавнится на его месте.
+
+Плюсы:
+
+- состояние обычного мира сохраняется;
+- clone можно безопасно убивать/удалять;
+- тот же механизм пригоден для bosses.
+
+Минусы:
+
+- нужно надёжно suspend/restore render, colliders, AI, physics;
+- restart/unload/nonpersistent cases сложнее.
+
+Runtime spike обязан сравнить оба. Для первой production версии direct conversion допустим только после сознательного принятия world-state tradeoff.
+
+## 19.2. Eligibility candidate
+
+Стартовая рекомендация:
+
+- valid untamed `MonsterAI`;
+- hostile к хотя бы одному active Player;
+- не Player;
+- не boss;
+- не tamed;
+- не trader/NPC/Dvergr-neutral;
+- не `PlayerSpawned`/pre-existing summon;
+- не fish/bird/ambient-only creature;
+- не already managed/blood.
+
+Точный predicate фиксируется после scan реальных prefabs.
+
+## 19.3. Dynamic scan
+
+Периодически обрабатывать новые ordinary spawns, вошедшие в interaction radius. Не сканировать весь world каждый frame.
+
+## 19.4. Markers
 
 ```text
 Seasons.BloodMoon.EventId
 Seasons.BloodMoon.GroupId
+Seasons.BloodMoon.Origin
 Seasons.BloodMoon.Role
+Seasons.BloodMoon.OriginalZDOID (если clone)
 ```
 
-## 15.1. Targeting
+## 19.5. Aggression
 
-Blood enemy may target only current-event:
+Blood enemy:
 
-```text
-AwaitingContact
-Fighting
-GoalReached
-```
+- всегда ищет active participant;
+- не flee/idle при наличии допустимой цели;
+- игнорирует PlayerBase/NoMonsters для spawn;
+- не выбирает static targets;
+- не выбирает tamed/NPC/boss/ordinary monster;
+- GoalReached target имеет меньший score, пока есть Fighting.
 
-`GoalReached` receives lower priority only when unresolved targets are available.
+Не мутировать shared prefab.
 
-Never target:
+## 19.6. Health/damage
 
-- nonparticipants;
-- Ejected/Resolved;
-- ordinary creatures/NPC;
-- tamed/mount as a target;
-- buildings, crops or static targets;
-- stale blood entities.
+Не менять permanent max health existing entity.
 
-AI filtering and final damage guards both delegate to centralized interaction policy.
+Желаемая меньшая живучесть задаётся через event-specific incoming damage multiplier. Меньший outgoing damage — через event-specific outgoing multiplier.
 
-## 15.2. Ownership reports
+Это одинаково работает для converted и spawned enemies.
 
-Do not assume blood-enemy death callback runs on dedicated server. Owner reports:
+## 19.7. Loot/ragdoll
 
-```text
-eventId
-enemy ZDOID
-group ID
-reported killer identity
-position
-```
-
-Server validates marker/event/group/range/phase and deduplicates ZDOID. Server defines point value.
-
-## 15.3. Loot and ragdoll
+Blood enemy:
 
 - no ordinary loot;
 - no economy contribution;
-- short ragdoll cleanup, initial default 2 seconds;
-- full cleanup on resolution/ejection/world unload;
-- never mutate shared prefab drop table globally.
+- ragdoll cleanup default 2 seconds;
+- remaining spawned/copy enemies deleted at resolution.
 
----
+# 20. Damage routing
 
-# 16. First contact and progress
+## Enemy
 
-## 16.1. Accepted contact
+Разрешено только:
 
-`AwaitingContact → Fighting` on accepted blood interaction:
+```text
+Blood enemy → Fighting/GoalReached Player
+```
 
-- incoming or outgoing melee/projectile hit;
-- block;
-- parry;
-- fully mitigated accepted hit.
+## Participant
 
-Not on miss, aggro or near-projectile notification.
+Разрешено только:
 
-The local owner must switch before resolving the same first incoming hit, so base Bloodlust defense and dream-collapse protection apply immediately. Server validates/deduplicates the transition.
+```text
+Fighting/GoalReached Player attack
+→ Blood enemy current eventId
+```
 
-## 16.2. Separate values
+Запрещены:
+
+- buildings;
+- crops;
+- trees/ores/resource objects;
+- tamed;
+- ordinary creatures;
+- bosses;
+- nonparticipants;
+- event enemies stale/other eventId.
+
+Traps/turrets/environment не должны убивать Blood enemies по умолчанию.
+
+Фильтровать candidate hit до status/stagger/skill credit, final guard оставить.
+
+# 21. Progress
+
+Разделить:
 
 ```text
 CombatBloodlustPoints
@@ -118,241 +165,143 @@ DisplayedBloodlustProgress
 CombatContribution
 ```
 
-Auto-complete only raises displayed floor.
+Kills/share:
 
-## 16.3. Kill progress
+- server validates enemy ZDO and exactly-once death;
+- points получают active members группы в configured radius;
+- не только last hit;
+- GoalReached actions могут идти в stats, но не progress.
 
-First prototype uses server-configured `pointsPerKill`.
-
-A validated kill:
-
-- grants combat points to eligible group participants within share radius;
-- does not depend only on last hit;
-- records killer separately;
-- grants nothing to Ejected/Resolved;
-- GoalReached actions may be recorded but no longer increase personal progress.
-
-## 16.4. GoalReached
-
-At real combat progress 100%:
+At 100%:
 
 - phase → `GoalReached`;
 - outcome → `Success`;
-- full combat buff/layer remain;
-- Player can help unresolved participants;
-- enemies still target this Player if no unresolved alternative exists.
+- full buff remains;
+- lower aggro only while unfinished targets exist.
 
-No weakened `Sated` state.
-
-## 16.5. Auto-complete
-
-Near morning:
+Auto-complete:
 
 ```text
-DisplayedBloodlustProgress = max(combatProgress, automaticFloor)
+Displayed = max(combatProgress, automaticFloor)
 ```
 
-Automatic floor:
+Не даёт points/contribution/reward/Success.
 
-- does not add combat points/contribution;
-- does not produce `Success`;
-- does not generate future skill reward.
+# 22. Defeated dream collapse
 
-At forced end, unresolved participant receives `HiddenAtBase` or `HiddenInWild` using the game’s normal base/protection semantics.
-
----
-
-# 17. Combat modifiers
-
-Initial linear direction:
+Owner-side `Character.CheckDeath` intercept:
 
 ```text
-incoming reduction at 0%: 50%
-incoming reduction at 100%: 25%
-outgoing bonus at 0%: 15%
-outgoing bonus at 100%: 40%
-movement bonus at 0%: 0/small
-movement bonus at 100%: 10–15%
-```
-
-Defensive base modifier must already apply to accepted first incoming hit. Contribution/reward begins only after contact.
-
-Defer lifesteal, attack speed, stagger immunity and weapon-specific tuning until combat playtest.
-
----
-
-# 18. Dream collapse and `Defeated`
-
-## 18.1. Interception
-
-Candidate production/spike point:
-
-```csharp
-Character.CheckDeath prefix
-```
-
-Only local owner `Player` where:
-
-```text
-phase == Fighting || phase == GoalReached
+Player
+phase Fighting/GoalReached
 health <= 0
-not already ejected
+not already Exited
 ```
 
-The prefix restores state and suppresses `Player.OnDeath`.
+No `Player.OnDeath`.
 
-Direct forced `Player.OnDeath` remains vanilla. Scripted removal is not treated as an ordinary lethal health check.
-
-## 18.2. Lethal scope
-
-Any ordinary lethal health result during `Fighting`/`GoalReached` triggers collapse, regardless of source:
-
-- blood hit;
-- fall;
-- delayed projectile/AoE;
-- environment;
-- ordinary HP reduction.
-
-This prevents a blood-caused fall from producing a real TombStone due to lost attribution.
-
-Edge-of-world is handled before lethal threshold through preventive ejection/withdrawal.
-
-## 18.3. Collapse result
-
-Do not call/do:
-
-- `Player.OnDeath`;
-- death point;
-- death effects/ragdoll;
-- TombStone;
-- inventory/equipment move;
-- food clear;
-- respawn;
-- transform/velocity restore.
-
-Set:
+Restore:
 
 ```text
-Health = current maximum
-Stamina = current maximum
-Eitr = current maximum
+Health = max
+Stamina = max
+Eitr = max
 Food unchanged
 Adrenaline unchanged
-Outcome = Defeated
-Phase = Ejected
 ```
 
-Then:
-
-- remove Bloodlust combat state;
-- clear damaging DoT status effects only;
-- restore real-world presentation/interactions;
-- prevent re-entry current event;
-- report exactly once to server;
-- show defeat DreamText at common resolution.
-
-At minimum inspect/test vanilla `SE_Burning`, `SE_Poison` and `SE_Smoke`; never use `RemoveAllStatusEffects`.
-
-## 18.4. Recovery protection
-
-### Stage 1
-
-Full incoming-damage immunity while still airborne from collapse. It must cover landing/fall damage from that trajectory.
-
-Runtime spike chooses a finite stabilization rule. Current candidate:
+Outcome:
 
 ```text
-IsOnGround || IsSwimming || IsAttached
+phase = Exited
+outcome = Defeated
 ```
 
-This honors ground-touch intent without indefinite immunity in water/attached state.
+## DoT cleanup
 
-### Stage 2
+Удалять только вычислимо damaging effects:
 
-After stabilization:
+- `SE_Burning`;
+- `SE_Poison`;
+- `SE_Smoke`;
+- `SE_Stats` с `m_tickInterval > 0 && m_healthPerTick < 0`.
+
+Не использовать `RemoveAllStatusEffects`. Unknown modded DoT не удалять автоматически без доказуемого признака.
+
+## Recovery protection
+
+Stage 1:
+
+```text
+100% incoming protection
+until IsOnGround || IsSwimming || IsAttached
+hard cap 15 seconds
+```
+
+Покрывает fall damage текущей траектории.
+
+Stage 2:
 
 ```text
 10 seconds
-75% incoming-damage reduction
-incoming multiplier = 0.25
+75% incoming reduction
+final multiplier 0.25
 ```
 
-Lava is not made permanently safe. After grace, vanilla lava damage resumes; entering lava was the player’s mistake and Blood Moon already granted a second chance.
+После этого lava/water/world damage полностью vanilla.
 
----
+Direct `Player.OnDeath`/scripted removal не перехватывать. Admin HP reduction естественно приводит к Defeated.
 
-# 19. Unsupported context after Fighting
+# 23. Edge withdrawal
 
-Entering dungeon, ship/ocean, boss encounter or teleport after full layer begins is still a production blocker.
+До vanilla edge death:
 
-Candidates:
-
-1. terminal withdrawal/ejection without heal;
-2. personal event suspension and later return;
-3. block the interaction;
-4. context-specific blood behavior.
-
-Preferred direction for simplicity/agency is terminal withdrawal without transform changes and without success reward, but outcome name/resource handling are not yet accepted.
-
----
-
-# 20. Early and morning resolution
-
-Early resolution when at least one Player was enrolled and every enrolled participant has terminal result:
-
-```text
-Success/GoalReached
-Defeated/Ejected
-Disconnected
+```csharp
+ZoneSystemVariantController.IsBeyondWorldEdge(position, positiveSafetyOffset)
 ```
 
-GoalReached remains active while AwaitingContact/Fighting participants exist.
+→ phase `Exited`, outcome `Withdrawn`.
 
-Forced resolution at 05:45.
+Не менять transform. После снятия Blood Moon protection обычные edge rules снова действуют.
 
-Two-phase protocol:
+# 24. Contexts
 
-### Prepare
+- outdoor ground: Fighting;
+- mounted/attached: Fighting, no forced detach;
+- teleport: временно не spawn; destination re-evaluate;
+- interior/dungeon at Active start: Deferred;
+- ship/ocean at Active start: Deferred;
+- выход Deferred Player в supported context: Fighting;
+- вход уже Fighting Player в unsupported context: решение в `09`, рекомендован terminal Withdrawn.
 
-- freeze enrollment;
-- stop spawn;
-- freeze outcomes/statistics;
-- publish prepare;
-- clients fade and ACK;
-- timeout prevents one client blocking server.
+# 25. Early/morning resolution
 
-### Resolve under fade
+Early end:
 
-- destroy blood enemies/summons/projectiles;
-- clear layer/status/recovery state as appropriate;
-- clear cloud VFX;
-- release own forced environment;
-- restore RandEventSystem;
-- move time to 06:00;
-- remove Rested;
-- publish DreamText/outcome;
-- release input.
+- хотя бы один Player был enrolled;
+- все enrolled имеют terminal Success/Defeated/Withdrawn/Disconnected.
+- Deferred не terminal и удерживает event до forced end.
 
-Never move or rotate Player. A safe grounded Player may receive an emote only; uncertain contexts use fade/DreamText only.
+05:45 forced resolution.
 
----
+Prepare:
 
-# 21. Debugging after spike gate
+1. freeze enrollment;
+2. stop scan/spawn;
+3. freeze outcomes;
+4. fade request + timeout.
 
-Planned commands include:
+Resolve under fade:
 
-```text
-seasons bloodmoon status
-seasons bloodmoon start marked
-seasons bloodmoon start active
-seasons bloodmoon firstcontact
-seasons bloodmoon defeat
-seasons bloodmoon setprogress <0..100>
-seasons bloodmoon spawn [prefab]
-seasons bloodmoon resolve
-seasons bloodmoon cleanup
-seasons bloodmoon dump-participants
-seasons bloodmoon dump-groups
-```
+1. delete blood spawned/copies;
+2. clear converted/suspended ordinary state;
+3. restore bosses;
+4. clean Blood Craft;
+5. remove force environment/VFX;
+6. restore RandEventSystem;
+7. time → 06:00;
+8. remove Rested;
+9. publish DreamText;
+10. release input.
 
-Commands call normal transition methods. Per-hit/per-spawn logs are debug-only.
+No Player transform changes.

@@ -1,27 +1,39 @@
-# Blood Moon — authoritative state and schedule
+# Blood Moon — state, authority and schedule
 
-Part of `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
+Обязательная часть задачи `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
 
-> Production implementation is blocked by `09_PREIMPLEMENTATION_DECISIONS_AND_SPIKES.md`. The isolated spike task is `10_PARALLEL_LAYER_RUNTIME_SPIKE.md`.
+> Production-код не начинать до закрытия `09_PREIMPLEMENTATION_DECISIONS_AND_SPIKES.md`.
 
-# 3. Architecture
+# 3. Серверная авторитетность
 
-## 3.1. Server authority
+Сервер определяет:
 
-The server is authoritative for:
+- `eventId`, расписание и фазу;
+- enrollment и participant state;
+- supported/unsupported context;
+- скрытые combat groups;
+- какие существа являются Blood Moon противниками;
+- spawn budget и caps;
+- progress, contribution и outcomes;
+- `Defeated`, `Withdrawn`, disconnect и Success;
+- раннее завершение;
+- morning resolution;
+- boss suspension/restore;
+- cleanup.
 
-- `eventId`, frozen schedule and event phase;
-- enrollment and participant phase/outcome;
-- context-gate eligibility;
-- first-contact validation;
-- hidden combat groups and spawn budgets;
-- blood-enemy identity;
-- progress, GoalReached, Defeated and disconnect outcomes;
-- early/forced resolution.
+Клиент отвечает за:
 
-A client owner may apply a safe provisional local transition before the round-trip when required to avoid a first-hit or death race, but it must report the event/object identities. The server validates, deduplicates and publishes the final state.
+- UI, VFX и собственный environment;
+- локальное применение авторитетных participant modifiers;
+- owner reports о событиях ZDO, которые реально исполняются на пире-владельце;
+- fade ACK;
+- provisional `Defeated` до server round-trip, чтобы не успел сработать `Player.OnDeath`.
 
-## 3.2. Event phase
+Любой client report проверяется по `eventId`, sender identity, ZDO identity, revision и допустимому переходу.
+
+# 4. State machines
+
+## 4.1. Event
 
 ```csharp
 internal enum BloodMoonEventPhase
@@ -37,33 +49,29 @@ internal enum BloodMoonEventPhase
 }
 ```
 
-`Enabled` is a config feature gate, not a phase.
+`Enabled` — config gate, а не runtime phase.
 
-## 3.3. Participant phase
+## 4.2. Participant
 
 ```csharp
 internal enum BloodMoonParticipantPhase
 {
     None,
     Marked,
-    AwaitingContact,
+    Deferred,
     Fighting,
     GoalReached,
-    Ejected,
+    Exited,
     Resolved
 }
 ```
 
-Meaning:
+- `Deferred` — Active уже начался, но Player находится в неподдерживаемом контексте и ещё не вступил в бой.
+- `Fighting` — Player является spawn anchor/target и получает Bloodlust modifiers.
+- `GoalReached` — 100% достигнуто, полный buff остаётся.
+- `Exited` — terminal personal outcome уже зафиксирован.
 
-- `Marked`: preparation before 23:00;
-- `AwaitingContact`: Blood Moon invasion is visible, but ordinary world remains visible/interactable and full blood-only isolation has not started;
-- `Fighting`: accepted first blood interaction occurred and full layer is active;
-- `GoalReached`: combat progress is 100%; full layer and combat buff remain;
-- `Ejected`: personal participation ended and real-world layer is restored;
-- `Resolved`: morning outcome is published and temporary state is cleared.
-
-## 3.4. Participant outcome
+Outcome отдельно:
 
 ```csharp
 internal enum BloodMoonParticipantOutcome
@@ -71,6 +79,7 @@ internal enum BloodMoonParticipantOutcome
     None,
     Success,
     Defeated,
+    Withdrawn,
     Disconnected,
     HiddenAtBase,
     HiddenInWild,
@@ -79,28 +88,27 @@ internal enum BloodMoonParticipantOutcome
 }
 ```
 
-`Defeated` is an illusory combat result. It must not imply or call vanilla `Player.OnDeath`.
+`Defeated` не является `Player.OnDeath`.
 
-A separate withdrawal outcome may be added after the edge/unsupported-context spikes. Do not overload `Defeated` until that decision is made.
+## 4.3. Context
 
-## 3.5. Engagement gate
-
-Context is a separate dimension, not another participant phase:
+Контекст не смешивать с phase:
 
 ```csharp
-internal enum BloodMoonEngagementGate
+internal enum BloodMoonParticipantContext
 {
-    None,
+    Supported,
     Teleporting,
     Interior,
-    ShipOrOcean,
-    BossEncounter
+    ShipOrOcean
 }
 ```
 
-The gate controls blood spawn/contact eligibility while preserving participant identity.
+Mounted и generic attached считаются поддерживаемыми и тестируются без forced detach.
 
-## 3.6. Resolution steps
+Активный boss encounter не является персональным context: boss временно выводится из боя глобальным server mechanism.
+
+## 4.4. Resolution
 
 ```csharp
 internal enum BloodMoonResolutionStep
@@ -109,8 +117,10 @@ internal enum BloodMoonResolutionStep
     FreezingEnrollment,
     StoppingSpawns,
     AwaitingClientFade,
-    CleaningEnemies,
-    CleaningTemporaryState,
+    CleaningBloodEnemies,
+    RestoringOrdinaryState,
+    RestoringBosses,
+    CleaningTemporaryItems,
     AdvancingTime,
     PublishingOutcomes,
     ReleasingClients,
@@ -118,104 +128,71 @@ internal enum BloodMoonResolutionStep
 }
 ```
 
-Every step is idempotent and restart-safe.
+Все операции idempotent.
 
-## 3.7. Combat groups
+# 5. Central interaction policy
 
-Groups are derived server records, not a `Forming/Merging/Splitting` state machine:
-
-```csharp
-internal sealed class BloodMoonCombatGroup
-{
-    internal long Id;
-    internal HashSet<long> PlayerIds;
-    internal int AliveEnemies;
-    internal int AliveBudget;
-}
-```
-
-Combat-capable members may include `AwaitingContact`, `Fighting` and `GoalReached`, but only participants without an engagement gate may anchor spawns. `Ejected`, `Resolved` and terminal disconnected players are excluded.
-
-## 3.8. Central interaction policy
-
-All target, damage, local visibility, collision and interaction patches must delegate to one policy boundary. Candidate API:
+Одна точка правил:
 
 ```csharp
 internal static class BloodMoonInteractionRules
 {
-    internal static bool IsEventEnemy(Character character);
-    internal static bool IsFullLayerParticipant(Player player);
-    internal static bool CanSee(Player localPlayer, Component entity);
-    internal static bool CanCollide(Player localPlayer, Character entity);
+    internal static bool IsBloodEnemy(Character character);
+    internal static bool IsActiveParticipant(Player player);
     internal static bool CanTarget(Character attacker, Character target);
-    internal static bool CanDamage(object source, IDamageable target, HitData hit);
-    internal static bool CanInteract(Player player, Component target);
-    internal static bool IsFirstContactCandidate(HitData hit, Character attacker, Character target);
+    internal static bool CanDamage(Character attacker, IDamageable target, HitData hit);
+    internal static bool CanReceiveBloodDamageSource(Character target, HitData hit);
 }
 ```
 
-Exact signatures are determined by the spike. Do not maintain separate contradictory allowlists in AI, projectile, melee and damage patches.
+Базовая матрица:
 
-## 3.9. Idempotency
+| Источник | Цель | Результат |
+|---|---|---|
+| Blood enemy | Fighting/GoalReached Player | target/damage разрешены |
+| Blood enemy | Defeated/Withdrawn/Deferred/обычный Player | запрещены |
+| Blood enemy | building/tamed/NPC/boss/ordinary monster | запрещены |
+| Fighting/GoalReached Player attack | Blood enemy текущего eventId | разрешено |
+| Fighting/GoalReached Player attack | ordinary world, boss, tamed, building, crop | запрещено |
+| Defeated/Withdrawn/Deferred Player | Blood enemy | запрещено |
+| ordinary world source/trap/environment | Blood enemy | по умолчанию запрещено, чтобы событие нельзя было проходить базовыми ловушками |
 
-The following must be safe on repetition:
+Финальный damage guard обязателен даже при AI/attack filtering.
 
-- event/participant transition;
-- first-contact report;
-- Defeated report;
-- kill report;
-- disconnect callback;
-- recovery snapshot;
-- local layer application/removal;
-- collision-pair restoration;
-- fade ACK;
-- cleanup;
-- stale packet from another `eventId`.
-
----
-
-# 4. Event identity
-
-Annual event identity is deterministic:
+# 6. Event ID
 
 ```csharp
 long eventId = eventWorldDay;
 ```
 
-Include it in:
+Event ID входит в:
 
-- runtime/persistence state;
-- sync/RPC payloads;
-- participant and first-contact records;
-- blood enemy, projectile, AoE and future Blood Craft markers;
-- deduplication and chronicle records.
+- runtime/persistence;
+- snapshots/RPC;
+- participant records;
+- Blood enemy ZDO markers;
+- deduplication;
+- boss/original-creature suspension marker;
+- Blood Craft marker;
+- chronicle.
 
-Reject stale identities.
-
----
-
-# 5. Calendar and absolute schedule
-
-## 5.1. Autumn days
+# 7. Schedule
 
 Defaults:
 
-- Forewarning begins on autumn day 6;
-- final Blood Moon night is autumn day 9;
-- if final day exceeds actual autumn length, use the final valid autumn night;
-- one event per game year.
-
-## 5.2. Final-night times
-
 ```text
-18:00 — Marked, sleep/random-event suppression, linear red overlay
-23:00 — Active; eligible participant → AwaitingContact; force environment
-04:15 — default auto-complete start (1.5 in-game hours before end)
-05:45 — forced resolution
-06:00 — morning target
+Forewarning start: autumn day 6
+Final event night: autumn day 9
+18:00 Marked
+23:00 Active
+04:15 auto-complete start (1.5 game hours before end)
+05:45 forced end
+06:00 morning target
 ```
 
-At event creation freeze absolute timestamps derived from authoritative server time and the frozen day length:
+При слишком короткой осени финальная ночь = последняя ночь осени.
+
+Вычислять абсолютные timestamps один раз:
 
 ```text
 visualStartSeconds
@@ -225,8 +202,6 @@ forcedEndSeconds
 morningTargetSeconds
 ```
 
-Do not drive authority from `m_smoothDayFraction`; it is presentation-only.
+`m_smoothDayFraction` используется только для локальной визуальной интерполяции.
 
-Time jumps must advance through required transitions or enter safe resolution without replaying an already resolved event.
-
-Calendar config changes during an event apply to the next year.
+После создания текущего event record расписание не меняется от hot reload конфигов.

@@ -1,30 +1,51 @@
-# CHAT 2026-08-23 — Blood Moon: design and preimplementation work
+# CHAT 2026-08-23 — Blood Moon: первый вертикальный срез
 
-## 0. Current status
+## 0. Текущий статус
 
-> **Production implementation is paused.** The next work item is an isolated runtime spike for the parallel-world boundary, first contact, dream collapse, mounted context and ordinary-world simulation.
+> **Статус:** preimplementation design. Production-код Blood Moon пока не начинать.
 
-Repository:
+От идеи персональных параллельных слоёв мира принято отказаться. Она давала сильный визуальный образ, но требовала хрупкой сетевой логики видимости, коллизий, ownership, projectile/AOE routing и совместимости с большим количеством игровых и модовых систем.
+
+Новая базовая модель глобальна и одинакова для всех клиентов:
+
+```text
+23:00
+→ подходящие обычные монстры рядом с игроками получают Blood Moon behavior
+→ дополнительно спавнятся Blood Moon противники
+→ все Blood Moon противники видимы всем
+→ они охотятся только на активных участников
+→ участники наносят урон только Blood Moon противникам
+→ база, tamed, NPC, боссы и обычная экономика мира не участвуют
+```
+
+Перед production-разработкой нужно закрыть оставшиеся вопросы и выполнить изолированный runtime-spike:
+
+```text
+docs/tasks/blood-moon/09_PREIMPLEMENTATION_DECISIONS_AND_SPIKES.md
+docs/tasks/blood-moon/10_GLOBAL_EVENT_RUNTIME_SPIKE.md
+```
+
+Старую ветку и задачу `spike/blood-moon-parallel-layer` не использовать: они относятся к отвергнутой архитектуре.
+
+Рабочий репозиторий:
 
 ```text
 https://github.com/shudnal/Seasons
 ```
 
-Design branch:
+Основная ветка подготовки:
 
 ```text
 feat/blood-moon
 ```
 
-Game-code source of truth:
+При чтении кода Valheim первым источником использовать:
 
 ```text
 https://github.com/shudnal/assemblies_combined
 ```
 
-Do not use the old external `BloodMoon_Design_Document.md` or `BloodMoon_Codex_Implementation_Brief.md` as requirements.
-
-## 0.1. Authoritative document set
+## 1. Авторитетный комплект
 
 1. `docs/tasks/CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`
 2. `docs/tasks/blood-moon/01_STATE_AND_SCHEDULE.md`
@@ -33,123 +54,87 @@ Do not use the old external `BloodMoon_Design_Document.md` or `BloodMoon_Codex_I
 5. `docs/tasks/blood-moon/04_COMBAT_PROGRESS_AND_RESOLUTION.md`
 6. `docs/tasks/blood-moon/05_SEASONS_INTEGRATION.md`
 7. `docs/tasks/blood-moon/06_FUTURE_PROGRESSION_AND_REWARDS.md`
-8. `docs/tasks/blood-moon/07_FUTURE_PARALLEL_WORLD_AND_DEATH.md`
+8. `docs/tasks/blood-moon/07_BLOOD_CRAFT_AND_WORLD_PRESERVATION.md`
 9. `docs/tasks/blood-moon/08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md`
 10. `docs/tasks/blood-moon/09_PREIMPLEMENTATION_DECISIONS_AND_SPIKES.md`
-11. `docs/tasks/blood-moon/10_PARALLEL_LAYER_RUNTIME_SPIKE.md`
+11. `docs/tasks/blood-moon/10_GLOBAL_EVENT_RUNTIME_SPIKE.md`
 
-For participant entry, `Defeated`, dream collapse, mounted handling, local visibility/collision, ownership and context gates, file `09` has priority. File `10` is the only implementation task currently permitted and applies only to the isolated spike branch.
+При конфликте файлы `09` и `10` имеют приоритет для ещё не закрытых технических решений.
 
-## 0.2. Working process
+Не использовать старые вне-репозиторные `BloodMoon_Design_Document.md` и `BloodMoon_Codex_Implementation_Brief.md`.
 
-Until the spike is reviewed and runtime-tested:
+## 2. Цель Blood Moon
 
-- do not implement the full event;
-- do not open an implementation PR into `master`;
-- do not bump the mod version;
-- do not edit public README/changelog/release files;
-- keep spike code isolated and removable;
-- record every confirmed or rejected approach back into files `09` and `10`.
+Blood Moon — ежегодная кульминация осени, один раз примерно за 40 игровых дней при стандартной длине года.
 
-After the gate is closed by an explicit owner decision, prepare a new production task from the confirmed spike results.
+Событие должно быть коротким мясным боевым эпизодом:
 
----
+- высокая плотность относительно слабых противников;
+- временное усиление игрока;
+- бесплатный временный Blood Craft известных боевых предметов;
+- простая цель — заполнить Bloodlust реальным боем;
+- поражение не создаёт могилу, не вызывает respawn и не отнимает навыки;
+- единственный постоянный механический результат — опыт боевых навыков;
+- никаких материалов, валюты, декора, world keys или иных постоянных наград.
 
-# 1. Product vision
+Ключевая формула после отказа от персональных слоёв:
 
-Blood Moon is an annual late-autumn event. With default Seasons settings it occurs once per 40 game days, approximately once per up to 20 hours of active gameplay.
+> Кровавая ночь охватывает реальных существ вокруг игроков, но временно меняет правила их боя. Мир остаётся общим, а последствия события должны быть минимальны.
 
-It is not a raid on the base. It is a temporary blood-layer combat episode:
-
-- the world begins to redden before combat;
-- blood enemies hunt participating players;
-- buildings, crops, tameables, bosses and ordinary creatures are outside the blood combat layer;
-- the player can experiment with already known combat equipment through future temporary Blood Craft;
-- permanent mechanical reward is limited to combat skills;
-- there are no material, recipe, key, decorative or other world-state rewards;
-- defeat does not create a tombstone or respawn the player;
-- after the event only learned skill and an informational chronicle remain.
-
-Core statements:
-
-> Blood Moon does not seek the player’s walls. It seeks the player.
-
-> Everything shaped by blood disappears; experience remains.
-
----
-
-# 2. Accepted lifecycle direction
+## 3. Планируемый цикл
 
 ```text
-Forewarning nights
-→ Marked at 18:00
-→ linear red overlay
-→ Active at 23:00
-→ context check
-→ AwaitingContact
-→ accepted first blood interaction
-→ Fighting/full blood layer
-→ GoalReached or Defeated/Disconnected
-→ early or forced resolution
-→ fade, cleanup, DreamText, morning
+предвестия последних осенних ночей
+→ Marked в 18:00
+→ Blood Craft и линейное покраснение среды
+→ Active в 23:00
+→ forced Blood Moon environment
+→ остановка RandEventSystem
+→ активация/добавление Blood Moon противников
+→ Fighting
+→ server-authoritative Bloodlust progress
+→ Success / Defeated / Withdrawn / Disconnected / forced morning
+→ cleanup
+→ fade + DreamText
+→ перевод времени к 06:00
+→ восстановление погоды, боссов и обычных систем
 ```
 
-Accepted decisions:
+## 4. Уже принятые изменения
 
-- explicit server event state machine;
-- explicit participant phase and separate outcome;
-- deterministic annual `eventId`;
-- server-authoritative progress and outcomes;
-- `AwaitingContact` keeps ordinary world visible until first accepted blood interaction;
-- first contact includes incoming/outgoing hit, block, parry and fully mitigated accepted hit;
-- outcome name is `BloodMoonParticipantOutcome.Defeated`;
-- dream collapse is intercepted in owner-side `Character.CheckDeath` before `Player.OnDeath`;
-- no death point, ragdoll, TombStone, inventory transfer or respawn;
-- restore health, stamina and eitr to full; keep food and adrenaline;
-- clear damaging DoT status effects;
-- full protection until the player is stabilized, then 10 seconds with 75% incoming-damage reduction;
-- no re-entry in the first release;
-- `SoftDeath` is shown only as a familiar indication and is not the protection mechanism;
-- no position, rotation, parent, ship or mount manipulation by Blood Moon;
-- no mass `SetOwner(0)` parking;
-- dungeon/interior and ship/ocean receive atmosphere but no blood enemies/full layer;
-- active boss encounter defers personal engagement while the boss HUD is visible;
-- edge-of-world proximity ejects the player before vanilla edge death;
-- mounted entry requires a dedicated runtime spike; forced dismount is not accepted because vanilla detach changes position.
+- `AwaitingContact` и `FirstBloodContactRecord` больше не нужны.
+- Персональной visibility/collision layer нет.
+- В 23:00 поддерживаемый Player сразу входит в `Fighting`.
+- Vanilla `SoftDeath` status не добавляется.
+- Безопасность поражения объясняется собственным Blood Moon status effect.
+- Outcome безопасного поражения называется `Defeated`.
+- `Player.OnDeath` для такого поражения не вызывается.
+- Любое обычное `health <= 0` в активном Blood Moon бою приводит к dream collapse.
+- Health, stamina и eitr восстанавливаются полностью; food и adrenaline не меняются.
+- Удаляются только вычислимо определяемые damaging DoT.
+- После `Defeated`: полная защита до стабилизации, максимум 15 секунд; затем 10 секунд 75% снижения входящего урона.
+- При приближении к краю мира участник получает terminal outcome `Withdrawn` до действия edge/tidal death.
+- Re-entry в первой версии отсутствует.
+- Mounted и generic attached не требуют отдельного слоя и не должны принудительно отсоединяться.
+- Interior/dungeon и ship/ocean получают визуал, но не являются spawn anchors.
+- Босс на время события должен быть глобально убран из боя с последующим восстановлением состояния; точный механизм проверяется spike.
 
----
+## 5. Процесс
 
-# 3. Production scope after the spike gate
+До закрытия spike разрешены только:
 
-The future first playable vertical slice is expected to include:
+- обновление документов;
+- чтение `assemblies_combined`;
+- debug-only runtime spike в отдельной ветке;
+- фиксация результатов.
 
-- annual calendar and safe first-install behavior;
-- Forewarning, Marked, Active, AutoCompleting, Resolving, Resolved/Skipped;
-- CCS/RPC synchronization and recovery;
-- environment overlay, forced environment and cloud VFX;
-- sleep and ordinary random-event suppression;
-- one blood enemy without persistent DoT;
-- hidden combat groups and server caps;
-- centralized interaction policy;
-- server progress, GoalReached, Defeated and disconnect outcomes;
-- morning resolution, DreamText and Rested removal;
-- debug commands and structured logs.
+После отдельного решения владельца о старте production-разработки:
 
-It must not be started from this index alone. Use the future production task produced after the runtime spike.
-
----
-
-# 4. Deferred systems
-
-- automatically inferred production enemy pool and enemy roles;
-- Momentum/StallTime;
-- Blood Craft UI/items;
-- skill-reward payout and limited x3 gain;
-- lifesteal/attack speed;
-- Odin watcher and Doppelganger;
-- optional PvP;
-- optional re-entry;
-- final music/SFX;
-- final forewarning presentation.
-
-The parallel layer, Blood Craft attacks, projectiles/AOE and summons must share one interaction policy even when implemented in separate commits.
+1. повторно прочитать весь комплект;
+2. реализовать первый вертикальный срез в `feat/blood-moon`;
+3. делать небольшие логические коммиты;
+4. не менять version/README/changelog/package без отдельного запроса;
+5. открыть draft PR в `master`;
+6. провести отдельный Codex review;
+7. исправить подтверждённые замечания;
+8. PR не сливать без владельца.
