@@ -20,7 +20,7 @@ namespace Seasons.BloodMoon
             if (!BloodMoonInteractionRules.CanDamage(attacker, target, hit))
                 return false;
 
-            if (attacker is Player player && BloodMoonInteractionRules.IsActiveParticipant(player) && BloodMoonInteractionRules.IsBloodEnemy(target))
+            if (BloodMoonInteractionRules.IsParticipantCombatSource(attacker) && BloodMoonInteractionRules.IsBloodEnemy(target))
                 multiplier = Mathf.Max(0f, BloodMoonConfig.EnemyIncomingDamageMultiplier.Value);
             else if (BloodMoonInteractionRules.IsBloodEnemy(attacker) && target is Player targetPlayer && BloodMoonInteractionRules.IsActiveParticipant(targetPlayer))
                 multiplier = Mathf.Max(0f, BloodMoonConfig.EnemyOutgoingDamageMultiplier.Value);
@@ -33,7 +33,7 @@ namespace Seasons.BloodMoon
             if (!BloodMoonHitAttribution.CanDamage(attribution, target))
                 return false;
 
-            if (attribution.SourceType == BloodMoonCombatSourceType.Participant)
+            if (attribution.SourceType == BloodMoonCombatSourceType.Participant || attribution.SourceType == BloodMoonCombatSourceType.ParticipantSummon)
                 multiplier = Mathf.Max(0f, BloodMoonConfig.EnemyIncomingDamageMultiplier.Value);
             else if (attribution.SourceType == BloodMoonCombatSourceType.BloodEnemy && target is Player)
                 multiplier = Mathf.Max(0f, BloodMoonConfig.EnemyOutgoingDamageMultiplier.Value);
@@ -51,9 +51,9 @@ namespace Seasons.BloodMoon
                 if (BloodMoonHitAttribution.CanCredit(attribution))
                     playerId = attribution.SourcePlayerId;
             }
-            else if (attacker is Player player && BloodMoonInteractionRules.CanCreditProgress(player.GetPlayerID()))
+            else if (BloodMoonInteractionRules.TryGetParticipantSourcePlayerId(attacker, out long sourcePlayerId) && BloodMoonInteractionRules.CanCreditProgress(sourcePlayerId))
             {
-                playerId = player.GetPlayerID();
+                playerId = sourcePlayerId;
             }
 
             if (playerId != 0L)
@@ -100,7 +100,8 @@ namespace Seasons.BloodMoon
         internal static BloodMoonHitAttributionData Attribution;
 
         internal static bool IsActive => Attacker != null || Attribution != null;
-        internal static bool IsParticipantSource => Attacker is Player player && BloodMoonInteractionRules.IsActiveParticipant(player) || Attribution?.SourceType == BloodMoonCombatSourceType.Participant;
+        internal static bool IsParticipantSource => BloodMoonInteractionRules.IsParticipantCombatSource(Attacker) ||
+            Attribution?.SourceType == BloodMoonCombatSourceType.Participant || Attribution?.SourceType == BloodMoonCombatSourceType.ParticipantSummon;
         internal static bool CanCredit => Attribution == null ? IsParticipantSource && AllowedCharacterHit : BloodMoonHitAttribution.CanCredit(Attribution) && AllowedCharacterHit;
 
         internal static void Begin(Character attacker)
@@ -201,7 +202,8 @@ namespace Seasons.BloodMoon
         private static void Prefix(Attack __instance)
         {
             Character attacker = __instance.m_character;
-            if (BloodMoonInteractionRules.IsEventCombatLive && (attacker is Player player && BloodMoonInteractionRules.IsActiveParticipant(player) || BloodMoonInteractionRules.IsBloodEnemy(attacker)))
+            if (BloodMoonInteractionRules.IsEventCombatLive &&
+                (BloodMoonInteractionRules.IsParticipantCombatSource(attacker) || BloodMoonInteractionRules.IsBloodEnemy(attacker)))
                 BloodMoonAttackContext.Begin(attacker);
         }
 
@@ -265,9 +267,7 @@ namespace Seasons.BloodMoon
             Character attacker = BloodMoonAttackContext.Attacker ?? hit.GetAttacker();
             if (BloodMoonAttackContext.Attribution != null)
                 return false;
-            if (attacker is Player player && BloodMoonInteractionRules.IsActiveParticipant(player))
-                return false;
-            if (BloodMoonInteractionRules.IsBloodEnemy(attacker))
+            if (BloodMoonInteractionRules.IsParticipantCombatSource(attacker) || BloodMoonInteractionRules.IsBloodEnemy(attacker))
                 return false;
             return true;
         }
@@ -310,7 +310,7 @@ namespace Seasons.BloodMoon
             if (owner == null)
                 return true;
             if (target == null)
-                return !(owner is Player player && BloodMoonInteractionRules.IsActiveParticipant(player)) && !BloodMoonInteractionRules.IsBloodEnemy(owner);
+                return !BloodMoonInteractionRules.IsParticipantCombatSource(owner) && !BloodMoonInteractionRules.IsBloodEnemy(owner);
             return BloodMoonCombat.CanDirectDamage(owner, target, __instance.m_originalHitData, out _);
         }
 
@@ -349,7 +349,7 @@ namespace Seasons.BloodMoon
                 return;
             if (target == null)
             {
-                if (owner is Player player && BloodMoonInteractionRules.IsActiveParticipant(player) || BloodMoonInteractionRules.IsBloodEnemy(owner))
+                if (BloodMoonInteractionRules.IsParticipantCombatSource(owner) || BloodMoonInteractionRules.IsBloodEnemy(owner))
                     __result = false;
                 return;
             }
