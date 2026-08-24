@@ -81,22 +81,35 @@ Marker устанавливается сразу после instantiate и до 
 - lowering cap не удаляет живых;
 - existing unmarked monster никогда не удаляется extra cleanup.
 
-## 4. Zone-owner spawner
+## 4. Per-zone owner spawner
 
 Dedicated server не выполняет zone `SpawnSystem`.
 
+Единого group-wide coordinator нет.
+
 Server:
 
-- определяет group/cap/pool;
-- выбирает coordinator peer;
-- отправляет targeted assignment.
+- определяет hidden group, group/server cap и spawn pool;
+- определяет все релевантные зоны группы;
+- определяет текущего owner каждой зоны;
+- выдаёт отдельный per-zone lease/budget с `eventId`, `groupId`, zone identity, owner/session и lease revision;
+- суммарно ограничивает все zone owners group/server caps.
 
-Coordinator client:
+Каждый zone owner client:
 
-- использует локальную surface/interior информацию;
+- обслуживает только принадлежащие ему зоны;
+- использует локальную surface/interior информацию этой зоны;
+- не спавнит за соседнюю зону и не управляет всей group;
 - создаёт extra;
 - ставит marker;
-- сообщает ZDOID.
+- сообщает ZDOID, zone identity и lease revision.
+
+При смене zone owner:
+
+- server увеличивает revision только этой зоны;
+- старый lease становится недействителен;
+- новый owner продолжает scheduler этой зоны;
+- reports старого owner/revision игнорируются.
 
 ### Surface
 
@@ -439,7 +452,7 @@ GoalReached Player остаётся активным, пока есть Fighting
 ### Prepare
 
 1. freeze enrollment;
-2. stop new group assignments/spawn;
+2. stop new per-zone leases/spawn;
 3. freeze result records;
 4. request client fade;
 5. wait ACK with timeout.

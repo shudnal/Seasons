@@ -79,7 +79,8 @@ Event state полностью восстанавливается из посл�
 - local Player → server: `Defeated` notification;
 - owner enemy → server: death/kill report;
 - client → server: boss discovery report;
-- server → selected peer: group spawn-coordinator assignment;
+- server → owner конкретной зоны: per-zone spawn lease/budget assignment;
+- zone owner → server: spawned ZDO report и lease heartbeat/ownership change;
 - server → specific Player: personal progress/reward/detail snapshot;
 - client → server: fade ACK;
 - client → server: explicit resync request;
@@ -92,7 +93,7 @@ Event state полностью восстанавливается из посл�
 protocolVersion
 eventId
 sender/player identity
-object/group identity when applicable
+object/group/zone identity when applicable
 message-specific sequence/deduplication key
 ```
 
@@ -144,47 +145,56 @@ Server:
 
 Existing и marked extra enemies учитываются одинаково для progress. Различие marker влияет на loot/cleanup, не на trust model.
 
-## 4. Group spawn coordinator
+## 4. Per-zone owner spawning
 
 Dedicated server не имеет live `Character` и не выполняет zone `SpawnSystem`.
+
+Единого group-wide spawn coordinator нет.
 
 Server:
 
 1. строит hidden groups по peer/player positions;
-2. выбирает один ready peer, владеющий/обслуживающий нужную зону;
-3. отправляет targeted assignment:
+2. определяет все релевантные активные зоны, связанные с участниками группы и допустимыми spawn anchors;
+3. определяет текущего owner каждой такой зоны/локального `SpawnSystem`;
+4. выдаёт каждому zone owner отдельный lease/budget:
 
 ```text
 eventId
 groupId
 groupRevision
-member Player ZDOIDs
-anchor position/member
-alive cap
+zone identity
+zone owner/session UID
+zone lease revision
+member/anchor data relevant to that zone
+zone allowance
+group alive cap
 server hard-cap remainder
 spawn pool revision
 ```
 
-Selected client:
+Zone owner:
 
-- запускает scheduler только для назначенной group revision;
+- запускает scheduler только для принадлежащих ему зон и только для актуальной lease revision;
+- не спавнит за соседние зоны и не становится координатором всей группы;
 - использует локальные `SpawnSystem`, terrain/interior/navmesh данные;
 - создаёт extra enemy;
 - немедленно ставит `SpawnedEventId`, `GroupId`, `Role`;
-- сообщает серверу созданный ZDOID.
+- сообщает серверу созданный ZDOID и использованную lease revision.
 
 Server:
 
-- считает marker-ZDO;
-- не даёт нескольким coordinators превысить cap;
-- при disconnect/reassignment увеличивает group revision;
-- игнорирует report старой revision.
+- считает marker-ZDO по group/server cap;
+- распределяет allowance между несколькими зонами одной группы;
+- не даёт нескольким zone owners суммарно превысить cap;
+- при ownership migration отбирает старый lease, увеличивает zone lease revision и перевыдаёт только эту зону новому owner;
+- игнорирует spawn reports старой owner/session или revision;
+- снижение cap не удаляет живых extras, а прекращает новые выдачи allowance.
 
-Это повторяет проверенную базовую модель Valheim/Custom Raids:
+Это следует базовой модели Valheim/Custom Raids:
 
 ```text
-server decides event
-→ zone owner client performs actual spawn
+server decides event and budgets
+→ every zone owner client performs actual spawn in its own zone
 ```
 
 ## 5. Boss discovery and parking
@@ -267,6 +277,7 @@ GoalReached
 ExitReason
 progress/contribution
 group IDs/revisions
+active zone leases/revisions when event is running
 marked extra enemy IDs или recoverable ZDO markers
 parked boss ZDOIDs
 revision
@@ -287,6 +298,7 @@ World-bound state привязан к world UID.
 - восстановить phase/schedule/participants;
 - сопоставить reconnect stable ID с новым peer/Player ZDOID;
 - rebuild groups;
+- пересчитать relevant zones и перевыдать leases текущим owners с новыми revisions;
 - удалить stale marked extras другого eventId;
 - оставить matching parked bosses parked;
 - продолжить текущую phase или resolve, если forced end прошёл.

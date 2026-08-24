@@ -67,6 +67,7 @@ https://github.com/shudnal/assemblies_combined
 - temporary persistence unknown bosses;
 - material/cosmetic/world-state event rewards;
 - mandatory JSON enemy catalog;
+- single group-wide spawn coordinator;
 - new branch;
 - version bump;
 - README/Thunderstore changelog/package changes без отдельного запроса.
@@ -86,7 +87,9 @@ https://github.com/shudnal/assemblies_combined
 - no SequencedCustomSyncedValue;
 - targeted own RPC;
 - local client authority for Defeated;
-- zone-owner spawn coordinator;
+- every relevant zone owner performs spawning only in its own zones;
+- server grants per-zone spawn lease/budget and enforces group/server caps;
+- ownership migration invalidates the old zone revision/lease;
 - boss discovery report + server parking.
 
 ### Persistence
@@ -137,7 +140,15 @@ Generic predicate and runtime AI patches. Ordinary loot remains.
 
 ### Extras
 
-Coordinator client spawn, marker immediately, no loot, fast ragdoll, stale cleanup.
+- server computes groups, pool and caps;
+- no single peer owns spawning for an entire group;
+- every owner of a relevant active zone runs the scheduler for that zone only;
+- per-zone lease contains at least `eventId`, `groupId`, zone identity, owner/session, revision and allowance;
+- owner uses local surface/interior data;
+- marker is written immediately;
+- no loot, fast ragdoll, stale cleanup;
+- server counts reports against group/server caps;
+- reports from stale owner/zone revision are ignored.
 
 ### Defeated
 
@@ -175,6 +186,7 @@ seasons bloodmoon resolve
 seasons bloodmoon cleanup
 seasons bloodmoon dump-participants
 seasons bloodmoon dump-groups
+seasons bloodmoon dump-spawn-zones
 seasons bloodmoon dump-monsters
 seasons bloodmoon dump-bosses
 seasons bloodmoon dump-sync
@@ -188,6 +200,7 @@ Structured log prefixes:
 [BloodMoon][event:<id>][phase]
 [BloodMoon][event:<id>][player:<id>]
 [BloodMoon][event:<id>][group:<id>]
+[BloodMoon][event:<id>][zone:<zone>]
 [BloodMoon][event:<id>][spawn]
 [BloodMoon][event:<id>][boss:<zdoid>]
 [BloodMoon][event:<id>][resolution]
@@ -208,7 +221,36 @@ Per-hit logs только diagnostic config.
 9. Исправить подтверждённые замечания.
 10. PR не merge.
 
-## 7. Final report
+## 7. Expected result of executing this task
+
+Результатом должна быть не новая постановка задачи и не исследовательский отчёт, а законченная реализация Blood Moon в ветке `feat/blood-moon`.
+
+Обязательный конечный набор:
+
+1. Production-код всех подсистем, перечисленных в разделе `Goal`, без no-op core flow и без откладывания уже принятых механик.
+2. Логические коммиты в одной ветке, чистый worktree и сохранённая история решений.
+3. Успешная сборка проекта; все compile errors устранены.
+4. Реальные state machines, persistence/recovery, CCS/RPC, zone-owner spawning, combat rules, Blood Craft, rewards, boss parking и resolution, связанные в один рабочий end-to-end flow.
+5. Debug/admin-команды и диагностические дампы, достаточные для дальнейшей настройки и игрового плейтеста владельцем.
+6. Обновлённые документы, отражающие фактические patch points, найденные ограничения и отличия от первоначального плана.
+7. Manual runtime test checklist с честным разделением:
+   - что реально проверено доступными средствами;
+   - что требует запуска Valheim и multiplayer-плейтеста владельцем.
+8. Draft PR `feat/blood-moon → master`.
+9. Отдельный Codex code review этого PR и исправление подтверждённых замечаний.
+10. Финальный отчёт с точкой продолжения, если после реальной игры потребуются баланс, VFX/SFX или runtime fixes.
+
+Не является ожидаемым результатом:
+
+- только план;
+- только skeleton;
+- только несколько первых этапов;
+- отдельная spike/MVP-ветка;
+- утверждение, что непроверенный в игре runtime гарантированно работает;
+- merge PR;
+- изменение версии или release-файлов.
+
+## 8. Final report
 
 Указать:
 
@@ -225,7 +267,7 @@ Per-hit logs только diagnostic config.
 - review result;
 - continuation point.
 
-## 8. Definition of clean documented result
+## 9. Definition of clean documented result
 
 - рабочая ветка чистая;
 - code compiles;

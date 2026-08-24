@@ -322,9 +322,17 @@ m_nview owner
 Player.m_localPlayer != null
 ```
 
-Thus zone owner client performs actual spawning.
+Thus owner конкретной зоны выполняет actual spawning для этой зоны.
 
-Server should coordinate, not instantiate zone creatures blindly.
+Не выбирать один peer coordinator на всю hidden group. Если group пересекает несколько зон с разными owners, каждый owner обслуживает только свои зоны.
+
+Server:
+
+- определяет groups/pool/caps;
+- выдаёт per-zone lease/budget;
+- суммирует reports всех zone owners;
+- ограничивает общий group/server cap;
+- при ownership migration меняет revision только этой зоны.
 
 `CreatureSpawner` positions are useful authored interior candidates, but calling its `Spawn()` mutates its Spawned connection and alive/respawn bookkeeping. Blood Moon reads positions only.
 
@@ -369,8 +377,8 @@ Own RPC:
 Defeated notification
 enemy death report
 boss discovery
-group coordinator assignment
-extra spawn report
+per-zone spawn lease/owner assignment
+zone-owner extra spawn report
 targeted progress/reward
 fade ACK
 resync/debug

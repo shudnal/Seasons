@@ -35,7 +35,12 @@
 
 ### Extra enemies
 
-- custom zone-owner spawn;
+- custom spawn выполняет owner каждой релевантной зоны;
+- единого group-wide spawn coordinator нет;
+- server определяет groups, общий/group cap, pool и выдаёт per-zone budget/lease;
+- каждый zone owner спавнит только в принадлежащих ему зонах;
+- lease идентифицируется минимум через `eventId`, `groupId`, zone identity, owner/session и revision;
+- при смене owner перевыдаётся только lease этой зоны, reports старой revision игнорируются;
 - `SpawnedEventId` marker;
 - no loot;
 - fast ragdoll;
@@ -83,7 +88,9 @@
 - CCS normal CustomSyncedValue for global/public current snapshots;
 - no SequencedCustomSyncedValue;
 - own RPC for targeted/client-owned operations;
-- zone owner client performs extra spawn;
+- every relevant zone owner client performs extra spawn in its own zone;
+- server does not nominate one coordinator for the whole group;
+- server grants/revokes per-zone spawn leases and enforces group/server caps;
 - local Player notification for Defeated, no HP verification.
 
 ## 2. Implementation order
@@ -107,7 +114,7 @@
 - targeted RPC registration;
 - identity/eventId/revision/deduplication;
 - late join/resync;
-- group coordinator assignment.
+- per-zone spawn lease/owner assignment.
 
 ### Step 3 — calendar, Forewarning, Marked, Active
 
@@ -133,7 +140,9 @@
 - server group graph;
 - stable IDs/hysteresis;
 - cap accounting;
-- coordinator selection/reassignment;
+- discovery of relevant active zones;
+- per-zone owner lease/budget allocation;
+- zone ownership migration and lease revision;
 - surface and CreatureSpawner interior candidates;
 - markers and stale cleanup.
 
