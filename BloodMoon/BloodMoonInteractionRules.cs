@@ -144,8 +144,10 @@ namespace Seasons.BloodMoon
                 return true;
             }
 
+            // Environmental and other unattributed damage remains vanilla-valid for participants.
+            // The same unattributed source must not become a way to damage Blood enemies.
             if (attacker == null)
-                return false;
+                return targetParticipant;
             return CanTarget(attacker, target);
         }
 
