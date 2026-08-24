@@ -20,6 +20,7 @@ namespace Seasons.BloodMoon
         {
             internal string Path;
             internal BloodMoonEventState State;
+            internal long FileTicks;
         }
 
         internal static string GetStatePath(long worldUid)
@@ -41,7 +42,14 @@ namespace Seasons.BloodMoon
                     continue;
                 anyFile = true;
                 if (TryLoadCandidate(candidatePath, worldUid, out BloodMoonEventState state))
-                    valid.Add(new Candidate { Path = candidatePath, State = state });
+                {
+                    valid.Add(new Candidate
+                    {
+                        Path = candidatePath,
+                        State = state,
+                        FileTicks = File.GetLastWriteTimeUtc(candidatePath).Ticks
+                    });
+                }
             }
 
             if (valid.Count == 0)
@@ -52,11 +60,13 @@ namespace Seasons.BloodMoon
             }
 
             // UpdatedAt is the durable state-change timestamp and remains monotonic across event replacement,
-            // where Revision intentionally starts over. EventId and Revision are deterministic tie breakers.
+            // where Revision intentionally starts over. EventId/Revision order semantic ties; the physical write
+            // timestamp resolves subsystem-only saves that intentionally do not touch the event revision.
             Candidate selected = valid
                 .OrderByDescending(candidate => candidate.State.UpdatedAt)
                 .ThenByDescending(candidate => candidate.State.EventId)
                 .ThenByDescending(candidate => candidate.State.Revision)
+                .ThenByDescending(candidate => candidate.FileTicks)
                 .First();
 
             BloodMoonEventState loaded = selected.State;
