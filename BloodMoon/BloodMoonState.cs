@@ -99,6 +99,7 @@ namespace Seasons.BloodMoon
         public double GoalReachedAt;
         public double ExitedAt;
         public double ResolvedAt;
+        public long LastSkillReportSequence;
         public Dictionary<int, float> SkillContribution = new Dictionary<int, float>();
         public Dictionary<int, float> LiveSkillBonusEquivalent = new Dictionary<int, float>();
 
