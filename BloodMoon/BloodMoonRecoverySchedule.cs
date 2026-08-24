@@ -4,11 +4,11 @@ namespace Seasons.BloodMoon
 {
     internal static class BloodMoonRecoverySchedule
     {
-        internal static void ReconcileLoadedState(BloodMoonEventState state)
+        internal static bool ReconcileLoadedState(BloodMoonEventState state)
         {
             if (state == null || state.Phase == BloodMoonEventPhase.Resolving || state.Phase == BloodMoonEventPhase.Resolved ||
                 !state.IsEventLive || state.Schedule == null || !state.Schedule.IsValid || !SeasonState.IsActive)
-                return;
+                return false;
 
             double now = seasonState.GetTotalSeconds();
             BloodMoonEventPhase expected = BloodMoonSchedule.GetExpectedPhase(state.Schedule, now);
@@ -52,14 +52,15 @@ namespace Seasons.BloodMoon
             }
 
             if (!changed)
-                return;
+                return false;
 
             state.UpdatedAt = now;
             state.Revision++;
             LogInfo($"[BloodMoon][event:{state.EventId}][phase] Recovered frozen schedule to {state.Phase} before first publish.");
+            return true;
         }
 
-        // Compatibility wrapper for state files loaded by the immediately preceding implementation commit.
+        // Compatibility wrapper for code paths introduced by the immediately preceding implementation commit.
         internal static void ReconcileForcedEnd(BloodMoonEventState state) => ReconcileLoadedState(state);
 
         private static void EnterRecoveredCombatPhase(BloodMoonEventState state, BloodMoonEventPhase phase, double now)
