@@ -20,9 +20,9 @@ namespace Seasons.BloodMoon
         private static class PlayerGetAvailableRecipesSafetyPatch
         {
             [HarmonyPriority(Priority.Last)]
-            private static void Postfix(ref List<Recipe> __result)
+            private static void Postfix(ref List<Recipe> available)
             {
-                __result?.RemoveAll(recipe => BloodCraft.IsBloodRecipe(recipe) && UsesPersistentWorldSpawner(recipe.m_item?.m_itemData));
+                available?.RemoveAll(recipe => BloodCraft.IsBloodRecipe(recipe) && UsesPersistentWorldSpawner(recipe.m_item?.m_itemData));
             }
         }
 
