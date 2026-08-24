@@ -40,6 +40,21 @@ namespace Seasons.BloodMoon
                 .ThenBy(player => Utils.DistanceXZ(enemy.transform.position, player.transform.position))
                 .FirstOrDefault();
         }
+
+        internal static Character FindBloodEnemyTarget(BaseAI ai)
+        {
+            Character summon = ai?.m_character;
+            if (summon == null)
+                return null;
+
+            return Character.GetAllCharacters()
+                .Where(character => character != null && !character.IsDead() && !character.m_aiSkipTarget)
+                .Where(BloodMoonInteractionRules.IsBloodEnemy)
+                .Where(character => SameNavigationContext(summon, character))
+                .Where(character => BaseAI.IsEnemy(summon, character) && ai.CanSenseTarget(character))
+                .OrderBy(character => Utils.DistanceXZ(summon.transform.position, character.transform.position))
+                .FirstOrDefault();
+        }
     }
 
     [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.FindEnemy))]
@@ -48,14 +63,19 @@ namespace Seasons.BloodMoon
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(BaseAI __instance, ref Character __result)
         {
-            Character enemy = __instance?.m_character;
-            if (!BloodMoonInteractionRules.IsBloodEnemy(enemy))
+            Character source = __instance?.m_character;
+            bool bloodEnemy = BloodMoonInteractionRules.IsBloodEnemy(source);
+            bool participantSummon = BloodMoonSummons.IsBloodSummon(source);
+            if (!bloodEnemy && !participantSummon)
                 return;
 
-            if (__result != null && BloodMoonAiContext.SameNavigationContext(enemy, __result))
+            if (__result != null && BloodMoonAiContext.SameNavigationContext(source, __result) &&
+                (bloodEnemy ? BloodMoonInteractionRules.CanTarget(source, __result) : BloodMoonInteractionRules.IsBloodEnemy(__result)))
                 return;
 
-            __result = BloodMoonAiContext.FindParticipantTarget(enemy);
+            __result = bloodEnemy
+                ? BloodMoonAiContext.FindParticipantTarget(source)
+                : BloodMoonAiContext.FindBloodEnemyTarget(__instance);
         }
     }
 
@@ -65,15 +85,20 @@ namespace Seasons.BloodMoon
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(MonsterAI __instance)
         {
-            Character enemy = __instance?.m_character;
-            if (!BloodMoonInteractionRules.IsBloodEnemy(enemy))
+            Character source = __instance?.m_character;
+            bool bloodEnemy = BloodMoonInteractionRules.IsBloodEnemy(source);
+            bool participantSummon = BloodMoonSummons.IsBloodSummon(source);
+            if (!bloodEnemy && !participantSummon)
                 return;
 
-            if (__instance.m_targetCreature != null && BloodMoonAiContext.SameNavigationContext(enemy, __instance.m_targetCreature) &&
-                BloodMoonInteractionRules.CanTarget(enemy, __instance.m_targetCreature))
+            bool currentValid = __instance.m_targetCreature != null && BloodMoonAiContext.SameNavigationContext(source, __instance.m_targetCreature) &&
+                (bloodEnemy ? BloodMoonInteractionRules.CanTarget(source, __instance.m_targetCreature) : BloodMoonInteractionRules.IsBloodEnemy(__instance.m_targetCreature));
+            if (currentValid)
                 return;
 
-            Player target = BloodMoonAiContext.FindParticipantTarget(enemy);
+            Character target = bloodEnemy
+                ? BloodMoonAiContext.FindParticipantTarget(source)
+                : BloodMoonAiContext.FindBloodEnemyTarget(__instance);
             __instance.m_targetCreature = target;
             __instance.m_targetStatic = null;
             if (target != null)
