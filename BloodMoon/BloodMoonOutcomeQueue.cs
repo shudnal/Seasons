@@ -364,7 +364,7 @@ namespace Seasons.BloodMoon
     [HarmonyPatch(typeof(BloodMoonController), "FixedUpdate")]
     internal static class BloodMoonOutcomeTickPatch
     {
-        private static void Postfix(float ___serverTickTimer)
+        private static void Postfix()
         {
             // The controller runs FixedUpdate on all peers. TickServer internally gates the server role.
             BloodMoonOutcomeQueue.TickServer(Time.fixedDeltaTime);
