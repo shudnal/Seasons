@@ -11,7 +11,7 @@ namespace Seasons.BloodMoon
                 return null;
 
             int dayInSeason = seasonState.GetDayInSeason(worldDay);
-            int eventAutumnDay = Math.Clamp(BloodMoonConfig.AutumnDay.Value, 4, seasonState.GetDaysInSeason(Season.Fall));
+            int eventAutumnDay = Math.Min(Math.Max(BloodMoonConfig.AutumnDay.Value, 4), seasonState.GetDaysInSeason(Season.Fall));
             if (dayInSeason != eventAutumnDay)
                 return null;
 
