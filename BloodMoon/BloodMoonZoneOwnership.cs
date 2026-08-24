@@ -20,6 +20,8 @@ namespace Seasons.BloodMoon
         private const double ClaimLifetimeSeconds = 5d;
         private const float RelevantZoneDistance = 180f;
         private static readonly Dictionary<Vector2i, ZoneClaim> serverClaims = new Dictionary<Vector2i, ZoneClaim>();
+        private static readonly HashSet<int> spawnSystemPrefabHashes = new HashSet<int>();
+        private static ZNetScene cachedPrefabScene;
         private static float localReportTimer;
 
         internal static void TickClient(float dt)
@@ -53,6 +55,12 @@ namespace Seasons.BloodMoon
                 return;
 
             Vector2i zone = new Vector2i(zoneX, zoneY);
+            if (!ValidateSpawnSystemOwnership(sender, zone))
+            {
+                LogWarning($"[BloodMoon][event:{eventId}][zone:{zone}] Rejected ownership claim from peer {sender}: no owned SpawnSystem ZDO in sector.");
+                return;
+            }
+
             serverClaims[zone] = new ZoneClaim
             {
                 EventId = eventId,
@@ -84,6 +92,7 @@ namespace Seasons.BloodMoon
 
             return serverClaims.Values
                 .Where(claim => claim.EventId == state.EventId && memberPositions.Any(position => Utils.DistanceXZ(position, ZoneSystem.GetZonePos(claim.Zone)) <= RelevantZoneDistance))
+                .Where(claim => ValidateSpawnSystemOwnership(claim.PeerId, claim.Zone))
                 .OrderBy(claim => claim.Zone.x)
                 .ThenBy(claim => claim.Zone.y)
                 .ToList();
@@ -93,6 +102,8 @@ namespace Seasons.BloodMoon
         {
             serverClaims.Clear();
             localReportTimer = 0f;
+            cachedPrefabScene = null;
+            spawnSystemPrefabHashes.Clear();
         }
 
         internal static string Dump(BloodMoonEventState state)
@@ -106,7 +117,7 @@ namespace Seasons.BloodMoon
             return string.Join("\n", serverClaims.Values
                 .OrderBy(claim => claim.Zone.x)
                 .ThenBy(claim => claim.Zone.y)
-                .Select(claim => $"zone={claim.Zone} peer={claim.PeerId} player={claim.PlayerId} age={Math.Max(0d, now - claim.LastSeen):0.0}s"));
+                .Select(claim => $"zone={claim.Zone} peer={claim.PeerId} player={claim.PlayerId} age={Math.Max(0d, now - claim.LastSeen):0.0}s verified={ValidateSpawnSystemOwnership(claim.PeerId, claim.Zone)}"));
         }
 
         private static void Prune(long eventId, double now)
@@ -114,12 +125,42 @@ namespace Seasons.BloodMoon
             long serverPeerId = ZRoutedRpc.instance != null ? ZRoutedRpc.instance.GetServerPeerID() : 0L;
             foreach (Vector2i zone in serverClaims
                 .Where(pair => pair.Value.EventId != eventId || now - pair.Value.LastSeen > ClaimLifetimeSeconds ||
-                    pair.Value.PeerId != serverPeerId && (ZNet.instance == null || ZNet.instance.GetPeer(pair.Value.PeerId) == null))
+                    pair.Value.PeerId != serverPeerId && (ZNet.instance == null || ZNet.instance.GetPeer(pair.Value.PeerId) == null) ||
+                    !ValidateSpawnSystemOwnership(pair.Value.PeerId, pair.Value.Zone))
                 .Select(pair => pair.Key)
                 .ToList())
             {
                 serverClaims.Remove(zone);
             }
+        }
+
+        private static bool ValidateSpawnSystemOwnership(long sender, Vector2i zone)
+        {
+            if (sender == 0L || ZDOMan.instance == null || ZNetScene.instance == null)
+                return false;
+
+            EnsureSpawnSystemPrefabHashes();
+            if (spawnSystemPrefabHashes.Count == 0)
+                return false;
+
+            return ZDOMan.instance.m_objectsByID.Values.Any(zdo =>
+                zdo != null && zdo.GetOwner() == sender && zdo.GetSector() == zone && spawnSystemPrefabHashes.Contains(zdo.GetPrefab()));
+        }
+
+        private static void EnsureSpawnSystemPrefabHashes()
+        {
+            ZNetScene scene = ZNetScene.instance;
+            if (scene == null || ReferenceEquals(scene, cachedPrefabScene))
+                return;
+
+            cachedPrefabScene = scene;
+            spawnSystemPrefabHashes.Clear();
+            foreach (KeyValuePair<int, GameObject> prefab in scene.m_namedPrefabs)
+            {
+                if (prefab.Value != null && prefab.Value.GetComponent<SpawnSystem>() != null)
+                    spawnSystemPrefabHashes.Add(prefab.Key);
+            }
+            LogInfo($"[BloodMoon.Spawn] Registered {spawnSystemPrefabHashes.Count} SpawnSystem prefab hash(es) for server ownership validation.");
         }
 
         private static bool ValidatePeerPlayer(long sender, long playerId)
