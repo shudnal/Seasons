@@ -13,9 +13,10 @@ namespace Seasons.BloodMoon
     internal static class BloodCraft
     {
         internal const string SchemaKey = "Seasons.BloodCraft.Schema";
+        internal const string WorldUidKey = "Seasons.BloodCraft.WorldUid";
         internal const string EventIdKey = "Seasons.BloodCraft.EventId";
         internal const string OwnerPlayerIdKey = "Seasons.BloodCraft.OwnerPlayerId";
-        private const int Schema = 1;
+        private const int Schema = 2;
         private const float PendingValidationGrace = 5f;
 
         private static readonly Dictionary<Recipe, Recipe> cloneByOriginal = new Dictionary<Recipe, Recipe>();
@@ -29,7 +30,7 @@ namespace Seasons.BloodMoon
 
         internal static bool IsAvailableFor(Player player)
         {
-            if (player == null || player != Player.m_localPlayer)
+            if (player == null || player != Player.m_localPlayer || GetCurrentWorldUid() == 0L)
                 return false;
             BloodMoonEventPhase phase = BloodMoonNetwork.ClientGlobal.Phase;
             if (phase != BloodMoonEventPhase.Marked && phase != BloodMoonEventPhase.Active && phase != BloodMoonEventPhase.AutoCompleting)
@@ -49,12 +50,20 @@ namespace Seasons.BloodMoon
 
         internal static bool TryReadMarker(ItemDrop.ItemData item, out long eventId, out long ownerPlayerId)
         {
+            return TryReadMarker(item, out _, out eventId, out ownerPlayerId);
+        }
+
+        private static bool TryReadMarker(ItemDrop.ItemData item, out long worldUid, out long eventId, out long ownerPlayerId)
+        {
+            worldUid = 0L;
             eventId = -1L;
             ownerPlayerId = 0L;
             if (item?.m_customData == null || !item.m_customData.TryGetValue(SchemaKey, out string schemaText) ||
-                !item.m_customData.TryGetValue(EventIdKey, out string eventText) || !item.m_customData.TryGetValue(OwnerPlayerIdKey, out string ownerText))
+                !item.m_customData.TryGetValue(WorldUidKey, out string worldText) || !item.m_customData.TryGetValue(EventIdKey, out string eventText) ||
+                !item.m_customData.TryGetValue(OwnerPlayerIdKey, out string ownerText))
                 return false;
             return int.TryParse(schemaText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int schema) && schema == Schema &&
+                long.TryParse(worldText, NumberStyles.Integer, CultureInfo.InvariantCulture, out worldUid) && worldUid != 0L &&
                 long.TryParse(eventText, NumberStyles.Integer, CultureInfo.InvariantCulture, out eventId) && eventId >= 0L &&
                 long.TryParse(ownerText, NumberStyles.Integer, CultureInfo.InvariantCulture, out ownerPlayerId) && ownerPlayerId != 0L;
         }
@@ -63,19 +72,20 @@ namespace Seasons.BloodMoon
         {
             if (item?.m_customData == null)
                 return false;
-            return item.m_customData.ContainsKey(SchemaKey) || item.m_customData.ContainsKey(EventIdKey) || item.m_customData.ContainsKey(OwnerPlayerIdKey);
+            return item.m_customData.ContainsKey(SchemaKey) || item.m_customData.ContainsKey(WorldUidKey) ||
+                item.m_customData.ContainsKey(EventIdKey) || item.m_customData.ContainsKey(OwnerPlayerIdKey);
         }
 
         internal static bool IsValidFor(Player player, ItemDrop.ItemData item)
         {
-            return player != null && TryReadMarker(item, out long eventId, out long ownerId) &&
-                eventId == BloodMoonNetwork.ClientGlobal.EventId && ownerId == player.GetPlayerID() && IsAvailableFor(player);
+            return player != null && TryReadMarker(item, out long worldUid, out long eventId, out long ownerId) &&
+                worldUid == GetCurrentWorldUid() && eventId == BloodMoonNetwork.ClientGlobal.EventId && ownerId == player.GetPlayerID() && IsAvailableFor(player);
         }
 
         internal static void AppendAvailableRecipes(Player player, List<Recipe> available)
         {
             InventoryGui gui = InventoryGui.instance;
-            if (player == null || available == null || gui == null || !InventoryGui.IsVisible() || !IsAvailableFor(player))
+            if (player == null || available == null || gui == null || ObjectDB.instance == null || !InventoryGui.IsVisible() || !IsAvailableFor(player))
                 return;
 
             bool craftTab = gui.InCraftTab();
@@ -138,6 +148,7 @@ namespace Seasons.BloodMoon
         internal static void CleanupLocal(Player player)
         {
             CleanupRecipeClones();
+            pendingInventoryValidation.Clear();
             if (player == null)
                 return;
 
@@ -168,18 +179,26 @@ namespace Seasons.BloodMoon
             if (player == null)
                 return;
 
-            if (pendingInventoryValidation.Count == 0 && !player.GetInventory().GetAllItems().Any(HasMarker))
+            Inventory playerInventory = player.GetInventory();
+            bool playerHasMarkers = playerInventory.GetAllItems().Any(HasMarker);
+            if (pendingInventoryValidation.Count == 0 && !playerHasMarkers)
                 return;
 
-            bool snapshotKnown = BloodMoonNetwork.ClientGlobal.EventId >= 0L || Time.realtimeSinceStartup >= PendingValidationGrace;
+            float now = Time.realtimeSinceStartup;
+            bool activeSnapshotKnown = BloodMoonNetwork.ClientGlobal.EventId >= 0L;
+            if (playerHasMarkers && !activeSnapshotKnown && !pendingInventoryValidation.ContainsKey(playerInventory))
+                pendingInventoryValidation[playerInventory] = now;
+
             foreach (KeyValuePair<Inventory, float> pending in pendingInventoryValidation.ToArray())
             {
-                if (!snapshotKnown && Time.realtimeSinceStartup - pending.Value < PendingValidationGrace)
+                if (!activeSnapshotKnown && now - pending.Value < PendingValidationGrace)
                     continue;
                 CleanupInvalidInventory(pending.Key, player);
                 pendingInventoryValidation.Remove(pending.Key);
             }
-            CleanupInvalidInventory(player.GetInventory(), player);
+
+            if (activeSnapshotKnown && playerInventory.GetAllItems().Any(HasMarker))
+                CleanupInvalidInventory(playerInventory, player);
         }
 
         internal static bool CanStack(ItemDrop.ItemData first, ItemDrop.ItemData second)
@@ -188,9 +207,10 @@ namespace Seasons.BloodMoon
             bool secondMarked = HasMarker(second);
             if (!firstMarked && !secondMarked)
                 return true;
-            if (!TryReadMarker(first, out long firstEvent, out long firstOwner) || !TryReadMarker(second, out long secondEvent, out long secondOwner))
+            if (!TryReadMarker(first, out long firstWorld, out long firstEvent, out long firstOwner) ||
+                !TryReadMarker(second, out long secondWorld, out long secondEvent, out long secondOwner))
                 return false;
-            return firstEvent == secondEvent && firstOwner == secondOwner;
+            return firstWorld == secondWorld && firstEvent == secondEvent && firstOwner == secondOwner;
         }
 
         internal static void StyleRecipeRow(InventoryGui gui, Recipe recipe, ItemDrop.ItemData item)
@@ -295,7 +315,7 @@ namespace Seasons.BloodMoon
             ItemDrop.ItemData item = recipe.m_item.m_itemData;
             if (item.m_shared.m_questItem || item.m_shared.m_buildPieces != null || !player.m_knownRecipes.Contains(item.m_shared.m_name))
                 return false;
-            if (!string.IsNullOrEmpty(item.m_shared.m_dlc) && !DLCMan.instance.IsDLCInstalled(item.m_shared.m_dlc))
+            if (!string.IsNullOrEmpty(item.m_shared.m_dlc) && (DLCMan.instance == null || !DLCMan.instance.IsDLCInstalled(item.m_shared.m_dlc)))
                 return false;
 
             switch (item.m_shared.m_itemType)
@@ -372,11 +392,14 @@ namespace Seasons.BloodMoon
             cloneByOriginal.Clear();
             originalByClone.Clear();
             cloneEventId = -1L;
+            craftButtonBaseColors.Clear();
         }
 
         private static void Mark(ItemDrop.ItemData item, long eventId, long playerId)
         {
+            long worldUid = GetCurrentWorldUid();
             item.m_customData[SchemaKey] = Schema.ToString(CultureInfo.InvariantCulture);
+            item.m_customData[WorldUidKey] = worldUid.ToString(CultureInfo.InvariantCulture);
             item.m_customData[EventIdKey] = eventId.ToString(CultureInfo.InvariantCulture);
             item.m_customData[OwnerPlayerIdKey] = playerId.ToString(CultureInfo.InvariantCulture);
         }
@@ -390,8 +413,8 @@ namespace Seasons.BloodMoon
             {
                 if (!HasMarker(item))
                     continue;
-                if (!TryReadMarker(item, out long eventId, out long ownerId) || owner == null || inventory != owner.GetInventory() ||
-                    eventId != BloodMoonNetwork.ClientGlobal.EventId || ownerId != owner.GetPlayerID() || !IsAvailableFor(owner))
+                if (!TryReadMarker(item, out long worldUid, out long eventId, out long ownerId) || owner == null || inventory != owner.GetInventory() ||
+                    worldUid != GetCurrentWorldUid() || eventId != BloodMoonNetwork.ClientGlobal.EventId || ownerId != owner.GetPlayerID() || !IsAvailableFor(owner))
                     remove.Add(item);
             }
             foreach (ItemDrop.ItemData item in remove)
@@ -409,8 +432,8 @@ namespace Seasons.BloodMoon
             Player player = Player.m_localPlayer;
             if (player == null)
                 return true;
-            return inventory == player.GetInventory() && TryReadMarker(item, out long eventId, out long ownerId) &&
-                eventId == BloodMoonNetwork.ClientGlobal.EventId && ownerId == player.GetPlayerID();
+            return inventory == player.GetInventory() && TryReadMarker(item, out long worldUid, out long eventId, out long ownerId) &&
+                worldUid == GetCurrentWorldUid() && eventId == BloodMoonNetwork.ClientGlobal.EventId && ownerId == player.GetPlayerID();
         }
 
         private static void DestroyWorldTemporary(ItemDrop itemDrop)
@@ -419,6 +442,11 @@ namespace Seasons.BloodMoon
                 return;
             LogWarning($"[BloodMoon.Craft] Destroying temporary world item {itemDrop.gameObject.name}.");
             ZNetScene.instance?.Destroy(itemDrop.gameObject);
+        }
+
+        private static long GetCurrentWorldUid()
+        {
+            return ZNet.m_world != null ? ZNet.m_world.m_uid : 0L;
         }
 
         [HarmonyPatch(typeof(Player), nameof(Player.GetAvailableRecipes))]
@@ -490,6 +518,11 @@ namespace Seasons.BloodMoon
             }
 
             private static void Postfix(ItemDrop.ItemData __state) => stackCandidate = __state;
+            private static Exception Finalizer(Exception __exception, ItemDrop.ItemData __state)
+            {
+                stackCandidate = __state;
+                return __exception;
+            }
         }
 
         [HarmonyPatch(typeof(Inventory), nameof(Inventory.AddItem), new Type[] { typeof(ItemDrop.ItemData), typeof(Vector2i) })]
@@ -506,6 +539,11 @@ namespace Seasons.BloodMoon
             }
 
             private static void Postfix(ItemDrop.ItemData __state) => stackCandidate = __state;
+            private static Exception Finalizer(Exception __exception, ItemDrop.ItemData __state)
+            {
+                stackCandidate = __state;
+                return __exception;
+            }
         }
 
         [HarmonyPatch(typeof(Inventory), nameof(Inventory.AddItem), new Type[] { typeof(ItemDrop.ItemData), typeof(int), typeof(int), typeof(int) })]
