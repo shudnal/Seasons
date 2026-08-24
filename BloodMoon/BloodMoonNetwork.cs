@@ -12,6 +12,7 @@ namespace Seasons.BloodMoon
         internal const int ProtocolVersion = 1;
         private const int SyncPriorityGlobal = Priority.VeryLow + 4;
         private const int SyncPriorityParticipants = Priority.VeryLow + 3;
+        private const int MaxPendingClientActions = 32;
 
         private const string RpcDefeated = "Seasons.BloodMoon.Defeated";
         private const string RpcEnemyDeath = "Seasons.BloodMoon.EnemyDeath";
@@ -24,9 +25,17 @@ namespace Seasons.BloodMoon
         private const string RpcResync = "Seasons.BloodMoon.Resync";
         private const string RpcClientAction = "Seasons.BloodMoon.ClientAction";
 
+        private sealed class PendingClientAction
+        {
+            internal long EventId;
+            internal string Action;
+            internal string Payload;
+        }
+
         internal static readonly CustomSyncedValue<string> GlobalStateJson = new CustomSyncedValue<string>(configSync, "Blood Moon global state", "", SyncPriorityGlobal);
         internal static readonly CustomSyncedValue<string> ParticipantStateJson = new CustomSyncedValue<string>(configSync, "Blood Moon participant state", "", SyncPriorityParticipants);
 
+        private static readonly List<PendingClientAction> pendingClientActions = new List<PendingClientAction>();
         private static bool valuesInitialized;
         private static ZRoutedRpc registeredRpc;
 
@@ -51,6 +60,7 @@ namespace Seasons.BloodMoon
                 return;
 
             registeredRpc = rpc;
+            pendingClientActions.Clear();
             rpc.Register<ZPackage>(RpcDefeated, OnDefeated);
             rpc.Register<ZPackage>(RpcEnemyDeath, OnEnemyDeath);
             rpc.Register<ZPackage>(RpcSkillGain, OnSkillGain);
@@ -349,7 +359,41 @@ namespace Seasons.BloodMoon
                 return;
             string action = pkg.ReadString();
             string payload = pkg.ReadString();
-            BloodMoonController.HandleClientAction(eventId, action, payload);
+
+            if (ClientGlobal.EventId == eventId)
+            {
+                BloodMoonController.HandleClientAction(eventId, action, payload);
+                return;
+            }
+
+            QueueClientAction(eventId, action, payload);
+        }
+
+        private static void QueueClientAction(long eventId, string action, string payload)
+        {
+            if (eventId < 0L || string.IsNullOrEmpty(action))
+                return;
+            if (pendingClientActions.Any(item => item.EventId == eventId && item.Action == action && item.Payload == payload))
+                return;
+            if (pendingClientActions.Count >= MaxPendingClientActions)
+                pendingClientActions.RemoveAt(0);
+            pendingClientActions.Add(new PendingClientAction
+            {
+                EventId = eventId,
+                Action = action,
+                Payload = payload ?? string.Empty
+            });
+        }
+
+        private static void FlushClientActions(long eventId)
+        {
+            if (eventId < 0L || pendingClientActions.Count == 0)
+                return;
+            foreach (PendingClientAction item in pendingClientActions.Where(item => item.EventId == eventId).ToArray())
+            {
+                pendingClientActions.Remove(item);
+                BloodMoonController.HandleClientAction(item.EventId, item.Action, item.Payload);
+            }
         }
 
         private static void OnGlobalStateChanged()
@@ -363,6 +407,7 @@ namespace Seasons.BloodMoon
                     return;
                 ClientGlobal = snapshot;
                 BloodMoonPresentation.OnGlobalSnapshot(ClientGlobal);
+                FlushClientActions(ClientGlobal.EventId);
             }
             catch (Exception ex)
             {
