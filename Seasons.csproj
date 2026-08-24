@@ -36,6 +36,7 @@
     <LangVersion>10.0</LangVersion>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="BloodMoon\**\*.cs" />
     <Compile Include="Compatibility\HoneyPlusCompat.cs" />
     <Compile Include="Compatibility\MyLittleUICompat.cs" />
     <Compile Include="Compatibility\EWDCompat.cs" />
