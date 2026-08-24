@@ -4,7 +4,7 @@
 
 > **Статус:** preimplementation design. Production-код Blood Moon пока не начинать.
 
-От персональных параллельных слоёв мира принято отказаться. Blood Moon — единое глобальное состояние, одинаковое для всех клиентов.
+Blood Moon — единое глобальное состояние, одинаковое для всех клиентов. Персональные слои видимости и clone-preservation обычных монстров отвергнуты.
 
 Базовая модель:
 
@@ -16,15 +16,14 @@
 
 23:00
 → forced Blood Moon environment
-→ существующие подходящие небоссовые монстры получают Blood Moon behavior
+→ все загруженные eligible небоссовые MonsterAI получают Blood Moon behavior
 → дополнительно спавнятся временные Blood Moon монстры
-→ все противники видимы всем
-→ они охотятся только на активных участников
+→ противники охотятся только на активных участников
 → участники наносят урон только Blood Moon противникам
 
 05:45 или раннее завершение
-→ cleanup
-→ восстановление запаркованных боссов
+→ cleanup marked extra spawns и личных временных предметов
+→ восстановление запаркованных persistent outdoor bosses
 → fade + DreamText
 → перевод времени к 06:00
 ```
@@ -39,6 +38,12 @@ https://github.com/shudnal/Seasons
 
 ```text
 feat/blood-moon
+```
+
+Изолированный runtime-spike:
+
+```text
+spike/blood-moon-global-event
 ```
 
 При чтении игрового кода первым источником использовать:
@@ -61,7 +66,7 @@ https://github.com/shudnal/assemblies_combined
 10. `docs/tasks/blood-moon/09_PREIMPLEMENTATION_DECISIONS_AND_SPIKES.md`
 11. `docs/tasks/blood-moon/10_GLOBAL_EVENT_RUNTIME_SPIKE.md`
 
-При конфликте файлы `09` и `10` имеют приоритет для ещё не закрытых runtime-решений.
+При конфликте файлы `09` и `10` имеют приоритет для ещё не подтверждённых runtime-решений.
 
 Не использовать старые вне-репозиторные `BloodMoon_Design_Document.md` и `BloodMoon_Codex_Implementation_Brief.md`.
 
@@ -83,7 +88,7 @@ Blood Moon — ежегодная кульминация осени, один р
 
 - Персональной visibility/collision layer нет.
 - `AwaitingContact` и `FirstBloodContactRecord` не нужны.
-- В 23:00 Player сразу входит в `Fighting`, кроме отдельно решаемого активного unparked interior-boss encounter.
+- В 23:00 Player сразу входит в `Fighting`, кроме encounter с неприпаркованным boss.
 - Vanilla `SoftDeath` status не добавляется; безопасное поражение объясняет собственный Blood Moon status.
 - Outcome безопасного поражения — `BloodMoonParticipantOutcome.Defeated`.
 - `Player.OnDeath` для `Defeated` не вызывается.
@@ -93,27 +98,35 @@ Blood Moon — ежегодная кульминация осени, один р
 - После `Defeated`: полная защита до стабилизации, максимум 15 секунд; затем 10 секунд 75% снижения входящего урона.
 - При приближении к краю мира участник получает terminal `Withdrawn` до edge/tidal death.
 - Re-entry в первой версии отсутствует.
-- Mounted, attached, ship/ocean и обычные interiors не требуют отдельного слоя или forced detach.
+- Mounted, attached, ship/ocean и обычные interiors поддерживаются без forced detach и персональных слоёв.
 - Body blocking terminal Player-ом не запрещается специально.
-- Все подходящие существующие небоссовые монстры считаются Blood enemies динамически, пока событие активно.
-- Существующие монстры сохраняют обычный loot и не удаляются при cleanup.
-- Только дополнительные custom-spawned монстры получают `SpawnedEventId`; для них loot подавляется, ragdoll быстро очищается, а выжившие ZDO удаляются в конце/при stale recovery.
+- Все загруженные eligible небоссовые MonsterAI считаются Blood enemies динамически, пока событие активно.
+- Eligibility определяется общими игровыми признаками: живой `MonsterAI`, не boss, не tamed, не `Players`/`PlayerSpawned`/`TrainingDummy`, враждебен хотя бы одному активному участнику через штатную faction/aggravation semantics.
+- Существующие монстры сохраняют обычный loot/ragdoll и не удаляются при cleanup.
+- Только дополнительные custom-spawned монстры получают `SpawnedEventId`; для них loot подавляется, ragdoll быстро очищается, а выжившие/stale ZDO удаляются.
+- AI-настройки и shared prefab существующих монстров не мутируются; Blood behavior задаётся условными runtime-патчами.
 - Призывание новых боссов блокируется с 18:00 через `OfferingBowl`.
-- Основной кандидат для активных outdoor bosses — server-authoritative far-sector ZDO parking с marker и восстановлением исходной позиции.
+- Persistent outdoor boss паркуется server-authoritative переносом ZDO в far sector и возвращается по marker/original position.
+- Nonpersistent boss не паркуется. Игроки в его encounter получают terminal `Withdrawn`; конкретная совместимость добавляется только по обращениям.
+- Interior boss не паркуется. Игроки в его encounter получают terminal `Withdrawn`.
+- Boss projectiles/AOE/summons специально не очищаются: они завершают собственный lifecycle; общие damage rules продолжают действовать.
+- Для additional spawn в interior используются только позиции уже загруженных `CreatureSpawner` с path/context validation. Если подходящей позиции нет, дополнительный spawn не выполняется.
+- Balance/runtime configs применяются на лету. Снижение cap не удаляет уже живых extra enemies, а только блокирует новый spawn до возврата ниже cap.
 
-## 4. До старта production-кода осталось
+## 4. Что осталось до production-кода
 
-Обязательные продуктовые решения сведены к небольшому набору:
+Продуктовые развилки почти закрыты. Нужны runtime-доказательства и точные технические точки:
 
-1. точный eligibility predicate обычных монстров;
-2. политика для активного босса в interior, прежде всего Queen;
-3. fallback для nonpersistent или нестандартного modded boss;
-4. способ дополнительного spawn в interiors;
-5. точный cleanup принудительно выставленных AI targets/visual state;
-6. runtime-проверка boss parking ownership/persistence/restart;
-7. balance: caps, интервалы, incoming/outgoing multipliers и агрессивность.
+1. минимальный набор Harmony-патчей для target selection, flee/idle, damage и progress без persistent AI mutation;
+2. server-authoritative discovery loaded boss, определение `Persistent`/interior и валидация owner report;
+3. boss parking transaction: ownership handoff, live transform/ZDO sync, sector invalidation, unload, restart и idempotent restore;
+4. проверка `CreatureSpawner`-точек и полного пути внутри разных dungeon layouts;
+5. `Character.CheckDeath`-based `Defeated`, DoT cleanup и двухэтапная recovery protection;
+6. projectile/AOE/summon attribution для общей damage matrix;
+7. окончательный выбор границ CCS snapshot/sequenced channel и собственных RPC;
+8. семантика Player, который достиг 100%, а затем получил `Defeated`/`Withdrawn`: рекомендовано не отнимать уже зафиксированный Success/reward, а хранить последующую причину выхода отдельно.
 
-Пункты 6–7 проверяются изолированным spike, а не требуют возвращения к отвергнутой layer-архитектуре.
+Балансовые значения не блокируют архитектуру: они сразу становятся server configs с live apply и настраиваются плейтестами.
 
 ## 5. Процесс
 

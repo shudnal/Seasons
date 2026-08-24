@@ -2,7 +2,7 @@
 
 Обязательная часть задачи `CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
 
-# 33. Обязательные edge cases
+# 35. Обязательные edge cases
 
 ## Lifecycle/network
 
@@ -15,7 +15,9 @@
 - stale RPC/eventId;
 - duplicate enemy death report;
 - cleanup twice;
-- config disable mid-event.
+- config disable mid-event;
+- recovery protection overlapping morning resolution;
+- disconnect/reconnect during recovery protection.
 
 ## Visual/system
 
@@ -29,21 +31,21 @@
 
 ## Existing monsters
 
-- eligible hostile ground MonsterAI;
-- passive animal;
-- tamed;
-- boss;
-- neutral and aggravated Dvergr;
-- trader/named NPC;
-- `PlayerSpawned` summon;
-- starred monster;
-- modded MonsterAI;
+- hostile ground MonsterAI included;
+- passive animal excluded by `BaseAI.IsEnemy`;
+- tamed excluded;
+- boss excluded;
+- neutral Dvergr excluded, aggravated hostile Dvergr included;
+- `Players`/`PlayerSpawned`/`TrainingDummy` excluded;
+- trader/non-MonsterAI NPC excluded;
+- unique/starred hostile monster included;
+- hostile modded MonsterAI included by generic predicate;
 - newly loaded/spawned ordinary monster during Active;
 - owner migration/disconnect;
 - survivor after event;
 - killed existing monster keeps ordinary loot/ragdoll;
-- no permanent max-health/shared-prefab mutation;
-- event-created target/hunt/VFX state does not remain stale.
+- no permanent max-health/shared-prefab/ZDO hunt mutation;
+- only event VFX/transient caches require cleanup.
 
 ## Additional spawned enemies
 
@@ -62,30 +64,32 @@
 - `RPC_SpawnBoss` race guarded;
 - non-boss OfferingBowl item rewards still work;
 - already placed attachments remain;
-- pre-18 queued spawn does not lose offerings and is parked if Active.
+- pre-18 queued spawn does not lose offerings;
+- queued persistent outdoor boss is parked if it appears during Active;
+- queued unparkable boss causes affected encounter Player to become `Withdrawn`, not item loss.
 
 ## Boss parking
 
 - vanilla persistent outdoor boss active at 23:00;
-- multiple bosses;
+- multiple bosses and deterministic separate parking slots;
 - boss owner server/client/other peer;
-- owner transfer and old-owner transform race;
+- server ownership handoff and old-owner transform race;
 - live server instance transform and ZDO position stay consistent;
 - far XZ/normal Y does not trigger out-of-world rescue;
 - clients unload instance;
-- HUD/music/forced event clear;
-- boss projectile/AOE in flight;
-- boss summons/minions;
+- HUD/music/forced event clear naturally after unload;
 - restart while parked;
 - restore with no nearby Player;
 - marker left after crash before/after move;
-- restore position/rotation/health/level;
+- same boss ZDO returns to original position;
+- recreated instance is valid when arena loads;
+- no boss death/loot/defeat key during parking;
 - dead/destroying boss not parked;
-- modded persistent boss;
-- nonpersistent boss fallback;
-- interior/Queen boss excluded;
 - boss loaded after Active begins;
-- optional recreation/appearance effect.
+- interior boss not parked → affected Player `Withdrawn`;
+- nonpersistent boss not parked → affected Player `Withdrawn`;
+- no requirement to preserve animation, target, velocity, coroutine or client-only state;
+- lingering boss projectile/AOE/summon is not explicitly cleaned and completes its own lifecycle.
 
 ## Defeated/recovery
 
@@ -106,20 +110,23 @@
 - food/adrenaline unchanged;
 - stage1 ≤15 sec;
 - stage2 exactly 10 sec at 0.25 incoming multiplier;
-- direct forced `Player.OnDeath` remains vanilla.
+- direct forced `Player.OnDeath` remains vanilla;
+- Player reaches 100%, then is defeated: full Success/reward policy is explicitly verified after final decision.
 
 ## Context
 
 - outdoor;
 - ship/ocean with no valid land spawn;
-- sea monster conversion;
+- sea monster dynamic Blood behavior;
 - normal interior with existing monsters;
-- interior custom navmesh spawn;
-- active unparked interior boss;
+- interior extra spawn from loaded `CreatureSpawner` point;
+- no suitable/pathable interior spawner → no extra spawn;
+- active interior boss → affected Player `Withdrawn`;
+- active nonpersistent/unparkable boss → affected Player `Withdrawn`;
 - teleport in progress/destination;
 - mounted;
 - generic attached;
-- edge safety offset → Withdrawn;
+- edge safety offset → `Withdrawn`;
 - Exited Player body collision remains vanilla;
 - Exited Player cannot damage or be targeted by Blood enemies.
 
@@ -131,7 +138,17 @@
 - ordinary trap/turret cannot farm Blood enemy;
 - projectile/AOE delayed attribution;
 - no status/stagger/skill credit on forbidden target;
-- GoalReached aggro fallback.
+- GoalReached aggro fallback;
+- lingering parked-boss attacks are not deleted and do not become Blood sources.
+
+## Live config
+
+- multiplier change affects next hit;
+- AI speed/aggression change affects next update;
+- caps and intervals update without restart;
+- lowering cap does not delete live extras;
+- group distance change triggers recompute;
+- schedule/calendar of current event remains frozen.
 
 ## Blood Craft future
 
@@ -143,26 +160,27 @@
 - TombStone fallback;
 - personal cleanup on Defeated/Withdrawn;
 - consumed food effect remains;
-- custom equipment slots do not retain temporary item.
+- custom equipment slots do not retain temporary item;
+- previous ordinary equipment is not auto-restored.
 
-# 34. Runtime-spike acceptance
+# 36. Runtime-spike acceptance
 
 `10_GLOBAL_EVENT_RUNTIME_SPIKE.md` должен ответить:
 
-1. Точный eligibility predicate обычных монстров.
-2. Можно ли реализовать dynamic direct conversion без persistent instance mutation.
+1. Работает ли generic eligibility predicate без prefab allowlist.
+2. Можно ли реализовать dynamic Blood behavior без persistent instance/ZDO mutation.
 3. Надёжно ли различаются ordinary existing и marked extra spawns.
-4. Работает ли centralized target/damage routing.
-5. Работает ли CheckDeath-based Defeated без vanilla death side effects.
+4. Работает ли centralized target/damage routing для melee/projectile/AOE.
+5. Работает ли CheckDeath-based `Defeated` без vanilla death side effects.
 6. Корректны ли 15s stabilization cap + 10s 75% protection.
 7. Поддерживаются ли mounted/attached/ship/ocean/interior без forced movement.
-8. Как спавнить extras в interior через navmesh/path validation.
-9. Надёжен ли far-sector boss parking для vanilla persistent boss.
-10. Какой fallback нужен interior/nonpersistent/modded boss.
-11. Как очищать lingering boss attacks/summons.
-12. Каков минимальный production patch set.
+8. Достаточны ли loaded `CreatureSpawner` positions для optional interior extras.
+9. Не теряет ли OfferingBowl items/attachments при block и queued-spawn race.
+10. Надёжен ли far-sector parking persistent outdoor boss при owner migration/restart.
+11. Надёжно ли определяется interior/nonpersistent/unparkable boss и применяется `Withdrawn` только к affected Player.
+12. Каков минимальный production patch set и CCS/RPC split.
 
-# 35. Production acceptance
+# 37. Production acceptance
 
 После снятия gate первый vertical slice готов только если:
 
@@ -176,22 +194,24 @@
 - OfferingBowl boss summon block from 18:00;
 - RandEvent blocked/restored;
 - environment/VFX cleanup;
-- direct existing-monster rules;
+- generic direct existing-monster rules;
 - extra-spawn markers and cleanup;
 - target/damage matrix centralized;
 - existing loot preserved; extra loot suppressed;
 - progress exactly once;
-- GoalReached behavior;
+- GoalReached behavior and post-goal exit semantics;
 - Defeated dream collapse;
-- Withdrawn edge behavior;
-- boss parking/restore and documented fallback;
+- Withdrawn edge/boss behavior;
+- persistent outdoor boss parking/restore;
+- nonpersistent/interior boss fallback documented;
 - no Player transform changes;
 - no material/world-state event rewards beyond ordinary loot of existing creatures;
+- live balance configs work with documented semantics;
 - build result and manual multiplayer checklist documented;
 - draft PR + Codex review;
 - PR not merged.
 
-# 36. Report
+# 38. Report
 
 Codex указывает:
 
@@ -204,5 +224,6 @@ Codex указывает:
 - eligibility and interior-spawn findings;
 - boss parking ownership/persistence/restart evidence;
 - known limitations/fallbacks;
+- live config behavior;
 - draft PR/review result;
 - next continuation point.

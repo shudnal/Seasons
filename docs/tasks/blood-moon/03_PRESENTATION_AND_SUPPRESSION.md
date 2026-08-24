@@ -40,7 +40,7 @@ Text/DreamText допускается дополнительно, но не вм
 
 Блокировать только bowls с `m_bossPrefab != null`; item-producing offerings не затрагивать.
 
-Если sacrifice был принят до 18:00 и `DelayedSpawnBoss` уже queued, не отнимать offerings отменой: позволить spawn завершиться и немедленно park созданного boss, если Active уже начался.
+Если sacrifice был принят до 18:00 и `DelayedSpawnBoss` уже queued, не отнимать offerings отменой. Позволить spawn завершиться. Persistent outdoor boss, появившийся во время Active, сразу паркуется; interior/nonpersistent boss остаётся обычным, а затронутый encounter Player получает `Withdrawn`.
 
 ## Status text
 
@@ -60,14 +60,15 @@ Vanilla `SoftDeath` status не добавлять.
 # 14. Active — 23:00
 
 - forced Blood Moon environment;
-- все enrolled Player → `Fighting`, кроме отдельно решаемого active unparked interior-boss encounter;
+- enrolled Player → `Fighting`;
+- affected Player в encounter с interior или nonpersistent/unparkable boss → terminal `Withdrawn`;
 - eligible existing monsters получают dynamic Blood Moon behavior;
 - additional marked enemies spawn to cap;
-- outdoor active bosses паркуются в far sector;
+- persistent outdoor active bosses паркуются в far sector;
 - персональной visibility/collision layer нет;
 - все клиенты видят одних и тех же противников.
 
-Mounted/attached не отсоединяются. Ship/ocean и обычный interior сохраняют Active state; отсутствие подходящей spawn point лишь уменьшает дополнительный spawn.
+Mounted/attached не отсоединяются. Ship/ocean и ordinary interior сохраняют Active state; отсутствие подходящей spawn point лишь уменьшает additional spawn.
 
 # 15. RandEventSystem
 
@@ -81,7 +82,9 @@ Blood Moon — собственная система.
 - restore систему в cleanup;
 - не запускать новый raid немедленно после Blood Moon.
 
-После парковки boss instance исчезает из active area; его EnemyHud и forced boss event должны естественно погаснуть. Всё равно проверить это runtime и не полагаться только на визуальный HUD.
+После parking boss instance исчезает из active area; EnemyHud и forced boss event должны естественно погаснуть. Проверить runtime, но не строить отдельную сохранительную систему HUD/music.
+
+Lingering boss projectile/AOE/summon специально не удаляются и завершают собственный lifecycle.
 
 # 16. Environment
 
