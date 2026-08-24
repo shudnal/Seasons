@@ -119,7 +119,7 @@ namespace Seasons.BloodMoon
 
             long eventId = zdo.GetLong(EventMarker, -1L);
             BloodMoonCombatSourceType sourceType = (BloodMoonCombatSourceType)zdo.GetInt(SourceTypeMarker, 0);
-            if (eventId != BloodMoonNetwork.ClientGlobal.EventId || sourceType == BloodMoonCombatSourceType.None)
+            if (eventId != BloodMoonNetwork.ClientGlobal.EventId || !IsKnownSourceType(sourceType))
                 return false;
 
             attribution = new BloodMoonHitAttributionData
@@ -212,7 +212,7 @@ namespace Seasons.BloodMoon
 
         private static void OnAttributionRpc(long sender, ZPackage pkg)
         {
-            if (pkg == null || pkg.ReadInt() != BloodMoonNetwork.ProtocolVersion)
+            if (pkg == null || pkg.ReadInt() != BloodMoonNetwork.ProtocolVersion || ZDOMan.instance == null)
                 return;
 
             BloodMoonHitAttributionData attribution = new BloodMoonHitAttributionData { EventId = pkg.ReadLong() };
@@ -221,16 +221,40 @@ namespace Seasons.BloodMoon
             attribution.SourceType = (BloodMoonCombatSourceType)pkg.ReadInt();
             attribution.SourcePlayerId = pkg.ReadLong();
 
-            if (attribution.EventId != BloodMoonNetwork.ClientGlobal.EventId || attribution.SourceType == BloodMoonCombatSourceType.None)
+            if (attribution.EventId != BloodMoonNetwork.ClientGlobal.EventId || !IsKnownSourceType(attribution.SourceType) || target.IsNone() || attribution.SourceCharacterId.IsNone())
                 return;
+
+            ZDO targetZdo = ZDOMan.instance.GetZDO(target);
+            if (targetZdo == null || targetZdo.GetOwner() != ZDOMan.GetSessionID())
+                return;
+
+            ZDO sourceZdo = ZDOMan.instance.GetZDO(attribution.SourceCharacterId);
+            if (sourceZdo == null || sourceZdo.GetOwner() != sender)
+                return;
+
+            if (attribution.SourceType == BloodMoonCombatSourceType.Participant)
+            {
+                if (attribution.SourcePlayerId == 0L || sourceZdo.GetLong(ZDOVars.s_playerID, 0L) != attribution.SourcePlayerId)
+                    return;
+            }
+            else if (attribution.SourcePlayerId != 0L)
+            {
+                return;
+            }
+
             AddPending(attribution, target);
+        }
+
+        private static bool IsKnownSourceType(BloodMoonCombatSourceType sourceType)
+        {
+            return sourceType == BloodMoonCombatSourceType.Participant || sourceType == BloodMoonCombatSourceType.BloodEnemy;
         }
 
         private static void AddPending(BloodMoonHitAttributionData attribution, ZDOID target)
         {
             PrunePending();
             PendingKey key = new PendingKey(target, attribution.SourceCharacterId);
-            if (!pendingHits.TryGetValue(key, out Queue<PendingHit> queue))
+            if (!pendingHits.TryGetValue(key, out Queue<PendingHit>> queue))
             {
                 queue = new Queue<PendingHit>();
                 pendingHits.Add(key, queue);
