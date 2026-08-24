@@ -117,6 +117,8 @@ namespace Seasons.BloodMoon
         public float CombatPoints;
         public float DisplayProgress;
         public float Contribution;
+        public float LiveSkillBonusUsed;
+        public long LastSkillReportSequence;
         public double MarkedAt;
         public double FightingAt;
         public double GoalReachedAt;
