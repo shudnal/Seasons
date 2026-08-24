@@ -44,7 +44,7 @@ namespace Seasons.BloodMoon
                 retryTimer = 0f;
             }
 
-            if (!NeedsOwnDetail(eventId, playerId))
+            if (!NeedsResync(eventId, playerId))
                 return;
 
             retryTimer -= Mathf.Max(0f, dt);
@@ -62,11 +62,13 @@ namespace Seasons.BloodMoon
             retryTimer = 0f;
         }
 
-        private static bool NeedsOwnDetail(long eventId, long playerId)
+        private static bool NeedsResync(long eventId, long playerId)
         {
-            if (eventId < 0L || BloodMoonNetwork.ClientParticipants.EventId != eventId ||
-                BloodMoonNetwork.ClientParticipants.Participants == null)
+            if (eventId < 0L)
                 return false;
+
+            if (BloodMoonNetwork.ClientParticipants.EventId != eventId || BloodMoonNetwork.ClientParticipants.Participants == null)
+                return true;
 
             bool enrolled = BloodMoonNetwork.ClientParticipants.Participants.Any(participant => participant.PlayerId == playerId);
             if (!enrolled)
