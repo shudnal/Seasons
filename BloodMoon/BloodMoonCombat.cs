@@ -195,10 +195,19 @@ namespace Seasons.BloodMoon
         private static void Prefix(Character __instance) => BloodMoonCombat.CleanupDeathTracking(__instance);
     }
 
-    [HarmonyPatch(typeof(Attack), nameof(Attack.DoMeleeAttack))]
-    [HarmonyPatch(typeof(Attack), nameof(Attack.DoAreaAttack))]
+    [HarmonyPatch]
     internal static class BloodMoonDirectAttackContextPatch
     {
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            MethodInfo melee = AccessTools.Method(typeof(Attack), nameof(Attack.DoMeleeAttack));
+            MethodInfo area = AccessTools.Method(typeof(Attack), nameof(Attack.DoAreaAttack));
+            if (melee != null)
+                yield return melee;
+            if (area != null)
+                yield return area;
+        }
+
         private static void Prefix(Attack __instance)
         {
             Character attacker = __instance.m_character;
