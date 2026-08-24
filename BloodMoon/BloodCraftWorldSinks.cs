@@ -18,6 +18,11 @@ namespace Seasons.BloodMoon
             return false;
         }
 
+        private static ItemDrop.ItemData FindPermanent(Inventory inventory, System.Func<ItemDrop.ItemData, bool> predicate)
+        {
+            return inventory?.m_inventory.FirstOrDefault(item => item != null && !BloodCraft.HasMarker(item) && predicate(item));
+        }
+
         [HarmonyPatch]
         private static class DirectWorldConsumerPatch
         {
@@ -47,6 +52,51 @@ namespace Seasons.BloodMoon
             private static bool Prefix(Humanoid user, ItemDrop.ItemData item, ref bool __result)
             {
                 return RejectTemporary(user, item, ref __result);
+            }
+        }
+
+        [HarmonyPatch(typeof(Fermenter), nameof(Fermenter.FindCookableItem))]
+        private static class FermenterFindCookableItemPatch
+        {
+            private static void Postfix(Fermenter __instance, Inventory inventory, ref ItemDrop.ItemData __result)
+            {
+                if (BloodCraft.HasMarker(__result))
+                    __result = FindPermanent(inventory, __instance.IsItemAllowed);
+            }
+        }
+
+        [HarmonyPatch(typeof(CookingStation), nameof(CookingStation.FindCookableItem))]
+        private static class CookingStationFindCookableItemPatch
+        {
+            private static void Postfix(CookingStation __instance, Inventory inventory, ref ItemDrop.ItemData __result)
+            {
+                if (BloodCraft.HasMarker(__result))
+                    __result = FindPermanent(inventory, __instance.IsItemAllowed);
+            }
+        }
+
+        [HarmonyPatch(typeof(Smelter), nameof(Smelter.FindCookableItem))]
+        private static class SmelterFindCookableItemPatch
+        {
+            private static void Postfix(Smelter __instance, Inventory inventory, ref ItemDrop.ItemData __result)
+            {
+                if (BloodCraft.HasMarker(__result))
+                    __result = FindPermanent(inventory, __instance.IsItemAllowed);
+            }
+        }
+
+        [HarmonyPatch(typeof(Turret), nameof(Turret.FindAmmoItem))]
+        private static class TurretFindAmmoItemPatch
+        {
+            private static void Postfix(Turret __instance, Inventory inventory, bool onlyCurrentlyLoadableType, ref ItemDrop.ItemData __result)
+            {
+                if (!BloodCraft.HasMarker(__result))
+                    return;
+
+                string currentAmmo = onlyCurrentlyLoadableType && __instance.HasAmmo() ? __instance.GetAmmoType() : string.Empty;
+                __result = FindPermanent(inventory, item =>
+                    item.m_dropPrefab != null && __instance.IsItemAllowed(item.m_dropPrefab.name) &&
+                    (string.IsNullOrEmpty(currentAmmo) || item.m_dropPrefab.name == currentAmmo));
             }
         }
 
