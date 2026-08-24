@@ -19,7 +19,8 @@ namespace Seasons.BloodMoon
             get
             {
                 BloodMoonEventPhase phase = BloodMoonNetwork.ClientGlobal.Phase;
-                return BloodMoonNetwork.ClientGlobal.BloodBehaviorEnabled && (phase == BloodMoonEventPhase.Active || phase == BloodMoonEventPhase.AutoCompleting);
+                return BloodMoonNetwork.ClientGlobal.BloodBehaviorEnabled &&
+                    (phase == BloodMoonEventPhase.Active || phase == BloodMoonEventPhase.AutoCompleting || phase == BloodMoonEventPhase.Resolving);
             }
         }
 
