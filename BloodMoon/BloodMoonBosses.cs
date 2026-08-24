@@ -117,6 +117,13 @@ namespace Seasons.BloodMoon
             clientDiscoveryEventId = -1L;
         }
 
+        internal static void ResetRuntimeState()
+        {
+            pendingUntil.Clear();
+            nextMarkerScan = 0d;
+            ResetClientState();
+        }
+
         internal static bool ParkNearest(BloodMoonEventState state, Vector3 point, double now)
         {
             if (state == null || ZDOMan.instance == null)
@@ -221,6 +228,7 @@ namespace Seasons.BloodMoon
                 originalPosition = durablePosition;
 
             zdo.SetOwner(ZDOMan.GetSessionID());
+            ZeroSerializedVelocity(zdo);
             zdo.SetPosition(originalPosition);
             SynchronizeLoadedInstance(zdo, originalPosition);
             ZDOMan.instance.ForceSendZDO(id);
@@ -352,9 +360,19 @@ namespace Seasons.BloodMoon
             long serverSession = ZDOMan.GetSessionID();
             if (zdo.GetOwner() != serverSession)
                 zdo.SetOwner(serverSession);
+            ZeroSerializedVelocity(zdo);
             if (Utils.DistanceXZ(zdo.GetPosition(), position) > 0.1f || Mathf.Abs(zdo.GetPosition().y - position.y) > 0.1f)
                 zdo.SetPosition(position);
             ZDOMan.instance.ForceSendZDO(zdo.m_uid);
+        }
+
+        private static void ZeroSerializedVelocity(ZDO zdo)
+        {
+            if (zdo == null)
+                return;
+            zdo.Set(ZDOVars.s_velHash, Vector3.zero);
+            zdo.Set(ZDOVars.s_bodyVelHash, Vector3.zero);
+            zdo.Set(ZDOVars.s_bodyAVelHash, Vector3.zero);
         }
 
         private static void SynchronizeLoadedInstance(ZDO zdo, Vector3 position)
