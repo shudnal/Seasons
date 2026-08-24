@@ -304,6 +304,9 @@ namespace Seasons.BloodMoon
 
             float before = GetLevelEquivalent(skill);
             float clamped = Mathf.Clamp(target, 0f, 100f);
+            if (clamped <= before + Epsilon)
+                return;
+
             if (clamped >= 100f)
             {
                 skill.m_level = 100f;
