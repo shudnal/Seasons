@@ -254,7 +254,7 @@ namespace Seasons.BloodMoon
         {
             PrunePending();
             PendingKey key = new PendingKey(target, attribution.SourceCharacterId);
-            if (!pendingHits.TryGetValue(key, out Queue<PendingHit>> queue))
+            if (!pendingHits.TryGetValue(key, out Queue<PendingHit> queue))
             {
                 queue = new Queue<PendingHit>();
                 pendingHits.Add(key, queue);
