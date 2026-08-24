@@ -36,7 +36,10 @@ namespace Seasons.BloodMoon
                 return null;
 
             int currentWorldDay = seasonState.GetWorldDay(now);
-            int searchRadius = Math.Max(16, seasonState.GetDaysInSeason(Season.Fall) * 4 + 4);
+            int annualDays = 0;
+            foreach (Season season in Enum.GetValues(typeof(Season)))
+                annualDays += seasonState.GetDaysInSeason(season);
+            int searchRadius = Math.Max(16, annualDays + 4);
             BloodMoonScheduleSnapshot best = null;
 
             for (int day = Math.Max(0, currentWorldDay - 4); day <= currentWorldDay + searchRadius; ++day)
