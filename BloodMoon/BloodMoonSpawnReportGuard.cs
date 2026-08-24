@@ -78,6 +78,15 @@ namespace Seasons.BloodMoon
             if (eventId < 0L || state.ExtraEnemyZdos.Contains(spawnedId.ToString()))
                 return false;
 
+            // The ZDOID user/session component is immutable after creation. Only the peer that created
+            // an object may report it, so a rejected report cannot be used to schedule another peer's
+            // valid event extra for delayed cleanup.
+            if (spawnedId.UserID != sender)
+            {
+                LogWarning($"[BloodMoon][event:{eventId}][spawn] Rejected report for ZDO {spawnedId} from non-creator peer {sender}.");
+                return false;
+            }
+
             if (state.SpawnsStopped || !state.IsCombatLive)
                 return Reject(spawnedId, eventId, now);
 
