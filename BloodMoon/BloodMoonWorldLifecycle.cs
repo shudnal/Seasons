@@ -8,7 +8,16 @@ namespace Seasons.BloodMoon
         [HarmonyPriority(Priority.First)]
         private static void Prefix()
         {
-            BloodCraft.CleanupLocal(Player.m_localPlayer);
+            BloodCraftWorldRecoveryPreservation.BeginManual();
+            try
+            {
+                BloodCraft.CleanupLocal(Player.m_localPlayer);
+            }
+            finally
+            {
+                BloodCraftWorldRecoveryPreservation.EndManual();
+            }
+
             BloodMoonRecovery.ResetRuntime();
             BloodMoonSummons.ResetRuntimeState();
             BloodMoonHitAttribution.Reset();
