@@ -25,6 +25,7 @@ namespace Seasons.BloodMoon
         private const string RpcFadeAck = "Seasons.BloodMoon.FadeAck";
         private const string RpcResync = "Seasons.BloodMoon.Resync";
         private const string RpcClientAction = "Seasons.BloodMoon.ClientAction";
+        private const string ParticipantDetailAction = "participant-detail";
 
         private sealed class PendingClientAction
         {
@@ -39,6 +40,10 @@ namespace Seasons.BloodMoon
         private static readonly List<PendingClientAction> pendingClientActions = new List<PendingClientAction>();
         private static bool valuesInitialized;
         private static ZRoutedRpc registeredRpc;
+        private static string lastGlobalSignature = string.Empty;
+        private static string lastParticipantSignature = string.Empty;
+        private static int globalSnapshotRevision;
+        private static int participantSnapshotRevision;
 
         internal static BloodMoonGlobalSnapshot ClientGlobal { get; private set; } = new BloodMoonGlobalSnapshot();
         internal static BloodMoonParticipantSnapshot ClientParticipants { get; private set; } = new BloodMoonParticipantSnapshot();
@@ -62,6 +67,7 @@ namespace Seasons.BloodMoon
 
             registeredRpc = rpc;
             pendingClientActions.Clear();
+            BloodMoonParticipantDetails.Reset();
             rpc.Register<ZPackage>(RpcDefeated, OnDefeated);
             rpc.Register<ZPackage>(RpcEnemyDeath, OnEnemyDeath);
             rpc.Register<ZPackage>(RpcSkillGain, OnSkillGain);
@@ -82,29 +88,52 @@ namespace Seasons.BloodMoon
             if (state == null || ZNet.instance == null || !ZNet.instance.IsServer())
                 return;
 
-            BloodMoonGlobalSnapshot global = new BloodMoonGlobalSnapshot
+            PublishGlobalSnapshot(state, serverTime);
+            PublishRoutingSnapshot(state);
+            PublishParticipantDetails(state);
+        }
+
+        private static void PublishGlobalSnapshot(BloodMoonEventState state, double serverTime)
+        {
+            BloodMoonGlobalSnapshot snapshot = new BloodMoonGlobalSnapshot
             {
                 EventId = state.EventId,
                 Phase = state.Phase,
                 ResolutionStep = state.ResolutionStep,
                 Schedule = state.Schedule,
-                Revision = state.Revision,
+                Revision = 0,
                 BloodBehaviorEnabled = state.BloodBehaviorEnabled,
                 SpawnsStopped = state.SpawnsStopped,
-                ServerTime = serverTime
+                ServerTime = 0d
             };
-            BloodMoonParticipantSnapshot participants = new BloodMoonParticipantSnapshot
+            string signature = JsonConvert.SerializeObject(snapshot);
+            if (string.Equals(signature, lastGlobalSignature, StringComparison.Ordinal))
+                return;
+
+            lastGlobalSignature = signature;
+            snapshot.Revision = ++globalSnapshotRevision;
+            snapshot.ServerTime = serverTime;
+            GlobalStateJson.AssignValueSafeIfChanged(JsonConvert.SerializeObject(snapshot));
+        }
+
+        private static void PublishRoutingSnapshot(BloodMoonEventState state)
+        {
+            BloodMoonParticipantSnapshot snapshot = new BloodMoonParticipantSnapshot
             {
                 EventId = state.EventId,
-                Revision = state.Revision,
+                Revision = 0,
                 Participants = state.Participants.Values
                     .OrderBy(participant => participant.PlayerId)
                     .Select(CreatePublicParticipant)
                     .ToList()
             };
+            string signature = JsonConvert.SerializeObject(snapshot);
+            if (string.Equals(signature, lastParticipantSignature, StringComparison.Ordinal))
+                return;
 
-            GlobalStateJson.AssignValueSafeIfChanged(JsonConvert.SerializeObject(global));
-            ParticipantStateJson.AssignValueSafeIfChanged(JsonConvert.SerializeObject(participants));
+            lastParticipantSignature = signature;
+            snapshot.Revision = ++participantSnapshotRevision;
+            ParticipantStateJson.AssignValueSafeIfChanged(JsonConvert.SerializeObject(snapshot));
         }
 
         private static BloodMoonParticipantState CreatePublicParticipant(BloodMoonParticipantState source)
@@ -117,15 +146,32 @@ namespace Seasons.BloodMoon
                 ExitReason = source.ExitReason,
                 GoalReached = source.GoalReached,
                 AutoCompleted = source.AutoCompleted,
-                JoinedLate = source.JoinedLate,
-                CombatPoints = source.CombatPoints,
-                DisplayProgress = source.DisplayProgress,
-                MarkedAt = source.MarkedAt,
-                FightingAt = source.FightingAt,
-                GoalReachedAt = source.GoalReachedAt,
-                ExitedAt = source.ExitedAt,
-                ResolvedAt = source.ResolvedAt
+                JoinedLate = source.JoinedLate
             };
+        }
+
+        private static void PublishParticipantDetails(BloodMoonEventState state)
+        {
+            BloodMoonController controller = BloodMoonController.Instance;
+            if (controller == null)
+                return;
+
+            foreach (BloodMoonParticipantState participant in state.Participants.Values)
+            {
+                string payload = BloodMoonParticipantDetails.Serialize(state, participant);
+                if (string.IsNullOrEmpty(payload))
+                    continue;
+
+                if (Player.m_localPlayer != null && Player.m_localPlayer.GetPlayerID() == participant.PlayerId)
+                {
+                    BloodMoonParticipantDetails.Apply(state.EventId, payload);
+                    continue;
+                }
+
+                long peerId = controller.GetPeerForPlayer(participant.PlayerId);
+                if (peerId != 0L)
+                    SendClientAction(peerId, state.EventId, ParticipantDetailAction, payload);
+            }
         }
 
         internal static void SendDefeated(long eventId, long playerId)
@@ -383,11 +429,21 @@ namespace Seasons.BloodMoon
 
             if (ClientGlobal.EventId == eventId)
             {
-                BloodMoonController.HandleClientAction(eventId, action, payload);
+                DispatchClientAction(eventId, action, payload);
                 return;
             }
 
             QueueClientAction(eventId, action, payload);
+        }
+
+        private static void DispatchClientAction(long eventId, string action, string payload)
+        {
+            if (action == ParticipantDetailAction)
+            {
+                BloodMoonParticipantDetails.Apply(eventId, payload);
+                return;
+            }
+            BloodMoonController.HandleClientAction(eventId, action, payload);
         }
 
         private static void QueueClientAction(long eventId, string action, string payload)
@@ -413,7 +469,7 @@ namespace Seasons.BloodMoon
             foreach (PendingClientAction item in pendingClientActions.Where(item => item.EventId == eventId).ToArray())
             {
                 pendingClientActions.Remove(item);
-                BloodMoonController.HandleClientAction(item.EventId, item.Action, item.Payload);
+                DispatchClientAction(item.EventId, item.Action, item.Payload);
             }
         }
 
@@ -426,6 +482,8 @@ namespace Seasons.BloodMoon
                     : JsonConvert.DeserializeObject<BloodMoonGlobalSnapshot>(GlobalStateJson.Value) ?? new BloodMoonGlobalSnapshot();
                 if (snapshot.EventId == ClientGlobal.EventId && snapshot.Revision < ClientGlobal.Revision)
                     return;
+                if (snapshot.EventId != ClientGlobal.EventId)
+                    BloodMoonParticipantDetails.Reset();
                 ClientGlobal = snapshot;
                 BloodMoonPresentation.OnGlobalSnapshot(ClientGlobal);
                 FlushClientActions(ClientGlobal.EventId);
@@ -446,6 +504,7 @@ namespace Seasons.BloodMoon
                 if (snapshot.EventId == ClientParticipants.EventId && snapshot.Revision < ClientParticipants.Revision)
                     return;
                 ClientParticipants = snapshot;
+                BloodMoonStatus.UpdateLocal();
             }
             catch (Exception ex)
             {
