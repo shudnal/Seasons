@@ -34,7 +34,7 @@ The assistant did not build or run the Valheim mod. This checkpoint can become s
 
 ## Current hardened architecture
 
-The latest static hardening includes:
+The current static hardening includes:
 
 - explicit server event/participant/resolution state machines;
 - world-bound newest-valid persistence recovery;
@@ -46,57 +46,77 @@ The latest static hardening includes:
 - exact prefab/`MonsterAI` spawn validation and stale prior-event cleanup history;
 - dynamic existing-monster Blood behavior without persistent conversion mutation;
 - owner-side final damage guard plus early direct/projectile/AOE filtering;
-- preserved vanilla projectile collision lifecycle for both active and stale Blood attribution;
-- actual-HP-loss-based death credit and Bloodlust lifesteal;
-- server-controlled Bloodlust damage/movement/lifesteal endpoints with rolling healing cap;
-- durable local Defeated terminal state and reconnect report retry;
+- contract-correct projectile pass-through for forbidden character colliders;
+- preserved world-geometry and stale-projectile physical lifecycle;
+- source-owner authorization plus target-owner actual-damage confirmation for kill credit;
+- lethal-hit credit observation before `CheckDeath` through `Character.SetHealth`;
+- server-controlled Bloodlust damage/movement/lifesteal endpoints using the same matched actual-damage authority;
+- rolling max-health-per-second healing cap and monotonic targeted healing grants;
+- durable local Defeated terminal state, immediate profile-save request and reconnect report retry;
 - source-recipe-bound Blood Craft with source station/quality semantics;
 - Blood Craft preflight support for `m_requireOnlyOneIngredient`;
-- verified vanilla Blood Craft world-sink signatures;
+- common static `ItemDrop.DropItem` rejection for temporary world materialization;
+- verified vanilla Blood Craft world-consumer signatures;
+- server-authorized Forewarning boss-offering relay across the Marked cutover;
 - persistent outdoor boss parking/restoration and navigation-context withdrawal;
 - live/completion skill reward accounting;
 - independent durable per-player outcome queue;
+- durable queue capture as a prerequisite for current-resolution outcome delivery;
 - immediate current-resolution native DreamText presentation;
 - bounded Dream presentation start/completion handshake separate from durable profile acknowledgement;
 - consolidated production resolution guards instead of corrective self-patches;
-- routed-RPC registration lifetime protection across world teardown.
+- routed-RPC registration lifetime protection across world teardown;
+- proactive hit-attribution/offering RPC registration on peers that may only own targets.
 
 ## Routed-RPC teardown invariant
 
-Current Valheim `ZRoutedRpc.Register` stores method handlers with `Dictionary.Add`. `ZNet.OnDestroy` does not synchronously discard the current `ZRoutedRpc` method table.
+Current Valheim `ZRoutedRpc.Register` stores method handlers with `Dictionary.Add`. Blood Moon subsystem runtime reset therefore clears event/runtime state without clearing a cached registration reference while that routed-RPC object may still be alive.
 
-Therefore Blood Moon subsystem runtime reset must not clear its cached transport reference while that routed-RPC object may still be alive. The outcome queue and outcome-presentation handshake now clear only their event/store state during teardown. A new network session is detected by object-reference change and registers handlers once on the new routed-RPC instance.
-
-A fresh full-diff audit found no remaining `registeredRpc = null` reset in the Blood Moon changes.
+A genuinely new network session is detected by object-reference change and registers each handler once on the new `ZRoutedRpc` instance.
 
 ## Exact static source checks in the latest pass
 
 The latest hardening re-read the current Valheim source for:
 
-- Player/Character death semantics and `CheckDeath` ordering;
-- `Character.RPC_Damage` and actual health loss;
-- `Projectile.OnHit`, TTL, skill/adrenaline and spawn-on-hit behavior;
+- Player/Character death semantics, `SetHealth`, `RPC_Damage` and `CheckDeath` ordering;
+- `Projectile.OnHit`, `FixedUpdate`, `SpawnOnHit`, TTL, skill/adrenaline and item respawn;
+- `ItemDrop.ItemData.Clone` and static `ItemDrop.DropItem`;
 - current vanilla `IDestructible.Damage(HitData)` implementations;
 - movement calculations used for temporary Bloodlust movement modifiers;
-- `Recipe.GetAmount`;
-- `InventoryGui.OnCraftPressed`, `SetupRequirementList`, `HideRequirement` and `DoCrafting`;
-- `OfferingBowl` inventory/item-stand/RPC/delayed-spawn flow;
-- `ZRoutedRpc.Register` and `ZNet.OnDestroy` transport lifetime;
-- Blood Craft world-sink signatures for `ItemStand`, `ArmorStand`, `Fermenter`, `CookingStation`, `Smelter`, `Turret` and `Catapult`;
+- `Recipe.GetAmount` and source-station APIs;
+- `InventoryGui` Blood Craft patch points;
+- `OfferingBowl` interaction, owner-RPC, item-consumption and delayed-spawn flow;
+- `ZNetView` owner RPC routing;
+- `ZNetScene.FindInstance` and prefab lookup;
+- `ZRoutedRpc.Register` transport lifetime;
+- `ZPackage` float/vector/ZDOID serialization;
+- Blood Craft world-consumer signatures for `ItemStand`, `ArmorStand`, `Fermenter`, `CookingStation`, `Smelter`, `Turret` and `Catapult`;
 - existing network/ZDO/spawn/profile-persistence APIs documented by the earlier review trail.
 
-A compile-oriented source audit also removed direct relational operators from enum comparisons and rechecked current private Harmony targets. This is not a build claim.
+This is a static source audit, not a build or runtime claim.
 
-## Final Codex gate
+## Current Codex gate
 
-The earlier Codex request for head `a2728234234308c03045ac7f0cc298382094d10c` is superseded because later runtime-code fixes changed the branch.
+The Codex review on:
 
-After this documentation commit, request Codex review on the new exact `feat/blood-moon` head. The final review is accepted only if:
+```text
+39d12ec6361f82f930c94cd0c258f272e3a8a916
+```
+
+reported six findings. Five were confirmed and fixed; the projectile-collision suggestion was rejected because it conflicts with the explicit authoritative requirement that a forbidden character collider must not stop the projectile. The exact dispositions are recorded in `14_CODE_REVIEW_STATUS.md`.
+
+The runtime-code hardening after that review was complete at:
+
+```text
+3b55e99f4006b2aca73686a5130e8b843888ee3f
+```
+
+After this documentation freeze and PR-thread disposition, request Codex review on the new exact documentation-inclusive head. The review gate is accepted only if:
 
 1. the exact reviewed SHA equals the current PR head;
 2. there is no unresolved confirmed finding;
 3. all inline review threads are resolved;
-4. the result is recorded in the PR timeline without another documentation-only commit.
+4. the final result is recorded in the PR timeline without another documentation-only commit.
 
 If a confirmed issue is found, fix it and review the new exact head again.
 
@@ -121,8 +141,9 @@ The complete matrix remains `08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md`. The follow
 
 - direct enemy Defeated;
 - fall/lava/drowning/environmental Defeated;
-- immediate process termination after local defeat before server acknowledgement;
+- immediate process termination after local defeat around the immediate profile-save request/server acknowledgement;
 - reconnect while the durable Defeated marker exists;
+- new enrollment clears the old durable marker;
 - recovery on ground, swimming, attached/mounted and falling longer than 15 seconds;
 - stage 2 duration and 0.25 incoming multiplier;
 - protection expiry while terminal Defeated state remains;
@@ -132,15 +153,20 @@ The complete matrix remains `08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md`. The follow
 ### Combat and Bloodlust
 
 - melee, area, projectile, thrown weapon, AOE and combat summon paths;
+- source owner and target owner on different peers;
+- lethal hit reports the same player as the final positive HP loss;
 - blocked/resisted/zero-damage hits do not steal death credit;
-- actual damaging hit updates credit;
+- reordered authorization/confirmation/death-report delivery;
 - outgoing/incoming endpoint interpolation across progress;
 - movement interpolation and field restoration across walk/run/crouch/swim;
-- lifesteal from actual enemy HP loss;
+- lifesteal only from matched authorized direct participant damage;
 - rolling maximum-health-per-second lifesteal cap;
 - no direct lifesteal from participant summons unless deliberately changed later;
 - no building/tree/rock/tamed/NPC/boss/other-player Blood-source damage;
-- stale projectiles collide and expire without damage/credit/persistent spawn effects.
+- forbidden character collider does not stop projectile;
+- active world-geometry collision keeps vanilla physical lifecycle without world damage;
+- stale projectile collision keeps permanent item respawn but blocks stale damage/credit/harmful spawned branches;
+- temporary projectile item cannot materialize through hit or TTL respawn.
 
 ### Networking and spawning
 
@@ -156,7 +182,7 @@ The complete matrix remains `08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md`. The follow
 - forged/invalid marked non-extra preserved by cleanup;
 - stale extra from a previous event after a later event state exists.
 
-### Bosses
+### Bosses and offerings
 
 - persistent outdoor vanilla boss parking/restoration;
 - owner migration and listen-host parking;
@@ -165,10 +191,13 @@ The complete matrix remains `08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md`. The follow
 - interior boss withdrawal;
 - nonpersistent surface boss withdrawal;
 - surface/dungeon navigation contexts remain separated;
-- OfferingBowl immediately before and after 18:00;
-- specifically test an interaction initiated just before Marked whose bowl-owner RPC is delivered after Marked.
+- item-producing OfferingBowl remains usable according to vanilla rules;
+- boss OfferingBowl immediately before and after 18:00;
+- request accepted by the server in Forewarning but delivered to the bowl owner after Marked still completes;
+- request first received by the server after Marked is blocked without consuming inventory or altar items;
+- vanilla `DelayedSpawnBoss` accepted before Marked is not cancelled after the transition.
 
-The last scenario is an explicit runtime boundary. Vanilla source confirms resources are consumed only after owner-side spawn-RPC acceptance and an already accepted `DelayedSpawnBoss` is not cancelled. The current authoritative guard rejects an RPC that actually arrives after the Marked block is active; no speculative preauthorization channel was added without evidence that this sub-second network race matters in real play.
+The authoritative cutover is intentionally server receipt: a local click that has not reached the server before Marked is not considered a queued pre-Marked boss spawn.
 
 ### Blood Craft
 
@@ -181,6 +210,8 @@ The last scenario is an explicit runtime boundary. Vanilla source confirms resou
 - permanent item upgrade is not free;
 - multi-craft near stack limits;
 - temporary/permanent/different-owner/different-event stack isolation;
+- ordinary inventory drop is blocked for temporary items;
+- temporary thrown weapon can perform its combat action but cannot become a world item afterward;
 - `ItemStand`, `ArmorStand`, `Fermenter`, `CookingStation`, `Smelter`, `Turret` and `Catapult` reject temporary Blood Craft items;
 - reconnect/restart with valid temporary inventory;
 - stale temporary inventory from another world/event/owner;
@@ -194,6 +225,7 @@ The last scenario is an explicit runtime boundary. Vanilla source confirms resou
 - completion +25 budget / top five / +10 per-skill cap;
 - monotonic interrupted reward replay;
 - offline outcome delivery after reconnect and after a later annual event;
+- forced outcome-store write failure leaves resolution in `PublishingOutcomes` until persistence succeeds;
 - immediate DreamText at current resolution, not next sleep;
 - delayed outcome delivery under simulated latency does not release input before presentation finishes;
 - presentation start/completion timeout fail-safe;
@@ -221,7 +253,6 @@ The last scenario is an explicit runtime boundary. Vanilla source confirms resou
 - Automatic enemy-pool inference from raids/keys/trophies/achievements remains the future contract documented in `06_FUTURE_PROGRESSION_AND_REWARDS.md`; the current implementation freezes the explicit configured bootstrap prefab per event.
 - Third-party custom world sinks or inventory systems that bypass vanilla boundaries may require compatibility patches after a concrete runtime report.
 - Exact parked-boss animation/target/coroutine/HUD runtime state is intentionally not reconstructed.
-- The OfferingBowl request-in-flight boundary described above remains a targeted multiplayer acceptance item rather than a proven blocker.
 
 ## Final repository checks
 
