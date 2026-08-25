@@ -47,15 +47,24 @@ namespace Seasons.BloodMoon
             }
         }
 
+        private sealed class PendingConfirmation
+        {
+            internal float ExpiresAt;
+            internal long Order;
+        }
+
         private sealed class ConfirmedCredit
         {
             internal long EventId;
             internal long PlayerId;
+            internal long ConfirmationOrder;
         }
 
         private static readonly Dictionary<AuthorizationKey, Queue<float>> authorizations = new Dictionary<AuthorizationKey, Queue<float>>();
+        private static readonly Dictionary<AuthorizationKey, Queue<PendingConfirmation>> pendingConfirmations = new Dictionary<AuthorizationKey, Queue<PendingConfirmation>>();
         private static readonly Dictionary<ZDOID, ConfirmedCredit> confirmedCredits = new Dictionary<ZDOID, ConfirmedCredit>();
         private static ZRoutedRpc registeredRpc;
+        private static long nextConfirmationOrder;
 
         internal static void RegisterRpc()
         {
@@ -65,7 +74,9 @@ namespace Seasons.BloodMoon
 
             registeredRpc = rpc;
             authorizations.Clear();
+            pendingConfirmations.Clear();
             confirmedCredits.Clear();
+            nextConfirmationOrder = 0L;
             rpc.Register<ZPackage>(RpcAuthorize, OnAuthorizeRpc);
             rpc.Register<ZPackage>(RpcConfirm, OnConfirmRpc);
         }
@@ -166,7 +177,9 @@ namespace Seasons.BloodMoon
         internal static void ResetRuntime()
         {
             authorizations.Clear();
+            pendingConfirmations.Clear();
             confirmedCredits.Clear();
+            nextConfirmationOrder = 0L;
             registeredRpc = null;
         }
 
@@ -227,14 +240,18 @@ namespace Seasons.BloodMoon
 
             ZDO targetZdo = ZDOMan.instance.GetZDO(targetId);
             ZDO sourceZdo = ZDOMan.instance.GetZDO(sourceId);
-            if (targetZdo == null || sourceZdo == null || !BloodMoonEnemyDeathReports.IsEligibleBloodEnemyZdo(eventId, targetZdo))
+            if (targetZdo == null || sourceZdo == null || !BloodMoonEnemyDeathReports.IsEligibleBloodEnemyZdo(eventId, targetZdo) ||
+                !ValidateSource(controller, sender, eventId, sourceZdo, sourceType, playerId, trustedLocalSource))
                 return;
 
-            if (!ValidateSource(controller, sender, eventId, sourceZdo, sourceType, playerId, trustedLocalSource))
-                return;
-
-            PurgeExpiredAuthorizations();
+            PurgeExpired();
             AuthorizationKey key = new AuthorizationKey(eventId, targetId, sourceId, sourceType, playerId);
+            if (TryConsumePendingConfirmation(key, out long confirmationOrder))
+            {
+                SetConfirmedCredit(key, confirmationOrder);
+                return;
+            }
+
             if (!authorizations.TryGetValue(key, out Queue<float> expirations))
             {
                 expirations = new Queue<float>();
@@ -257,15 +274,25 @@ namespace Seasons.BloodMoon
                 !trustedLocalTarget && targetZdo.GetOwner() != sender)
                 return;
 
-            PurgeExpiredAuthorizations();
+            PurgeExpired();
             AuthorizationKey key = new AuthorizationKey(eventId, targetId, sourceId, sourceType, playerId);
-            if (!authorizations.TryGetValue(key, out Queue<float> expirations) || expirations.Count == 0)
+            long confirmationOrder = ++nextConfirmationOrder;
+            if (TryConsumeAuthorization(key))
+            {
+                SetConfirmedCredit(key, confirmationOrder);
                 return;
+            }
 
-            expirations.Dequeue();
-            if (expirations.Count == 0)
-                authorizations.Remove(key);
-            confirmedCredits[targetId] = new ConfirmedCredit { EventId = eventId, PlayerId = playerId };
+            if (!pendingConfirmations.TryGetValue(key, out Queue<PendingConfirmation> confirmations))
+            {
+                confirmations = new Queue<PendingConfirmation>();
+                pendingConfirmations[key] = confirmations;
+            }
+            confirmations.Enqueue(new PendingConfirmation
+            {
+                ExpiresAt = Time.realtimeSinceStartup + AuthorizationLifetimeSeconds,
+                Order = confirmationOrder
+            });
         }
 
         private static bool ValidateSource(BloodMoonController controller, long sender, long eventId, ZDO sourceZdo,
@@ -280,18 +307,48 @@ namespace Seasons.BloodMoon
             {
                 if (sourceZdo.GetLong(ZDOVars.s_playerID, 0L) != playerId)
                     return false;
-                if (!trustedLocalSource && controller.GetPeerForPlayer(playerId) != sender)
-                    return false;
-                return true;
+                return trustedLocalSource || controller.GetPeerForPlayer(playerId) == sender;
             }
 
-            if (!BloodMoonSummons.ValidateMarkedSummonZdo(sourceZdo, eventId, playerId))
-                return false;
-            long ownerPeer = controller.GetPeerForPlayer(playerId);
-            return trustedLocalSource || ownerPeer == 0L || ownerPeer == sender;
+            return BloodMoonSummons.ValidateMarkedSummonZdo(sourceZdo, eventId, playerId);
         }
 
-        private static void PurgeExpiredAuthorizations()
+        private static bool TryConsumeAuthorization(AuthorizationKey key)
+        {
+            if (!authorizations.TryGetValue(key, out Queue<float> expirations) || expirations.Count == 0)
+                return false;
+            expirations.Dequeue();
+            if (expirations.Count == 0)
+                authorizations.Remove(key);
+            return true;
+        }
+
+        private static bool TryConsumePendingConfirmation(AuthorizationKey key, out long confirmationOrder)
+        {
+            confirmationOrder = 0L;
+            if (!pendingConfirmations.TryGetValue(key, out Queue<PendingConfirmation> confirmations) || confirmations.Count == 0)
+                return false;
+            PendingConfirmation confirmation = confirmations.Dequeue();
+            confirmationOrder = confirmation.Order;
+            if (confirmations.Count == 0)
+                pendingConfirmations.Remove(key);
+            return true;
+        }
+
+        private static void SetConfirmedCredit(AuthorizationKey key, long confirmationOrder)
+        {
+            if (confirmedCredits.TryGetValue(key.TargetId, out ConfirmedCredit existing) &&
+                existing.EventId == key.EventId && existing.ConfirmationOrder >= confirmationOrder)
+                return;
+            confirmedCredits[key.TargetId] = new ConfirmedCredit
+            {
+                EventId = key.EventId,
+                PlayerId = key.PlayerId,
+                ConfirmationOrder = confirmationOrder
+            };
+        }
+
+        private static void PurgeExpired()
         {
             float now = Time.realtimeSinceStartup;
             foreach (AuthorizationKey key in authorizations.Keys.ToArray())
@@ -301,6 +358,15 @@ namespace Seasons.BloodMoon
                     expirations.Dequeue();
                 if (expirations.Count == 0)
                     authorizations.Remove(key);
+            }
+
+            foreach (AuthorizationKey key in pendingConfirmations.Keys.ToArray())
+            {
+                Queue<PendingConfirmation> confirmations = pendingConfirmations[key];
+                while (confirmations.Count > 0 && confirmations.Peek().ExpiresAt < now)
+                    confirmations.Dequeue();
+                if (confirmations.Count == 0)
+                    pendingConfirmations.Remove(key);
             }
         }
     }
