@@ -338,12 +338,14 @@ namespace Seasons.BloodMoon
     {
         private static IEnumerable<MethodBase> TargetMethods()
         {
-            Type[] types = { typeof(WearNTear), typeof(Destructible), typeof(MineRock), typeof(MineRock5), typeof(TreeBase), typeof(TreeLog) };
+            Type[] types = { typeof(WearNTear), typeof(Destructible), typeof(MineRock), typeof(MineRock5), typeof(TreeBase), typeof(TreeLog), typeof(HitArea), typeof(Raven) };
             foreach (Type type in types)
             {
                 MethodInfo method = AccessTools.Method(type, "Damage", new[] { typeof(HitData) });
                 if (method != null)
                     yield return method;
+                else
+                    Seasons.LogWarning($"[BloodMoon.Combat] Could not resolve {type.Name}.Damage(HitData); Blood Moon world-damage protection for that type is unavailable.");
             }
         }
 
