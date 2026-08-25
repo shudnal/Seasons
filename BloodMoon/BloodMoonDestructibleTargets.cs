@@ -1,4 +1,3 @@
-using HarmonyLib;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,8 +8,13 @@ namespace Seasons.BloodMoon
 {
     internal static class BloodMoonDestructibleTargets
     {
+        private static IReadOnlyList<MethodBase> cachedMethods;
+
         internal static IEnumerable<MethodBase> EnumerateWorldDamageMethods()
         {
+            if (cachedMethods != null)
+                return cachedMethods;
+
             HashSet<MethodBase> methods = new HashSet<MethodBase>();
             foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
@@ -32,9 +36,10 @@ namespace Seasons.BloodMoon
                 }
             }
 
-            if (methods.Count == 0)
+            cachedMethods = methods.ToList();
+            if (cachedMethods.Count == 0)
                 LogWarning("[BloodMoon.Combat] No non-Character IDestructible.Damage(HitData) methods were discovered; world-damage protection is unavailable.");
-            return methods;
+            return cachedMethods;
         }
 
         private static IEnumerable<Type> GetTypes(Assembly assembly)
