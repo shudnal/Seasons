@@ -52,6 +52,7 @@ namespace Seasons.BloodMoon
             internal float ExpiresAt;
             internal long Order;
             internal float ActualDamage;
+            internal bool Lethal;
         }
 
         private sealed class ConfirmedCredit
@@ -91,8 +92,11 @@ namespace Seasons.BloodMoon
 
             if (attribution != null)
             {
+                // The target owner only preserves immutable source identity here. Participant activity is
+                // authoritative on the server; a delayed routing snapshot must not suppress a valid
+                // confirmation before the server can make that decision.
                 if ((attribution.SourceType != BloodMoonCombatSourceType.Participant && attribution.SourceType != BloodMoonCombatSourceType.ParticipantSummon) ||
-                    !BloodMoonHitAttribution.CanCredit(attribution) || attribution.SourceCharacterId.IsNone() || attribution.SourcePlayerId == 0L)
+                    attribution.EventId != BloodMoonNetwork.ClientGlobal.EventId || attribution.SourceCharacterId.IsNone() || attribution.SourcePlayerId == 0L)
                     return false;
 
                 sourceType = attribution.SourceType;
@@ -148,17 +152,22 @@ namespace Seasons.BloodMoon
             if (targetId.IsNone())
                 return;
 
+            // Called from Character.SetHealth postfix, before the enclosing RPC_Damage reaches
+            // CheckDeath. This is the stable point at which the target owner knows whether this exact
+            // positive HP loss is the lethal loss rather than merely the most recent credited hit.
+            bool lethal = target.GetHealth() <= 0f;
+
             if (ZNet.instance != null && ZNet.instance.IsServer())
             {
                 long localOwner = ZDOMan.instance != null ? ZDOMan.GetSessionID() : 0L;
-                AcceptConfirmation(localOwner, eventId, targetId, sourceId, sourceType, playerId, actualDamage);
+                AcceptConfirmation(localOwner, eventId, targetId, sourceId, sourceType, playerId, actualDamage, lethal);
                 return;
             }
 
             if (ZRoutedRpc.instance == null)
                 return;
             ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.instance.GetServerPeerID(), RpcConfirm,
-                CreateConfirmationPackage(eventId, targetId, sourceId, sourceType, playerId, actualDamage));
+                CreateConfirmationPackage(eventId, targetId, sourceId, sourceType, playerId, actualDamage, lethal));
         }
 
         internal static bool TryGetConfirmedCredit(long eventId, ZDOID targetId, out long playerId)
@@ -193,11 +202,12 @@ namespace Seasons.BloodMoon
         }
 
         private static ZPackage CreateConfirmationPackage(long eventId, ZDOID targetId, ZDOID sourceId,
-            BloodMoonCombatSourceType sourceType, long playerId, float actualDamage)
+            BloodMoonCombatSourceType sourceType, long playerId, float actualDamage, bool lethal)
         {
             ZPackage package = new ZPackage();
             WriteCommon(package, eventId, targetId, sourceId, sourceType, playerId);
             package.Write(actualDamage);
+            package.Write(lethal);
             return package;
         }
 
@@ -244,7 +254,8 @@ namespace Seasons.BloodMoon
                 !TryReadCommon(package, out long eventId, out ZDOID targetId, out ZDOID sourceId, out BloodMoonCombatSourceType sourceType, out long playerId))
                 return;
             float actualDamage = package.ReadSingle();
-            AcceptConfirmation(sender, eventId, targetId, sourceId, sourceType, playerId, actualDamage);
+            bool lethal = package.ReadBool();
+            AcceptConfirmation(sender, eventId, targetId, sourceId, sourceType, playerId, actualDamage, lethal);
         }
 
         private static void AcceptAuthorization(long sender, long eventId, ZDOID targetId, ZDOID sourceId,
@@ -266,7 +277,7 @@ namespace Seasons.BloodMoon
             AuthorizationKey key = new AuthorizationKey(eventId, targetId, sourceId, sourceType, playerId);
             if (TryConsumePendingConfirmation(key, out PendingConfirmation confirmation))
             {
-                ApplyMatchedDamage(key, confirmation.Order, confirmation.ActualDamage);
+                ApplyMatchedDamage(key, confirmation.Order, confirmation.ActualDamage, confirmation.Lethal);
                 return;
             }
 
@@ -279,7 +290,7 @@ namespace Seasons.BloodMoon
         }
 
         private static void AcceptConfirmation(long sender, long eventId, ZDOID targetId, ZDOID sourceId,
-            BloodMoonCombatSourceType sourceType, long playerId, float actualDamage)
+            BloodMoonCombatSourceType sourceType, long playerId, float actualDamage, bool lethal)
         {
             BloodMoonController controller = BloodMoonController.Instance;
             BloodMoonEventState state = controller?.State;
@@ -301,11 +312,12 @@ namespace Seasons.BloodMoon
             {
                 ExpiresAt = Time.realtimeSinceStartup + AuthorizationLifetimeSeconds,
                 Order = ++nextConfirmationOrder,
-                ActualDamage = actualDamage
+                ActualDamage = actualDamage,
+                Lethal = lethal
             };
             if (TryConsumeAuthorization(key))
             {
-                ApplyMatchedDamage(key, confirmation.Order, confirmation.ActualDamage);
+                ApplyMatchedDamage(key, confirmation.Order, confirmation.ActualDamage, confirmation.Lethal);
                 return;
             }
 
@@ -358,10 +370,15 @@ namespace Seasons.BloodMoon
             return true;
         }
 
-        private static void ApplyMatchedDamage(AuthorizationKey key, long confirmationOrder, float actualDamage)
+        private static void ApplyMatchedDamage(AuthorizationKey key, long confirmationOrder, float actualDamage, bool lethal)
         {
             if (key.SourceType == BloodMoonCombatSourceType.Participant)
                 BloodMoonBloodlust.AcceptAuthorizedDamage(key.EventId, key.PlayerId, actualDamage);
+
+            // Death progress may only be signed by the matched HP loss which actually crossed health to
+            // zero. Older non-lethal hits must never remain eligible to credit a later post-exit death.
+            if (!lethal)
+                return;
 
             if (confirmedCredits.TryGetValue(key.TargetId, out ConfirmedCredit existing) &&
                 existing.EventId == key.EventId && existing.ConfirmationOrder >= confirmationOrder)
