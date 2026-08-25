@@ -350,7 +350,7 @@ namespace Seasons.BloodMoon
         private static bool TryConsumePendingConfirmation(AuthorizationKey key, out PendingConfirmation confirmation)
         {
             confirmation = null;
-            if (!pendingConfirmations.TryGetValue(key, out Queue<PendingConfirmation>> confirmations) || confirmations.Count == 0)
+            if (!pendingConfirmations.TryGetValue(key, out Queue<PendingConfirmation> confirmations) || confirmations.Count == 0)
                 return false;
             confirmation = confirmations.Dequeue();
             if (confirmations.Count == 0)
