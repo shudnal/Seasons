@@ -634,9 +634,9 @@ namespace Seasons.BloodMoon
 
             ZDO source = character.m_nview.GetZDO();
             ZDO ragdoll = __instance.m_nview.GetZDO();
-            ragdoll.Set(EventMarker, source.GetLong(EventMarker, -1L));
-            ragdoll.Set(GroupMarker, source.GetLong(GroupMarker, -1L));
-            ragdoll.Set(RoleMarker, source.GetInt(RoleMarker, 0));
+            ragdoll.Set(BloodMoonSpawner.EventMarker, source.GetLong(BloodMoonSpawner.EventMarker, -1L));
+            ragdoll.Set(BloodMoonSpawner.GroupMarker, source.GetLong(BloodMoonSpawner.GroupMarker, -1L));
+            ragdoll.Set(BloodMoonSpawner.RoleMarker, source.GetInt(BloodMoonSpawner.RoleMarker, 0));
             __instance.m_ttl = __instance.m_ttl <= 0f ? 2f : Mathf.Min(__instance.m_ttl, 2f);
             __instance.m_dropItems = false;
         }
