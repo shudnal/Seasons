@@ -378,7 +378,10 @@ namespace Seasons.BloodMoon
 
         private static void OnSpawnLease(long sender, ZPackage pkg)
         {
-            if (!ReadHeader(pkg, out long eventId, out _) || ZNet.instance == null || ZNet.instance.IsServer() || !IsFromServer(sender) || ZDOMan.instance == null)
+            // ZRoutedRpc delivers a server-to-self call synchronously on a listen host. The same
+            // deserialized lease path is required there; being the server does not make the local
+            // zone-owner role disappear.
+            if (!ReadHeader(pkg, out long eventId, out _) || ZNet.instance == null || !IsFromServer(sender) || ZDOMan.instance == null)
                 return;
             BloodMoonSpawnLeaseState lease = new BloodMoonSpawnLeaseState
             {
