@@ -52,6 +52,8 @@ namespace Seasons.BloodMoon
         private void FixedUpdate()
         {
             BloodMoonNetwork.RegisterRpcs();
+            BloodMoonHitAttribution.RegisterRpc(ZRoutedRpc.instance);
+            BloodMoonDamageCreditAuthority.RegisterRpc();
             BloodMoonBloodlust.RegisterRpc();
             BloodMoonOutcomeQueue.RegisterRpc();
             BloodMoonOutcomePresentationHandshake.RegisterRpc();
@@ -122,7 +124,9 @@ namespace Seasons.BloodMoon
             BloodMoonSpawner.ResetClientState();
             BloodMoonSummons.ResetRuntimeState();
             BloodMoonHitAttribution.Reset();
+            BloodMoonDamageCreditAuthority.ResetRuntime();
             BloodMoonBloodlust.ResetRuntime();
+            BloodMoonRecovery.ResetRuntime();
             BloodMoonOutcomePresentationHandshake.ResetRuntime();
             BloodMoonWorldEdge.ResetRuntime();
             if (BloodMoonNetwork.ClientGlobal.EventId >= 0L)
@@ -440,6 +444,7 @@ namespace Seasons.BloodMoon
             if (!State.ReportedEnemyDeaths.Add(key))
                 return;
 
+            BloodMoonDamageCreditAuthority.ConsumeConfirmedCredit(eventId, enemyId);
             AwardPoints(participant, points, seasonState.GetTotalSeconds());
         }
 
@@ -598,8 +603,10 @@ namespace Seasons.BloodMoon
                 case BloodMoonResolutionStep.PublishingOutcomes:
                     if (publishedResolutionOutcomeEventId != State.EventId)
                     {
-                        PublishOutcomes();
+                        if (!PublishOutcomes())
+                            break;
                         publishedResolutionOutcomeEventId = State.EventId;
+                        BloodMoonOutcomePresentationHandshake.Begin(State.EventId);
                         resolutionStepStartedRealtime = Time.realtimeSinceStartup;
                     }
                     BloodMoonOutcomeQueue.TickServer(0f);
@@ -639,8 +646,6 @@ namespace Seasons.BloodMoon
             State.ResolutionStep = step;
             resolutionStepStartedAt = now;
             resolutionStepStartedRealtime = Time.realtimeSinceStartup;
-            if (step == BloodMoonResolutionStep.PublishingOutcomes)
-                BloodMoonOutcomePresentationHandshake.Begin(State.EventId);
             Touch(now, persist: true, publish: true);
             LogInfo($"[BloodMoon][event:{State.EventId}][resolution] Step -> {step}.");
         }
@@ -671,12 +676,11 @@ namespace Seasons.BloodMoon
             }
         }
 
-        private void PublishOutcomes()
+        private bool PublishOutcomes()
         {
             if (State == null || State.ResolutionCancelledBeforeCombat)
-                return;
-            BloodMoonOutcomeQueue.Capture(State);
-            BloodMoonOutcomeQueue.TickServer(0f);
+                return true;
+            return BloodMoonOutcomeQueue.Capture(State);
         }
 
         private void SendFadeToParticipants(bool begin)
@@ -727,8 +731,6 @@ namespace Seasons.BloodMoon
                 resolutionStepStartedAt = 0d;
                 resolutionStepStartedRealtime = 0f;
                 publishedResolutionOutcomeEventId = -1L;
-                if (State.ResolutionStep == BloodMoonResolutionStep.PublishingOutcomes)
-                    BloodMoonOutcomePresentationHandshake.Begin(State.EventId);
                 LogWarning($"[BloodMoon][event:{State.EventId}][resolution] Resuming at step {State.ResolutionStep} after state recovery.");
             }
         }
@@ -823,6 +825,7 @@ namespace Seasons.BloodMoon
             BloodMoonEnvironment.ReleaseForcedEnvironment();
             BloodMoonRandEventSuppression.Release();
             BloodMoonHitAttribution.Reset();
+            BloodMoonDamageCreditAuthority.ResetRuntime();
             BloodMoonBloodlust.ResetRuntime();
             BloodMoonOutcomePresentationHandshake.ResetRuntime();
             State = BloodMoonPersistence.CreateClean(loadedWorldUid);
@@ -926,6 +929,7 @@ namespace Seasons.BloodMoon
             switch (action)
             {
                 case "enroll":
+                    BloodMoonRecovery.ResetEvent(eventId);
                     BloodMoonPresentation.OnEnrolled();
                     break;
                 case "defeated":
