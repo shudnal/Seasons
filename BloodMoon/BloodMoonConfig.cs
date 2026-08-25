@@ -16,6 +16,12 @@ namespace Seasons.BloodMoon
         internal static ConfigEntry<float> EnemyMovementSpeedMultiplier;
         internal static ConfigEntry<float> EnemyTargetUpdateIntervalMultiplier;
         internal static ConfigEntry<float> EnemyHuntRange;
+        internal static ConfigEntry<float> BloodlustFullOutgoingDamageMultiplier;
+        internal static ConfigEntry<float> BloodlustFullIncomingDamageMultiplier;
+        internal static ConfigEntry<float> BloodlustFullMovementSpeedMultiplier;
+        internal static ConfigEntry<float> BloodlustFullLifestealFraction;
+        internal static ConfigEntry<float> BloodlustLifestealMaximumHealthPerSecond;
+        internal static ConfigEntry<float> WorldEdgeWithdrawalSafetyOffset;
         internal static ConfigEntry<float> GroupMergeDistance;
         internal static ConfigEntry<float> GroupSplitDistance;
         internal static ConfigEntry<int> ExtraEnemiesPerParticipant;
@@ -57,6 +63,12 @@ namespace Seasons.BloodMoon
             EnemyMovementSpeedMultiplier = Server("Blood Moon - Combat", "Enemy movement speed multiplier", 1f, "Runtime movement speed multiplier for Blood enemies. Existing prefab and ZDO values are not modified.");
             EnemyTargetUpdateIntervalMultiplier = Server("Blood Moon - Combat", "Enemy target update interval multiplier", 1f, "Runtime target-update interval multiplier for Blood enemies. Values below 1 make target decisions more frequent.");
             EnemyHuntRange = Server("Blood Moon - Combat", "Enemy hunt range", 200f, "Maximum XZ range used by Blood enemies when acquiring active participants.");
+            BloodlustFullOutgoingDamageMultiplier = Server("Blood Moon - Combat", "Bloodlust full outgoing damage multiplier", 1.25f, "Player outgoing damage multiplier against Blood enemies at full earned Bloodlust. Provisional playtest balance.");
+            BloodlustFullIncomingDamageMultiplier = Server("Blood Moon - Combat", "Bloodlust full incoming damage multiplier", 0.75f, "Incoming Blood enemy damage multiplier for a Player at full earned Bloodlust. Provisional playtest balance.");
+            BloodlustFullMovementSpeedMultiplier = Server("Blood Moon - Combat", "Bloodlust full movement speed multiplier", 1.10f, "Player movement speed multiplier at full earned Bloodlust. Provisional playtest balance.");
+            BloodlustFullLifestealFraction = Server("Blood Moon - Combat", "Bloodlust full lifesteal fraction", 0.10f, "Fraction of actual Blood enemy health loss returned as healing at full earned Bloodlust. Provisional playtest balance.");
+            BloodlustLifestealMaximumHealthPerSecond = Server("Blood Moon - Combat", "Bloodlust lifesteal maximum health per second", 0.10f, "Maximum Bloodlust lifesteal healing per rolling second as a fraction of the Player's current maximum health. Provisional playtest balance.");
+            WorldEdgeWithdrawalSafetyOffset = Server("Blood Moon - Combat", "World edge withdrawal safety offset", 100f, "Positive XZ safety offset inside the current Seasons world boundary used for Blood Moon withdrawal.");
             GroupMergeDistance = Server("Blood Moon - Combat", "Group merge distance", 120f, "XZ distance used to merge active participants into combat groups.");
             GroupSplitDistance = Server("Blood Moon - Combat", "Group split distance", 160f, "XZ distance used as group split hysteresis.");
 
