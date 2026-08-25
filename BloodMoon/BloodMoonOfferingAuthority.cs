@@ -2,6 +2,7 @@ using HarmonyLib;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using static Seasons.Seasons;
 
 namespace Seasons.BloodMoon
 {
@@ -90,13 +91,19 @@ namespace Seasons.BloodMoon
                 return;
 
             ZDO bowlZdo = ZDOMan.instance.GetZDO(bowlId);
-            if (bowlZdo == null || !IsBossOfferingPrefab(bowlZdo) || pendingOfferings.ContainsKey(bowlId))
+            if (bowlZdo == null || !IsBossOfferingPrefab(bowlZdo))
+                return;
+
+            long worldUid = ZNet.m_world != null ? ZNet.m_world.m_uid : 0L;
+            if (pendingOfferings.TryGetValue(bowlId, out PendingOffering existingPending) && existingPending.WorldUid != worldUid)
+                pendingOfferings.Remove(bowlId);
+            if (pendingOfferings.ContainsKey(bowlId))
                 return;
 
             PendingOffering pending = new PendingOffering
             {
                 RequestId = ++nextRequestId,
-                WorldUid = ZNet.m_world != null ? ZNet.m_world.m_uid : 0L,
+                WorldUid = worldUid,
                 BowlId = bowlId,
                 Requester = sender,
                 Point = point,
@@ -228,6 +235,10 @@ namespace Seasons.BloodMoon
                 return;
             }
 
+            // A stale negative ACK from an owner we have already moved past must not wake another relay.
+            if (sender != pending.LastRelayedOwner)
+                return;
+
             // A relay that reached an owner after ownership already migrated is explicitly retryable.
             // The next pass resolves the owner from the authoritative ZDO again without re-checking the
             // Blood Moon phase; the request was accepted before the cutoff and keeps that authorization.
@@ -239,6 +250,16 @@ namespace Seasons.BloodMoon
         {
             if (state == null)
                 return true;
+
+            // The server state machine ticks discretely. Use the frozen schedule as well so an offering
+            // received just after 18:00 cannot slip through before the next Forewarning -> Marked tick.
+            if (state.Schedule != null && state.Schedule.IsValid && SeasonState.IsActive)
+            {
+                double now = seasonState.GetTotalSeconds();
+                if (now >= state.Schedule.MarkedAt && now < state.Schedule.MorningAt)
+                    return true;
+            }
+
             return state.Phase == BloodMoonEventPhase.Marked || state.Phase == BloodMoonEventPhase.Active ||
                 state.Phase == BloodMoonEventPhase.AutoCompleting || state.Phase == BloodMoonEventPhase.Resolving;
         }
