@@ -11,6 +11,9 @@ namespace Seasons.BloodMoon
         private const string RpcRequest = "Seasons.BloodMoon.OfferingRequest";
         private const string RpcRelay = "Seasons.BloodMoon.OfferingRelay";
         private const string RpcRelayResult = "Seasons.BloodMoon.OfferingRelayResult";
+        private const string RpcRequesterExpectation = "Seasons.BloodMoon.OfferingRequesterExpectation";
+        private const string OfferingRequestMarker = "Seasons.BloodMoon.OfferingRequestId";
+        private const string ConsumedMarkerPrefix = "Seasons.BloodMoon.OfferingConsumed.";
         private const float RelayRetrySeconds = 1f;
 
         private sealed class PendingOffering
@@ -25,10 +28,18 @@ namespace Seasons.BloodMoon
             internal long LastRelayedOwner;
         }
 
+        private sealed class ExpectedInventoryRemoval
+        {
+            internal long WorldUid;
+            internal long RequestId;
+            internal ZDOID BowlId;
+        }
+
         [System.ThreadStatic]
         private static int authorizedCompletionDepth;
 
         private static readonly Dictionary<ZDOID, PendingOffering> pendingOfferings = new Dictionary<ZDOID, PendingOffering>();
+        private static readonly Dictionary<ZDOID, ExpectedInventoryRemoval> expectedInventoryRemovals = new Dictionary<ZDOID, ExpectedInventoryRemoval>();
         private static ZRoutedRpc registeredRpc;
         private static long nextRequestId;
 
@@ -42,14 +53,17 @@ namespace Seasons.BloodMoon
 
             registeredRpc = rpc;
             pendingOfferings.Clear();
+            expectedInventoryRemovals.Clear();
             rpc.Register<ZPackage>(RpcRequest, OnRequestRpc);
             rpc.Register<ZPackage>(RpcRelay, OnRelayRpc);
             rpc.Register<ZPackage>(RpcRelayResult, OnRelayResultRpc);
+            rpc.Register<ZPackage>(RpcRequesterExpectation, OnRequesterExpectationRpc);
         }
 
         internal static void ResetRuntime()
         {
             pendingOfferings.Clear();
+            expectedInventoryRemovals.Clear();
             nextRequestId = 0L;
             authorizedCompletionDepth = 0;
         }
@@ -154,6 +168,16 @@ namespace Seasons.BloodMoon
 
             pending.NextRelayAtRealtime = Time.realtimeSinceStartup + RelayRetrySeconds;
 
+            // Inventory consumption is tied to the routed requester session by vanilla OfferingBowl.
+            // If that session disappears, do not rebind the accepted action to a fresh session whose
+            // m_interactUser/m_usedSpawnItem context does not exist. Cancel before another owner executes.
+            if (pending.RemoveItemsFromInventory && !IsPeerAvailable(pending.Requester))
+            {
+                LogWarning($"[BloodMoon.Offering] Cancelled request {pending.RequestId}: requester session {pending.Requester} disconnected before inventory consumption could complete.");
+                pendingOfferings.Remove(pending.BowlId);
+                return;
+            }
+
             // There may be network delay between an ownership change and the ACK for the relay already
             // delivered to the previous owner. Do not issue the same accepted request to two connected
             // owners in parallel. A live previous peer must explicitly complete or reject its relay;
@@ -203,6 +227,20 @@ namespace Seasons.BloodMoon
                 return;
             }
 
+            // A reconnect creates a new routed session and a new local OfferingBowl interaction context.
+            // Vanilla inventory removal cannot be safely redirected to it, so reject this relay and let
+            // the server cancel the pending inventory offering rather than spawning for free or throwing.
+            if (removeItemsFromInventory && !IsPeerAvailable(requester))
+            {
+                SendRelayResult(requestId, bowlId, completed: false);
+                return;
+            }
+
+            ZDO bowlZdo = bowl.m_nview.GetZDO();
+            bowlZdo?.Set(OfferingRequestMarker, requestId);
+            if (removeItemsFromInventory)
+                SendRequesterExpectation(requester, requestId, bowlId);
+
             bool completed = false;
             authorizedCompletionDepth++;
             try
@@ -215,6 +253,92 @@ namespace Seasons.BloodMoon
                 authorizedCompletionDepth--;
                 SendRelayResult(requestId, bowlId, completed);
             }
+        }
+
+        private static void SendRequesterExpectation(long requester, long requestId, ZDOID bowlId)
+        {
+            if (ZRoutedRpc.instance == null || requester == 0L || requestId <= 0L || bowlId.IsNone())
+                return;
+
+            ZPackage package = new ZPackage();
+            package.Write(BloodMoonNetwork.ProtocolVersion);
+            package.Write(ZNet.m_world != null ? ZNet.m_world.m_uid : 0L);
+            package.Write(requestId);
+            package.Write(bowlId);
+            ZRoutedRpc.instance.InvokeRoutedRPC(requester, RpcRequesterExpectation, package);
+        }
+
+        private static void OnRequesterExpectationRpc(long sender, ZPackage package)
+        {
+            if (package == null || package.ReadInt() != BloodMoonNetwork.ProtocolVersion || ZNet.m_world == null)
+                return;
+
+            long worldUid = package.ReadLong();
+            long requestId = package.ReadLong();
+            ZDOID bowlId = package.ReadZDOID();
+            if (worldUid == 0L || worldUid != ZNet.m_world.m_uid || requestId <= 0L || bowlId.IsNone())
+                return;
+
+            // The expectation is emitted by the current bowl owner immediately before vanilla sends the
+            // requester-side inventory-removal RPC. Supported peers are trusted; the stable request/world
+            // identity is used only to make normal owner-loss retries idempotent.
+            _ = sender;
+            expectedInventoryRemovals[bowlId] = new ExpectedInventoryRemoval
+            {
+                WorldUid = worldUid,
+                RequestId = requestId,
+                BowlId = bowlId
+            };
+        }
+
+        internal static bool BeginInventoryRemoval(OfferingBowl bowl, out long requestId)
+        {
+            requestId = 0L;
+            if (bowl == null || bowl.m_nview == null || !bowl.m_nview.IsValid() || ZNet.m_world == null)
+                return true;
+
+            ZDO bowlZdo = bowl.m_nview.GetZDO();
+            if (bowlZdo == null)
+                return true;
+
+            ZDOID bowlId = bowlZdo.m_uid;
+            long worldUid = ZNet.m_world.m_uid;
+            if (!expectedInventoryRemovals.TryGetValue(bowlId, out ExpectedInventoryRemoval expected) || expected.WorldUid != worldUid)
+            {
+                long markedRequestId = bowlZdo.GetLong(OfferingRequestMarker, 0L);
+                if (markedRequestId <= 0L)
+                    return true;
+                expected = new ExpectedInventoryRemoval { WorldUid = worldUid, RequestId = markedRequestId, BowlId = bowlId };
+                expectedInventoryRemovals[bowlId] = expected;
+            }
+
+            Player player = Player.m_localPlayer;
+            if (player == null)
+                return false;
+
+            requestId = expected.RequestId;
+            if (player.m_customData.ContainsKey(GetConsumedMarkerKey(worldUid, bowlId, requestId)))
+                return false;
+            return true;
+        }
+
+        internal static void CompleteInventoryRemoval(OfferingBowl bowl, long requestId)
+        {
+            Player player = Player.m_localPlayer;
+            if (player == null || bowl == null || bowl.m_nview == null || !bowl.m_nview.IsValid() || ZNet.m_world == null || requestId <= 0L)
+                return;
+
+            ZDO bowlZdo = bowl.m_nview.GetZDO();
+            if (bowlZdo == null)
+                return;
+
+            player.m_customData[GetConsumedMarkerKey(ZNet.m_world.m_uid, bowlZdo.m_uid, requestId)] = "1";
+            Game.instance?.SavePlayerProfile(false);
+        }
+
+        private static string GetConsumedMarkerKey(long worldUid, ZDOID bowlId, long requestId)
+        {
+            return $"{ConsumedMarkerPrefix}{worldUid}.{bowlId}.{requestId}";
         }
 
         private static void SendRelayResult(long requestId, ZDOID bowlId, bool completed)
@@ -312,6 +436,22 @@ namespace Seasons.BloodMoon
         private static void Postfix()
         {
             BloodMoonOfferingAuthority.RegisterRpc();
+        }
+    }
+
+    [HarmonyPatch(typeof(OfferingBowl), nameof(OfferingBowl.RPC_RemoveBossSpawnInventoryItems))]
+    internal static class BloodMoonOfferingInventoryRemovalPatch
+    {
+        [HarmonyPriority(Priority.First)]
+        private static bool Prefix(OfferingBowl __instance, out long __state)
+        {
+            return BloodMoonOfferingAuthority.BeginInventoryRemoval(__instance, out __state);
+        }
+
+        private static void Postfix(OfferingBowl __instance, long __state)
+        {
+            if (__state > 0L)
+                BloodMoonOfferingAuthority.CompleteInventoryRemoval(__instance, __state);
         }
     }
 }
