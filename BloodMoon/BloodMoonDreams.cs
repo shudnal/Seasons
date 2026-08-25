@@ -29,10 +29,18 @@ namespace Seasons.BloodMoon
                 BloodMoonOutcomePresentationHandshake.NotifyCompleted(worldUid, eventId, playerId);
                 return true;
             }
-            if (activePresenter != null && activePresenter.Matches(worldUid, eventId, playerId))
+            if (activePresenter != null)
             {
-                BloodMoonOutcomePresentationHandshake.NotifyStarted(worldUid, eventId, playerId);
-                return true;
+                if (activePresenter.Matches(worldUid, eventId, playerId))
+                {
+                    BloodMoonOutcomePresentationHandshake.NotifyStarted(worldUid, eventId, playerId);
+                    return true;
+                }
+
+                // OutcomeQueue retries pending outcomes. Never destroy another event's active presenter:
+                // doing so would prevent its completion marker/ACK and could make multiple queued results
+                // continually cancel each other. The next retry starts this event after the current one ends.
+                return false;
             }
 
             string text = SelectDreamText(chronicle);
@@ -44,8 +52,6 @@ namespace Seasons.BloodMoon
 
             try
             {
-                if (activePresenter != null)
-                    UnityEngine.Object.Destroy(activePresenter.gameObject);
                 if (!TryCreatePresenter(worldUid, eventId, playerId, text, out BloodMoonDreamPresenter presenter))
                     return false;
 
