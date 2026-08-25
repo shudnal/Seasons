@@ -42,7 +42,7 @@ namespace Seasons.BloodMoon
 
         internal static void Process()
         {
-            if (ZNet.instance == null || !ZNet.instance.IsServer() || ZDOMan.instance == null || pending.Count == 0)
+            if (ZNet.instance == null || !ZNet.instance.IsServer() || pending.Count == 0)
                 return;
 
             float now = Time.realtimeSinceStartup;
@@ -55,8 +55,7 @@ namespace Seasons.BloodMoon
                     continue;
                 }
 
-                ZDO zdo = ZDOMan.instance.GetZDO(report.EnemyId);
-                if (zdo != null && BloodMoonEnemyDeathReports.IsObservedDead(zdo))
+                if (BloodMoonEnemyDeathReports.TryValidate(report.Sender, report.EventId, report.PlayerId, report.EnemyId, out _))
                 {
                     pending.Remove(report.EnemyId);
                     replaying = true;
