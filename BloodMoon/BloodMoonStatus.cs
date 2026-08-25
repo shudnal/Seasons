@@ -20,7 +20,7 @@ namespace Seasons.BloodMoon
                 return "Blood Moon — Marked\n" +
                     "Combat begins at 23:00.\n" +
                     "You cannot sleep while marked.\n" +
-                    "Known combat recipes can be Blood Crafted for free.\n" +
+                    "Known combat recipes can be Blood Crafted without materials at their source crafting station.\n" +
                     "Blood Craft items disappear when you exit or at dawn.";
             }
 
@@ -28,14 +28,17 @@ namespace Seasons.BloodMoon
             {
                 return "Blood Moon — Goal reached\n" +
                     "Combat progress: 100%\n" +
+                    "Full Bloodlust remains active while you stay in the fight.\n" +
                     "Success is secured for this Blood Moon.\n" +
                     "You remain an active participant and can keep fighting to help others.";
             }
 
+            float combatProgress = BloodMoonBloodlust.GetCombatProgressPercent(participant);
             string autoCompleting = BloodMoonNetwork.ClientGlobal.Phase == BloodMoonEventPhase.AutoCompleting
-                ? "\nDawn is now raising displayed progress automatically; only combat progress counts toward rewards."
+                ? $"\nDisplayed dawn progress: {participant.DisplayProgress:0.#}%\nAutomatic dawn progress does not increase Bloodlust or rewards."
                 : string.Empty;
-            return $"Blood Moon — Fighting\nCombat progress: {participant.DisplayProgress:0.#}%\n" +
+            return $"Blood Moon — Fighting\nCombat progress: {combatProgress:0.#}%\n" +
+                "Bloodlust scales continuously with earned combat progress.\n" +
                 "If your health is depleted, your Blood Moon participation ends.\n" +
                 "No grave is created and no skills are lost.\n" +
                 "Blood Craft items disappear when you exit." + autoCompleting;
@@ -48,7 +51,7 @@ namespace Seasons.BloodMoon
                 return string.Empty;
             if (participant.Phase == BloodMoonParticipantPhase.Marked)
                 return "23:00";
-            return participant.GoalReached ? "100%" : $"{participant.DisplayProgress:0}%";
+            return participant.GoalReached ? "100%" : $"{BloodMoonBloodlust.GetCombatProgressPercent(participant):0}%";
         }
     }
 
