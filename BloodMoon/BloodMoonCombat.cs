@@ -114,13 +114,63 @@ namespace Seasons.BloodMoon
         }
     }
 
-    internal struct BloodMoonDamageObservation
+    internal sealed class BloodMoonDamageObservation
     {
-        internal bool Track;
         internal float BeforeHealth;
         internal long EventId;
         internal long CreditPlayerId;
         internal long LifestealPlayerId;
+        internal ZDOID CreditSourceId;
+        internal BloodMoonCombatSourceType CreditSourceType;
+        internal Character Target;
+        internal BloodMoonDamageObservation Previous;
+        internal bool Reported;
+    }
+
+    internal static class BloodMoonDamageObservationContext
+    {
+        [ThreadStatic]
+        private static BloodMoonDamageObservation current;
+
+        internal static void Begin(Character target, BloodMoonDamageObservation observation)
+        {
+            if (target == null || observation == null)
+                return;
+            observation.Target = target;
+            observation.Previous = current;
+            current = observation;
+        }
+
+        internal static void ObserveHealth(Character target)
+        {
+            BloodMoonDamageObservation observation = current;
+            if (observation == null || observation.Reported || !ReferenceEquals(observation.Target, target) || target == null || !target.IsOwner())
+                return;
+
+            float actualDamage = Mathf.Max(0f, observation.BeforeHealth - Mathf.Max(0f, target.GetHealth()));
+            if (actualDamage <= 0f)
+                return;
+
+            observation.Reported = true;
+            if (observation.CreditPlayerId != 0L && !observation.CreditSourceId.IsNone())
+            {
+                BloodMoonCombat.RecordCreditedPlayer(target, observation.CreditPlayerId);
+                BloodMoonDamageCreditAuthority.ConfirmActualDamage(target, observation.EventId, observation.CreditSourceId,
+                    observation.CreditSourceType, observation.CreditPlayerId);
+            }
+            if (observation.LifestealPlayerId != 0L)
+                BloodMoonBloodlust.ReportActualDamage(target, observation.EventId, observation.LifestealPlayerId, actualDamage);
+        }
+
+        internal static void End(BloodMoonDamageObservation observation)
+        {
+            if (observation == null)
+                return;
+            if (!observation.Reported)
+                ObserveHealth(observation.Target);
+            if (ReferenceEquals(current, observation))
+                current = observation.Previous;
+        }
     }
 
     internal struct BloodMoonProjectileHitState
@@ -136,7 +186,7 @@ namespace Seasons.BloodMoon
         [HarmonyPriority(Priority.First)]
         private static bool Prefix(Character __instance, HitData hit, out BloodMoonDamageObservation __state)
         {
-            __state = default;
+            __state = null;
             if (hit == null || !__instance.IsOwner())
                 return true;
 
@@ -179,42 +229,35 @@ namespace Seasons.BloodMoon
 
             if (BloodMoonInteractionRules.IsBloodEnemy(__instance))
             {
-                long creditPlayerId = GetCreditPlayerId(attacker, attribution);
+                bool creditable = BloodMoonDamageCreditAuthority.TryResolveCreditableSource(attacker, attribution,
+                    out BloodMoonCombatSourceType creditSourceType, out ZDOID creditSourceId, out long creditPlayerId);
                 long lifestealPlayerId = TryGetLifestealPlayerId(attacker, attribution, out long sourcePlayerId) ? sourcePlayerId : 0L;
-                if (creditPlayerId != 0L || lifestealPlayerId != 0L)
+                if (creditable || lifestealPlayerId != 0L)
                 {
-                    __state.Track = true;
-                    __state.BeforeHealth = Mathf.Max(0f, __instance.GetHealth());
-                    __state.EventId = BloodMoonNetwork.ClientGlobal.EventId;
-                    __state.CreditPlayerId = creditPlayerId;
-                    __state.LifestealPlayerId = lifestealPlayerId;
+                    __state = new BloodMoonDamageObservation
+                    {
+                        BeforeHealth = Mathf.Max(0f, __instance.GetHealth()),
+                        EventId = BloodMoonNetwork.ClientGlobal.EventId,
+                        CreditPlayerId = creditable ? creditPlayerId : 0L,
+                        CreditSourceId = creditable ? creditSourceId : ZDOID.None,
+                        CreditSourceType = creditable ? creditSourceType : BloodMoonCombatSourceType.None,
+                        LifestealPlayerId = lifestealPlayerId
+                    };
+                    BloodMoonDamageObservationContext.Begin(__instance, __state);
                 }
             }
             return true;
         }
 
-        private static void Postfix(Character __instance, BloodMoonDamageObservation __state)
+        private static void Postfix(BloodMoonDamageObservation __state)
         {
-            if (!__state.Track || __instance == null || !__instance.IsOwner())
-                return;
-
-            float actualDamage = Mathf.Max(0f, __state.BeforeHealth - Mathf.Max(0f, __instance.GetHealth()));
-            if (actualDamage <= 0f)
-                return;
-
-            if (__state.CreditPlayerId != 0L)
-                BloodMoonCombat.RecordCreditedPlayer(__instance, __state.CreditPlayerId);
-            if (__state.LifestealPlayerId != 0L)
-                BloodMoonBloodlust.ReportActualDamage(__instance, __state.EventId, __state.LifestealPlayerId, actualDamage);
+            BloodMoonDamageObservationContext.End(__state);
         }
 
-        private static long GetCreditPlayerId(Character attacker, BloodMoonHitAttributionData attribution)
+        private static Exception Finalizer(Exception __exception, BloodMoonDamageObservation __state)
         {
-            if (attribution != null)
-                return BloodMoonHitAttribution.CanCredit(attribution) ? attribution.SourcePlayerId : 0L;
-            return BloodMoonInteractionRules.TryGetParticipantSourcePlayerId(attacker, out long playerId) && BloodMoonInteractionRules.CanCreditProgress(playerId)
-                ? playerId
-                : 0L;
+            BloodMoonDamageObservationContext.End(__state);
+            return __exception;
         }
 
         private static bool TryGetLifestealPlayerId(Character attacker, BloodMoonHitAttributionData attribution, out long playerId)
@@ -232,6 +275,16 @@ namespace Seasons.BloodMoon
                 return false;
             playerId = player.GetPlayerID();
             return playerId != 0L;
+        }
+    }
+
+    [HarmonyPatch(typeof(Character), nameof(Character.SetHealth))]
+    internal static class BloodMoonCharacterSetHealthObservationPatch
+    {
+        [HarmonyPriority(Priority.Last)]
+        private static void Postfix(Character __instance)
+        {
+            BloodMoonDamageObservationContext.ObserveHealth(__instance);
         }
     }
 
@@ -322,6 +375,7 @@ namespace Seasons.BloodMoon
                 BloodMoonHitAttribution.QueueForTarget(attribution, __instance);
             if (BloodMoonInteractionRules.IsBloodEnemy(__instance))
             {
+                BloodMoonDamageCreditAuthority.AuthorizeHit(__instance, BloodMoonAttackContext.Attacker, attribution);
                 BloodMoonAttackContext.AllowedCharacterHit = true;
                 Player sourcePlayer = null;
                 if (attribution?.SourceType == BloodMoonCombatSourceType.Participant && Player.m_localPlayer != null &&
