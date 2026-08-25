@@ -113,7 +113,8 @@ namespace Seasons.BloodMoon
             }
             if (snapshot.Phase == BloodMoonEventPhase.Marked)
                 return Mathf.Clamp01((float)((now - schedule.MarkedAt) / Math.Max(1d, schedule.ActiveAt - schedule.MarkedAt)));
-            if (snapshot.Phase == BloodMoonEventPhase.Active || snapshot.Phase == BloodMoonEventPhase.AutoCompleting || snapshot.Phase == BloodMoonEventPhase.Resolving && snapshot.ResolutionStep < BloodMoonResolutionStep.RestoringWorldSystems)
+            if (snapshot.Phase == BloodMoonEventPhase.Active || snapshot.Phase == BloodMoonEventPhase.AutoCompleting ||
+                snapshot.Phase == BloodMoonEventPhase.Resolving && (int)snapshot.ResolutionStep < (int)BloodMoonResolutionStep.RestoringWorldSystems)
                 return 1f;
             return 0f;
         }
