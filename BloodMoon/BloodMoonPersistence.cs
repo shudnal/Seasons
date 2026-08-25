@@ -1,4 +1,3 @@
-using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -10,11 +9,6 @@ namespace Seasons.BloodMoon
     internal static class BloodMoonPersistence
     {
         private const string StateDirectoryName = "BloodMoon";
-        private static readonly JsonSerializerSettings serializerSettings = new JsonSerializerSettings
-        {
-            Formatting = Formatting.Indented,
-            ObjectCreationHandling = ObjectCreationHandling.Replace
-        };
 
         private sealed class Candidate
         {
@@ -88,7 +82,7 @@ namespace Seasons.BloodMoon
             state = null;
             try
             {
-                state = JsonConvert.DeserializeObject<BloodMoonEventState>(File.ReadAllText(path), serializerSettings);
+                state = BloodMoonJson.DeserializePersistence<BloodMoonEventState>(File.ReadAllText(path));
                 if (state == null || state.Schema != BloodMoonStateSchema.Current || state.WorldUid != worldUid)
                 {
                     LogWarning($"[BloodMoon.Persistence] Ignoring incompatible state file '{path}'.");
@@ -117,8 +111,9 @@ namespace Seasons.BloodMoon
 
             try
             {
+                string serialized = BloodMoonJson.SerializePersistence(state);
                 Directory.CreateDirectory(directory);
-                File.WriteAllText(temporary, JsonConvert.SerializeObject(state, serializerSettings));
+                File.WriteAllText(temporary, serialized);
                 if (File.Exists(path))
                 {
                     if (File.Exists(backup))
@@ -180,7 +175,6 @@ namespace Seasons.BloodMoon
             state.SpawnLeases ??= new Dictionary<string, BloodMoonSpawnLeaseState>();
             state.ReportedEnemyDeaths ??= new HashSet<string>();
             state.ExtraEnemyZdos ??= new HashSet<string>();
-            state.ParkedBosses ??= new Dictionary<string, BloodMoonBossParkingState>();
 
             foreach (BloodMoonParticipantState participant in state.Participants.Values)
             {

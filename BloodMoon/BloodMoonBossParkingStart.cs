@@ -1,0 +1,78 @@
+using HarmonyLib;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+using static Seasons.Seasons;
+
+namespace Seasons.BloodMoon
+{
+    internal static partial class BloodMoonBosses
+    {
+        internal static bool ParkNearest(BloodMoonEventState state, Vector3 point, double now)
+        {
+            if (state == null || ZDOMan.instance == null)
+                return false;
+
+            ZDO zdo = ZDOMan.instance.m_objectsByID.Values
+                .Where(IsAliveBossZdo)
+                .Where(item => item.Persistent && !Character.InInterior(item.GetPosition()))
+                .OrderBy(item => Utils.DistanceXZ(item.GetPosition(), point))
+                .FirstOrDefault();
+            if (zdo == null)
+                return false;
+
+            Park(state, zdo, now);
+            return true;
+        }
+
+        private static void Park(BloodMoonEventState state, ZDO zdo, double now)
+        {
+            if (state == null || zdo == null || !zdo.Persistent || !IsAliveBossZdo(zdo))
+                return;
+
+            long parkedEvent = zdo.GetLong(ParkedEventMarker, -1L);
+            if (parkedEvent >= 0L)
+            {
+                if (parkedEvent == state.EventId)
+                {
+                    if (TryReadParkingRecord(zdo, out _, out string error))
+                    {
+                        Vector3 existingParkingPosition = GetParkingPosition(zdo.m_uid);
+                        Reassert(zdo, existingParkingPosition);
+                        pendingUntil[zdo.m_uid] = now + 5d;
+                        SynchronizeLoadedInstance(zdo, existingParkingPosition, zdo.GetRotation());
+                    }
+                    else
+                    {
+                        LogInvalidRecordOnce(zdo, error);
+                    }
+                }
+                return;
+            }
+
+            Vector3 originalPosition = zdo.GetPosition();
+            Quaternion originalRotation = zdo.GetRotation();
+            int prefabHash = zdo.GetPrefab();
+            if (!IsFinite(originalPosition) || !IsFinite(originalRotation))
+            {
+                LogError($"[BloodMoon][event:{state.EventId}][boss:{zdo.m_uid}] parking rejected because the original transform is not finite.");
+                return;
+            }
+
+            zdo.Set(ParkingSchemaMarker, ParkingSchema);
+            zdo.Set(OriginalPositionMarker, originalPosition);
+            zdo.Set(OriginalRotationMarker, originalRotation);
+            zdo.Set(OriginalPrefabHashMarker, prefabHash);
+            zdo.Set(ParkingTimestampMarker, (long)now);
+            zdo.Set(ParkedEventMarker, state.EventId);
+
+            Vector3 parked = GetParkingPosition(zdo.m_uid);
+            Reassert(zdo, parked);
+            pendingUntil[zdo.m_uid] = now + 5d;
+            SynchronizeLoadedInstance(zdo, parked, originalRotation);
+            invalidRecordErrors.Remove(zdo.m_uid);
+            LogInfo($"[BloodMoon][event:{state.EventId}][boss:{zdo.m_uid}] parked from {originalPosition} to {parked}.");
+        }
+    }
+}
