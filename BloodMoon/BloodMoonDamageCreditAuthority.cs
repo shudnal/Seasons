@@ -51,6 +51,7 @@ namespace Seasons.BloodMoon
         {
             internal float ExpiresAt;
             internal long Order;
+            internal float ActualDamage;
         }
 
         private sealed class ConfirmedCredit
@@ -132,14 +133,15 @@ namespace Seasons.BloodMoon
 
             if (ZRoutedRpc.instance == null)
                 return;
-            ZPackage package = CreatePackage(eventId, targetId, sourceId, sourceType, playerId);
-            ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.instance.GetServerPeerID(), RpcAuthorize, package);
+            ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.instance.GetServerPeerID(), RpcAuthorize,
+                CreateAuthorizationPackage(eventId, targetId, sourceId, sourceType, playerId));
         }
 
-        internal static void ConfirmActualDamage(Character target, long eventId, ZDOID sourceId, BloodMoonCombatSourceType sourceType, long playerId)
+        internal static void ConfirmActualDamage(Character target, long eventId, ZDOID sourceId, BloodMoonCombatSourceType sourceType,
+            long playerId, float actualDamage)
         {
             if (target == null || target.m_nview == null || !target.m_nview.IsValid() || !target.m_nview.IsOwner() ||
-                eventId < 0L || sourceId.IsNone() || playerId == 0L)
+                eventId < 0L || sourceId.IsNone() || playerId == 0L || !IsFinitePositive(actualDamage))
                 return;
 
             ZDOID targetId = target.GetZDOID();
@@ -149,14 +151,14 @@ namespace Seasons.BloodMoon
             if (ZNet.instance != null && ZNet.instance.IsServer())
             {
                 long localOwner = ZDOMan.instance != null ? ZDOMan.GetSessionID() : 0L;
-                AcceptConfirmation(localOwner, eventId, targetId, sourceId, sourceType, playerId, trustedLocalTarget: true);
+                AcceptConfirmation(localOwner, eventId, targetId, sourceId, sourceType, playerId, actualDamage, trustedLocalTarget: true);
                 return;
             }
 
             if (ZRoutedRpc.instance == null)
                 return;
-            ZPackage package = CreatePackage(eventId, targetId, sourceId, sourceType, playerId);
-            ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.instance.GetServerPeerID(), RpcConfirm, package);
+            ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.instance.GetServerPeerID(), RpcConfirm,
+                CreateConfirmationPackage(eventId, targetId, sourceId, sourceType, playerId, actualDamage));
         }
 
         internal static bool TryGetConfirmedCredit(long eventId, ZDOID targetId, out long playerId)
@@ -183,19 +185,35 @@ namespace Seasons.BloodMoon
             registeredRpc = null;
         }
 
-        private static ZPackage CreatePackage(long eventId, ZDOID targetId, ZDOID sourceId, BloodMoonCombatSourceType sourceType, long playerId)
+        private static ZPackage CreateAuthorizationPackage(long eventId, ZDOID targetId, ZDOID sourceId,
+            BloodMoonCombatSourceType sourceType, long playerId)
         {
             ZPackage package = new ZPackage();
+            WriteCommon(package, eventId, targetId, sourceId, sourceType, playerId);
+            return package;
+        }
+
+        private static ZPackage CreateConfirmationPackage(long eventId, ZDOID targetId, ZDOID sourceId,
+            BloodMoonCombatSourceType sourceType, long playerId, float actualDamage)
+        {
+            ZPackage package = new ZPackage();
+            WriteCommon(package, eventId, targetId, sourceId, sourceType, playerId);
+            package.Write(actualDamage);
+            return package;
+        }
+
+        private static void WriteCommon(ZPackage package, long eventId, ZDOID targetId, ZDOID sourceId,
+            BloodMoonCombatSourceType sourceType, long playerId)
+        {
             package.Write(BloodMoonNetwork.ProtocolVersion);
             package.Write(eventId);
             package.Write(targetId);
             package.Write(sourceId);
             package.Write((int)sourceType);
             package.Write(playerId);
-            return package;
         }
 
-        private static bool TryReadPackage(ZPackage package, out long eventId, out ZDOID targetId, out ZDOID sourceId,
+        private static bool TryReadCommon(ZPackage package, out long eventId, out ZDOID targetId, out ZDOID sourceId,
             out BloodMoonCombatSourceType sourceType, out long playerId)
         {
             eventId = -1L;
@@ -216,7 +234,7 @@ namespace Seasons.BloodMoon
         private static void OnAuthorizeRpc(long sender, ZPackage package)
         {
             if (ZNet.instance == null || !ZNet.instance.IsServer() ||
-                !TryReadPackage(package, out long eventId, out ZDOID targetId, out ZDOID sourceId, out BloodMoonCombatSourceType sourceType, out long playerId))
+                !TryReadCommon(package, out long eventId, out ZDOID targetId, out ZDOID sourceId, out BloodMoonCombatSourceType sourceType, out long playerId))
                 return;
             AcceptAuthorization(sender, eventId, targetId, sourceId, sourceType, playerId, trustedLocalSource: false);
         }
@@ -224,9 +242,10 @@ namespace Seasons.BloodMoon
         private static void OnConfirmRpc(long sender, ZPackage package)
         {
             if (ZNet.instance == null || !ZNet.instance.IsServer() ||
-                !TryReadPackage(package, out long eventId, out ZDOID targetId, out ZDOID sourceId, out BloodMoonCombatSourceType sourceType, out long playerId))
+                !TryReadCommon(package, out long eventId, out ZDOID targetId, out ZDOID sourceId, out BloodMoonCombatSourceType sourceType, out long playerId))
                 return;
-            AcceptConfirmation(sender, eventId, targetId, sourceId, sourceType, playerId, trustedLocalTarget: false);
+            float actualDamage = package.ReadSingle();
+            AcceptConfirmation(sender, eventId, targetId, sourceId, sourceType, playerId, actualDamage, trustedLocalTarget: false);
         }
 
         private static void AcceptAuthorization(long sender, long eventId, ZDOID targetId, ZDOID sourceId,
@@ -246,9 +265,9 @@ namespace Seasons.BloodMoon
 
             PurgeExpired();
             AuthorizationKey key = new AuthorizationKey(eventId, targetId, sourceId, sourceType, playerId);
-            if (TryConsumePendingConfirmation(key, out long confirmationOrder))
+            if (TryConsumePendingConfirmation(key, out PendingConfirmation confirmation))
             {
-                SetConfirmedCredit(key, confirmationOrder);
+                ApplyMatchedDamage(key, confirmation.Order, confirmation.ActualDamage);
                 return;
             }
 
@@ -261,12 +280,13 @@ namespace Seasons.BloodMoon
         }
 
         private static void AcceptConfirmation(long sender, long eventId, ZDOID targetId, ZDOID sourceId,
-            BloodMoonCombatSourceType sourceType, long playerId, bool trustedLocalTarget)
+            BloodMoonCombatSourceType sourceType, long playerId, float actualDamage, bool trustedLocalTarget)
         {
             BloodMoonController controller = BloodMoonController.Instance;
             BloodMoonEventState state = controller?.State;
             if (state == null || !state.IsCombatLive || state.EventId != eventId || playerId == 0L || targetId.IsNone() || sourceId.IsNone() ||
-                !state.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant) || !participant.IsCombatActive || ZDOMan.instance == null)
+                !IsFinitePositive(actualDamage) || !state.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant) ||
+                !participant.IsCombatActive || ZDOMan.instance == null)
                 return;
 
             ZDO targetZdo = ZDOMan.instance.GetZDO(targetId);
@@ -276,10 +296,15 @@ namespace Seasons.BloodMoon
 
             PurgeExpired();
             AuthorizationKey key = new AuthorizationKey(eventId, targetId, sourceId, sourceType, playerId);
-            long confirmationOrder = ++nextConfirmationOrder;
+            PendingConfirmation confirmation = new PendingConfirmation
+            {
+                ExpiresAt = Time.realtimeSinceStartup + AuthorizationLifetimeSeconds,
+                Order = ++nextConfirmationOrder,
+                ActualDamage = actualDamage
+            };
             if (TryConsumeAuthorization(key))
             {
-                SetConfirmedCredit(key, confirmationOrder);
+                ApplyMatchedDamage(key, confirmation.Order, confirmation.ActualDamage);
                 return;
             }
 
@@ -288,11 +313,7 @@ namespace Seasons.BloodMoon
                 confirmations = new Queue<PendingConfirmation>();
                 pendingConfirmations[key] = confirmations;
             }
-            confirmations.Enqueue(new PendingConfirmation
-            {
-                ExpiresAt = Time.realtimeSinceStartup + AuthorizationLifetimeSeconds,
-                Order = confirmationOrder
-            });
+            confirmations.Enqueue(confirmation);
         }
 
         private static bool ValidateSource(BloodMoonController controller, long sender, long eventId, ZDO sourceZdo,
@@ -323,20 +344,22 @@ namespace Seasons.BloodMoon
             return true;
         }
 
-        private static bool TryConsumePendingConfirmation(AuthorizationKey key, out long confirmationOrder)
+        private static bool TryConsumePendingConfirmation(AuthorizationKey key, out PendingConfirmation confirmation)
         {
-            confirmationOrder = 0L;
+            confirmation = null;
             if (!pendingConfirmations.TryGetValue(key, out Queue<PendingConfirmation> confirmations) || confirmations.Count == 0)
                 return false;
-            PendingConfirmation confirmation = confirmations.Dequeue();
-            confirmationOrder = confirmation.Order;
+            confirmation = confirmations.Dequeue();
             if (confirmations.Count == 0)
                 pendingConfirmations.Remove(key);
             return true;
         }
 
-        private static void SetConfirmedCredit(AuthorizationKey key, long confirmationOrder)
+        private static void ApplyMatchedDamage(AuthorizationKey key, long confirmationOrder, float actualDamage)
         {
+            if (key.SourceType == BloodMoonCombatSourceType.Participant)
+                BloodMoonBloodlust.AcceptAuthorizedDamage(key.EventId, key.PlayerId, actualDamage);
+
             if (confirmedCredits.TryGetValue(key.TargetId, out ConfirmedCredit existing) &&
                 existing.EventId == key.EventId && existing.ConfirmationOrder >= confirmationOrder)
                 return;
@@ -368,6 +391,11 @@ namespace Seasons.BloodMoon
                 if (confirmations.Count == 0)
                     pendingConfirmations.Remove(key);
             }
+        }
+
+        private static bool IsFinitePositive(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value) && value > 0f;
         }
     }
 }
