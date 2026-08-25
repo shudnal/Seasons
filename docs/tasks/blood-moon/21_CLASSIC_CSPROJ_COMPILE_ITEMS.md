@@ -66,6 +66,29 @@ BloodMoon/BloodMoonBossRestore.cs
 BloodMoon/BloodMoonBossRuntime.cs
 ```
 
+## Follow-up compiler corrections
+
+The next local Visual Studio compile exposed two source regressions introduced during the boss-parking split:
+
+```text
+CS0136 BloodMoonBossParkingStart.cs: local 'record' shadowed a later local in the same method scope
+CS0103 BloodMoonBosses.cs: TryValidateDiscoverySender was referenced but not carried over from the pre-split implementation
+```
+
+They were corrected in:
+
+```text
+597c928c11fd67be60eff63e615b8bbc29d7243c
+fix: repair Blood Moon boss parking compilation
+```
+
+The correction:
+
+- renames the existing-record `out` variable to `existingRecord`, leaving the new parking transaction local as `record`;
+- restores `TryValidateDiscoverySender` with the previous server/listen-host and routed-peer identity validation, including active participant validation and server-authoritative reporter position lookup.
+
+When splitting a production class into partial files, static review must compare the complete pre-split member set against the resulting partial member set so private helpers are not silently dropped.
+
 ## Verification boundary
 
-The assistant does not build or launch the Valheim mod. The correction was verified statically against the repository project file and the current `BloodMoon` directory listing. Local Visual Studio compilation remains the acceptance check for compiler errors.
+The assistant does not build or launch the Valheim mod. The correction was verified statically against the repository project file, current source, and the pre-split `BloodMoonBosses.cs` implementation. Local Visual Studio compilation remains the acceptance check for compiler errors.
