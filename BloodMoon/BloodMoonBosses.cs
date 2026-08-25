@@ -58,7 +58,8 @@ namespace Seasons.BloodMoon
                 nextClientDiscoveryAt.Clear();
             }
 
-            if (Utils.DistanceXZ(player.transform.position, boss.transform.position) > DiscoveryMaxDistance)
+            if (Utils.DistanceXZ(player.transform.position, boss.transform.position) > DiscoveryMaxDistance ||
+                !SameNavigationContext(player.transform.position, boss.transform.position))
                 return;
 
             ZDO zdo = boss.m_nview.GetZDO();
@@ -95,7 +96,8 @@ namespace Seasons.BloodMoon
             }
 
             Vector3 bossPosition = zdo.GetPosition();
-            if (Utils.DistanceXZ(reporterPosition, bossPosition) > DiscoveryMaxDistance)
+            if (Utils.DistanceXZ(reporterPosition, bossPosition) > DiscoveryMaxDistance ||
+                !SameNavigationContext(reporterPosition, bossPosition))
                 return;
 
             bool interior = Character.InInterior(bossPosition);
@@ -416,13 +418,31 @@ namespace Seasons.BloodMoon
             return new Vector3(600000f + offset, 200f, 600000f + offset * 0.37f);
         }
 
+        private static bool SameNavigationContext(Vector3 first, Vector3 second)
+        {
+            bool firstInterior = Character.InInterior(first);
+            bool secondInterior = Character.InInterior(second);
+            if (firstInterior != secondInterior)
+                return false;
+            if (!firstInterior)
+                return true;
+
+            Location firstLocation = Location.GetLocation(first);
+            Location secondLocation = Location.GetLocation(second);
+            if (firstLocation != null || secondLocation != null)
+                return firstLocation != null && object.ReferenceEquals(firstLocation, secondLocation);
+
+            return ZoneSystem.GetZone(first) == ZoneSystem.GetZone(second);
+        }
+
         private static void WithdrawAffectedPlayers(BloodMoonEventState state, Vector3 bossPosition, string reason)
         {
             if (BloodMoonController.Instance == null)
                 return;
             foreach (BloodMoonParticipantState participant in state.Participants.Values.Where(item => item.IsCombatActive).ToArray())
             {
-                if (!BloodMoonController.Instance.TryGetConnectedPosition(participant.PlayerId, out Vector3 position) || Utils.DistanceXZ(position, bossPosition) > EncounterWithdrawDistance)
+                if (!BloodMoonController.Instance.TryGetConnectedPosition(participant.PlayerId, out Vector3 position) ||
+                    Utils.DistanceXZ(position, bossPosition) > EncounterWithdrawDistance || !SameNavigationContext(position, bossPosition))
                     continue;
                 BloodMoonController.Instance.WithdrawLocalOrRequested(participant.PlayerId);
                 LogWarning($"[BloodMoon][event:{state.EventId}][boss] withdrew player {participant.PlayerId}: {reason}.");
