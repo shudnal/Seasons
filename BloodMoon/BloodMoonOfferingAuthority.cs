@@ -12,7 +12,6 @@ namespace Seasons.BloodMoon
         private const string RpcRelay = "Seasons.BloodMoon.OfferingRelay";
         private const string RpcRelayResult = "Seasons.BloodMoon.OfferingRelayResult";
         private const float RelayRetrySeconds = 1f;
-        private const float RequestLifetimeSeconds = 15f;
 
         private sealed class PendingOffering
         {
@@ -22,7 +21,6 @@ namespace Seasons.BloodMoon
             internal long Requester;
             internal Vector3 Point;
             internal bool RemoveItemsFromInventory;
-            internal float ExpiresAtRealtime;
             internal float NextRelayAtRealtime;
             internal long LastRelayedOwner;
         }
@@ -108,7 +106,6 @@ namespace Seasons.BloodMoon
                 Requester = sender,
                 Point = point,
                 RemoveItemsFromInventory = removeItemsFromInventory,
-                ExpiresAtRealtime = Time.realtimeSinceStartup + RequestLifetimeSeconds,
                 NextRelayAtRealtime = 0f,
                 LastRelayedOwner = 0L
             };
@@ -123,7 +120,7 @@ namespace Seasons.BloodMoon
             WaitForSecondsRealtime retryDelay = new WaitForSecondsRealtime(RelayRetrySeconds);
             while (pendingOfferings.TryGetValue(bowlId, out PendingOffering pending) && pending.RequestId == requestId)
             {
-                if (!IsCurrentWorld(pending) || Time.realtimeSinceStartup >= pending.ExpiresAtRealtime)
+                if (!IsCurrentWorld(pending))
                 {
                     pendingOfferings.Remove(bowlId);
                     yield break;
