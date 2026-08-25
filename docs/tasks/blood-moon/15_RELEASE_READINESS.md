@@ -1,6 +1,6 @@
 # Blood Moon release-readiness checkpoint
 
-This file is the final repository checkpoint for draft PR #42 before owner-side runtime playtest. It complements `13_IMPLEMENTATION_REPORT.md` and `14_CODE_REVIEW_STATUS.md`.
+This file is the repository checkpoint for draft PR #42 before owner-side runtime playtest. It complements `13_IMPLEMENTATION_REPORT.md` and `14_CODE_REVIEW_STATUS.md`.
 
 ## Pull request state
 
@@ -12,119 +12,190 @@ state: draft / open / not merged
 URL: https://github.com/shudnal/Seasons/pull/42
 ```
 
-The pull request must remain unmerged until explicit owner approval.
+The PR must remain unmerged until explicit owner approval.
 
-The implementation still intentionally leaves the following release metadata unchanged:
+The following release metadata remains intentionally unchanged:
 
 - plugin version;
 - public README;
 - Thunderstore changelog;
 - packaging/release metadata.
 
-## Static review status
+## Static code-review gate
 
-Multiple full-diff Codex review passes have been run. Confirmed findings from the earlier passes were fixed and their inline threads were resolved.
-
-Reviewed commits include:
+The exact runtime code-freeze head:
 
 ```text
-f11ff4d4ff
-  first Codex pass
-
-ddbb65649e
-  second Codex pass
-
-e870e5805b
-  third Codex pass
-
-f7ed0e6bdc
-  fourth Codex pass
+0be8eb89d600a95720f08387041fb7ab15ccd5f7
 ```
 
-The fourth pass identified and the branch fixed the following additional issues:
+received a Codex result with no major issues after all prior confirmed findings were fixed and all inline review threads were resolved.
 
-- client spawn-lease expiry used independent real-time-calendar clocks;
-- canonical Blood Moon persistence could hide a newer valid `.new` recovery snapshot;
-- the durable outcome queue had the same recovery-order weakness;
-- a peer could claim an owned non-enemy ZDO as `BloodEnemy` hit attribution;
-- the interaction matrix stopped at `Resolving` before the authoritative `BloodBehaviorEnabled` disable step;
-- disabled source/upgrade recipes could still appear through Blood Craft.
+The final hardening present at that head includes:
 
-The fixes now:
+- explicit server event/participant/resolution state machines;
+- crash-recoverable current-event persistence with newest-valid canonical/`.new`/`.old` selection;
+- CCS public routing plus targeted private participant details;
+- monotonic resync and reconnect skill baselines;
+- real-time-calendar-safe net-time and lease-time handling;
+- authoritative zone-owner lease validation;
+- frozen per-event extra-enemy prefab identity;
+- exact prefab + `MonsterAI` spawn-report validation;
+- creator/lease/group/zone validation for client-spawned extras;
+- resolution freeze for both ordinary and mixed-context spawning;
+- cleanup of completely unreported valid extras without deleting unrelated marked ZDOs;
+- dormant `EventId == -1` cleanup safety;
+- durable server-side spawn-pool history for stale prior-event cleanup;
+- server-observed enemy death validation;
+- immutable projectile/AOE/summon attribution guards;
+- environmental hazard damage for participants without opening Blood-enemy farming paths;
+- boss discovery/withdrawal navigation-context validation;
+- durable boss parking/restoration;
+- active-world Blood Craft preservation plus stale world-sink cleanup;
+- disabled-recipe and stack-limit Blood Craft invariants;
+- explicit pre-combat cancellation behavior;
+- late defeat-report rejection after combat resolution starts;
+- independent durable per-player outcome queue;
+- persistence-aware local outcome acknowledgement;
+- conservative cloud outcome acknowledgement based on a marker observed from character persistence in a fresh process.
 
-- rebase received lease lifetime into the client time domain;
-- validate all canonical/`.new`/`.old` event-state candidates and recover the newest valid state;
-- persist outcome-queue revision/write time and recover its newest valid candidate;
-- validate `BloodEnemy` attribution at RPC ingress against the shared raw-ZDO enemy predicate and sender ownership;
-- keep target/damage routing active through the fade window while the server still owns Blood behavior;
-- freeze new extra spawning and skill credit as soon as resolution starts;
-- require Blood Craft source and temporary-upgrade recipes to remain enabled.
+A final Codex review is required after the internal documentation freeze (`13`, `14`, `15`). That final result should be recorded in the PR timeline without another documentation-only commit, preserving an exact reviewed final head.
 
-Additional manual hardening after those reviews includes:
+## Authoritative game-source verification
 
-- file-write timestamp tie breaking for state snapshots whose subsystem-only save does not advance the event revision;
-- immutable attribution lookup now returns the recorded source fact independently of the current event so stale-event guards can reject old local projectiles across event rollover;
-- participant-summon attribution validates the current sender ownership of the source ZDO;
-- pre-combat cancellation cannot later replay normal success outcomes after the feature is re-enabled;
-- direct attack skill-credit guarding patches the real `Player.RaiseSkill` override;
-- environmental/unattributed damage remains vanilla-valid for active participants while it cannot damage Blood enemies;
-- server death reports require observed `s_health <= 0` and use bounded pending reconciliation for replication order;
-- explicit resync retries after `Player.SetLocalPlayer` until current public/private state is available;
-- chronicle identity is world-scoped;
-- real-time-calendar worlds never feed calendar absolute seconds into Valheim net time.
-
-A final Codex pass must target the exact final code head after this checkpoint. If that pass reports confirmed findings, they must be fixed and reviewed again before this checkpoint can be considered clean.
-
-## Authoritative API source
-
-All game API and Harmony target verification uses:
+All game API and Harmony target verification used:
 
 ```text
 repository: https://github.com/shudnal/assemblies_combined
 commit: cf2cda3a4c5c05e62cb8052a61753e5dcaecc28e
 ```
 
-Recent freeze checks specifically reconfirmed:
+Freeze checks include:
 
-- `ZPackage.m_stream` is a seekable `MemoryStream`, so attribution pre-validation can restore the package cursor safely;
-- `SeasonState.GetTotalSeconds()` uses ZNet time for ordinary worlds and UTC calendar elapsed seconds for world-settings real-time calendar mode;
-- `Player.SetLocalPlayer()` is the reliable local-player-ready hook used by resync retry;
-- `Player` overrides `RaiseSkill`, and projectile/AOE skill raises dispatch through that override;
-- `Character.GetHealth()` is backed by ZDO `ZDOVars.s_health`;
-- the current `EnvSetup` has 14 `Color` fields and the Blood Moon environment red-channel rule covers all 14.
+- `ZRoutedRpc` sender semantics and peer/player identity;
+- immutable `ZDOID` creator identity and `ZDOMan` ownership/sector behavior;
+- `ZNetScene.GetPrefab(string/int)` and stable prefab hashes;
+- raw `SpawnSystem` ownership and authored `CreatureSpawner` behavior;
+- `Location.GetLocation`/interior navigation context;
+- `Character` damage/death flow and ZDO health;
+- `Projectile`, `Aoe`, `SpawnAbility` and `TriggerSpawnAbility`;
+- `Player.RaiseSkill` override behavior;
+- `PlayerProfile.SavePlayerData`, `PlayerProfile.Save`, `FileWriter` and `FileHelpers.ReplaceOldFile`;
+- the current cloud-save failure path where vanilla can return successful profile save status while only producing a local recovery backup;
+- `EnvMan`/`EnvSetup`, random events, sleep and boss-offering paths;
+- vanilla inventory/container/world-consumer boundaries.
 
-## Runtime verification gate
+## No assistant-side runtime claim
 
 No local Valheim build or runtime execution was performed by the assistant, per owner workflow.
 
-Release readiness therefore still requires owner-side runtime validation, with the acceptance matrix in `08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md`, at minimum for:
+Therefore this checkpoint is **static/review ready**, not runtime release-approved.
+
+## Owner-side runtime acceptance gate
+
+Owner-side validation must use `08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md`. At minimum the following scenarios remain required.
+
+### Lifecycle and recovery
 
 - single-player annual lifecycle;
-- listen-host lifecycle;
+- listen-host annual lifecycle;
 - dedicated server with multiple clients;
-- late join and reconnect during Marked/Active/resolution;
-- dedicated-server restart during Active and during persisted resolution steps;
-- Defeated from enemy damage and environmental damage;
-- recovery stage transition on ground, in water and while falling;
-- GoalReached followed by continued helper combat, Defeated and Withdrawn;
-- zone ownership migration with in-flight lease/report replication;
-- mixed interior/surface participants in the same map zone;
-- interior authored CreatureSpawner pathing;
-- boss encounter parking/restoration and unsupported interior/nonpersistent withdrawal context;
-- stale Blood Craft inventory across reconnect/restart and all guarded vanilla sinks;
-- permanent and temporary combat summons;
-- live x3 skill cap, reconnect baseline and completion reward replay;
-- real-time calendar mode;
-- early feature-disable cancellation;
-- final 04:15/05:45/06:00 resolution behavior and client fade/input release.
+- late join during Marked and Active;
+- reconnect during Active and Resolving;
+- dedicated-server restart during Active;
+- restart in each persisted resolution step;
+- first enable inside an already-running annual window;
+- disable during Forewarning/Marked without time advance or success outcome;
+- final 04:15/05:45/06:00 behavior and fade/input release.
+
+### Defeated, GoalReached and recovery
+
+- enemy-caused Defeated;
+- environmental damage and environmental Defeated;
+- recovery started on ground, in water and while falling;
+- recovery through morning resolution and reconnect;
+- GoalReached followed by helper combat;
+- GoalReached followed by Defeated;
+- Withdrawn and no re-entry;
+- late defeat/report traffic after resolution begins.
+
+### Networking and spawning
+
+- real zone-owner migration with in-flight lease/report replication;
+- lease expiry under ordinary and real-time-calendar worlds;
+- mixed interior/surface participants in one map zone;
+- authored interior CreatureSpawner pathing;
+- configured extra prefab changed during an active event;
+- configured extra prefab changed before restart of that same active event;
+- valid extra with a completely lost spawn report cleaned at resolution;
+- invalid/forged marked non-extra preserved by cleanup;
+- dormant world recovery with `EventId == -1`;
+- stale extra from an earlier event cleaned after a later event state exists;
+- server/client cap behavior under rapid ownership movement.
+
+### Bosses and combat routing
+
+- persistent outdoor boss parking/restoration;
+- interior boss withdrawal;
+- nonpersistent surface boss withdrawal;
+- surface player near dungeon boss and dungeon player near surface boss remain separated by navigation context;
+- delayed projectile/AOE hits across personal exit and event rollover;
+- permanent and temporary participant summons;
+- environmental/null-source damage behavior;
+- server-observed death reconciliation under replication delay.
+
+### Blood Craft
+
+- temporary item creation/upgrade/equip/use;
+- reconnect and restart with valid temporary inventory;
+- stale inventory from another world/event/owner;
+- all guarded vanilla world sinks;
+- multi-craft near stack limits;
+- disabled source/upgrade recipes;
+- permanent and temporary summon cleanup;
+- third-party inventory/equipment compatibility where available.
+
+### Skills and durable outcomes
+
+- live x3 budget and per-event cap;
+- reconnect private baseline before new bonus reporting;
+- completion reward monotonic replay;
+- offline participant outcome delivered after reconnect;
+- outcome surviving a later annual event;
+- local-profile save then server acknowledgement;
+- cloud-profile successful persistence followed by fresh-process acknowledgement;
+- simulated/observed cloud save failure retaining the server queue;
+- repeated delivery remaining idempotent while acknowledgement is pending;
+- chronicle/DreamText and one-time Rested removal.
+
+### Presentation
+
+- Forewarning/Marked/Active visuals in representative biomes and interiors;
+- Fader cloud clone lifecycle through environment switching;
+- random-event suppression/release;
+- sleep and OfferingBowl suppression;
+- Blood Moon/recovery status icon behavior;
+- resolution fade/input timing.
 
 ## Known non-blocking content limitations
 
-- Blood Moon music assets are not supplied yet; music production is intentionally paused.
+- Blood Moon music assets are not supplied; music work remains paused.
 - Blood Moon-specific runtime wording is English-first until playtest wording stabilizes.
-- Automatic inferred enemy-pool progression remains future work documented in `06_FUTURE_PROGRESSION_AND_REWARDS.md`; the current implementation uses the explicit configured bootstrap prefab.
-- Third-party custom world sinks or custom inventory implementations that bypass vanilla boundaries may require compatibility patches after runtime discovery.
+- Automatic raid/trophy/key/achievement-derived enemy-pool progression remains future work in `06_FUTURE_PROGRESSION_AND_REWARDS.md`; the current implementation uses an explicit configured bootstrap prefab and freezes it per event.
+- Third-party custom world sinks or inventory implementations that bypass vanilla guarded boundaries may require compatibility patches after runtime discovery.
+- Exact parked-boss animation/target/coroutine/HUD state is not reconstructed by design; the persistent boss ZDO is restored and vanilla runtime state resumes.
+
+## Final repository checks
+
+Before this checkpoint is handed to owner-side playtest, verify:
+
+1. final documentation-inclusive Codex review has no confirmed finding;
+2. all inline review threads are resolved;
+3. PR #42 remains draft/open/unmerged;
+4. `master...feat/blood-moon` contains no unintended release-metadata changes;
+5. code and new English technical documentation contain no accidental Cyrillic outside intentional localization/design source material;
+6. no assistant-side build/runtime result is claimed.
 
 ## Continuation rule
 
-If runtime testing finds a defect, record the reproduction, decision and fix in this repository before continuing. Do not merge PR #42 or alter release metadata until the owner explicitly requests the release step.
+Any runtime defect found during owner-side validation must be recorded in the repository with its reproduction, design decision and fix before the next implementation step. Do not merge PR #42 or alter release metadata until the owner explicitly requests that step.
