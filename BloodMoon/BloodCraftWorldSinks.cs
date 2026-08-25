@@ -2,6 +2,7 @@ using HarmonyLib;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using UnityEngine;
 
 namespace Seasons.BloodMoon
 {
@@ -52,6 +53,20 @@ namespace Seasons.BloodMoon
             private static bool Prefix(Humanoid user, ItemDrop.ItemData item, ref bool __result)
             {
                 return RejectTemporary(user, item, ref __result);
+            }
+        }
+
+        [HarmonyPatch(typeof(ItemDrop), nameof(ItemDrop.DropItem), new[] { typeof(ItemDrop.ItemData), typeof(int), typeof(Vector3), typeof(Quaternion) })]
+        private static class WorldDropPatch
+        {
+            [HarmonyPriority(Priority.First)]
+            private static bool Prefix(ItemDrop.ItemData item, ref ItemDrop __result)
+            {
+                if (!BloodCraft.HasMarker(item))
+                    return true;
+
+                __result = null;
+                return false;
             }
         }
 
