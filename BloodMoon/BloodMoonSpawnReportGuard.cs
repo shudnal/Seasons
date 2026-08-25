@@ -263,15 +263,17 @@ namespace Seasons.BloodMoon
                 return false;
 
             double now = SeasonState.IsActive ? seasonState.GetTotalSeconds() : 0d;
-            foreach (string idValue in new List<string>(state.ExtraEnemyZdos))
+            foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values
+                .Where(zdo => zdo.GetLong(BloodMoonSpawner.EventMarker, -1L) == state.EventId)
+                .ToArray())
             {
-                if (!BloodMoonSpawner.TryParseZdoId(idValue, out ZDOID id))
-                    continue;
-                ZDO zdo = ZDOMan.instance.GetZDO(id);
                 if (BloodMoonSpawnReportValidation.IsAllowedExtraEnemyZdo(zdo, state.EventId))
+                {
                     ZDOMan.instance.DestroyZDO(zdo);
-                else if (zdo != null)
-                    LogWarning($"[BloodMoon][event:{state.EventId}][spawn] Skipping cleanup for authoritative id {id}: prefab validation failed.");
+                    continue;
+                }
+
+                LogWarning($"[BloodMoon][event:{state.EventId}][spawn] Refusing cleanup for marked ZDO {zdo.m_uid}: prefab is not an allowed Blood Moon extra enemy.");
             }
 
             IDictionary pending = BloodMoonSpawnReportValidation.GetPendingReports();
