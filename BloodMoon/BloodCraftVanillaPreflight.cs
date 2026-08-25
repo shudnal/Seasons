@@ -1,5 +1,6 @@
 using HarmonyLib;
 using System;
+using UnityEngine;
 
 namespace Seasons.BloodMoon
 {
