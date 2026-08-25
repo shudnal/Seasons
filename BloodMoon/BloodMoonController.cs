@@ -12,6 +12,7 @@ namespace Seasons.BloodMoon
         private const float GroupTickInterval = 4f;
         private const float FadeAckTimeout = 4f;
         private const float OutcomePresentationHoldSeconds = 8f;
+        private const string FeatureDisabledReason = "feature disabled";
 
         internal static BloodMoonController Instance { get; private set; }
         internal BloodMoonEventState State { get; private set; }
@@ -53,6 +54,7 @@ namespace Seasons.BloodMoon
             BloodMoonNetwork.RegisterRpcs();
             BloodMoonBloodlust.RegisterRpc();
             BloodMoonOutcomeQueue.RegisterRpc();
+            BloodMoonOutcomePresentationHandshake.RegisterRpc();
             BloodMoonPresentation.Tick(Time.fixedDeltaTime);
             BloodMoonSpawner.TickClient(Time.fixedDeltaTime);
             BloodMoonRecovery.TickClientProtection(Time.fixedDeltaTime);
@@ -121,6 +123,7 @@ namespace Seasons.BloodMoon
             BloodMoonSummons.ResetRuntimeState();
             BloodMoonHitAttribution.Reset();
             BloodMoonBloodlust.ResetRuntime();
+            BloodMoonOutcomePresentationHandshake.ResetRuntime();
             BloodMoonWorldEdge.ResetRuntime();
             if (BloodMoonNetwork.ClientGlobal.EventId >= 0L)
                 BloodMoonSkills.ResetLocal(BloodMoonNetwork.ClientGlobal.EventId);
@@ -133,7 +136,7 @@ namespace Seasons.BloodMoon
             if (!BloodMoonConfig.Enabled.Value)
             {
                 if (State.IsEventLive && State.Phase != BloodMoonEventPhase.Resolving)
-                    BeginResolution("feature disabled", now);
+                    BeginResolution(FeatureDisabledReason, now);
                 if (State.Phase == BloodMoonEventPhase.Resolving)
                     TickResolution(now);
                 return;
@@ -384,7 +387,7 @@ namespace Seasons.BloodMoon
 
         internal void OnDefeatedReport(long sender, long eventId, long playerId)
         {
-            if (!ValidateSender(sender, eventId, playerId, out BloodMoonParticipantState participant) || !participant.IsCombatActive)
+            if (State == null || !State.IsCombatLive || !ValidateSender(sender, eventId, playerId, out BloodMoonParticipantState participant) || !participant.IsCombatActive)
                 return;
             ExitParticipant(participant, BloodMoonParticipantExitReason.Defeated, seasonState.GetTotalSeconds());
             DispatchClientAction(playerId, GetPeerForPlayer(playerId), "defeated");
@@ -518,6 +521,13 @@ namespace Seasons.BloodMoon
             if (State == null || State.Phase == BloodMoonEventPhase.Resolving || State.Phase == BloodMoonEventPhase.Resolved)
                 return;
 
+            if (string.Equals(reason, FeatureDisabledReason, StringComparison.Ordinal) &&
+                (State.Phase == BloodMoonEventPhase.Forewarning || State.Phase == BloodMoonEventPhase.Marked))
+            {
+                State.ResolutionCancelledBeforeCombat = true;
+                LogInfo($"[BloodMoon][event:{State.EventId}][resolution] Feature disabled before combat; cleanup will not advance time or publish outcomes.");
+            }
+
             CompleteAutomaticProgressAtForcedEnd(now);
             State.Phase = BloodMoonEventPhase.Resolving;
             State.ResolutionStep = BloodMoonResolutionStep.FreezingEnrollment;
@@ -547,7 +557,8 @@ namespace Seasons.BloodMoon
                     break;
 
                 case BloodMoonResolutionStep.AwaitingClientFade:
-                    if (AllConnectedParticipantsAcknowledgedFade() || resolutionStepStartedAt <= 0d || now - resolutionStepStartedAt >= FadeAckTimeout)
+                    if (AllConnectedParticipantsAcknowledgedFade() || resolutionStepStartedRealtime <= 0f ||
+                        Time.realtimeSinceStartup - resolutionStepStartedRealtime >= FadeAckTimeout)
                         SetResolutionStep(BloodMoonResolutionStep.DisablingBloodBehavior, now);
                     break;
 
@@ -592,8 +603,13 @@ namespace Seasons.BloodMoon
                         resolutionStepStartedRealtime = Time.realtimeSinceStartup;
                     }
                     BloodMoonOutcomeQueue.TickServer(0f);
-                    if (Time.realtimeSinceStartup - resolutionStepStartedRealtime >= OutcomePresentationHoldSeconds)
+                    if (Time.realtimeSinceStartup - resolutionStepStartedRealtime >= OutcomePresentationHoldSeconds &&
+                        BloodMoonOutcomePresentationHandshake.CanRelease(State, out string timedOutPlayers))
+                    {
+                        if (!string.IsNullOrEmpty(timedOutPlayers))
+                            LogWarning($"[BloodMoon][event:{State.EventId}][resolution] Releasing after outcome presentation timeout for player(s) {timedOutPlayers}.");
                         SetResolutionStep(BloodMoonResolutionStep.ReleasingClients, now);
+                    }
                     break;
 
                 case BloodMoonResolutionStep.ReleasingClients:
@@ -623,24 +639,42 @@ namespace Seasons.BloodMoon
             State.ResolutionStep = step;
             resolutionStepStartedAt = now;
             resolutionStepStartedRealtime = Time.realtimeSinceStartup;
+            if (step == BloodMoonResolutionStep.PublishingOutcomes)
+                BloodMoonOutcomePresentationHandshake.Begin(State.EventId);
             Touch(now, persist: true, publish: true);
             LogInfo($"[BloodMoon][event:{State.EventId}][resolution] Step -> {step}.");
         }
 
         private void AdvanceToFrozenMorning(double now)
         {
-            if (State.Schedule == null || ZNet.instance == null || !ZNet.instance.IsServer())
+            if (State == null || State.ResolutionCancelledBeforeCombat || State.Schedule == null || ZNet.instance == null || !ZNet.instance.IsServer())
                 return;
+
+            if (ZNet.m_world != null && SeasonState.seasonWorldSettings.HasWorldSettings(ZNet.m_world))
+            {
+                LogInfo($"[BloodMoon][event:{State.EventId}][resolution] Real-time calendar mode keeps Valheim net time unchanged at resolution.");
+                return;
+            }
+
             if (now < State.Schedule.MorningAt)
             {
                 ZNet.instance.SetNetTime(State.Schedule.MorningAt);
                 EnvManPatches.sleepingUpdated = true;
                 LogInfo($"[BloodMoon][event:{State.EventId}][resolution] Advanced net time to frozen morning target {State.Schedule.MorningAt:0.###}.");
             }
+
+            ZNet.instance.SendNetTime();
+            if (EnvMan.instance != null)
+            {
+                EnvMan.instance.m_skipTime = false;
+                EnvMan.instance.m_totalSeconds = ZNet.instance.GetTimeSeconds();
+            }
         }
 
         private void PublishOutcomes()
         {
+            if (State == null || State.ResolutionCancelledBeforeCombat)
+                return;
             BloodMoonOutcomeQueue.Capture(State);
             BloodMoonOutcomeQueue.TickServer(0f);
         }
@@ -678,7 +712,8 @@ namespace Seasons.BloodMoon
             BloodMoonSpawner.Recover(State);
             BloodMoonSummons.Recover(State);
 
-            if (State.Phase == BloodMoonEventPhase.Marked || State.IsCombatLive || State.Phase == BloodMoonEventPhase.Resolving && State.ResolutionStep < BloodMoonResolutionStep.RestoringWorldSystems)
+            if (State.Phase == BloodMoonEventPhase.Marked || State.IsCombatLive ||
+                State.Phase == BloodMoonEventPhase.Resolving && (int)State.ResolutionStep < (int)BloodMoonResolutionStep.RestoringWorldSystems)
                 BloodMoonRandEventSuppression.StopActiveRandomEvent();
 
             if (State.IsCombatLive)
@@ -692,6 +727,8 @@ namespace Seasons.BloodMoon
                 resolutionStepStartedAt = 0d;
                 resolutionStepStartedRealtime = 0f;
                 publishedResolutionOutcomeEventId = -1L;
+                if (State.ResolutionStep == BloodMoonResolutionStep.PublishingOutcomes)
+                    BloodMoonOutcomePresentationHandshake.Begin(State.EventId);
                 LogWarning($"[BloodMoon][event:{State.EventId}][resolution] Resuming at step {State.ResolutionStep} after state recovery.");
             }
         }
@@ -787,6 +824,7 @@ namespace Seasons.BloodMoon
             BloodMoonRandEventSuppression.Release();
             BloodMoonHitAttribution.Reset();
             BloodMoonBloodlust.ResetRuntime();
+            BloodMoonOutcomePresentationHandshake.ResetRuntime();
             State = BloodMoonPersistence.CreateClean(loadedWorldUid);
             State.FirstEnabledAt = firstEnabled;
             State.LastCreatedEventId = lastCreated;
