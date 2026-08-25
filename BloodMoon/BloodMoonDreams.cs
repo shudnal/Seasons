@@ -23,10 +23,17 @@ namespace Seasons.BloodMoon
             if (player == null || player != Player.m_localPlayer || worldUid == 0L || eventId < 0L || string.IsNullOrWhiteSpace(chronicle))
                 return false;
 
+            long playerId = player.GetPlayerID();
             if (IsPresented(player, eventId))
+            {
+                BloodMoonOutcomePresentationHandshake.NotifyCompleted(worldUid, eventId, playerId);
                 return true;
-            if (activePresenter != null && activePresenter.Matches(worldUid, eventId, player.GetPlayerID()))
+            }
+            if (activePresenter != null && activePresenter.Matches(worldUid, eventId, playerId))
+            {
+                BloodMoonOutcomePresentationHandshake.NotifyStarted(worldUid, eventId, playerId);
                 return true;
+            }
 
             string text = SelectDreamText(chronicle);
             if (string.IsNullOrWhiteSpace(text))
@@ -39,10 +46,11 @@ namespace Seasons.BloodMoon
             {
                 if (activePresenter != null)
                     UnityEngine.Object.Destroy(activePresenter.gameObject);
-                if (!TryCreatePresenter(worldUid, eventId, player.GetPlayerID(), text, out BloodMoonDreamPresenter presenter))
+                if (!TryCreatePresenter(worldUid, eventId, playerId, text, out BloodMoonDreamPresenter presenter))
                     return false;
 
                 activePresenter = presenter;
+                BloodMoonOutcomePresentationHandshake.NotifyStarted(worldUid, eventId, playerId);
                 LogInfo($"[BloodMoon.Outcome] Started DreamText presentation for event {eventId} through the current outcome path.");
                 return true;
             }
@@ -75,6 +83,7 @@ namespace Seasons.BloodMoon
 
             player.m_customData[GetKey(worldUid, eventId)] = "1";
             BloodMoonOutcomeQueue.OnLocalDreamPresentationCompleted(worldUid, eventId, playerId);
+            BloodMoonOutcomePresentationHandshake.NotifyCompleted(worldUid, eventId, playerId);
             LogInfo($"[BloodMoon.Outcome] DreamText presentation completed for event {eventId}.");
         }
 
