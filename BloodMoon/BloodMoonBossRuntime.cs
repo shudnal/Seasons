@@ -9,8 +9,11 @@ namespace Seasons.BloodMoon
 {
     internal static partial class BloodMoonBosses
     {
-        private static void ReassertPending(BloodMoonEventState state, double now)
+        internal static void TickPending(BloodMoonEventState state, double now)
         {
+            if (state == null || ZDOMan.instance == null || pendingUntil.Count == 0)
+                return;
+
             foreach (KeyValuePair<ZDOID, double> pending in pendingUntil.ToArray())
             {
                 if (pending.Value < now)

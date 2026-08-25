@@ -1,5 +1,6 @@
 using HarmonyLib;
 using UnityEngine;
+using static Seasons.Seasons;
 
 namespace Seasons.BloodMoon
 {
@@ -30,13 +31,43 @@ namespace Seasons.BloodMoon
         }
     }
 
+    internal sealed class BloodMoonBossParkingGuard : MonoBehaviour
+    {
+        private float nextTick;
+
+        private void Update()
+        {
+            if (Time.realtimeSinceStartup < nextTick)
+                return;
+            nextTick = Time.realtimeSinceStartup + 0.25f;
+
+            if (ZNet.instance == null)
+                return;
+            if (!ZNet.instance.IsServer())
+            {
+                Destroy(this);
+                return;
+            }
+
+            BloodMoonEventState state = BloodMoonController.Instance?.State;
+            if (state == null || ZDOMan.instance == null || !SeasonState.IsActive)
+                return;
+
+            BloodMoonBosses.TickPending(state, seasonState.GetTotalSeconds());
+        }
+    }
+
     [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.Awake))]
     internal static class BloodMoonBossRecoveryBootstrapPatch
     {
         private static void Postfix(ZNetScene __instance)
         {
-            if (__instance != null && __instance.GetComponent<BloodMoonBossRecoveryTicker>() == null)
+            if (__instance == null)
+                return;
+            if (__instance.GetComponent<BloodMoonBossRecoveryTicker>() == null)
                 __instance.gameObject.AddComponent<BloodMoonBossRecoveryTicker>();
+            if (__instance.GetComponent<BloodMoonBossParkingGuard>() == null)
+                __instance.gameObject.AddComponent<BloodMoonBossParkingGuard>();
         }
     }
 

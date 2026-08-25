@@ -52,7 +52,6 @@ namespace Seasons.BloodMoon
             if (state == null || ZNet.instance == null || !ZNet.instance.IsServer() || ZDOMan.instance == null)
                 return;
 
-            ReassertPending(state, now);
             if (!state.IsCombatLive || now < nextMarkerScan)
                 return;
             nextMarkerScan = now + 2d;
