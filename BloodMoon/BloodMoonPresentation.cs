@@ -8,6 +8,9 @@ namespace Seasons.BloodMoon
     {
         private static BloodMoonPresentationBehaviour behaviour;
         private static BloodMoonEventPhase lastPhase = BloodMoonEventPhase.Dormant;
+        private static bool resolutionFadeRequested;
+
+        internal static bool IsResolutionFadeActive => resolutionFadeRequested;
 
         internal static void EnsureBehaviour()
         {
@@ -66,14 +69,25 @@ namespace Seasons.BloodMoon
         internal static void SetResolutionFade(bool begin)
         {
             EnsureBehaviour();
+            resolutionFadeRequested = begin;
+            BloodMoonFadeInputGuard.SetResolution(begin);
             if (behaviour != null)
                 behaviour.SetFade(begin ? 1f : 0f);
+        }
+
+        internal static void SetDreamOverlayActive(bool active)
+        {
+            EnsureBehaviour();
+            if (behaviour != null)
+                behaviour.DreamOverlayActive = active;
         }
 
         internal static void OnResolutionComplete()
         {
             BloodMoonStatus.RemoveLocal();
             BloodMoonEnvironment.ReleaseForcedEnvironment();
+            resolutionFadeRequested = false;
+            BloodMoonFadeInputGuard.SetResolution(false);
             if (behaviour != null)
             {
                 behaviour.VisualFactor = 0f;
@@ -94,15 +108,15 @@ namespace Seasons.BloodMoon
                 _ when participant.AutoCompleted => "Survived until dawn",
                 _ => "Survived"
             };
-            float combatProgress = Mathf.Clamp(participant.CombatPoints / Mathf.Max(1f, BloodMoonConfig.GoalPoints.Value) * 100f, 0f, 100f);
+            float combatProgress = BloodMoonBloodlust.GetCombatProgressPercent(participant);
             return $"Blood Moon — {outcome}\nCombat progress: {combatProgress:0.#}%\nDisplayed progress: {participant.DisplayProgress:0.#}%\nCombat points: {participant.CombatPoints:0.##}";
         }
 
-        internal static void PublishChronicle(string chronicle)
+        internal static bool PublishChronicle(string chronicle)
         {
             Player player = Player.m_localPlayer;
             if (player == null || string.IsNullOrWhiteSpace(chronicle))
-                return;
+                return false;
 
             long eventId = BloodMoonNetwork.ClientGlobal.EventId;
             BloodMoonEventState controllerState = BloodMoonController.Instance?.State;
@@ -117,22 +131,22 @@ namespace Seasons.BloodMoon
                 ? $"Blood Moon {worldUid}:{eventId}"
                 : eventId >= 0L ? $"Blood Moon {eventId}" : "Blood Moon";
 
-            bool changed = !player.m_knownTexts.TryGetValue(key, out string existing) || !string.Equals(existing, chronicle, StringComparison.Ordinal);
-            if (changed)
+            if (!player.m_knownTexts.TryGetValue(key, out string existing) || !string.Equals(existing, chronicle, StringComparison.Ordinal))
                 player.AddKnownText(key, chronicle);
-            if (eventId >= 0L)
-                BloodMoonDreams.Record(player, eventId, chronicle);
-            if (changed)
-                player.Message(MessageHud.MessageType.Center, chronicle);
+            return eventId >= 0L && BloodMoonDreams.Present(player, eventId, chronicle);
         }
 
         internal static void CleanupTransientState()
         {
             lastPhase = BloodMoonEventPhase.Dormant;
+            resolutionFadeRequested = false;
             BloodMoonStatus.RemoveLocal();
+            BloodMoonDreams.CleanupTransientPresentation();
+            BloodMoonFadeInputGuard.Reset();
             if (behaviour != null)
             {
                 behaviour.VisualFactor = 0f;
+                behaviour.DreamOverlayActive = false;
                 behaviour.SetFade(0f);
             }
         }
@@ -161,6 +175,7 @@ namespace Seasons.BloodMoon
     internal sealed class BloodMoonPresentationBehaviour : MonoBehaviour
     {
         internal float VisualFactor;
+        internal bool DreamOverlayActive;
         private float fadeTarget;
         private float fadeAlpha;
 
@@ -187,7 +202,7 @@ namespace Seasons.BloodMoon
                 GUI.color = old;
             }
 
-            if (fadeAlpha > 0.001f)
+            if (!DreamOverlayActive && fadeAlpha > 0.001f)
             {
                 Color old = GUI.color;
                 GUI.color = new Color(0f, 0f, 0f, fadeAlpha);
