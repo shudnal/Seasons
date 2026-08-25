@@ -24,9 +24,8 @@ namespace Seasons.BloodMoon
                 lease.EventId != global.EventId || global.SpawnsStopped || global.Phase == BloodMoonEventPhase.Resolving)
                 return false;
 
-            string prefabName = BloodMoonConfig.TestEnemyPrefab.Value?.Trim();
-            GameObject prefab = string.IsNullOrEmpty(prefabName) ? null : ZNetScene.instance.GetPrefab(prefabName);
-            if (prefab == null || prefab.GetComponent<MonsterAI>() == null)
+            GameObject prefab = BloodMoonSpawner.ResolveSpawnPrefab(lease);
+            if (prefab == null)
                 return false;
 
             List<Player> targets = BloodMoonInteractionRules.GetLoadedActiveParticipants(preferFighting: false)
