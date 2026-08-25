@@ -16,7 +16,8 @@ namespace Seasons.BloodMoon
         internal const string WorldUidKey = "Seasons.BloodCraft.WorldUid";
         internal const string EventIdKey = "Seasons.BloodCraft.EventId";
         internal const string OwnerPlayerIdKey = "Seasons.BloodCraft.OwnerPlayerId";
-        private const int Schema = 2;
+        internal const string SourceRecipeKey = "Seasons.BloodCraft.SourceRecipe";
+        private const int Schema = 3;
         private const float PendingValidationGrace = 5f;
 
         private static readonly Dictionary<Recipe, Recipe> cloneByOriginal = new Dictionary<Recipe, Recipe>();
@@ -50,17 +51,19 @@ namespace Seasons.BloodMoon
 
         internal static bool TryReadMarker(ItemDrop.ItemData item, out long eventId, out long ownerPlayerId)
         {
-            return TryReadMarker(item, out _, out eventId, out ownerPlayerId);
+            return TryReadMarker(item, out _, out eventId, out ownerPlayerId, out _);
         }
 
-        private static bool TryReadMarker(ItemDrop.ItemData item, out long worldUid, out long eventId, out long ownerPlayerId)
+        private static bool TryReadMarker(ItemDrop.ItemData item, out long worldUid, out long eventId, out long ownerPlayerId, out string sourceRecipeName)
         {
             worldUid = 0L;
             eventId = -1L;
             ownerPlayerId = 0L;
+            sourceRecipeName = string.Empty;
             if (item?.m_customData == null || !item.m_customData.TryGetValue(SchemaKey, out string schemaText) ||
                 !item.m_customData.TryGetValue(WorldUidKey, out string worldText) || !item.m_customData.TryGetValue(EventIdKey, out string eventText) ||
-                !item.m_customData.TryGetValue(OwnerPlayerIdKey, out string ownerText))
+                !item.m_customData.TryGetValue(OwnerPlayerIdKey, out string ownerText) || !item.m_customData.TryGetValue(SourceRecipeKey, out sourceRecipeName) ||
+                string.IsNullOrWhiteSpace(sourceRecipeName))
                 return false;
             return int.TryParse(schemaText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int schema) && schema == Schema &&
                 long.TryParse(worldText, NumberStyles.Integer, CultureInfo.InvariantCulture, out worldUid) && worldUid != 0L &&
@@ -73,12 +76,12 @@ namespace Seasons.BloodMoon
             if (item?.m_customData == null)
                 return false;
             return item.m_customData.ContainsKey(SchemaKey) || item.m_customData.ContainsKey(WorldUidKey) ||
-                item.m_customData.ContainsKey(EventIdKey) || item.m_customData.ContainsKey(OwnerPlayerIdKey);
+                item.m_customData.ContainsKey(EventIdKey) || item.m_customData.ContainsKey(OwnerPlayerIdKey) || item.m_customData.ContainsKey(SourceRecipeKey);
         }
 
         internal static bool IsValidFor(Player player, ItemDrop.ItemData item)
         {
-            return player != null && TryReadMarker(item, out long worldUid, out long eventId, out long ownerId) &&
+            return player != null && TryReadMarker(item, out long worldUid, out long eventId, out long ownerId, out _) &&
                 worldUid == GetCurrentWorldUid() && eventId == BloodMoonNetwork.ClientGlobal.EventId && ownerId == player.GetPlayerID() && IsAvailableFor(player);
         }
 
@@ -107,15 +110,20 @@ namespace Seasons.BloodMoon
                 return;
             }
 
-            HashSet<string> temporaryNames = new HashSet<string>(player.GetInventory().GetAllItems()
-                .Where(item => IsValidFor(player, item) && item.m_quality < item.m_shared.m_maxQuality)
-                .Select(item => item.m_shared.m_name));
-            if (temporaryNames.Count == 0)
+            HashSet<string> temporaryRecipeNames = new HashSet<string>(StringComparer.Ordinal);
+            foreach (ItemDrop.ItemData item in player.GetInventory().GetAllItems())
+            {
+                if (!IsValidFor(player, item) || item.m_quality >= item.m_shared.m_maxQuality ||
+                    !TryReadMarker(item, out _, out _, out _, out string sourceRecipeName))
+                    continue;
+                temporaryRecipeNames.Add(sourceRecipeName);
+            }
+            if (temporaryRecipeNames.Count == 0)
                 return;
 
             foreach (Recipe recipe in ObjectDB.instance.m_recipes)
             {
-                if (recipe?.m_item == null || !temporaryNames.Contains(recipe.m_item.m_itemData.m_shared.m_name))
+                if (recipe == null || !recipe.m_enabled || recipe.m_item == null || !temporaryRecipeNames.Contains(recipe.name))
                     continue;
                 if (!available.Contains(recipe))
                     available.Add(recipe);
@@ -135,6 +143,20 @@ namespace Seasons.BloodMoon
             if (!IsAvailableFor(player))
             {
                 player.Message(MessageHud.MessageType.Center, "Blood Craft is no longer available.");
+                return true;
+            }
+
+            Recipe sourceRecipe = GetSourceRecipe(gui.m_craftRecipe);
+            int quality = temporaryUpgrade ? gui.m_craftUpgradeItem.m_quality + 1 : 1;
+            if (!CanUseSourceStation(player, sourceRecipe, quality))
+            {
+                player.Message(MessageHud.MessageType.Center, "The required crafting station or station level is not available.");
+                return true;
+            }
+
+            if (temporaryUpgrade && !MatchesSourceRecipe(gui.m_craftUpgradeItem, sourceRecipe))
+            {
+                player.Message(MessageHud.MessageType.Center, "This temporary item belongs to a different Blood Craft recipe.");
                 return true;
             }
 
@@ -207,10 +229,11 @@ namespace Seasons.BloodMoon
             bool secondMarked = HasMarker(second);
             if (!firstMarked && !secondMarked)
                 return true;
-            if (!TryReadMarker(first, out long firstWorld, out long firstEvent, out long firstOwner) ||
-                !TryReadMarker(second, out long secondWorld, out long secondEvent, out long secondOwner))
+            if (!TryReadMarker(first, out long firstWorld, out long firstEvent, out long firstOwner, out string firstRecipe) ||
+                !TryReadMarker(second, out long secondWorld, out long secondEvent, out long secondOwner, out string secondRecipe))
                 return false;
-            return firstWorld == secondWorld && firstEvent == secondEvent && firstOwner == secondOwner;
+            return firstWorld == secondWorld && firstEvent == secondEvent && firstOwner == secondOwner &&
+                string.Equals(firstRecipe, secondRecipe, StringComparison.Ordinal);
         }
 
         internal static void StyleRecipeRow(InventoryGui gui, Recipe recipe, ItemDrop.ItemData item)
@@ -225,8 +248,16 @@ namespace Seasons.BloodMoon
             if (background != null)
                 background.color = Color.Lerp(background.color, new Color(0.55f, 0.12f, 0.12f, background.color.a), 0.65f);
             TMP_Text name = element.transform.Find("name")?.GetComponent<TMP_Text>();
-            if (name != null && !name.text.Contains("Blood Craft"))
-                name.text += " <color=#b85a5a>[Blood Craft]</color>";
+            if (name == null || name.text.Contains("Blood Craft"))
+                return;
+
+            Player player = Player.m_localPlayer;
+            Recipe sourceRecipe = GetSourceRecipe(recipe);
+            int quality = item != null && IsTemporary(item) ? item.m_quality + 1 : 1;
+            bool stationReady = player != null && CanUseSourceStation(player, sourceRecipe, quality);
+            name.text += stationReady
+                ? " <color=#b85a5a>[Blood Craft]</color>"
+                : " <color=#b85a5a>[Blood Craft: station/level required]</color>";
         }
 
         internal static void StyleCraftButton(InventoryGui gui)
@@ -245,8 +276,47 @@ namespace Seasons.BloodMoon
             image.color = bloodSelection ? Color.Lerp(baseColor, new Color(0.55f, 0.12f, 0.12f, baseColor.a), 0.7f) : baseColor;
         }
 
+        internal static bool CanUseSourceStation(Player player, Recipe recipe, int quality)
+        {
+            if (player == null || recipe == null)
+                return false;
+            CraftingStation requiredStation = recipe.GetRequiredStation(Mathf.Max(1, quality));
+            if (requiredStation == null)
+                return true;
+
+            CraftingStation currentStation = player.GetCurrentCraftingStation();
+            if (currentStation == null || !string.Equals(currentStation.m_name, requiredStation.m_name, StringComparison.Ordinal))
+                return false;
+            if (currentStation.GetLevel() < recipe.GetRequiredStationLevel(Mathf.Max(1, quality)))
+                return false;
+            return currentStation.CheckUsable(player, showMessage: false);
+        }
+
+        internal static void UpdateSelectedCraftability(InventoryGui gui)
+        {
+            if (gui?.m_craftButton == null || Player.m_localPlayer == null)
+                return;
+
+            Recipe recipe = gui.m_selectedRecipe.Recipe;
+            ItemDrop.ItemData item = gui.m_selectedRecipe.ItemData;
+            bool bloodRecipe = IsBloodRecipe(recipe);
+            bool temporaryUpgrade = IsTemporary(item);
+            if (!bloodRecipe && !temporaryUpgrade)
+                return;
+
+            Recipe sourceRecipe = GetSourceRecipe(recipe);
+            int quality = temporaryUpgrade ? item.m_quality + 1 : 1;
+            bool qualityValid = !temporaryUpgrade || item.m_quality < item.m_shared.m_maxQuality;
+            bool sourceMatches = !temporaryUpgrade || MatchesSourceRecipe(item, sourceRecipe);
+            gui.m_craftButton.interactable = qualityValid && sourceMatches && CanUseSourceStation(Player.m_localPlayer, sourceRecipe, quality);
+        }
+
         private static void CraftTemporary(InventoryGui gui, Player player, Recipe recipe)
         {
+            Recipe sourceRecipe = GetSourceRecipe(recipe);
+            if (sourceRecipe == null)
+                return;
+
             int multiplier = gui.m_multiCrafting ? gui.m_multiCraftAmount : 1;
             int amount = Mathf.Max(1, recipe.m_amount) * Mathf.Max(1, multiplier);
             ItemDrop.ItemData template = recipe.m_item.m_itemData.Clone();
@@ -257,7 +327,7 @@ namespace Seasons.BloodMoon
             template.m_worldLevel = (byte)Game.m_worldLevel;
             template.m_crafterID = player.GetPlayerID();
             template.m_crafterName = player.GetPlayerName();
-            Mark(template, BloodMoonNetwork.ClientGlobal.EventId, player.GetPlayerID());
+            Mark(template, BloodMoonNetwork.ClientGlobal.EventId, player.GetPlayerID(), sourceRecipe.name);
 
             Inventory inventory = player.GetInventory();
             if (!CanAddTemporary(inventory, template))
@@ -282,18 +352,18 @@ namespace Seasons.BloodMoon
             }
 
             FinishCraft(gui, player);
-            LogInfo($"[BloodMoon.Craft] Crafted temporary {recipe.m_item.gameObject.name} x{amount} for event {BloodMoonNetwork.ClientGlobal.EventId}.");
+            LogInfo($"[BloodMoon.Craft] Crafted temporary {recipe.m_item.gameObject.name} x{amount} at source station requirements for event {BloodMoonNetwork.ClientGlobal.EventId}.");
         }
 
         private static void UpgradeTemporary(InventoryGui gui, Player player, ItemDrop.ItemData item)
         {
-            if (!IsValidFor(player, item) || item.m_quality >= item.m_shared.m_maxQuality)
+            if (!IsValidFor(player, item) || item.m_quality >= item.m_shared.m_maxQuality || !MatchesSourceRecipe(item, gui.m_craftRecipe))
                 return;
             item.m_quality++;
             item.m_durability = item.GetMaxDurability();
             player.GetInventory().Changed();
             FinishCraft(gui, player);
-            LogInfo($"[BloodMoon.Craft] Upgraded temporary {item.m_dropPrefab?.name ?? item.m_shared.m_name} to quality {item.m_quality}.");
+            LogInfo($"[BloodMoon.Craft] Upgraded temporary {item.m_dropPrefab?.name ?? item.m_shared.m_name} to quality {item.m_quality} at source station requirements.");
         }
 
         private static void FinishCraft(InventoryGui gui, Player player)
@@ -323,7 +393,7 @@ namespace Seasons.BloodMoon
 
         private static bool IsEligibleKnownRecipe(Player player, Recipe recipe)
         {
-            if (recipe?.m_item == null || recipe.m_item.m_itemData?.m_shared == null)
+            if (recipe?.m_item == null || recipe.m_item.m_itemData?.m_shared == null || !recipe.m_enabled)
                 return false;
             ItemDrop.ItemData item = recipe.m_item.m_itemData;
             if (item.m_shared.m_questItem || item.m_shared.m_buildPieces != null || !player.m_knownRecipes.Contains(item.m_shared.m_name))
@@ -377,13 +447,20 @@ namespace Seasons.BloodMoon
             clone = UnityEngine.Object.Instantiate(original);
             clone.name = original.name + "_SeasonsBloodCraft";
             clone.m_resources = Array.Empty<Piece.Requirement>();
-            clone.m_craftingStation = null;
-            clone.m_repairStation = null;
-            clone.m_minStationLevel = 1;
-            clone.m_requireOnlyOneIngredient = false;
             cloneByOriginal[original] = clone;
             originalByClone[clone] = original;
             return clone;
+        }
+
+        private static Recipe GetSourceRecipe(Recipe recipe)
+        {
+            return recipe != null && originalByClone.TryGetValue(recipe, out Recipe original) && original != null ? original : recipe;
+        }
+
+        private static bool MatchesSourceRecipe(ItemDrop.ItemData item, Recipe recipe)
+        {
+            return recipe != null && TryReadMarker(item, out _, out _, out _, out string sourceRecipeName) &&
+                string.Equals(sourceRecipeName, GetSourceRecipe(recipe)?.name, StringComparison.Ordinal);
         }
 
         private static void EnsureCloneEvent()
@@ -408,13 +485,14 @@ namespace Seasons.BloodMoon
             craftButtonBaseColors.Clear();
         }
 
-        private static void Mark(ItemDrop.ItemData item, long eventId, long playerId)
+        private static void Mark(ItemDrop.ItemData item, long eventId, long playerId, string sourceRecipeName)
         {
             long worldUid = GetCurrentWorldUid();
             item.m_customData[SchemaKey] = Schema.ToString(CultureInfo.InvariantCulture);
             item.m_customData[WorldUidKey] = worldUid.ToString(CultureInfo.InvariantCulture);
             item.m_customData[EventIdKey] = eventId.ToString(CultureInfo.InvariantCulture);
             item.m_customData[OwnerPlayerIdKey] = playerId.ToString(CultureInfo.InvariantCulture);
+            item.m_customData[SourceRecipeKey] = sourceRecipeName ?? string.Empty;
         }
 
         private static void CleanupInvalidInventory(Inventory inventory, Player owner)
@@ -426,7 +504,7 @@ namespace Seasons.BloodMoon
             {
                 if (!HasMarker(item))
                     continue;
-                if (!TryReadMarker(item, out long worldUid, out long eventId, out long ownerId) || owner == null || inventory != owner.GetInventory() ||
+                if (!TryReadMarker(item, out long worldUid, out long eventId, out long ownerId, out _) || owner == null || inventory != owner.GetInventory() ||
                     worldUid != GetCurrentWorldUid() || eventId != BloodMoonNetwork.ClientGlobal.EventId || ownerId != owner.GetPlayerID() || !IsAvailableFor(owner))
                     remove.Add(item);
             }
@@ -445,7 +523,7 @@ namespace Seasons.BloodMoon
             Player player = Player.m_localPlayer;
             if (player == null)
                 return true;
-            return inventory == player.GetInventory() && TryReadMarker(item, out long worldUid, out long eventId, out long ownerId) &&
+            return inventory == player.GetInventory() && TryReadMarker(item, out long worldUid, out long eventId, out long ownerId, out _) &&
                 worldUid == GetCurrentWorldUid() && eventId == BloodMoonNetwork.ClientGlobal.EventId && ownerId == player.GetPlayerID();
         }
 
@@ -471,10 +549,13 @@ namespace Seasons.BloodMoon
         [HarmonyPatch(typeof(InventoryGui), nameof(InventoryGui.AddRecipeToList))]
         private static class InventoryGuiAddRecipePatch
         {
-            private static void Prefix(Recipe recipe, ItemDrop.ItemData item, ref bool canCraft)
+            private static void Prefix(Player player, Recipe recipe, ItemDrop.ItemData item, ref bool canCraft)
             {
-                if (IsBloodRecipe(recipe) || IsTemporary(item))
-                    canCraft = true;
+                if (!IsBloodRecipe(recipe) && !IsTemporary(item))
+                    return;
+                Recipe sourceRecipe = GetSourceRecipe(recipe);
+                int quality = IsTemporary(item) ? item.m_quality + 1 : 1;
+                canCraft = CanUseSourceStation(player, sourceRecipe, quality) && (!IsTemporary(item) || MatchesSourceRecipe(item, sourceRecipe));
             }
 
             private static void Postfix(InventoryGui __instance, Recipe recipe, ItemDrop.ItemData item)
@@ -487,6 +568,12 @@ namespace Seasons.BloodMoon
         private static class InventoryGuiSetRecipePatch
         {
             private static void Postfix(InventoryGui __instance) => StyleCraftButton(__instance);
+        }
+
+        [HarmonyPatch(typeof(InventoryGui), nameof(InventoryGui.UpdateCraftingPanel))]
+        private static class InventoryGuiUpdateCraftingPanelPatch
+        {
+            private static void Postfix(InventoryGui __instance) => UpdateSelectedCraftability(__instance);
         }
 
         [HarmonyPatch(typeof(InventoryGui), nameof(InventoryGui.DoCrafting))]
