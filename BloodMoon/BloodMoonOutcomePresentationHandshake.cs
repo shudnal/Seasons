@@ -97,7 +97,6 @@ namespace Seasons.BloodMoon
         internal static void ResetRuntime()
         {
             serverRecords.Clear();
-            registeredRpc = null;
             eventId = -1L;
             publishingStartedAtRealtime = 0f;
         }
