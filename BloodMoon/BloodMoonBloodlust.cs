@@ -8,25 +8,8 @@ namespace Seasons.BloodMoon
 {
     internal static class BloodMoonBloodlust
     {
-        private const string RpcDamageReport = "Seasons.BloodMoon.LifestealDamage";
         private const string RpcHealingGrant = "Seasons.BloodMoon.LifestealGrant";
         private const float HealingWindowSeconds = 1f;
-
-        private readonly struct DamageReporterKey : IEquatable<DamageReporterKey>
-        {
-            internal readonly long EventId;
-            internal readonly long Sender;
-
-            internal DamageReporterKey(long eventId, long sender)
-            {
-                EventId = eventId;
-                Sender = sender;
-            }
-
-            public bool Equals(DamageReporterKey other) => EventId == other.EventId && Sender == other.Sender;
-            public override bool Equals(object obj) => obj is DamageReporterKey other && Equals(other);
-            public override int GetHashCode() => unchecked(EventId.GetHashCode() * 397 ^ Sender.GetHashCode());
-        }
 
         private readonly struct HealingWindowEntry
         {
@@ -50,12 +33,10 @@ namespace Seasons.BloodMoon
             internal float SwimSpeed;
         }
 
-        private static readonly Dictionary<DamageReporterKey, long> lastDamageSequenceByReporter = new Dictionary<DamageReporterKey, long>();
         private static readonly Dictionary<long, long> nextHealingGrantSequenceByPlayer = new Dictionary<long, long>();
         private static readonly Dictionary<long, long> lastHealingGrantSequenceByEvent = new Dictionary<long, long>();
         private static readonly Dictionary<long, Queue<HealingWindowEntry>> serverHealingWindows = new Dictionary<long, Queue<HealingWindowEntry>>();
         private static ZRoutedRpc registeredRpc;
-        private static long nextDamageReportSequence;
 
         internal static void RegisterRpc()
         {
@@ -64,7 +45,6 @@ namespace Seasons.BloodMoon
                 return;
 
             registeredRpc = rpc;
-            rpc.Register<ZPackage>(RpcDamageReport, OnDamageReport);
             rpc.Register<ZPackage>(RpcHealingGrant, OnHealingGrant);
         }
 
@@ -124,41 +104,34 @@ namespace Seasons.BloodMoon
             return Interpolate(0f, BloodMoonConfig.BloodlustFullLifestealFraction.Value, GetFactor(participant));
         }
 
-        internal static void ReportActualDamage(Character target, long eventId, long sourcePlayerId, float actualDamage)
+        internal static void AcceptAuthorizedDamage(long eventId, long sourcePlayerId, float actualDamage)
         {
-            if (target == null || target.m_nview == null || !target.m_nview.IsValid() || !target.m_nview.IsOwner() ||
-                eventId < 0L || sourcePlayerId == 0L || !IsFinitePositive(actualDamage) || !BloodMoonInteractionRules.IsBloodEnemy(target))
+            if (ZNet.instance == null || !ZNet.instance.IsServer() || !IsFinitePositive(actualDamage))
                 return;
 
-            ZDOID targetId = target.GetZDOID();
-            long sequence = ++nextDamageReportSequence;
-            if (ZNet.instance != null && ZNet.instance.IsServer())
-            {
-                long localOwner = ZDOMan.instance != null ? ZDOMan.GetSessionID() : 0L;
-                AcceptDamageReport(localOwner, eventId, sourcePlayerId, targetId, sequence, actualDamage, trustedLocalOwner: true);
-                return;
-            }
-
-            if (ZRoutedRpc.instance == null)
+            BloodMoonController controller = BloodMoonController.Instance;
+            BloodMoonEventState state = controller?.State;
+            if (state == null || eventId != state.EventId || !state.BloodBehaviorEnabled || !state.IsCombatLive || sourcePlayerId == 0L ||
+                !state.Participants.TryGetValue(sourcePlayerId, out BloodMoonParticipantState participant) || !participant.IsCombatActive)
                 return;
 
-            ZPackage package = new ZPackage();
-            package.Write(BloodMoonNetwork.ProtocolVersion);
-            package.Write(eventId);
-            package.Write(sourcePlayerId);
-            package.Write(targetId);
-            package.Write(sequence);
-            package.Write(actualDamage);
-            ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.instance.GetServerPeerID(), RpcDamageReport, package);
+            float fraction = GetLifestealFraction(participant);
+            if (fraction <= 0f)
+                return;
+
+            float requestedHealing = actualDamage * fraction;
+            if (!IsFinitePositive(requestedHealing) || !TryApplyServerHealingCap(sourcePlayerId, requestedHealing, out float grantedHealing))
+                return;
+
+            SendHealingGrant(controller, eventId, sourcePlayerId, grantedHealing);
         }
 
         internal static void ResetRuntime()
         {
-            lastDamageSequenceByReporter.Clear();
             nextHealingGrantSequenceByPlayer.Clear();
             lastHealingGrantSequenceByEvent.Clear();
             serverHealingWindows.Clear();
-            nextDamageReportSequence = 0L;
+            registeredRpc = null;
         }
 
         internal static MovementState ApplyWalkingMovement(Player player)
@@ -215,57 +188,6 @@ namespace Seasons.BloodMoon
             if (!IsFinite(full))
                 full = neutral;
             return Mathf.Lerp(neutral, Mathf.Max(0f, full), Mathf.Clamp01(factor));
-        }
-
-        private static void OnDamageReport(long sender, ZPackage package)
-        {
-            if (package == null || ZNet.instance == null || !ZNet.instance.IsServer() || package.ReadInt() != BloodMoonNetwork.ProtocolVersion)
-                return;
-
-            long eventId = package.ReadLong();
-            long sourcePlayerId = package.ReadLong();
-            ZDOID targetId = package.ReadZDOID();
-            long sequence = package.ReadLong();
-            float actualDamage = package.ReadSingle();
-            AcceptDamageReport(sender, eventId, sourcePlayerId, targetId, sequence, actualDamage, trustedLocalOwner: false);
-        }
-
-        private static void AcceptDamageReport(long sender, long eventId, long sourcePlayerId, ZDOID targetId, long sequence, float actualDamage, bool trustedLocalOwner)
-        {
-            BloodMoonController controller = BloodMoonController.Instance;
-            BloodMoonEventState state = controller?.State;
-            if (state == null || eventId != state.EventId || !state.BloodBehaviorEnabled || !state.IsCombatLive ||
-                sourcePlayerId == 0L || sequence <= 0L || !IsFinitePositive(actualDamage) ||
-                !state.Participants.TryGetValue(sourcePlayerId, out BloodMoonParticipantState participant) || !participant.IsCombatActive)
-                return;
-
-            ZDO targetZdo = ZDOMan.instance?.GetZDO(targetId);
-            if (targetZdo == null || !ValidateDamageReporter(sender, targetZdo, trustedLocalOwner) ||
-                !BloodMoonEnemyDeathReports.IsEligibleBloodEnemyZdo(eventId, targetZdo))
-                return;
-
-            DamageReporterKey reporterKey = new DamageReporterKey(eventId, sender);
-            if (lastDamageSequenceByReporter.TryGetValue(reporterKey, out long previousSequence) && sequence <= previousSequence)
-                return;
-            lastDamageSequenceByReporter[reporterKey] = sequence;
-
-            float fraction = GetLifestealFraction(participant);
-            if (fraction <= 0f)
-                return;
-
-            float requestedHealing = actualDamage * fraction;
-            if (!IsFinitePositive(requestedHealing) || !TryApplyServerHealingCap(sourcePlayerId, requestedHealing, out float grantedHealing))
-                return;
-
-            SendHealingGrant(controller, eventId, sourcePlayerId, grantedHealing);
-        }
-
-        private static bool ValidateDamageReporter(long sender, ZDO targetZdo, bool trustedLocalOwner)
-        {
-            long owner = targetZdo.GetOwner();
-            if (owner == 0L || ZDOMan.instance == null)
-                return false;
-            return trustedLocalOwner ? owner == ZDOMan.GetSessionID() : owner == sender;
         }
 
         private static bool TryApplyServerHealingCap(long playerId, float requested, out float granted)
