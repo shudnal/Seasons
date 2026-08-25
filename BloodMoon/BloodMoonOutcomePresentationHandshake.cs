@@ -148,8 +148,8 @@ namespace Seasons.BloodMoon
         {
             BloodMoonEventState state = BloodMoonController.Instance?.State;
             if (state == null || state.EventId != currentEventId || state.Phase != BloodMoonEventPhase.Resolving ||
-                state.ResolutionStep < BloodMoonResolutionStep.PublishingOutcomes || state.ResolutionStep >= BloodMoonResolutionStep.Complete ||
-                !state.Participants.ContainsKey(playerId))
+                (int)state.ResolutionStep < (int)BloodMoonResolutionStep.PublishingOutcomes ||
+                (int)state.ResolutionStep >= (int)BloodMoonResolutionStep.Complete || !state.Participants.ContainsKey(playerId))
                 return;
 
             if (eventId != currentEventId)
@@ -234,6 +234,16 @@ namespace Seasons.BloodMoon
             BloodMoonEventState state = __instance?.State;
             if (state != null && state.Phase == BloodMoonEventPhase.Resolving && state.ResolutionStep == BloodMoonResolutionStep.PublishingOutcomes)
                 BloodMoonOutcomePresentationHandshake.Begin(state.EventId);
+        }
+    }
+
+    [HarmonyPatch(typeof(BloodMoonOutcomeQueue), "TryAcknowledge")]
+    internal static class BloodMoonOutcomePresentationDurableAckPatch
+    {
+        private static void Postfix(long worldUid, long eventId, long playerId, bool __result)
+        {
+            if (__result)
+                BloodMoonOutcomePresentationHandshake.NotifyCompleted(worldUid, eventId, playerId);
         }
     }
 
