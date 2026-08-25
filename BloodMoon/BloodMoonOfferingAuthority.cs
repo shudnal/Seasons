@@ -251,9 +251,10 @@ namespace Seasons.BloodMoon
             if (state == null)
                 return true;
 
-            // The server state machine ticks discretely. Use the frozen schedule as well so an offering
-            // received just after 18:00 cannot slip through before the next Forewarning -> Marked tick.
-            if (state.Schedule != null && state.Schedule.IsValid && SeasonState.IsActive)
+            // The server state machine ticks discretely. Use the frozen schedule while still in
+            // Forewarning so an offering received just after 18:00 cannot slip through before the next
+            // Forewarning -> Marked tick. Skipped/Resolved events intentionally do not acquire this block.
+            if (state.Phase == BloodMoonEventPhase.Forewarning && state.Schedule != null && state.Schedule.IsValid && SeasonState.IsActive)
             {
                 double now = seasonState.GetTotalSeconds();
                 if (now >= state.Schedule.MarkedAt && now < state.Schedule.MorningAt)
