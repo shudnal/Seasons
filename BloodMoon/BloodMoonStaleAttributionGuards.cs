@@ -62,7 +62,6 @@ namespace Seasons.BloodMoon
             internal float RaiseSkillAmount;
             internal float Adrenaline;
             internal GameObject SpawnOnHit;
-            internal ItemDrop.ItemData SpawnItem;
             internal List<GameObject> RandomSpawnOnHit;
             internal OnProjectileHit OnHit;
         }
@@ -81,7 +80,6 @@ namespace Seasons.BloodMoon
                 RaiseSkillAmount = __instance.m_raiseSkillAmount,
                 Adrenaline = __instance.m_adrenaline,
                 SpawnOnHit = __instance.m_spawnOnHit,
-                SpawnItem = __instance.m_spawnItem,
                 RandomSpawnOnHit = __instance.m_randomSpawnOnHit,
                 OnHit = __instance.m_onHit
             };
@@ -91,7 +89,6 @@ namespace Seasons.BloodMoon
             __instance.m_raiseSkillAmount = 0f;
             __instance.m_adrenaline = 0f;
             __instance.m_spawnOnHit = null;
-            __instance.m_spawnItem = null;
             __instance.m_randomSpawnOnHit = EmptySpawnList;
             __instance.m_onHit = null;
         }
@@ -108,7 +105,6 @@ namespace Seasons.BloodMoon
                         __instance.m_raiseSkillAmount = __state.RaiseSkillAmount;
                         __instance.m_adrenaline = __state.Adrenaline;
                         __instance.m_spawnOnHit = __state.SpawnOnHit;
-                        __instance.m_spawnItem = __state.SpawnItem;
                         __instance.m_randomSpawnOnHit = __state.RandomSpawnOnHit;
                         __instance.m_onHit = __state.OnHit;
                     }
