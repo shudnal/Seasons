@@ -19,7 +19,9 @@ namespace Seasons.BloodMoon
         [HarmonyPriority(Priority.First)]
         private static bool Prefix(BloodMoonSpawnLeaseState lease, Vector2i zone)
         {
-            if (lease == null || lease.Allowance <= 0 || ZNetScene.instance == null)
+            BloodMoonGlobalSnapshot global = BloodMoonNetwork.ClientGlobal;
+            if (lease == null || lease.Allowance <= 0 || ZNetScene.instance == null || global == null ||
+                lease.EventId != global.EventId || global.SpawnsStopped || global.Phase == BloodMoonEventPhase.Resolving)
                 return false;
 
             string prefabName = BloodMoonConfig.TestEnemyPrefab.Value?.Trim();
