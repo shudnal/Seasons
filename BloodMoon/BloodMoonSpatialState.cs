@@ -151,12 +151,15 @@ namespace Seasons.BloodMoon
         }
     }
 
-    [HarmonyPatch(typeof(Player), nameof(Player.CustomFixedUpdate))]
+    [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.CustomFixedUpdate))]
     internal static class BloodMoonSpatialLocalStatePatch
     {
-        private static void Postfix(Player __instance, float dt)
+        private static void Postfix(Humanoid __instance, float fixedDeltaTime)
         {
-            BloodMoonSpatialState.TickLocal(__instance, dt);
+            if (__instance != Player.m_localPlayer)
+                return;
+
+            BloodMoonSpatialState.TickLocal((Player)__instance, fixedDeltaTime);
         }
     }
 

@@ -722,10 +722,10 @@ namespace Seasons.BloodMoon
             }
         }
 
-        [HarmonyPatch(typeof(Player), nameof(Player.CustomFixedUpdate))]
-        private static class PlayerCustomFixedUpdatePatch
+        [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.CustomFixedUpdate))]
+        private static class HumanoidCustomFixedUpdatePatch
         {
-            private static void Postfix(Player __instance)
+            private static void Postfix(Humanoid __instance)
             {
                 if (__instance == Player.m_localPlayer)
                     TickLocal();

@@ -6,19 +6,52 @@ using System.Reflection;
 
 namespace Seasons.BloodMoon
 {
-    [HarmonyPatch]
-    internal static class BloodMoonGenericWorldDestructibleDamagePatch
+    /// <summary>
+    /// Additional non-vanilla IDestructible implementations that are not
+    /// already covered by explicit Blood Moon patches.
+    /// </summary>
+    internal static class BloodMoonGenericDestructiblePatchTargets
     {
         private static readonly HashSet<Type> ExistingCoveredTypes = new HashSet<Type>
         {
-            typeof(WearNTear), typeof(Destructible), typeof(MineRock), typeof(MineRock5),
-            typeof(TreeBase), typeof(TreeLog), typeof(HitArea), typeof(Raven)
+            typeof(WearNTear),
+            typeof(Destructible),
+            typeof(MineRock),
+            typeof(MineRock5),
+            typeof(TreeBase),
+            typeof(TreeLog),
+            typeof(HitArea),
+            typeof(Raven)
         };
 
+        internal static readonly MethodBase[] Methods =
+            BloodMoonDestructibleTargets
+                .EnumerateWorldDamageMethods()
+                .Where(method =>
+                    method?.DeclaringType != null &&
+                    !ExistingCoveredTypes.Contains(method.DeclaringType))
+                .Distinct()
+                .ToArray();
+    }
+
+    [HarmonyPatch]
+    internal static class BloodMoonGenericWorldDestructibleDamagePatch
+    {
+        /// <summary>
+        /// Harmony considers a patch class without resolved originals invalid.
+        /// Skip the optional compatibility patch when no additional
+        /// IDestructible implementations are loaded.
+        /// </summary>
+        [HarmonyPrepare]
+        private static bool Prepare()
+        {
+            return BloodMoonGenericDestructiblePatchTargets.Methods.Length > 0;
+        }
+
+        [HarmonyTargetMethods]
         private static IEnumerable<MethodBase> TargetMethods()
         {
-            return BloodMoonDestructibleTargets.EnumerateWorldDamageMethods()
-                .Where(method => method?.DeclaringType != null && !ExistingCoveredTypes.Contains(method.DeclaringType));
+            return BloodMoonGenericDestructiblePatchTargets.Methods;
         }
 
         [HarmonyPriority(Priority.First)]
@@ -27,32 +60,49 @@ namespace Seasons.BloodMoon
             if (!BloodMoonInteractionRules.IsEventCombatLive || hit == null)
                 return true;
 
-            Character attacker = BloodMoonAttackContext.Attacker ?? hit.GetAttacker();
+            Character attacker =
+                BloodMoonAttackContext.Attacker ?? hit.GetAttacker();
+
             if (BloodMoonAttackContext.Attribution != null)
                 return false;
-            return !BloodMoonInteractionRules.IsParticipantCombatSource(attacker) && !BloodMoonInteractionRules.IsBloodEnemy(attacker);
+
+            return
+                !BloodMoonInteractionRules.IsParticipantCombatSource(attacker) &&
+                !BloodMoonInteractionRules.IsBloodEnemy(attacker);
         }
     }
 
     [HarmonyPatch]
     internal static class BloodMoonGenericStaleProjectileDamageGuardPatch
     {
-        private static readonly HashSet<Type> ExistingCoveredTypes = new HashSet<Type>
+        /// <summary>
+        /// This is also an optional compatibility patch and may legitimately
+        /// have no targets in a vanilla-only setup.
+        /// </summary>
+        [HarmonyPrepare]
+        private static bool Prepare()
         {
-            typeof(WearNTear), typeof(Destructible), typeof(MineRock), typeof(MineRock5),
-            typeof(TreeBase), typeof(TreeLog), typeof(HitArea), typeof(Raven)
-        };
+            return BloodMoonGenericDestructiblePatchTargets.Methods.Length > 0;
+        }
 
+        [HarmonyTargetMethods]
         private static IEnumerable<MethodBase> TargetMethods()
         {
-            return BloodMoonDestructibleTargets.EnumerateWorldDamageMethods()
-                .Where(method => method?.DeclaringType != null && !ExistingCoveredTypes.Contains(method.DeclaringType));
+            return BloodMoonGenericDestructiblePatchTargets.Methods;
         }
 
         [HarmonyPriority(Priority.First)]
         private static bool Prefix()
         {
-            return !BloodMoonStaleAttribution.BlockingProjectileDamage;
+            if (BloodMoonInteractionRules.IsEventCombatLive)
+                return true;
+
+            BloodMoonHitAttributionData attribution =
+                BloodMoonAttackContext.Attribution;
+
+            return attribution == null ||
+                   attribution.SourceType ==
+                   BloodMoonCombatSourceType.None;
         }
     }
 }

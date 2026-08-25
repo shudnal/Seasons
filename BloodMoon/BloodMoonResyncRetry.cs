@@ -88,12 +88,15 @@ namespace Seasons.BloodMoon
         }
     }
 
-    [HarmonyPatch(typeof(Player), nameof(Player.CustomFixedUpdate))]
-    internal static class BloodMoonLocalPlayerResyncRetryPatch
+    [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.CustomFixedUpdate))]
+    internal static class BloodMoonLocalHumanoidResyncRetryPatch
     {
-        private static void Postfix(Player __instance, float dt)
+        private static void Postfix(Humanoid __instance, float fixedDeltaTime)
         {
-            BloodMoonResyncRetry.Tick(__instance, dt);
+            if (__instance != Player.m_localPlayer)
+                return;
+
+            BloodMoonResyncRetry.Tick((Player)__instance, fixedDeltaTime);
         }
     }
 
