@@ -98,7 +98,6 @@ namespace Seasons.BloodMoon
             serverRecords.Clear();
             eventId = -1L;
             publishingStartedAtRealtime = 0f;
-            registeredRpc = null;
         }
 
         private static void Notify(long worldUid, long currentEventId, long playerId, bool completed)
