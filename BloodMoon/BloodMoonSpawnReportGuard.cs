@@ -39,18 +39,24 @@ namespace Seasons.BloodMoon
             return true;
         }
 
-        internal static bool IsAllowedExtraEnemyZdo(ZDO zdo, long eventId)
+        internal static bool IsAllowedExtraEnemyZdo(ZDO zdo, long eventId, string expectedPrefabName)
         {
-            if (zdo == null || eventId < 0L || zdo.GetLong(BloodMoonSpawner.EventMarker, -1L) != eventId || ZNetScene.instance == null)
+            if (zdo == null || eventId < 0L || string.IsNullOrEmpty(expectedPrefabName) ||
+                zdo.GetLong(BloodMoonSpawner.EventMarker, -1L) != eventId || ZNetScene.instance == null)
                 return false;
 
-            string configuredPrefab = BloodMoonConfig.TestEnemyPrefab.Value?.Trim();
-            if (string.IsNullOrEmpty(configuredPrefab))
+            int expectedPrefabHash = expectedPrefabName.GetStableHashCode();
+            if (zdo.GetPrefab() != expectedPrefabHash)
                 return false;
 
-            GameObject prefab = ZNetScene.instance.GetPrefab(zdo.GetPrefab());
-            return prefab != null && prefab.GetComponent<MonsterAI>() != null &&
-                string.Equals(prefab.name, configuredPrefab, StringComparison.Ordinal);
+            GameObject prefab = ZNetScene.instance.GetPrefab(expectedPrefabHash);
+            return prefab != null && prefab.GetComponent<MonsterAI>() != null;
+        }
+
+        internal static string GetExpectedPrefabName(long eventId)
+        {
+            BloodMoonEventState state = BloodMoonController.Instance?.State;
+            return state != null && state.EventId == eventId ? BloodMoonSpawner.GetFrozenSpawnPrefabName(state) : string.Empty;
         }
     }
 
@@ -61,19 +67,21 @@ namespace Seasons.BloodMoon
         private sealed class Watch
         {
             internal long EventId;
+            internal string PrefabName;
             internal double ExpiresAt;
         }
 
         private static readonly Dictionary<ZDOID, Watch> watches = new Dictionary<ZDOID, Watch>();
 
-        internal static void Queue(ZDOID id, long eventId, double now)
+        internal static void Queue(ZDOID id, long eventId, string prefabName, double now)
         {
-            if (id.IsNone() || eventId < 0L)
+            if (id.IsNone() || eventId < 0L || string.IsNullOrEmpty(prefabName))
                 return;
 
             watches[id] = new Watch
             {
                 EventId = eventId,
+                PrefabName = prefabName,
                 ExpiresAt = now + WatchLifetimeSeconds
             };
         }
@@ -88,14 +96,14 @@ namespace Seasons.BloodMoon
                 ZDO zdo = ZDOMan.instance.GetZDO(entry.Key);
                 if (zdo != null)
                 {
-                    if (BloodMoonSpawnReportValidation.IsAllowedExtraEnemyZdo(zdo, entry.Value.EventId))
+                    if (BloodMoonSpawnReportValidation.IsAllowedExtraEnemyZdo(zdo, entry.Value.EventId, entry.Value.PrefabName))
                     {
                         LogWarning($"[BloodMoon][event:{entry.Value.EventId}][spawn] Removing rejected marked spawn {entry.Key} after delayed replication.");
                         ZDOMan.instance.DestroyZDO(zdo);
                     }
                     else if (zdo.GetLong(BloodMoonSpawner.EventMarker, -1L) == entry.Value.EventId)
                     {
-                        LogWarning($"[BloodMoon][event:{entry.Value.EventId}][spawn] Refusing cleanup for rejected ZDO {entry.Key}: prefab is not an allowed Blood Moon extra enemy.");
+                        LogWarning($"[BloodMoon][event:{entry.Value.EventId}][spawn] Refusing cleanup for rejected ZDO {entry.Key}: prefab does not match the frozen Blood Moon spawn pool.");
                     }
                     watches.Remove(entry.Key);
                     continue;
@@ -126,6 +134,14 @@ namespace Seasons.BloodMoon
             if (eventId < 0L || state.ExtraEnemyZdos.Contains(spawnedId.ToString()))
                 return false;
 
+            string expectedPrefabName = BloodMoonSpawner.GetFrozenSpawnPrefabName(state);
+            int expectedPoolIdentity = BloodMoonSpawner.GetSpawnPoolIdentity(state);
+            if (expectedPoolIdentity == 0 || string.IsNullOrEmpty(expectedPrefabName))
+            {
+                LogWarning($"[BloodMoon][event:{eventId}][spawn] Rejected report for ZDO {spawnedId}: the event has no valid frozen spawn-pool identity.");
+                return false;
+            }
+
             // The ZDOID user/session component is immutable after creation. Only the peer that created
             // an object may report it, so a rejected report cannot be used to schedule another peer's
             // valid event extra for delayed cleanup.
@@ -136,18 +152,19 @@ namespace Seasons.BloodMoon
             }
 
             if (state.SpawnsStopped || !state.IsCombatLive)
-                return Reject(spawnedId, eventId, now);
+                return Reject(spawnedId, eventId, expectedPrefabName, now);
 
             string leaseKey = $"{groupId}:{zoneX}:{zoneY}";
             if (!state.SpawnLeases.TryGetValue(leaseKey, out BloodMoonSpawnLeaseState lease))
-                return Reject(spawnedId, eventId, now);
+                return Reject(spawnedId, eventId, expectedPrefabName, now);
 
             if (lease.OwnerPeerId != sender || lease.OwnerSessionId != sender || lease.EventId != eventId ||
-                lease.GroupRevision != groupRevision || lease.LeaseRevision != leaseRevision || lease.ExpiresAt < now || lease.Allowance <= 0)
-                return Reject(spawnedId, eventId, now);
+                lease.GroupRevision != groupRevision || lease.LeaseRevision != leaseRevision || lease.PoolRevision != expectedPoolIdentity ||
+                lease.ExpiresAt < now || lease.Allowance <= 0)
+                return Reject(spawnedId, eventId, expectedPrefabName, now);
 
             if (!state.Groups.TryGetValue(groupId, out BloodMoonGroupState group) || group.Revision != groupRevision)
-                return Reject(spawnedId, eventId, now);
+                return Reject(spawnedId, eventId, expectedPrefabName, now);
 
             ZDO zdo = ZDOMan.instance?.GetZDO(spawnedId);
             if (zdo != null)
@@ -160,11 +177,11 @@ namespace Seasons.BloodMoon
                 }
 
                 if (zdo.GetLong(BloodMoonSpawner.GroupMarker, -1L) != groupId || zdo.GetSector() != new Vector2i(zoneX, zoneY))
-                    return Reject(spawnedId, eventId, now);
+                    return Reject(spawnedId, eventId, expectedPrefabName, now);
 
-                if (!BloodMoonSpawnReportValidation.IsAllowedExtraEnemyZdo(zdo, eventId))
+                if (!BloodMoonSpawnReportValidation.IsAllowedExtraEnemyZdo(zdo, eventId, expectedPrefabName))
                 {
-                    LogWarning($"[BloodMoon][event:{eventId}][spawn] Rejected ZDO {spawnedId}: prefab is not the configured Blood Moon extra enemy.");
+                    LogWarning($"[BloodMoon][event:{eventId}][spawn] Rejected ZDO {spawnedId}: prefab does not match frozen spawn pool '{expectedPrefabName}'.");
                     return false;
                 }
             }
@@ -185,15 +202,15 @@ namespace Seasons.BloodMoon
             {
                 lease.Allowance = Math.Max(0, lease.Allowance - 1);
                 BloodMoonPersistence.Save(state);
-                return Reject(spawnedId, eventId, now);
+                return Reject(spawnedId, eventId, expectedPrefabName, now);
             }
 
             return true;
         }
 
-        private static bool Reject(ZDOID spawnedId, long eventId, double now)
+        private static bool Reject(ZDOID spawnedId, long eventId, string prefabName, double now)
         {
-            BloodMoonRejectedSpawnCleanup.Queue(spawnedId, eventId, now);
+            BloodMoonRejectedSpawnCleanup.Queue(spawnedId, eventId, prefabName, now);
             BloodMoonRejectedSpawnCleanup.Process(now);
             return false;
         }
@@ -227,9 +244,10 @@ namespace Seasons.BloodMoon
                 return;
 
             long eventId = zdo.GetLong(BloodMoonSpawner.EventMarker, -1L);
-            __result = BloodMoonSpawnReportValidation.IsAllowedExtraEnemyZdo(zdo, eventId);
+            string expectedPrefabName = BloodMoonSpawnReportValidation.GetExpectedPrefabName(eventId);
+            __result = BloodMoonSpawnReportValidation.IsAllowedExtraEnemyZdo(zdo, eventId, expectedPrefabName);
             if (!__result)
-                LogWarning($"[BloodMoon][event:{eventId}][spawn] Deferred report rejected for ZDO {zdo.m_uid}: prefab is not the configured Blood Moon extra enemy.");
+                LogWarning($"[BloodMoon][event:{eventId}][spawn] Deferred report rejected for ZDO {zdo.m_uid}: prefab does not match the frozen spawn pool.");
         }
     }
 
@@ -244,11 +262,12 @@ namespace Seasons.BloodMoon
                 return true;
 
             long eventId = zdo.GetLong(BloodMoonSpawner.EventMarker, -1L);
-            if (BloodMoonSpawnReportValidation.IsAllowedExtraEnemyZdo(zdo, eventId))
+            string expectedPrefabName = BloodMoonSpawnReportValidation.GetExpectedPrefabName(eventId);
+            if (BloodMoonSpawnReportValidation.IsAllowedExtraEnemyZdo(zdo, eventId, expectedPrefabName))
                 return true;
 
             if (eventId >= 0L)
-                LogWarning($"[BloodMoon][event:{eventId}][spawn] Refusing to destroy marked ZDO {id}: prefab is not an allowed Blood Moon extra enemy.");
+                LogWarning($"[BloodMoon][event:{eventId}][spawn] Refusing to destroy marked ZDO {id}: prefab cannot be validated against the frozen Blood Moon spawn pool.");
             return false;
         }
     }
@@ -262,21 +281,30 @@ namespace Seasons.BloodMoon
             if (state == null || ZDOMan.instance == null)
                 return false;
 
+            IDictionary pending = BloodMoonSpawnReportValidation.GetPendingReports();
+            if (state.EventId < 0L)
+            {
+                pending?.Clear();
+                state.ExtraEnemyZdos.Clear();
+                BloodMoonSpawner.StopServerLeases(state);
+                return false;
+            }
+
+            string expectedPrefabName = BloodMoonSpawner.GetFrozenSpawnPrefabName(state);
             double now = SeasonState.IsActive ? seasonState.GetTotalSeconds() : 0d;
             foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values
                 .Where(zdo => zdo.GetLong(BloodMoonSpawner.EventMarker, -1L) == state.EventId)
                 .ToArray())
             {
-                if (BloodMoonSpawnReportValidation.IsAllowedExtraEnemyZdo(zdo, state.EventId))
+                if (BloodMoonSpawnReportValidation.IsAllowedExtraEnemyZdo(zdo, state.EventId, expectedPrefabName))
                 {
                     ZDOMan.instance.DestroyZDO(zdo);
                     continue;
                 }
 
-                LogWarning($"[BloodMoon][event:{state.EventId}][spawn] Refusing cleanup for marked ZDO {zdo.m_uid}: prefab is not an allowed Blood Moon extra enemy.");
+                LogWarning($"[BloodMoon][event:{state.EventId}][spawn] Refusing cleanup for marked ZDO {zdo.m_uid}: prefab does not match frozen spawn pool '{expectedPrefabName}'.");
             }
 
-            IDictionary pending = BloodMoonSpawnReportValidation.GetPendingReports();
             if (pending != null)
             {
                 foreach (DictionaryEntry entry in pending)
@@ -284,7 +312,7 @@ namespace Seasons.BloodMoon
                     if (!BloodMoonSpawnReportValidation.TryReadPendingReport(entry.Value, out long pendingEvent, out _, out ZDOID pendingId) ||
                         pendingEvent != state.EventId || pendingId.IsNone())
                         continue;
-                    BloodMoonRejectedSpawnCleanup.Queue(pendingId, pendingEvent, now);
+                    BloodMoonRejectedSpawnCleanup.Queue(pendingId, pendingEvent, expectedPrefabName, now);
                 }
                 pending.Clear();
             }
@@ -305,11 +333,12 @@ namespace Seasons.BloodMoon
             if (state == null || ZDOMan.instance == null || state.ExtraEnemyZdos.Count == 0)
                 return;
 
+            string expectedPrefabName = BloodMoonSpawner.GetFrozenSpawnPrefabName(state);
             bool changed = false;
             foreach (string idValue in new List<string>(state.ExtraEnemyZdos))
             {
                 if (!BloodMoonSpawner.TryParseZdoId(idValue, out ZDOID id) ||
-                    !BloodMoonSpawnReportValidation.IsAllowedExtraEnemyZdo(ZDOMan.instance.GetZDO(id), state.EventId))
+                    !BloodMoonSpawnReportValidation.IsAllowedExtraEnemyZdo(ZDOMan.instance.GetZDO(id), state.EventId, expectedPrefabName))
                 {
                     state.ExtraEnemyZdos.Remove(idValue);
                     changed = true;
