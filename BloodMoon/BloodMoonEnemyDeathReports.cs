@@ -20,6 +20,9 @@ namespace Seasons.BloodMoon
             if (enemyZdo == null || enemyZdo.GetOwner() != sender || !IsEligibleBloodEnemyZdo(state.EventId, enemyZdo) || !IsObservedDead(enemyZdo))
                 return false;
 
+            if (!BloodMoonDamageCreditAuthority.TryGetConfirmedCredit(eventId, enemyId, out long confirmedPlayerId) || confirmedPlayerId != creditedPlayerId)
+                return false;
+
             serverPoints = BloodMoonCombat.GetPointsForEnemy(enemyId, 0f);
             return serverPoints > 0f && !float.IsNaN(serverPoints) && !float.IsInfinity(serverPoints);
         }
