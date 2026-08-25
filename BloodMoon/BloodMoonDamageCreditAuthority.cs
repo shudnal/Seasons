@@ -151,7 +151,7 @@ namespace Seasons.BloodMoon
             if (ZNet.instance != null && ZNet.instance.IsServer())
             {
                 long localOwner = ZDOMan.instance != null ? ZDOMan.GetSessionID() : 0L;
-                AcceptConfirmation(localOwner, eventId, targetId, sourceId, sourceType, playerId, actualDamage, trustedLocalTarget: true);
+                AcceptConfirmation(localOwner, eventId, targetId, sourceId, sourceType, playerId, actualDamage);
                 return;
             }
 
@@ -244,7 +244,7 @@ namespace Seasons.BloodMoon
                 !TryReadCommon(package, out long eventId, out ZDOID targetId, out ZDOID sourceId, out BloodMoonCombatSourceType sourceType, out long playerId))
                 return;
             float actualDamage = package.ReadSingle();
-            AcceptConfirmation(sender, eventId, targetId, sourceId, sourceType, playerId, actualDamage, trustedLocalTarget: false);
+            AcceptConfirmation(sender, eventId, targetId, sourceId, sourceType, playerId, actualDamage);
         }
 
         private static void AcceptAuthorization(long sender, long eventId, ZDOID targetId, ZDOID sourceId,
@@ -279,7 +279,7 @@ namespace Seasons.BloodMoon
         }
 
         private static void AcceptConfirmation(long sender, long eventId, ZDOID targetId, ZDOID sourceId,
-            BloodMoonCombatSourceType sourceType, long playerId, float actualDamage, bool trustedLocalTarget)
+            BloodMoonCombatSourceType sourceType, long playerId, float actualDamage)
         {
             BloodMoonController controller = BloodMoonController.Instance;
             BloodMoonEventState state = controller?.State;
@@ -289,8 +289,10 @@ namespace Seasons.BloodMoon
                 return;
 
             ZDO targetZdo = ZDOMan.instance.GetZDO(targetId);
-            if (targetZdo == null || !BloodMoonEnemyDeathReports.IsEligibleBloodEnemyZdo(eventId, targetZdo) ||
-                !trustedLocalTarget && targetZdo.GetOwner() != sender)
+            // The sender was the target owner when it observed the positive HP loss. Normal ZDO
+            // ownership can migrate before this routed RPC reaches the server, so current ownership is
+            // deliberately not used as a receive-time invariant.
+            if (targetZdo == null || !BloodMoonEnemyDeathReports.IsEligibleBloodEnemyZdo(eventId, targetZdo))
                 return;
 
             PurgeExpired();
@@ -320,16 +322,18 @@ namespace Seasons.BloodMoon
         {
             if (sourceType != BloodMoonCombatSourceType.Participant && sourceType != BloodMoonCombatSourceType.ParticipantSummon)
                 return false;
-            if (!trustedLocalSource && sourceZdo.GetOwner() != sender)
-                return false;
 
             if (sourceType == BloodMoonCombatSourceType.Participant)
             {
                 if (sourceZdo.GetLong(ZDOVars.s_playerID, 0L) != playerId)
                     return false;
+                // A participant authorization is still bound to that participant's routed peer. The
+                // source ZDO itself may have changed owner before the RPC is delivered.
                 return trustedLocalSource || controller.GetPeerForPlayer(playerId) == sender;
             }
 
+            // Summon ownership may migrate for the same reason. Its durable event/owner marker, rather
+            // than receive-time ZDO ownership, identifies the supported source.
             return BloodMoonSummons.ValidateMarkedSummonZdo(sourceZdo, eventId, playerId);
         }
 
@@ -346,7 +350,7 @@ namespace Seasons.BloodMoon
         private static bool TryConsumePendingConfirmation(AuthorizationKey key, out PendingConfirmation confirmation)
         {
             confirmation = null;
-            if (!pendingConfirmations.TryGetValue(key, out Queue<PendingConfirmation> confirmations) || confirmations.Count == 0)
+            if (!pendingConfirmations.TryGetValue(key, out Queue<PendingConfirmation>> confirmations) || confirmations.Count == 0)
                 return false;
             confirmation = confirmations.Dequeue();
             if (confirmations.Count == 0)
