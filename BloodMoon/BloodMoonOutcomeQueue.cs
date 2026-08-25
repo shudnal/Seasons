@@ -194,7 +194,6 @@ namespace Seasons.BloodMoon
             store = null;
             loadedWorldUid = 0L;
             retryTimer = 0f;
-            registeredRpc = null;
             pendingLocalAcks.Clear();
             pendingDreamCompletionKeys.Clear();
             pendingLocalProfileCaptured = false;
