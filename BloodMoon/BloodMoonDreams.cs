@@ -1,20 +1,23 @@
+using HarmonyLib;
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using UnityEngine;
-using UnityEngine.UI;
 using static Seasons.Seasons;
 
 namespace Seasons.BloodMoon
 {
     internal static class BloodMoonDreams
     {
+        private const string PendingPrefix = "Seasons.BloodMoon.PendingDream.";
         private const string PresentedPrefix = "Seasons.BloodMoon.DreamPresented.";
-        private static BloodMoonDreamPresenter activePresenter;
 
         internal static bool IsPresented(Player player, long eventId)
         {
             long worldUid = ZNet.m_world != null ? ZNet.m_world.m_uid : 0L;
-            return player != null && worldUid != 0L && eventId >= 0L && player.m_customData.ContainsKey(GetKey(worldUid, eventId));
+            return player != null && worldUid != 0L && eventId >= 0L &&
+                player.m_customData.ContainsKey(GetPresentedKey(worldUid, eventId));
         }
 
         internal static bool Present(Player player, long eventId, string chronicle)
@@ -22,26 +25,8 @@ namespace Seasons.BloodMoon
             long worldUid = ZNet.m_world != null ? ZNet.m_world.m_uid : 0L;
             if (player == null || player != Player.m_localPlayer || worldUid == 0L || eventId < 0L || string.IsNullOrWhiteSpace(chronicle))
                 return false;
-
-            long playerId = player.GetPlayerID();
             if (IsPresented(player, eventId))
-            {
-                BloodMoonOutcomePresentationHandshake.NotifyCompleted(worldUid, eventId, playerId);
                 return true;
-            }
-            if (activePresenter != null)
-            {
-                if (activePresenter.Matches(worldUid, eventId, playerId))
-                {
-                    BloodMoonOutcomePresentationHandshake.NotifyStarted(worldUid, eventId, playerId);
-                    return true;
-                }
-
-                // OutcomeQueue retries pending outcomes. Never destroy another event's active presenter:
-                // doing so would prevent its completion marker/ACK and could make multiple queued results
-                // continually cancel each other. The next retry starts this event after the current one ends.
-                return false;
-            }
 
             string text = SelectDreamText(chronicle);
             if (string.IsNullOrWhiteSpace(text))
@@ -50,99 +35,63 @@ namespace Seasons.BloodMoon
                 return false;
             }
 
-            try
-            {
-                if (!TryCreatePresenter(worldUid, eventId, playerId, text, out BloodMoonDreamPresenter presenter))
-                    return false;
-
-                activePresenter = presenter;
-                BloodMoonOutcomePresentationHandshake.NotifyStarted(worldUid, eventId, playerId);
-                LogInfo($"[BloodMoon.Outcome] Started DreamText presentation for event {eventId} through the current outcome path.");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                LogWarning($"[BloodMoon.Outcome] DreamText presentation failed for event {eventId}: {ex.Message}");
-                CleanupTransientPresentation();
-                return false;
-            }
+            string key = GetPendingKey(worldUid, eventId);
+            if (!player.m_customData.TryGetValue(key, out string existing) || !string.Equals(existing, text, StringComparison.Ordinal))
+                player.m_customData[key] = text;
+            return true;
         }
 
         internal static void CleanupTransientPresentation()
         {
-            if (activePresenter != null)
-                UnityEngine.Object.Destroy(activePresenter.gameObject);
-            activePresenter = null;
-            BloodMoonPresentation.SetDreamOverlayActive(false);
+            // Blood Moon dreams are profile-backed pending records and use vanilla SleepText.
+            // There is no transient presenter to destroy on world changes.
         }
 
-        internal static void OnPresenterDestroyed(BloodMoonDreamPresenter presenter, bool completed, long worldUid, long eventId, long playerId)
+        internal static bool TryGetPending(out long worldUid, out long eventId, out string text)
         {
-            if (ReferenceEquals(activePresenter, presenter))
-                activePresenter = null;
-            if (!completed)
-                return;
+            worldUid = ZNet.m_world != null ? ZNet.m_world.m_uid : 0L;
+            eventId = -1L;
+            text = string.Empty;
 
             Player player = Player.m_localPlayer;
-            if (player == null || player.GetPlayerID() != playerId || ZNet.m_world == null || ZNet.m_world.m_uid != worldUid)
-                return;
+            if (player == null || worldUid == 0L || player.m_customData == null)
+                return false;
 
-            player.m_customData[GetKey(worldUid, eventId)] = "1";
-            BloodMoonOutcomeQueue.OnLocalDreamPresentationCompleted(worldUid, eventId, playerId);
-            BloodMoonOutcomePresentationHandshake.NotifyCompleted(worldUid, eventId, playerId);
-            LogInfo($"[BloodMoon.Outcome] DreamText presentation completed for event {eventId}.");
+            string prefix = PendingPrefix + worldUid.ToString(CultureInfo.InvariantCulture) + ".";
+            KeyValuePair<string, string> pending = player.m_customData
+                .Where(entry => entry.Key.StartsWith(prefix, StringComparison.Ordinal))
+                .Select(entry => new
+                {
+                    Entry = entry,
+                    EventId = long.TryParse(entry.Key.Substring(prefix.Length), NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsed)
+                        ? parsed
+                        : -1L
+                })
+                .Where(item => item.EventId >= 0L && !string.IsNullOrWhiteSpace(item.Entry.Value))
+                .OrderBy(item => item.EventId)
+                .Select(item => item.Entry)
+                .FirstOrDefault();
+
+            if (string.IsNullOrEmpty(pending.Key))
+                return false;
+
+            if (!long.TryParse(pending.Key.Substring(prefix.Length), NumberStyles.Integer, CultureInfo.InvariantCulture, out eventId))
+                return false;
+
+            text = pending.Value;
+            return true;
         }
 
-        private static bool TryCreatePresenter(long worldUid, long eventId, long playerId, string text, out BloodMoonDreamPresenter presenter)
+        internal static void MarkPresented(long worldUid, long eventId)
         {
-            presenter = null;
-            Hud hud = Hud.instance;
-            GameObject source = hud?.m_sleepingProgress;
-            if (source == null || source.transform.parent == null)
-            {
-                LogWarning($"[BloodMoon.Outcome] Native sleep DreamText UI is not available for event {eventId}; delivery will retry.");
-                return false;
-            }
+            Player player = Player.m_localPlayer;
+            if (player == null || worldUid == 0L || eventId < 0L || ZNet.m_world == null || ZNet.m_world.m_uid != worldUid)
+                return;
 
-            GameObject clone = UnityEngine.Object.Instantiate(source, source.transform.parent);
-            clone.name = "SeasonsBloodMoonDreamText";
-            clone.SetActive(false);
-            clone.transform.SetAsLastSibling();
-
-            SleepText sleepText = clone.GetComponentInChildren<SleepText>(includeInactive: true);
-            if (sleepText == null || sleepText.m_dreamField == null)
-            {
-                UnityEngine.Object.Destroy(clone);
-                LogWarning($"[BloodMoon.Outcome] Native SleepText fields are unavailable for event {eventId}; delivery will retry.");
-                return false;
-            }
-
-            sleepText.CancelInvoke();
-            sleepText.enabled = false;
-            if (sleepText.m_textField != null)
-                sleepText.m_textField.gameObject.SetActive(false);
-
-            string localized = Localization.instance != null ? Localization.instance.Localize(text) : text;
-            sleepText.m_dreamField.text = localized;
-            sleepText.m_dreamField.enabled = true;
-            sleepText.m_dreamField.CrossFadeAlpha(0f, 0f, ignoreTimeScale: true);
-
-            GameObject backgroundObject = new GameObject("BloodMoonDreamBackground", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-            backgroundObject.transform.SetParent(clone.transform, worldPositionStays: false);
-            backgroundObject.transform.SetAsFirstSibling();
-            RectTransform backgroundRect = (RectTransform)backgroundObject.transform;
-            backgroundRect.anchorMin = Vector2.zero;
-            backgroundRect.anchorMax = Vector2.one;
-            backgroundRect.offsetMin = Vector2.zero;
-            backgroundRect.offsetMax = Vector2.zero;
-            Image background = backgroundObject.GetComponent<Image>();
-            background.color = Color.black;
-            background.raycastTarget = false;
-
-            presenter = clone.AddComponent<BloodMoonDreamPresenter>();
-            presenter.Initialize(worldUid, eventId, playerId, sleepText.m_dreamField, background);
-            clone.SetActive(true);
-            return true;
+            player.m_customData.Remove(GetPendingKey(worldUid, eventId));
+            player.m_customData[GetPresentedKey(worldUid, eventId)] = "1";
+            BloodMoonOutcomeQueue.OnLocalDreamPresentationCompleted(worldUid, eventId, player.GetPlayerID());
+            Game.instance?.SavePlayerProfile(false);
         }
 
         private static string SelectDreamText(string chronicle)
@@ -168,82 +117,34 @@ namespace Seasons.BloodMoon
             return string.Empty;
         }
 
-        private static string GetKey(long worldUid, long eventId)
+        private static string GetPendingKey(long worldUid, long eventId)
+        {
+            return PendingPrefix + worldUid.ToString(CultureInfo.InvariantCulture) + "." + eventId.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static string GetPresentedKey(long worldUid, long eventId)
         {
             return PresentedPrefix + worldUid.ToString(CultureInfo.InvariantCulture) + "." + eventId.ToString(CultureInfo.InvariantCulture);
         }
     }
 
-    internal sealed class BloodMoonDreamPresenter : MonoBehaviour
+    [HarmonyPatch(typeof(SleepText), nameof(SleepText.ShowDreamText))]
+    internal static class BloodMoonSleepDreamPatch
     {
-        private const float FadeInSeconds = 1f;
-        private const float HoldSeconds = 3f;
-        private const float FadeOutSeconds = 1f;
-
-        private TMPro.TMP_Text dreamField;
-        private Image background;
-        private float elapsed;
-        private bool initialized;
-        private bool released;
-        private bool completed;
-        private long worldUid;
-        private long eventId;
-        private long playerId;
-
-        internal void Initialize(long currentWorldUid, long currentEventId, long currentPlayerId, TMPro.TMP_Text field, Image backgroundImage)
+        [HarmonyPriority(Priority.First)]
+        private static bool Prefix(SleepText __instance)
         {
-            worldUid = currentWorldUid;
-            eventId = currentEventId;
-            playerId = currentPlayerId;
-            dreamField = field;
-            background = backgroundImage;
-            initialized = dreamField != null && background != null;
-            if (!initialized)
-                throw new InvalidOperationException("DreamText presenter dependencies are missing.");
+            if (__instance == null || __instance.m_dreamField == null ||
+                !BloodMoonDreams.TryGetPending(out long worldUid, out long eventId, out string text))
+                return true;
 
-            BloodMoonFadeInputGuard.AcquireDream();
-            BloodMoonPresentation.SetDreamOverlayActive(true);
-            dreamField.CrossFadeAlpha(1f, FadeInSeconds, ignoreTimeScale: true);
-        }
-
-        internal bool Matches(long expectedWorldUid, long expectedEventId, long expectedPlayerId)
-        {
-            return initialized && worldUid == expectedWorldUid && eventId == expectedEventId && playerId == expectedPlayerId;
-        }
-
-        private void Update()
-        {
-            if (!initialized)
-                return;
-
-            elapsed += Time.unscaledDeltaTime;
-            float fadeOutAt = FadeInSeconds + HoldSeconds;
-            if (elapsed >= fadeOutAt && elapsed - Time.unscaledDeltaTime < fadeOutAt)
-            {
-                dreamField.CrossFadeAlpha(0f, FadeOutSeconds, ignoreTimeScale: true);
-                background.CrossFadeAlpha(0f, FadeOutSeconds, ignoreTimeScale: true);
-            }
-
-            if (elapsed >= fadeOutAt + FadeOutSeconds)
-            {
-                completed = true;
-                UnityEngine.Object.Destroy(gameObject);
-            }
-        }
-
-        private void OnDestroy()
-        {
-            ReleaseGuards();
-            BloodMoonDreams.OnPresenterDestroyed(this, completed, worldUid, eventId, playerId);
-        }
-
-        private void ReleaseGuards()
-        {
-            if (released)
-                return;
-            released = true;
-            BloodMoonPresentation.SetDreamOverlayActive(false);
-            BloodMoonFadeInputGuard.ReleaseDream();
+            __instance.m_dreamField.text = Localization.instance != null ? Localization.instance.Localize(text) : text;
+            __instance.m_dreamField.enabled = true;
+            __instance.Invoke(nameof(SleepText.DelayedCrossFadeStart), 0.1f);
+            __instance.Invoke(nameof(SleepText.HideDreamText), 6.5f);
+            BloodMoonDreams.MarkPresented(worldUid, eventId);
+            LogInfo($"[BloodMoon.Outcome] Presented pending DreamText for event {eventId} through vanilla SleepText.");
+            return false;
         }
     }
 }
