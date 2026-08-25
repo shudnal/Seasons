@@ -62,6 +62,7 @@ namespace Seasons.BloodMoon
                 return;
             registeredRpc = rpc;
             rpc.Register<ZPackage>(RpcName, OnAttributionRpc);
+            BloodMoonOfferingAuthority.RegisterRpc();
             pendingHits.Clear();
         }
 
