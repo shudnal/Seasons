@@ -240,7 +240,8 @@ namespace Seasons.BloodMoon
                 return;
 
             ZDO targetZdo = ZDOMan.instance?.GetZDO(targetId);
-            if (targetZdo == null || !ValidateDamageReporter(sender, targetZdo, trustedLocalOwner))
+            if (targetZdo == null || !ValidateDamageReporter(sender, targetZdo, trustedLocalOwner) ||
+                !BloodMoonEnemyDeathReports.IsEligibleBloodEnemyZdo(eventId, targetZdo))
                 return;
 
             DamageReporterKey reporterKey = new DamageReporterKey(eventId, sender);
