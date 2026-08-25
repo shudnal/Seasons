@@ -121,10 +121,13 @@ namespace Seasons.BloodMoon
     [HarmonyPatch(typeof(Projectile), nameof(Projectile.FixedUpdate))]
     internal static class BloodMoonStaleProjectileTtlSpawnGuardPatch
     {
+        private static readonly List<GameObject> EmptySpawnList = new List<GameObject>();
+
         private sealed class State
         {
             internal bool Active;
-            internal bool SpawnOnTtl;
+            internal GameObject SpawnOnHit;
+            internal List<GameObject> RandomSpawnOnHit;
         }
 
         [HarmonyPriority(Priority.First)]
@@ -134,14 +137,23 @@ namespace Seasons.BloodMoon
             if (__instance == null || !__instance.m_spawnOnTtl || !BloodMoonStaleAttribution.IsStale(__instance, __instance.m_nview))
                 return;
 
-            __state = new State { Active = true, SpawnOnTtl = __instance.m_spawnOnTtl };
-            __instance.m_spawnOnTtl = false;
+            __state = new State
+            {
+                Active = true,
+                SpawnOnHit = __instance.m_spawnOnHit,
+                RandomSpawnOnHit = __instance.m_randomSpawnOnHit
+            };
+            __instance.m_spawnOnHit = null;
+            __instance.m_randomSpawnOnHit = EmptySpawnList;
         }
 
         private static Exception Finalizer(Exception __exception, Projectile __instance, State __state)
         {
             if (__state?.Active == true && __instance != null)
-                __instance.m_spawnOnTtl = __state.SpawnOnTtl;
+            {
+                __instance.m_spawnOnHit = __state.SpawnOnHit;
+                __instance.m_randomSpawnOnHit = __state.RandomSpawnOnHit;
+            }
             return __exception;
         }
     }
