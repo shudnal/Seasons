@@ -11,7 +11,6 @@ namespace Seasons.BloodMoon
     internal static class BloodMoonSpawnPoolRegistry
     {
         private const int Schema = 1;
-        private const int RetainedEvents = 16;
 
         [Serializable]
         private sealed class Store
@@ -59,7 +58,6 @@ namespace Seasons.BloodMoon
             }
 
             store.PrefabsByEvent[eventId] = prefabName;
-            TrimHistory();
             Save();
         }
 
@@ -134,15 +132,6 @@ namespace Seasons.BloodMoon
                 Save();
             }
             return result;
-        }
-
-        private static void TrimHistory()
-        {
-            if (store?.PrefabsByEvent == null || store.PrefabsByEvent.Count <= RetainedEvents)
-                return;
-
-            foreach (long eventId in store.PrefabsByEvent.Keys.OrderByDescending(value => value).Skip(RetainedEvents).ToArray())
-                store.PrefabsByEvent.Remove(eventId);
         }
 
         private static void Save()
