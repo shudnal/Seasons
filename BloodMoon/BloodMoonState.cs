@@ -189,6 +189,8 @@ namespace Seasons.BloodMoon
         public bool SpawnsStopped;
         public bool BloodBehaviorEnabled;
         public bool ResolutionCancelledBeforeCombat;
+        public bool SpawnPoolFrozen;
+        public string ExtraEnemyPrefab = string.Empty;
         public double UpdatedAt;
         public Dictionary<long, BloodMoonParticipantState> Participants = new Dictionary<long, BloodMoonParticipantState>();
         public Dictionary<long, BloodMoonGroupState> Groups = new Dictionary<long, BloodMoonGroupState>();
