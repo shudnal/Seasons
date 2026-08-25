@@ -11,14 +11,21 @@ namespace Seasons.BloodMoon
         private const string PresentedPrefix = "Seasons.BloodMoon.DreamPresented.";
         private static BloodMoonDreamPresenter activePresenter;
 
+        internal static bool IsPresented(Player player, long eventId)
+        {
+            long worldUid = ZNet.m_world != null ? ZNet.m_world.m_uid : 0L;
+            return player != null && worldUid != 0L && eventId >= 0L && player.m_customData.ContainsKey(GetKey(worldUid, eventId));
+        }
+
         internal static bool Present(Player player, long eventId, string chronicle)
         {
             long worldUid = ZNet.m_world != null ? ZNet.m_world.m_uid : 0L;
             if (player == null || player != Player.m_localPlayer || worldUid == 0L || eventId < 0L || string.IsNullOrWhiteSpace(chronicle))
                 return false;
 
-            string markerKey = GetKey(worldUid, eventId);
-            if (player.m_customData.ContainsKey(markerKey))
+            if (IsPresented(player, eventId))
+                return true;
+            if (activePresenter != null && activePresenter.Matches(worldUid, eventId, player.GetPlayerID()))
                 return true;
 
             string text = SelectDreamText(chronicle);
@@ -30,12 +37,13 @@ namespace Seasons.BloodMoon
 
             try
             {
-                if (!TryCreatePresenter(eventId, text, out BloodMoonDreamPresenter presenter))
+                if (activePresenter != null)
+                    UnityEngine.Object.Destroy(activePresenter.gameObject);
+                if (!TryCreatePresenter(worldUid, eventId, player.GetPlayerID(), text, out BloodMoonDreamPresenter presenter))
                     return false;
 
                 activePresenter = presenter;
-                player.m_customData[markerKey] = "1";
-                LogInfo($"[BloodMoon.Outcome] Presented DreamText for event {eventId} through the current outcome path.");
+                LogInfo($"[BloodMoon.Outcome] Started DreamText presentation for event {eventId} through the current outcome path.");
                 return true;
             }
             catch (Exception ex)
@@ -54,13 +62,23 @@ namespace Seasons.BloodMoon
             BloodMoonPresentation.SetDreamOverlayActive(false);
         }
 
-        internal static void OnPresenterDestroyed(BloodMoonDreamPresenter presenter)
+        internal static void OnPresenterDestroyed(BloodMoonDreamPresenter presenter, bool completed, long worldUid, long eventId, long playerId)
         {
             if (ReferenceEquals(activePresenter, presenter))
                 activePresenter = null;
+            if (!completed)
+                return;
+
+            Player player = Player.m_localPlayer;
+            if (player == null || player.GetPlayerID() != playerId || ZNet.m_world == null || ZNet.m_world.m_uid != worldUid)
+                return;
+
+            player.m_customData[GetKey(worldUid, eventId)] = "1";
+            BloodMoonOutcomeQueue.OnLocalDreamPresentationCompleted(worldUid, eventId, playerId);
+            LogInfo($"[BloodMoon.Outcome] DreamText presentation completed for event {eventId}.");
         }
 
-        private static bool TryCreatePresenter(long eventId, string text, out BloodMoonDreamPresenter presenter)
+        private static bool TryCreatePresenter(long worldUid, long eventId, long playerId, string text, out BloodMoonDreamPresenter presenter)
         {
             presenter = null;
             Hud hud = Hud.instance;
@@ -107,7 +125,7 @@ namespace Seasons.BloodMoon
             background.raycastTarget = false;
 
             presenter = clone.AddComponent<BloodMoonDreamPresenter>();
-            presenter.Initialize(eventId, sleepText.m_dreamField, background);
+            presenter.Initialize(worldUid, eventId, playerId, sleepText.m_dreamField, background);
             clone.SetActive(true);
             return true;
         }
@@ -143,20 +161,25 @@ namespace Seasons.BloodMoon
 
     internal sealed class BloodMoonDreamPresenter : MonoBehaviour
     {
-        private const float FadeInSeconds = 1.5f;
-        private const float HoldSeconds = 4.5f;
-        private const float FadeOutSeconds = 1.5f;
+        private const float FadeInSeconds = 1f;
+        private const float HoldSeconds = 3f;
+        private const float FadeOutSeconds = 1f;
 
         private TMPro.TMP_Text dreamField;
         private Image background;
         private float elapsed;
         private bool initialized;
         private bool released;
+        private bool completed;
+        private long worldUid;
         private long eventId;
+        private long playerId;
 
-        internal void Initialize(long currentEventId, TMPro.TMP_Text field, Image backgroundImage)
+        internal void Initialize(long currentWorldUid, long currentEventId, long currentPlayerId, TMPro.TMP_Text field, Image backgroundImage)
         {
+            worldUid = currentWorldUid;
             eventId = currentEventId;
+            playerId = currentPlayerId;
             dreamField = field;
             background = backgroundImage;
             initialized = dreamField != null && background != null;
@@ -166,6 +189,11 @@ namespace Seasons.BloodMoon
             BloodMoonFadeInputGuard.AcquireDream();
             BloodMoonPresentation.SetDreamOverlayActive(true);
             dreamField.CrossFadeAlpha(1f, FadeInSeconds, ignoreTimeScale: true);
+        }
+
+        internal bool Matches(long expectedWorldUid, long expectedEventId, long expectedPlayerId)
+        {
+            return initialized && worldUid == expectedWorldUid && eventId == expectedEventId && playerId == expectedPlayerId;
         }
 
         private void Update()
@@ -182,15 +210,16 @@ namespace Seasons.BloodMoon
             }
 
             if (elapsed >= fadeOutAt + FadeOutSeconds)
+            {
+                completed = true;
                 UnityEngine.Object.Destroy(gameObject);
+            }
         }
 
         private void OnDestroy()
         {
             ReleaseGuards();
-            BloodMoonDreams.OnPresenterDestroyed(this);
-            if (initialized)
-                LogInfo($"[BloodMoon.Outcome] DreamText presentation completed for event {eventId}.");
+            BloodMoonDreams.OnPresenterDestroyed(this, completed, worldUid, eventId, playerId);
         }
 
         private void ReleaseGuards()
