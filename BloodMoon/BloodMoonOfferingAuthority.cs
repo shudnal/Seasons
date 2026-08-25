@@ -1,3 +1,4 @@
+using HarmonyLib;
 using UnityEngine;
 
 namespace Seasons.BloodMoon
@@ -129,6 +130,15 @@ namespace Seasons.BloodMoon
             GameObject prefab = ZNetScene.instance.GetPrefab(bowlZdo.GetPrefab());
             OfferingBowl bowl = prefab != null ? prefab.GetComponentInChildren<OfferingBowl>(true) : null;
             return bowl != null && bowl.m_bossPrefab != null;
+        }
+    }
+
+    [HarmonyPatch(typeof(BloodMoonNetwork), nameof(BloodMoonNetwork.RegisterRpcs))]
+    internal static class BloodMoonOfferingAuthorityRegistrationPatch
+    {
+        private static void Postfix()
+        {
+            BloodMoonOfferingAuthority.RegisterRpc();
         }
     }
 }
