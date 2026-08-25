@@ -96,7 +96,7 @@ namespace Seasons.BloodMoon
             Vector3 point = package.ReadVector3();
             bool removeItemsFromInventory = package.ReadBool();
 
-            if (eventId < 0L || bowlId.IsNone() || requester == 0L)
+            if (eventId < 0L || eventId != BloodMoonNetwork.ClientGlobal.EventId || bowlId.IsNone() || requester == 0L)
                 return;
 
             GameObject instance = ZNetScene.instance.FindInstance(bowlId);
