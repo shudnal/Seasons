@@ -126,12 +126,28 @@ namespace Seasons.BloodMoon
         }
     }
 
+    internal struct BloodMoonDamageObservation
+    {
+        internal bool Track;
+        internal float BeforeHealth;
+        internal long EventId;
+        internal long SourcePlayerId;
+    }
+
+    internal struct BloodMoonProjectileHitState
+    {
+        internal bool ContextStarted;
+        internal bool RestoreHealthReturn;
+        internal float HealthReturn;
+    }
+
     [HarmonyPatch(typeof(Character), nameof(Character.RPC_Damage))]
     internal static class BloodMoonCharacterRpcDamagePatch
     {
         [HarmonyPriority(Priority.First)]
-        private static bool Prefix(Character __instance, HitData hit)
+        private static bool Prefix(Character __instance, HitData hit, out BloodMoonDamageObservation __state)
         {
+            __state = default;
             if (hit == null || !__instance.IsOwner())
                 return true;
 
@@ -158,8 +174,56 @@ namespace Seasons.BloodMoon
 
             if (!Mathf.Approximately(attributedMultiplier, 1f))
                 hit.ApplyModifier(attributedMultiplier);
+
+            if (__instance is Player targetPlayer)
+            {
+                bool fromBloodEnemy = attributed
+                    ? attribution?.SourceType == BloodMoonCombatSourceType.BloodEnemy
+                    : BloodMoonInteractionRules.IsBloodEnemy(attacker);
+                if (fromBloodEnemy)
+                {
+                    float bloodlustIncoming = BloodMoonBloodlust.GetIncomingMultiplier(targetPlayer);
+                    if (!Mathf.Approximately(bloodlustIncoming, 1f))
+                        hit.ApplyModifier(bloodlustIncoming);
+                }
+            }
+
             BloodMoonCombat.RecordCreditedHit(__instance, attacker, attribution);
+
+            if (BloodMoonInteractionRules.IsBloodEnemy(__instance) && TryGetPlayerDamageSource(attacker, attribution, out long sourcePlayerId))
+            {
+                __state.Track = true;
+                __state.BeforeHealth = Mathf.Max(0f, __instance.GetHealth());
+                __state.EventId = BloodMoonNetwork.ClientGlobal.EventId;
+                __state.SourcePlayerId = sourcePlayerId;
+            }
             return true;
+        }
+
+        private static void Postfix(Character __instance, BloodMoonDamageObservation __state)
+        {
+            if (!__state.Track || __instance == null || !__instance.IsOwner())
+                return;
+            float actualDamage = Mathf.Max(0f, __state.BeforeHealth - Mathf.Max(0f, __instance.GetHealth()));
+            if (actualDamage > 0f)
+                BloodMoonBloodlust.ReportActualDamage(__instance, __state.EventId, __state.SourcePlayerId, actualDamage);
+        }
+
+        private static bool TryGetPlayerDamageSource(Character attacker, BloodMoonHitAttributionData attribution, out long playerId)
+        {
+            playerId = 0L;
+            if (attribution != null)
+            {
+                if (attribution.SourceType != BloodMoonCombatSourceType.Participant || !BloodMoonHitAttribution.CanCredit(attribution))
+                    return false;
+                playerId = attribution.SourcePlayerId;
+                return playerId != 0L;
+            }
+
+            if (attacker is not Player player || !BloodMoonInteractionRules.IsActiveParticipant(player))
+                return false;
+            playerId = player.GetPlayerID();
+            return playerId != 0L;
         }
     }
 
@@ -249,7 +313,22 @@ namespace Seasons.BloodMoon
             if (attribution != null)
                 BloodMoonHitAttribution.QueueForTarget(attribution, __instance);
             if (BloodMoonInteractionRules.IsBloodEnemy(__instance))
+            {
                 BloodMoonAttackContext.AllowedCharacterHit = true;
+                Player sourcePlayer = null;
+                if (attribution?.SourceType == BloodMoonCombatSourceType.Participant && Player.m_localPlayer != null &&
+                    attribution.SourcePlayerId == Player.m_localPlayer.GetPlayerID())
+                    sourcePlayer = Player.m_localPlayer;
+                else if (attribution == null && BloodMoonAttackContext.Attacker is Player player)
+                    sourcePlayer = player;
+
+                if (sourcePlayer != null)
+                {
+                    float bloodlustOutgoing = BloodMoonBloodlust.GetOutgoingMultiplier(sourcePlayer);
+                    if (!Mathf.Approximately(bloodlustOutgoing, 1f))
+                        hit.ApplyModifier(bloodlustOutgoing);
+                }
+            }
             return true;
         }
     }
@@ -297,9 +376,9 @@ namespace Seasons.BloodMoon
     [HarmonyPatch(typeof(Projectile), nameof(Projectile.OnHit))]
     internal static class BloodMoonProjectileOnHitPatch
     {
-        private static bool Prefix(Projectile __instance, Collider collider, out bool __state)
+        private static bool Prefix(Projectile __instance, Collider collider, out BloodMoonProjectileHitState __state)
         {
-            __state = false;
+            __state = default;
             if (!BloodMoonInteractionRules.IsEventCombatLive || collider == null)
                 return true;
 
@@ -307,33 +386,58 @@ namespace Seasons.BloodMoon
             Character target = hitObject != null ? hitObject.GetComponent<Character>() : null;
             if (BloodMoonHitAttribution.TryGet(__instance, __instance.m_nview, out BloodMoonHitAttributionData attribution))
             {
-                if (target == null || !BloodMoonHitAttribution.CanDamage(attribution, target))
+                if (target != null && !BloodMoonHitAttribution.CanDamage(attribution, target))
                     return false;
+
                 BloodMoonAttackContext.Begin(attribution);
-                BloodMoonAttackContext.AllowedCharacterHit = BloodMoonInteractionRules.IsBloodEnemy(target);
-                __state = true;
+                BloodMoonAttackContext.AllowedCharacterHit = target != null && BloodMoonInteractionRules.IsBloodEnemy(target);
+                __state.ContextStarted = true;
+                SuppressWorldHealthReturn(__instance, target, ref __state);
                 return true;
             }
 
             Character owner = __instance.m_owner;
             if (owner == null)
                 return true;
-            if (target == null)
-                return !BloodMoonInteractionRules.IsParticipantCombatSource(owner) && !BloodMoonInteractionRules.IsBloodEnemy(owner);
-            return BloodMoonCombat.CanDirectDamage(owner, target, __instance.m_originalHitData, out _);
+            bool bloodSource = BloodMoonInteractionRules.IsParticipantCombatSource(owner) || BloodMoonInteractionRules.IsBloodEnemy(owner);
+            if (!bloodSource)
+                return true;
+            if (target != null && !BloodMoonCombat.CanDirectDamage(owner, target, __instance.m_originalHitData, out _))
+                return false;
+
+            BloodMoonAttackContext.Begin(owner);
+            BloodMoonAttackContext.AllowedCharacterHit = target != null && BloodMoonInteractionRules.IsBloodEnemy(target);
+            __state.ContextStarted = true;
+            SuppressWorldHealthReturn(__instance, target, ref __state);
+            return true;
         }
 
-        private static void Postfix(bool __state)
+        private static void Postfix(Projectile __instance, BloodMoonProjectileHitState __state)
         {
-            if (__state)
-                BloodMoonAttackContext.End();
+            Restore(__instance, __state);
         }
 
-        private static Exception Finalizer(Exception __exception, bool __state)
+        private static Exception Finalizer(Exception __exception, Projectile __instance, BloodMoonProjectileHitState __state)
         {
-            if (__state)
-                BloodMoonAttackContext.End();
+            Restore(__instance, __state);
             return __exception;
+        }
+
+        private static void SuppressWorldHealthReturn(Projectile projectile, Character target, ref BloodMoonProjectileHitState state)
+        {
+            if (projectile == null || target != null || Mathf.Approximately(projectile.m_healthReturn, 0f))
+                return;
+            state.RestoreHealthReturn = true;
+            state.HealthReturn = projectile.m_healthReturn;
+            projectile.m_healthReturn = 0f;
+        }
+
+        private static void Restore(Projectile projectile, BloodMoonProjectileHitState state)
+        {
+            if (projectile != null && state.RestoreHealthReturn)
+                projectile.m_healthReturn = state.HealthReturn;
+            if (state.ContextStarted)
+                BloodMoonAttackContext.End();
         }
     }
 
