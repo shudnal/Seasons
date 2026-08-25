@@ -17,7 +17,10 @@ namespace Seasons.BloodMoon
                 return false;
 
             ZDO enemyZdo = ZDOMan.instance.GetZDO(enemyId);
-            if (enemyZdo == null || enemyZdo.GetOwner() != sender || !IsEligibleBloodEnemyZdo(state.EventId, enemyZdo) || !IsObservedDead(enemyZdo))
+            // Ownership can migrate after the owner observes death but before its routed report reaches
+            // the server. Event identity, observed dead state and matched damage credit remain stable
+            // validation inputs; receive-time ownership does not.
+            if (enemyZdo == null || !IsEligibleBloodEnemyZdo(state.EventId, enemyZdo) || !IsObservedDead(enemyZdo))
                 return false;
 
             if (!BloodMoonDamageCreditAuthority.TryGetConfirmedCredit(eventId, enemyId, out long confirmedPlayerId) || confirmedPlayerId != creditedPlayerId)
@@ -38,7 +41,7 @@ namespace Seasons.BloodMoon
                 return false;
 
             ZDO enemyZdo = ZDOMan.instance.GetZDO(enemyId);
-            return enemyZdo != null && enemyZdo.GetOwner() == sender && IsEligibleBloodEnemyZdo(state.EventId, enemyZdo);
+            return enemyZdo != null && IsEligibleBloodEnemyZdo(state.EventId, enemyZdo);
         }
 
         internal static bool IsObservedDead(ZDO zdo)
