@@ -4,34 +4,31 @@ namespace Seasons.BloodMoon
 {
     internal static class BloodMoonFadeInputGuard
     {
-        internal static bool Blocking { get; private set; }
+        private static bool resolutionBlocking;
+        private static int dreamBlocks;
 
-        internal static void Set(bool blocking)
+        internal static bool Blocking => resolutionBlocking || dreamBlocks > 0;
+
+        internal static void SetResolution(bool blocking)
         {
-            Blocking = blocking;
+            resolutionBlocking = blocking;
+        }
+
+        internal static void AcquireDream()
+        {
+            dreamBlocks++;
+        }
+
+        internal static void ReleaseDream()
+        {
+            if (dreamBlocks > 0)
+                dreamBlocks--;
         }
 
         internal static void Reset()
         {
-            Blocking = false;
-        }
-    }
-
-    [HarmonyPatch(typeof(BloodMoonPresentation), nameof(BloodMoonPresentation.SetResolutionFade))]
-    internal static class BloodMoonResolutionFadeStatePatch
-    {
-        private static void Prefix(bool begin)
-        {
-            BloodMoonFadeInputGuard.Set(begin);
-        }
-    }
-
-    [HarmonyPatch(typeof(BloodMoonPresentation), nameof(BloodMoonPresentation.OnResolutionComplete))]
-    internal static class BloodMoonResolutionInputReleasePatch
-    {
-        private static void Postfix()
-        {
-            BloodMoonFadeInputGuard.Reset();
+            resolutionBlocking = false;
+            dreamBlocks = 0;
         }
     }
 
