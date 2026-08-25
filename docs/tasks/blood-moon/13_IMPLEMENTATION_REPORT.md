@@ -1,20 +1,22 @@
 # Blood Moon implementation report
 
-This document is the implementation and recovery checkpoint for the complete Blood Moon first gameplay slice on `feat/blood-moon`. The authoritative design remains `docs/tasks/CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md` plus `docs/tasks/blood-moon/01` through `12`.
+This document is the implementation and recovery checkpoint for the Blood Moon gameplay slice on `feat/blood-moon`. The authoritative product and architecture contract remains `docs/tasks/CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md` plus `docs/tasks/blood-moon/01` through `12`.
 
-## Repository status
+## Repository checkpoint
 
 ```text
 base branch: master
 implementation branch: feat/blood-moon
 pull request: #42
 pull request state: draft / open / not merged
-code-freeze reviewed head: 0be8eb89d600a95720f08387041fb7ab15ccd5f7
+pre-documentation hardening head: 3e653828134b7cbeaf888e9044e2b7ddca9bd98b
 ```
 
-The plugin version, public README, Thunderstore changelog and packaging/release metadata are intentionally unchanged.
+The final documentation-inclusive review head is intentionally recorded in the PR timeline after this documentation freeze so the reviewed SHA can remain exact without another documentation-only commit.
 
-No local Valheim build or runtime execution was performed by the assistant, per owner workflow. Static verification used the current decompiled game source first:
+The plugin version, public README, Thunderstore changelog and packaging/release metadata remain unchanged.
+
+Per owner workflow, the assistant did not build or run the Valheim mod. Static verification used the current decompiled game source first:
 
 ```text
 repository: https://github.com/shudnal/assemblies_combined
@@ -23,317 +25,255 @@ commit: cf2cda3a4c5c05e62cb8052a61753e5dcaecc28e
 
 ## Implemented architecture
 
-### Explicit state machines and frozen schedule
+### Explicit state machines and frozen annual schedule
 
-The server owns the event lifecycle:
+The server owns explicit event and resolution state machines. Participant phase and exit reason are independent, with `GoalReached` preserved after later `Defeated`, `Withdrawn` or disconnect.
 
-```text
-Dormant
-Forewarning
-Marked
-Active
-AutoCompleting
-Resolving
-Resolved
-Skipped
-```
-
-Participant state is independent:
+The event schedule is frozen and persisted from the event world day and event-time day length. Default boundaries remain:
 
 ```text
-None
-Marked
-Fighting
-GoalReached
-Exited
-Resolved
+forewarning start: autumn day 6
+final autumn day: 9
+Marked: 18:00
+Active: 23:00
+AutoCompleting: 04:15
+forced end: 05:45
+morning target: 06:00
 ```
 
-Participant exit reason is stored separately as `Defeated`, `Withdrawn` or `Disconnected`, and `GoalReached` remains an independent fact.
+Pre-combat feature disable is now handled directly by the production resolution path: it runs cleanup but does not advance time or publish normal outcomes.
 
-The annual schedule is frozen and persisted per event. With default settings it provides forewarning, Marked, Active, auto-completion, forced-end and 06:00 morning boundaries. Pre-combat feature disable uses a persisted cancellation path and never advances the world to the event morning or publishes normal success outcomes.
+### Persistence and restart recovery
 
-### Durable event persistence
+Current event state uses world-UID-bound JSON persistence with canonical, `.new` and `.old` candidates. Recovery chooses the newest valid snapshot instead of blindly preferring the canonical file.
 
-The current world event state is stored under the Seasons Blood Moon config directory. Persistence validates schema and world UID. Recovery examines canonical, `.new` and `.old` candidates and chooses the newest valid state by revision, update time and file timestamp instead of blindly preferring the canonical file. A recovered fallback is rewritten as canonical.
+Extra-enemy spawn identity and parked-boss recovery also have durable server-side/ZDO evidence. Matching active state is reconstructed; stale extras and parked bosses are reconciled without depending on live `Character` instances on a dedicated server.
 
-State-changing boundaries persist before dependent work continues. Restart reconciliation advances the recovered state to the correct frozen phase before normal publication.
+Persisted participants receive bounded reconnect grace after a server restart before disconnect becomes terminal.
 
-Boss parking also stores durable markers directly on the boss ZDO, so recovery does not depend exclusively on the JSON sidecar.
+### CCS and targeted RPC split
 
-### Network authority and privacy
+Normal CCS `CustomSyncedValue<string>` carries recoverable global/public routing snapshots. It is not used as an event queue.
 
-CCS publishes only global routing state and public participant routing state. Personal progress, contribution, report sequence and live-skill budget remain private and are delivered only to the owning player.
+Targeted/custom RPC is used for:
 
-Routed RPC handlers validate the appropriate authority boundary:
+- Defeated notification;
+- enemy death reports;
+- private participant detail and explicit resync;
+- boss discovery;
+- per-zone spawn claims, leases and reports;
+- immutable projectile/AOE attribution transfer;
+- Bloodlust actual-damage/lifesteal grants;
+- fade acknowledgement;
+- durable outcome delivery/acknowledgement;
+- outcome-presentation start/completion acknowledgement.
 
-- server sender for server-to-client event traffic;
-- peer/player identity for participant reports;
-- immutable ZDOID creator and current ownership where object authority matters;
-- event, group, group revision, zone, lease revision and frozen spawn-pool identity for extra-enemy reports;
-- server-observed ZDO state for credited enemy deaths.
+Resync is monotonic for same-event revisions, and private skill baselines are restored before new live-bonus reporting.
 
-Explicit resync is monotonic: an older response cannot overwrite a newer same-event CCS snapshot. Resync retries after the local Player exists until current global, public and private state align, and skill report sequence/live-bonus baselines are preserved.
+### Presentation and environment
 
-### Presentation, environment and suppression
+`Seasons_BloodMoon` is cloned from vanilla `Fader` rather than mutating the source environment. The required red-channel, wind and sun-angle changes are applied to the clone.
 
-Blood Moon presentation is derived from vanilla runtime objects instead of mutating shared source definitions.
+Forewarning/Marked overlays are transient around vanilla `EnvMan.SetEnv`; Active uses a force-environment lease. The cloned `Ashlands_FaderFX` keeps only the intended cloud objects and scales particle emission without altering the vanilla source object.
 
-- `Seasons_BloodMoon` is cloned from vanilla `Fader`.
-- All `EnvSetup` color fields receive the required red-channel treatment.
-- Forewarning/Marked presentation is applied around vanilla environment selection with exception-safe restoration.
-- Active uses a force-environment lease and releases only the lease owned by Blood Moon.
-- Fader cloud presentation is cloned/filtered rather than modifying the vanilla source object.
-- Random-event suppression is owned explicitly and is released on resolution and world teardown.
-- Sleep and boss-producing offering interactions are guarded during their required phases.
-- Resolution fade waits for acknowledgements with a timeout and blocks local Player input until release.
-- The supplied `blood_moon.png` sprite is used for Blood Moon and recovery status presentation.
+Random-event suppression, sleep blocking and boss-offering blocking are phase-scoped and released by resolution/world teardown.
 
-Real-time-calendar worlds never feed UTC/calendar absolute seconds into Valheim net time. The frozen 06:00 transition uses the correct net-time domain and broadcasts the resulting net time.
+Real-time-calendar worlds never feed calendar absolute seconds into Valheim net time. Ordinary worlds advance to the frozen morning target and explicitly broadcast the resulting net time.
 
-### Hidden combat groups and spatial state
+### Groups and per-zone spawning
 
-The server rebuilds connected combat groups with merge/split hysteresis. Group anchors are positions of actual members. GoalReached participants remain valid helpers while Fighting members remain.
+The server owns hidden combat groups, hysteresis, caps, group revisions and frozen spawn-pool identity. Actual extra-enemy spawning is performed only by the client that owns each relevant loaded zone/`SpawnSystem`.
 
-Teleporting players remain enrolled but are temporarily excluded from spawn-anchor/zone calculations by heartbeat/TTL spatial suspension so interrupted teleport state self-recovers.
+Server validation covers:
 
-AI targeting, boss encounter selection and mixed spawn contexts distinguish surface from interior navigation context. Interior comparisons use the resolved vanilla `Location` when available and otherwise fall back to the relevant zone context.
+- event ID;
+- group and group revision;
+- zone;
+- owner/session;
+- lease revision;
+- lease expiry;
+- group/server cap;
+- immutable ZDO creator identity;
+- exact frozen prefab identity;
+- `MonsterAI` presence.
 
-### Zone-owner extra-enemy spawning
+Received lease lifetime is rebased once to Unity `Time.realtimeSinceStartup`; OS wall-clock changes cannot extend or prematurely expire a client lease.
 
-The dedicated server does not pretend to own vanilla client-side loaded-zone spawning. A client owning a loaded `SpawnSystem` reports the relevant sector, and the server independently verifies the claim against raw owned SpawnSystem ZDO state.
+Surface and interior spawning remain separate. Interior extras use authored loaded `CreatureSpawner` positions without invoking their spawn bookkeeping. Mixed surface/interior zones preserve both candidate sets.
 
-Leases carry:
+### Existing-monster behavior
+
+Existing eligible hostile `MonsterAI` are identified dynamically. They receive runtime Blood behavior only; no persistent HuntPlayer/alert conversion marker, level mutation, max-health rewrite or shared-prefab mutation is applied.
+
+AI target selection distinguishes surface/interior navigation context. Static-target pressure, flee/idle behavior and no-monster-area suppression are overridden only inside the Blood Moon runtime policy.
+
+Existing monsters retain ordinary loot and survive event end normally if not killed.
+
+### Combat routing and projectile lifecycle
+
+Owner-side `Character.RPC_Damage` remains the final permission guard. Early direct-attack, projectile and AOE filters prevent forbidden hits from producing status, push, stagger or skill credit.
+
+World-object damage protection covers the current vanilla `IDestructible` implementations with `Damage(HitData)` verified in the game source, including build pieces, destructibles, rocks, trees, hit areas and Raven targets.
+
+Projectile collision semantics were hardened in two directions:
+
+1. an active Blood-source projectile hitting world geometry still follows vanilla hit/effect/attach/destroy lifecycle while world damage and unrelated health-return side effects are suppressed;
+2. a stale Blood-attributed projectile after event rollover/end also follows vanilla collision/destruction instead of phasing through geometry, while damage, skill/adrenaline credit and persistent spawn-on-hit/TTL effects are suppressed.
+
+AOE from stale event attribution is rejected.
+
+### Actual-damage credit and Bloodlust
+
+Combat progress and Bloodlust use earned `CombatPoints`, never auto-complete display progress. `GoalReached` pins earned factor to full strength while the participant remains combat-active.
+
+Current provisional full-factor endpoints are server-controlled configs:
 
 ```text
-event ID
-group ID
-group revision
-zone
-owner peer/session
-lease revision
-anchor
-allowance
-group cap
-server hard cap
-frozen spawn-pool identity
-expiry
+outgoing damage: 1.25x
+incoming damage: 0.75x
+movement speed: 1.10x
+lifesteal: 10% of actual Blood-enemy HP loss
+lifesteal cap: 10% current max HP per rolling second
 ```
 
-Client lease lifetime is rebased into the receiving client's monotonic time domain rather than comparing independent real-time-calendar clocks.
+Movement is applied only around local walking/swimming calculations and original character fields are restored in postfix/finalizer paths.
 
-The event's extra-enemy prefab is frozen once before the first lease is issued. The frozen prefab name is persisted in the event state, and its stable prefab hash is carried in the existing `PoolRevision` field. Live config changes therefore cannot change an already-running event's spawn identity.
+Death-credit and lifesteal accounting now commit only after the target owner observes positive actual HP loss. Fully blocked/resisted/zero-damage hits cannot overwrite the last credited player.
 
-A separate server-only durable spawn-pool registry stores:
+Lifesteal is server-granted. The target owner reports actual HP loss; the server validates current event/participant state, target ZDO ownership, raw Blood-enemy eligibility, report sequence and the rolling HPS cap before sending a healing grant. This is an integrity boundary, not an anti-cheat claim: the owner still supplies the measured damage magnitude.
 
-```text
-world UID -> event ID -> frozen prefab name
-```
+Participant summons can contribute progress through immutable attribution, but direct lifesteal is limited to direct participant damage.
 
-The registry uses canonical/`.new`/`.old` recovery and preserves complete event history. This allows stale extras from prior events to be validated and removed after the current event state has already been replaced, without falling back to trusting arbitrary client markers.
+### Defeated and recovery
 
-Spawn reports are accepted only when all authoritative facts align. The reported ZDO must:
+Local `Character.CheckDeath` remains the interception point before `Player.OnDeath`. Static verification confirms Player death state uses the ZDO `s_dead` flag, so `health <= 0` can be intercepted before vanilla death processing.
 
-- be created by the reporting peer;
-- belong to the current event/group/leased sector;
-- match the current lease revision and frozen pool identity;
-- resolve to the exact frozen prefab;
-- contain `MonsterAI`.
+Defeated behavior:
 
-Deferred report validation repeats the prefab/enemy check after ZDO replication. Rejected reports use bounded delayed cleanup, and cleanup refuses to destroy unrelated marked ZDOs.
+- no grave, death point, ragdoll, respawn or vanilla skill loss;
+- health/stamina/eitr restored to current maxima;
+- food/adrenaline retained;
+- only the explicitly allowed vanilla damaging DoT types are removed;
+- stage 1 gives full incoming protection until stabilization, maximum 15 seconds;
+- stage 2 lasts 10 seconds at 0.25 incoming damage;
+- no transform/velocity reset;
+- no re-entry.
 
-Surface spawning uses distance, terrain, visibility and path checks. Interior spawning uses authored loaded `CreatureSpawner` positions without invoking the spawner's own respawn bookkeeping. Mixed zones partition surface/interior targets and preserve both contexts. Resolution explicitly blocks the replacement mixed-context spawner so an outstanding lease cannot race the spawn freeze.
+A durable world/event-bound local Defeated marker now survives process loss independently of the short recovery timer. On reconnect it restores the local terminal state and retries the Defeated notification while the server still reports that participant as combat-active. The marker is cleared only by a new authoritative `enroll` for a new/restarted diagnostic participation cycle.
 
-### Extra-enemy lifecycle and cleanup
+### Bosses
 
-Blood Moon extras carry event/group/role markers and have no ordinary loot. Ragdoll drops are disabled and event ragdoll lifetime is shortened safely after vanilla setup ordering.
+Boss-producing `OfferingBowl` interactions are blocked from Marked onward. Vanilla source verification confirms offering items/attachments are consumed only after owner-side `RPC_SpawnBoss` accepts the request; once accepted, `DelayedSpawnBoss` is not cancelled by the Blood Moon transition.
 
-Resolution and recovery clean all validated extras for the event, including extras whose report was lost entirely, while preserving unrelated structures, players or other prefabs even if a modified client forged event markers on them.
+The narrow remaining race to verify in multiplayer is an interaction initiated just before Marked whose owner RPC is received only after Marked. The authoritative guard currently rejects an RPC received after the block becomes active; no speculative cross-peer preauthorization protocol was added without runtime evidence that this boundary is observable in practice.
 
-Dormant state with `EventId == -1` never scans ordinary unmarked world ZDOs as event extras.
+Persistent outdoor bosses use marker-first far-sector parking on the same ZDO. The server takes ownership, writes a deterministic far position, zeros serialized velocity, force-sends and briefly reasserts authority. Restore returns the same persistent ZDO to its durable original position and clears markers last.
 
-Stale prior-event cleanup uses the durable server-side spawn-pool registry and therefore retains the same exact-prefab/`MonsterAI` validation instead of weakening the security rule.
-
-### Existing-monster behavior and damage routing
-
-Existing Blood enemies are selected dynamically from eligible loaded hostile `MonsterAI` characters. They are not permanently converted and no persistent HuntPlayer/event-conversion mutation is written to ordinary monsters.
-
-The interaction matrix remains active through early `Resolving` while the authoritative `BloodBehaviorEnabled` flag is still set. Final owner-side `Character.RPC_Damage` guarding plus earlier direct/projectile/AOE filtering enforce the allowed event combat routes.
-
-Environmental/unattributed hazards remain able to damage participants. Participant-to-participant bypasses are not opened by claimed Blood-enemy attribution: claimed sources are validated against the raw ZDO enemy predicate and sender authority.
-
-Projectile, AOE and summon attribution records immutable event/source facts. Stale attribution from an earlier event cannot become valid again after rollover.
-
-### Enemy-death credit and progress
-
-A death report never trusts client-provided points. The server validates sender authority, enemy eligibility and server-observed `ZDOVars.s_health <= 0`. Otherwise-valid reports can wait briefly for delayed health replication before expiring.
-
-Enemy IDs are persisted and deduplicated exactly once. Combat points, display progress and contribution are distinct. GoalReached uses real combat progress only; auto-completion affects display progress without manufacturing combat credit or rewards.
-
-Late defeat reports are rejected once global combat resolution has started, so the final participant outcome cannot be rewritten during fade/cleanup.
-
-### Defeated, Withdrawn and recovery
-
-Defeated intercepts the local Player death before vanilla grave/respawn handling for active participants. It preserves inventory/food/adrenaline, restores current resource maxima, removes only computed damaging vanilla DoTs, avoids teleporting or resetting velocity and enters terminal personal recovery without vanilla SoftDeath.
-
-Recovery state is world/event bound in Player custom data and survives reconnect/global morning resolution. Withdrawal is a distinct terminal exit used for unsupported boss/world-edge cases and does not move the Player.
-
-Boss discovery and boss withdrawal both require the same navigation context as the reporting/affected participant. A surface boss is therefore not parked because a player happens to be in a vertically separated dungeon at similar XZ coordinates.
-
-### Boss parking
-
-Persistent outdoor bosses use marker-first durable parking. The server takes ownership, zeros serialized movement, relocates the same ZDO to a deterministic far slot, forces replication and briefly reasserts the parked transform to cover old-owner revision races.
-
-Original position has explicit marker presence, so world origin is valid. Recovery can reconstruct the parking transaction from ZDO markers even if the sidecar transaction is absent. Interior/nonpersistent bosses are not parked; affected participants in the same encounter context are withdrawn instead.
+Interior/nonpersistent encounters withdraw only affected participants in the same navigation context.
 
 ### Blood Craft
 
-Blood Craft derives temporary recipe clones from already-known, currently enabled combat recipes without mutating the source recipe. Temporary item identity is bound to schema, world UID, event ID and owner player ID.
+Blood Craft uses runtime clones of already-known, enabled combat recipes without mutating source recipes. The source recipe name is stored in the temporary item marker, preventing output-identity ambiguity between recipes that produce the same prefab.
 
-Implemented invariants include:
+Temporary item identity is bound to schema, world UID, event ID, owner player ID and source recipe. Stack, transfer, world-drop, container and world-consumer boundaries preserve the inventory-only invariant.
 
-- no Blood Craft resource/station cost;
-- permanent recipe remains available;
-- temporary upgrade only targets the matching temporary item;
-- invalid world/event/owner stacks cannot merge;
-- multi-craft respects vanilla maximum stack size;
-- stale world `ItemDrop` and stale container items are cleaned safely;
-- transfer to external inventories/world sinks is rejected at vanilla boundaries;
-- item/armor stands, fermenter, cooking station, smelter, turret and catapult are guarded;
-- automatic consumers prefer permanent equivalents where possible;
-- disabled source or upgrade recipes are excluded;
-- temporary combat summons are attributable and cleaned at personal/global boundaries;
-- unsafe `TriggerSpawnAbility` world mutation is excluded from Blood Craft.
+Source station semantics are retained for both creation and upgrade:
 
-World-transition cleanup preserves valid active-event Blood Craft inventory until the recovered world/event/owner context is known, then removes stale markers.
+- resources are free;
+- the original crafting/repair station type is required when the source recipe requires one;
+- normal vanilla quality-to-station-level progression is preserved;
+- permanent recipes/items do not become free upgrades.
 
-### Skill accounting and rewards
+Vanilla preflight was hardened for `m_requireOnlyOneIngredient`: `Recipe.GetAmount` is overridden only for the selected Blood Craft path so empty free-clone resources cannot dereference a missing ingredient before `DoCrafting`. Temporary-upgrade material requirement rows are hidden while station/quality requirements remain visible and enforced.
 
-Live skill accounting observes the real `Player.RaiseSkill` override, not the base Character method. It tracks nonlinear level-equivalent progress, separates base contribution from the x3 live bonus and enforces the server-provided sequence/budget baseline after reconnect.
+Temporary summons retain event/owner attribution and are removed by personal/global cleanup. Known persistent-world-spawner ability paths remain excluded.
 
-Completion rewards use persisted contribution, configured eligible skills, total budget and per-skill cap. Application stores monotonic absolute targets so an interrupted replay cannot reduce later legitimate skill progress.
+### Skills, chronicle and durable outcomes
 
-### Durable outcomes
+Live skill tracking observes actual `Player.RaiseSkill` calls and uses nonlinear level-equivalent progress. Server-side sequence/budget baselines prevent reconnect from resetting the +10 live-bonus budget.
 
-Final outcomes are captured independently of the single current event state before resolution publication. They are stored in a per-world durable outcome queue with canonical/`.new`/`.old` newest-valid recovery.
+Completion rewards preserve the configured +25 total budget, top-five contribution selection and +10 per-skill cap with no overflow redistribution.
 
-The queue contains per-player event ID, serialized completion reward and chronicle. Offline players therefore keep their undelivered outcome even after a later annual event replaces the current event state.
+Per-player outcomes are stored independently from the single current event state, so offline delivery survives later annual events.
 
-Client application is idempotent and writes a full-outcome marker only after reward, chronicle/DreamText state and one-time Rested removal complete successfully.
+Dream/chronicle delivery no longer intercepts the next ordinary sleep. The current resolution outcome creates a dedicated presentation from the native `SleepText` UI, with its own black background and local input guard. Current timing is approximately 1 second fade-in, 3 seconds hold and 1 second fade-out.
 
-Acknowledgement is persistence-aware:
+Resolution has a separate outcome-presentation handshake:
 
-- local profiles acknowledge only after the Player data was captured and `PlayerProfile.Save()` completed successfully;
-- cloud profiles do **not** treat vanilla `Save() == true` as durable proof, because current Valheim can return true after a cloud `FileWriter` failure while only writing a local recovery backup;
-- for cloud profiles the server queue is retained until a fresh process observes the outcome marker loaded back from character persistence;
-- listen-host delivery follows the same durable rule.
+- connected clients report presentation start/completion;
+- the server keeps the original minimum presentation hold;
+- late-starting presentation delays `ReleasingClients` until completion;
+- missing start/completion uses bounded real-time fail-safe timeouts;
+- offline participants do not block resolution;
+- presentation acknowledgement is separate from durable profile-persistence acknowledgement.
 
-This closes the crash window between mutating the local Player and removing the server-side durable outcome.
+The final outcome marker is written only after DreamText presentation completes. Server queue removal still waits for proven character persistence; cloud profile save success is not treated as durable proof when vanilla may have produced only a local recovery backup.
 
 ### Resolution transaction
 
-Resolution is persisted as ordered replayable steps:
+The production controller now owns the previously scattered hardening directly. Resolution performs:
 
-1. freeze enrollment;
-2. stop new spawn leases;
-3. request client fade and wait for acknowledgements/timeout;
-4. disable Blood behavior;
-5. clean validated extras;
-6. restore parked bosses;
-7. clean temporary Blood Craft state and temporary summons;
-8. restore environment/random-event systems;
-9. advance ordinary-world net time to the frozen 06:00 target when applicable;
-10. capture/publish durable outcomes;
-11. release clients and input;
-12. finalize Resolved state.
+1. enrollment freeze;
+2. spawn lease freeze;
+3. fade request and real-time ACK timeout;
+4. Blood behavior disable;
+5. validated extra cleanup;
+6. boss restore;
+7. temporary item/summon cleanup;
+8. environment/random-event restore;
+9. ordinary-world morning net-time advance when applicable;
+10. durable outcome capture/delivery;
+11. presentation start/completion wait with bounded fail-safe;
+12. client/input release;
+13. Resolved finalization.
 
-Pre-combat cancellation follows the cleanup transaction but skips morning advance and normal outcome publication.
+Corrective self-patches for pre-combat cancellation, calendar time, net-time broadcast, defeat-report phase guard and recovery DoT policy were removed after their behavior was integrated into the production paths. A stale patch targeting the no-longer-existing `ReplayResolvedOutcomes` method was removed with that consolidation.
 
-## Review hardening incorporated
+## Static verification performed in this hardening pass
 
-Multiple full-diff Codex passes plus manual freeze audits produced and verified fixes for, among other issues:
+The latest manual pass re-read the relevant current game classes before changing their patches, including:
 
-- private resync skill baselines and local-player-ready retries;
-- active Blood Craft recovery across world transitions;
-- pre-combat cancellation time skip;
-- random-event suppression leakage across world unload;
-- boss and AI surface/interior context;
-- environmental hazard damage;
-- direct attack Harmony target enumeration and the real `Player.RaiseSkill` override;
-- mixed-context spawning;
-- server-observed enemy death validation;
-- world-scoped chronicle identity;
-- independent durable offline outcome queue;
-- monotonic resync envelopes;
-- real-time-calendar net-time and lease-time domains;
-- newest-valid persistence recovery;
-- hostile attribution validation;
-- interaction routing through early resolution;
-- disabled Blood Craft recipes;
-- arbitrary marked-ZDO spawn-report injection;
-- resolution spawn race;
-- persistence-aware outcome acknowledgement;
-- late defeat reports;
-- dormant `EventId == -1` cleanup;
-- frozen per-event extra prefab identity;
-- stale prior-event extra cleanup through durable spawn-pool history.
+- `Character` death/movement/damage flow;
+- `Player` death semantics and player ZDO identity;
+- `Projectile` collision, damage, skill/adrenaline and TTL behavior;
+- current `IDestructible` implementations;
+- `Recipe.GetAmount`;
+- `InventoryGui.OnCraftPressed`, `SetupRequirementList`, `HideRequirement` and `DoCrafting`;
+- `OfferingBowl` inventory/item-stand/RPC/delayed-spawn flow;
+- Player-profile persistence paths already documented by earlier review work.
 
-The exact code-freeze head `0be8eb89d600a95720f08387041fb7ab15ccd5f7` received a Codex result with no major issues. Review chronology and exact findings are recorded in `14_CODE_REVIEW_STATUS.md`.
+A compile-oriented source audit also removed invalid relational comparisons between C# enum values and checked current private Harmony target names against the implementation. This is static source verification only; it is not a successful build claim.
 
-## Static game-source verification
+## Runtime acceptance still required
 
-Critical game/API behavior was checked against `shudnal/assemblies_combined@cf2cda3a4c5c05e62cb8052a61753e5dcaecc28e`, including:
+Owner-side Valheim testing remains the release gate. The full matrix is in `08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md`; priority scenarios after this hardening are:
 
-- `ZRoutedRpc`, `ZNetPeer`, Player ZDO identity and sender semantics;
-- `ZDOID` creator identity, `ZDOMan` ownership and sectors;
-- `ZNetScene.GetPrefab(string/int)` and stable prefab hashes;
-- `SpawnSystem`, `CreatureSpawner`, `BaseAI`, `MonsterAI` and `AnimalAI`;
-- `Location.GetLocation` and interior context;
-- `Character.CheckDeath`, damage/RPC flow and ZDO health;
-- `Projectile`, `Aoe`, `SpawnAbility` and `TriggerSpawnAbility`;
-- `Ragdoll` setup/destruction behavior;
-- `OfferingBowl`, `Bed`, `RandEventSystem`, `EnvMan` and `EnvSetup`;
-- vanilla inventory/container/world-consumer boundaries;
-- `Skills` and the `Player.RaiseSkill` override;
-- `PlayerProfile.SavePlayerData`, `PlayerProfile.Save`, `FileWriter` and `FileHelpers.ReplaceOldFile`, including cloud-save failure semantics.
+- annual single-player/listen/dedicated lifecycle;
+- restart/reconnect in Active and every resolution step;
+- Defeated followed by immediate process loss before the first notification/save;
+- recovery through protection expiry and later reconnect;
+- direct/melee/projectile/AOE/summon combat with zero-damage and blocked hits;
+- Bloodlust endpoint behavior, actual-damage lifesteal and rolling HPS cap;
+- active and stale projectile collision against terrain/build pieces/characters;
+- mixed surface/interior groups and zone-owner migration;
+- configured extra prefab changes across active-event restart;
+- persistent boss parking and unsupported boss withdrawal;
+- OfferingBowl interaction immediately around the 18:00 transition;
+- Blood Craft `m_requireOnlyOneIngredient`, temporary upgrades, station levels, multi-craft and third-party inventories;
+- DreamText immediate morning presentation under latency, disconnect and reconnect;
+- local and cloud durable outcome acknowledgement;
+- real-time-calendar mode and OS clock changes;
+- 04:15 / 05:45 / 06:00 boundaries and fade/input release.
 
-## Diagnostics
-
-`seasons bloodmoon` includes diagnostic paths for event status, phase forcing, progress/GoalReached, Defeated/Withdrawn, marked debug spawning, boss park/restore, resolution/cleanup and participant/group/zone/monster/boss/sync dumps. Diagnostics reuse production transitions/cleanup rather than maintaining a separate state machine.
-
-## Runtime verification gate
-
-No assistant-side build or runtime execution was performed.
-
-Owner-side playtest must still cover the acceptance matrix in `08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md`, including at minimum:
-
-- single-player, listen-host and dedicated multiplayer annual lifecycle;
-- late join/reconnect and dedicated-server restart during Active/Resolving;
-- Defeated from combat and environmental hazards;
-- recovery on ground, in water and while falling;
-- GoalReached helper behavior, Defeated and Withdrawn;
-- real owner migration with in-flight leases/reports;
-- mixed surface/interior participants and authored interior spawners;
-- boss parking/restoration and unsupported encounter withdrawal;
-- Blood Craft inventory/world-sink/temporary-summon boundaries;
-- live x3 budget, reconnect baseline and completion reward replay;
-- offline outcome delivery and local/cloud persistence acknowledgement;
-- config change of extra-enemy prefab during an active event and across restart;
-- lost spawn report followed by resolution cleanup;
-- dormant world recovery with no event;
-- stale extra from a prior event after a later event state exists;
-- real-time-calendar mode;
-- pre-combat feature-disable cancellation;
-- 04:15/05:45/06:00 final-night behavior and fade/input release.
-
-## Known limitations and deferred work
+## Known limitations and deferred content
 
 - Blood Moon music assets are not supplied; music work remains paused.
-- Blood Moon-specific runtime wording is English-first until playtest wording stabilizes.
-- Automatic raid/trophy/key/achievement-derived enemy-pool progression remains the future contract in `06_FUTURE_PROGRESSION_AND_REWARDS.md`; this implementation uses the explicit configured bootstrap prefab and freezes that identity per event.
-- Third-party world sinks or inventory implementations that bypass vanilla guarded boundaries may require compatibility patches after runtime discovery.
-- Exact parked-boss animation/target/coroutine/HUD runtime state is intentionally not reconstructed; the same persistent ZDO is restored and vanilla runtime state resumes.
+- Runtime wording is English-first until owner playtest stabilizes it.
+- Automatic raid/trophy/key/achievement-derived enemy-pool progression remains the future contract in `06_FUTURE_PROGRESSION_AND_REWARDS.md`; the current event freezes the explicit configured bootstrap prefab.
+- Third-party inventory/world-consumer systems that bypass vanilla guarded boundaries may require compatibility work after a concrete runtime report.
+- Exact parked-boss animation/target/coroutine/HUD state is intentionally not reconstructed.
+- The sub-second OfferingBowl request-in-flight boundary across the Marked transition remains an explicit multiplayer runtime acceptance item as described above.
 
 ## Continuation rule
 
-PR #42 must remain draft and unmerged until explicit owner approval. Runtime defects, decisions and fixes must be recorded in the repository before continuing. Release metadata remains untouched until the owner explicitly requests the release step.
+PR #42 must remain draft and unmerged until explicit owner approval. Any runtime defect, accepted compatibility issue or changed design decision must be recorded in the repository before the next implementation step. Release metadata remains untouched until the owner explicitly requests release work.
