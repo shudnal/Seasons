@@ -173,8 +173,10 @@ namespace Seasons.BloodMoon
         [JsonProperty] public HashSet<string> ReportedEnemyDeaths = new HashSet<string>();
         [JsonProperty] public HashSet<string> ExtraEnemyZdos = new HashSet<string>();
 
+        // Compatibility-only runtime projection for existing status output. It is rebuilt from ZDO markers
+        // on every access and is excluded from the durable JSON contract.
         [JsonIgnore]
-        public IReadOnlyDictionary<string, BloodMoonBossParkingState> ParkedBosses => BloodMoonBosses.GetParkingDiagnostics();
+        public IReadOnlyDictionary<string, BloodMoonBossParkingDiagnostic> ParkedBosses => BloodMoonBosses.GetParkingDiagnostics();
 
         public bool IsEventLive => Phase == BloodMoonEventPhase.Forewarning || Phase == BloodMoonEventPhase.Marked ||
             Phase == BloodMoonEventPhase.Active || Phase == BloodMoonEventPhase.AutoCompleting ||

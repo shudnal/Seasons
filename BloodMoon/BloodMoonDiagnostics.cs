@@ -330,14 +330,28 @@ namespace Seasons.BloodMoon
 
         private static void DumpBosses(ConsoleEventArgs args)
         {
-            BloodMoonEventState state = BloodMoonController.Instance?.State;
-            if (state == null)
+            if (ZNet.instance == null || !ZNet.instance.IsServer() || ZDOMan.instance == null)
             {
-                Print(args, "Boss transaction state is server-only and is unavailable here.");
+                Print(args, "Boss parking diagnostics require server authority and a loaded ZDO registry.");
                 return;
             }
-            foreach (BloodMoonBossParkingState boss in state.ParkedBosses.Values.OrderBy(item => item.ZdoId))
-                Print(args, $"zdo={boss.ZdoId} original={boss.OriginalPosition} restored={boss.Restored} loaded={boss.WasLoaded} ownerRev={boss.OriginalOwnerRevision} dataRev={boss.OriginalDataRevision}");
+
+            IReadOnlyDictionary<string, BloodMoonBossParkingDiagnostic> diagnostics = BloodMoonBosses.GetParkingDiagnostics();
+            if (diagnostics.Count == 0)
+            {
+                Print(args, "No active Blood Moon boss parking markers were found.");
+                return;
+            }
+
+            foreach (BloodMoonBossParkingDiagnostic boss in diagnostics.Values.OrderBy(item => item.ZdoId))
+            {
+                string error = string.IsNullOrWhiteSpace(boss.ValidationError) ? "none" : boss.ValidationError;
+                Print(args,
+                    $"zdo={boss.ZdoId} event={boss.EventId} bossValid={boss.BossValid} recordValid={boss.RecordValid} " +
+                    $"location={boss.Location} originalPosition={boss.OriginalPosition} originalRotation={boss.OriginalRotation} " +
+                    $"prefabMarker={boss.OriginalPrefabHash} currentPrefab={boss.CurrentPrefabHash} loaded={boss.Loaded} " +
+                    $"owner={boss.CurrentOwner} ownerRev={boss.OwnerRevision} dataRev={boss.DataRevision} error='{error}'");
+            }
         }
 
         private static void DumpSync(ConsoleEventArgs args)

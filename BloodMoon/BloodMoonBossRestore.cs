@@ -111,33 +111,34 @@ namespace Seasons.BloodMoon
             }
         }
 
-        internal static IReadOnlyDictionary<string, BloodMoonBossParkingState> GetParkingDiagnostics()
+        internal static IReadOnlyDictionary<string, BloodMoonBossParkingDiagnostic> GetParkingDiagnostics()
         {
-            Dictionary<string, BloodMoonBossParkingState> result = new Dictionary<string, BloodMoonBossParkingState>(StringComparer.Ordinal);
+            Dictionary<string, BloodMoonBossParkingDiagnostic> result = new Dictionary<string, BloodMoonBossParkingDiagnostic>(StringComparer.Ordinal);
             if (ZDOMan.instance == null)
                 return result;
 
             foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values.Where(HasParkingMarker).ToArray())
             {
-                bool valid = TryReadParkingRecord(zdo, out ParkingRecord record, out string error);
+                bool bossValid = TryResolveBossPrefab(zdo, out _);
+                bool recordValid = TryReadParkingRecord(zdo, out ParkingRecord record, out string error);
                 ParkingLocation location = ClassifyCurrentPosition(zdo);
                 string id = zdo.m_uid.ToString();
-                result[id] = new BloodMoonBossParkingState
+                result[id] = new BloodMoonBossParkingDiagnostic
                 {
                     ZdoId = id,
                     EventId = zdo.GetLong(ParkedEventMarker, -1L),
-                    OriginalPosition = record?.OriginalPosition ?? Vector3.zero,
-                    OriginalRotation = record?.OriginalRotation ?? Quaternion.identity,
-                    OriginalOwner = zdo.GetOwner(),
-                    OriginalDataRevision = zdo.DataRevision,
-                    OriginalOwnerRevision = zdo.OwnerRevision,
-                    WasLoaded = ZNetScene.instance?.FindInstance(zdo.m_uid) != null,
-                    Restored = location == ParkingLocation.InsideWorld,
-                    RecordValid = valid,
+                    BossValid = bossValid,
+                    RecordValid = recordValid,
                     ValidationError = error ?? string.Empty,
                     Location = location.ToString(),
+                    OriginalPosition = record?.OriginalPosition ?? Vector3.zero,
+                    OriginalRotation = record?.OriginalRotation ?? Quaternion.identity,
                     OriginalPrefabHash = record?.OriginalPrefabHash ?? zdo.GetInt(OriginalPrefabHashMarker, 0),
-                    CurrentPrefabHash = zdo.GetPrefab()
+                    CurrentPrefabHash = zdo.GetPrefab(),
+                    CurrentOwner = zdo.GetOwner(),
+                    DataRevision = zdo.DataRevision,
+                    OwnerRevision = zdo.OwnerRevision,
+                    Loaded = ZNetScene.instance?.FindInstance(zdo.m_uid) != null
                 };
             }
             return result;
