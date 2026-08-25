@@ -152,14 +152,21 @@ namespace Seasons.BloodMoon
                 return;
             }
 
-            long owner = bowlZdo.GetOwner();
             pending.NextRelayAtRealtime = Time.realtimeSinceStartup + RelayRetrySeconds;
-            if (owner == 0L)
-                return;
 
-            // Do not hammer the same live owner while its ACK is in flight. Ownership migration changes
-            // this value and permits the accepted pre-cutoff request to be handed to the new owner.
-            if (pending.LastRelayedOwner == owner && IsPeerAvailable(owner))
+            // There may be network delay between an ownership change and the ACK for the relay already
+            // delivered to the previous owner. Do not issue the same accepted request to two connected
+            // owners in parallel. A live previous peer must explicitly complete or reject its relay;
+            // only peer loss makes that in-flight relay unavailable without an ACK.
+            if (pending.LastRelayedOwner != 0L)
+            {
+                if (IsPeerAvailable(pending.LastRelayedOwner))
+                    return;
+                pending.LastRelayedOwner = 0L;
+            }
+
+            long owner = bowlZdo.GetOwner();
+            if (owner == 0L)
                 return;
 
             pending.LastRelayedOwner = owner;
@@ -233,15 +240,14 @@ namespace Seasons.BloodMoon
             if (!pendingOfferings.TryGetValue(bowlId, out PendingOffering pending) || pending.RequestId != requestId)
                 return;
 
+            if (sender != pending.LastRelayedOwner)
+                return;
+
             if (completed)
             {
                 pendingOfferings.Remove(bowlId);
                 return;
             }
-
-            // A stale negative ACK from an owner we have already moved past must not wake another relay.
-            if (sender != pending.LastRelayedOwner)
-                return;
 
             // A relay that reached an owner after ownership already migrated is explicitly retryable.
             // The next pass resolves the owner from the authoritative ZDO again without re-checking the
