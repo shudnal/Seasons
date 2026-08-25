@@ -63,6 +63,7 @@ namespace Seasons.BloodMoon
             BeginRecovery(player, eventId, resetExisting: true);
             BloodCraft.CleanupLocal(player);
             BloodMoonStatus.RemoveLocal();
+            PersistProfileNow(player, "Defeated interception");
             LogInfo($"[BloodMoon][event:{eventId}][player:{playerId}] Intercepted Defeated and started recovery.");
             return true;
         }
@@ -77,6 +78,7 @@ namespace Seasons.BloodMoon
             RemoveDamagingDots(player);
             BeginRecovery(player, eventId, resetExisting: false);
             BloodMoonStatus.RemoveLocal();
+            PersistProfileNow(player, "Defeated synchronization");
         }
 
         internal static void ApplyWithdrawal(Player player)
@@ -213,7 +215,8 @@ namespace Seasons.BloodMoon
             if (player != null)
             {
                 locallyExited.RemoveWhere(item => item.PlayerId == player.GetPlayerID());
-                player.m_customData.Remove(DefeatedDataKey);
+                if (player.m_customData.Remove(DefeatedDataKey))
+                    PersistProfileNow(player, "new Blood Moon enrollment");
             }
             defeatReportEventId = -1L;
             defeatReportTimer = 0f;
@@ -395,6 +398,26 @@ namespace Seasons.BloodMoon
                 Remaining = Mathf.Max(0f, state.Remaining),
                 SavedUtcTicks = DateTime.UtcNow.Ticks
             });
+        }
+
+        private static void PersistProfileNow(Player player, string reason)
+        {
+            if (player == null || player != Player.m_localPlayer)
+                return;
+            if (Game.instance == null)
+            {
+                LogWarning($"[BloodMoon.Recovery] Could not persist {reason}: Game instance is unavailable.");
+                return;
+            }
+
+            try
+            {
+                Game.instance.SavePlayerProfile(setLogoutPoint: false);
+            }
+            catch (Exception ex)
+            {
+                LogWarning($"[BloodMoon.Recovery] Could not persist {reason}: {ex.Message}");
+            }
         }
 
         private static void EndRecovery(Player player)
