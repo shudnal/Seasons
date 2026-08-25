@@ -66,8 +66,9 @@ namespace Seasons.BloodMoon
             if (envMan == null || envMan.GetEnv(EnvironmentName) == null)
                 return;
 
-            if (!ownsForceEnvironment)
-                previousForceEnvironment = envMan.m_forceEnv ?? string.Empty;
+            string currentForceEnvironment = envMan.m_forceEnv ?? string.Empty;
+            if (!ownsForceEnvironment || currentForceEnvironment != EnvironmentName)
+                previousForceEnvironment = currentForceEnvironment;
             envMan.SetForceEnvironment(EnvironmentName);
             ownsForceEnvironment = envMan.m_forceEnv == EnvironmentName;
             SetParticleFactor(1f);
