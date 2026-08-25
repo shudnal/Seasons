@@ -32,14 +32,101 @@ namespace Seasons.BloodMoon
         private static float clientSpawnTimer;
         private static float serverMaintenanceTimer;
 
+        internal static bool FreezeSpawnPool(BloodMoonEventState state)
+        {
+            if (state == null || state.EventId < 0L || state.SpawnPoolFrozen)
+                return false;
+
+            string prefabName = InferPersistedSpawnPrefab(state);
+            if (string.IsNullOrEmpty(prefabName))
+                prefabName = BloodMoonConfig.TestEnemyPrefab.Value?.Trim() ?? string.Empty;
+
+            state.ExtraEnemyPrefab = prefabName;
+            state.SpawnPoolFrozen = true;
+
+            GameObject prefab = ResolveSpawnPrefabName(prefabName);
+            if (prefab == null)
+                LogWarning($"[BloodMoon][event:{state.EventId}][spawn] Frozen extra-enemy prefab '{prefabName}' is unavailable or does not contain MonsterAI. No extra enemies will spawn for this event.");
+            else
+                LogInfo($"[BloodMoon][event:{state.EventId}][spawn] Frozen extra-enemy prefab '{prefab.name}' ({GetSpawnPoolIdentity(state)}).");
+            return true;
+        }
+
+        internal static string GetFrozenSpawnPrefabName(BloodMoonEventState state)
+        {
+            return state != null && state.SpawnPoolFrozen ? state.ExtraEnemyPrefab?.Trim() ?? string.Empty : string.Empty;
+        }
+
+        internal static int GetSpawnPoolIdentity(BloodMoonEventState state)
+        {
+            string prefabName = GetFrozenSpawnPrefabName(state);
+            return string.IsNullOrEmpty(prefabName) ? 0 : prefabName.GetStableHashCode();
+        }
+
+        internal static GameObject ResolveSpawnPrefab(BloodMoonSpawnLeaseState lease)
+        {
+            if (lease == null || lease.PoolRevision == 0 || ZNetScene.instance == null)
+                return null;
+            GameObject prefab = ZNetScene.instance.GetPrefab(lease.PoolRevision);
+            return prefab != null && prefab.GetComponent<MonsterAI>() != null ? prefab : null;
+        }
+
+        private static GameObject ResolveSpawnPrefabName(string prefabName)
+        {
+            if (string.IsNullOrEmpty(prefabName) || ZNetScene.instance == null)
+                return null;
+            GameObject prefab = ZNetScene.instance.GetPrefab(prefabName);
+            return prefab != null && prefab.GetComponent<MonsterAI>() != null ? prefab : null;
+        }
+
+        private static string InferPersistedSpawnPrefab(BloodMoonEventState state)
+        {
+            if (state == null || state.EventId < 0L || ZDOMan.instance == null || ZNetScene.instance == null || state.ExtraEnemyZdos == null || state.ExtraEnemyZdos.Count == 0)
+                return string.Empty;
+
+            HashSet<string> candidates = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string idValue in state.ExtraEnemyZdos)
+            {
+                if (!TryParseZdoId(idValue, out ZDOID id))
+                    continue;
+                ZDO zdo = ZDOMan.instance.GetZDO(id);
+                if (zdo == null || zdo.GetLong(EventMarker, -1L) != state.EventId)
+                    continue;
+                GameObject prefab = ZNetScene.instance.GetPrefab(zdo.GetPrefab());
+                if (prefab != null && prefab.GetComponent<MonsterAI>() != null)
+                    candidates.Add(prefab.name);
+            }
+
+            if (candidates.Count == 1)
+            {
+                string inferred = candidates.First();
+                LogWarning($"[BloodMoon][event:{state.EventId}][spawn] Recovered missing frozen spawn-pool identity from authoritative extra-enemy state: '{inferred}'.");
+                return inferred;
+            }
+
+            if (candidates.Count > 1)
+                LogError($"[BloodMoon][event:{state.EventId}][spawn] Cannot infer one frozen spawn prefab from persisted extras: {string.Join(", ", candidates.OrderBy(value => value))}.");
+            return string.Empty;
+        }
+
         internal static void UpdateServerLeases(BloodMoonEventState state, double now)
         {
             if (state == null || state.SpawnsStopped || !state.IsCombatLive || BloodMoonController.Instance == null)
                 return;
 
+            if (FreezeSpawnPool(state))
+                BloodMoonPersistence.Save(state);
+
             ProcessPendingReports(state, now);
             PruneMissingExtras(state);
             PruneServerLeases(state, now);
+
+            int poolIdentity = GetSpawnPoolIdentity(state);
+            if (poolIdentity == 0 || ResolveSpawnPrefabName(GetFrozenSpawnPrefabName(state)) == null)
+            {
+                state.SpawnLeases.Clear();
+                return;
+            }
 
             int hardCap = Math.Max(0, BloodMoonConfig.ServerExtraEnemyHardCap.Value);
             int pendingServer = pendingSpawnReports.Values.Count(report => report.EventId == state.EventId);
@@ -68,7 +155,7 @@ namespace Seasons.BloodMoon
 
                     if (state.SpawnLeases.TryGetValue(key, out BloodMoonSpawnLeaseState existing))
                     {
-                        if (existing.OwnerPeerId != claim.PeerId || existing.OwnerSessionId != claim.PeerId || existing.GroupRevision != group.Revision)
+                        if (existing.OwnerPeerId != claim.PeerId || existing.OwnerSessionId != claim.PeerId || existing.GroupRevision != group.Revision || existing.PoolRevision != poolIdentity)
                         {
                             serverAvailable += Math.Max(0, existing.Allowance);
                             groupAvailable += Math.Max(0, existing.Allowance);
@@ -106,7 +193,7 @@ namespace Seasons.BloodMoon
                         Allowance = allowance,
                         GroupCap = groupCap,
                         ServerHardCap = hardCap,
-                        PoolRevision = 1,
+                        PoolRevision = poolIdentity,
                         ExpiresAt = now + Math.Max(2f, BloodMoonConfig.SpawnLeaseSeconds.Value)
                     };
                     state.SpawnLeases[key] = lease;
@@ -189,7 +276,7 @@ namespace Seasons.BloodMoon
 
         private static void TrySpawnFromLease(BloodMoonSpawnLeaseState lease, Vector2i zone)
         {
-            GameObject prefab = ResolveSpawnPrefab();
+            GameObject prefab = ResolveSpawnPrefab(lease);
             if (prefab == null)
                 return;
 
@@ -206,13 +293,6 @@ namespace Seasons.BloodMoon
 
             if (spawned)
                 lease.Allowance--;
-        }
-
-        private static GameObject ResolveSpawnPrefab()
-        {
-            string prefabName = BloodMoonConfig.TestEnemyPrefab.Value?.Trim();
-            GameObject prefab = string.IsNullOrEmpty(prefabName) || ZNetScene.instance == null ? null : ZNetScene.instance.GetPrefab(prefabName);
-            return prefab != null && prefab.GetComponent<MonsterAI>() != null ? prefab : null;
         }
 
         private static bool TrySpawnSurface(GameObject prefab, BloodMoonSpawnLeaseState lease, Vector2i zone, List<Player> targets)
@@ -454,6 +534,7 @@ namespace Seasons.BloodMoon
             if (state == null || ZDOMan.instance == null)
                 return;
 
+            bool spawnPoolChanged = FreezeSpawnPool(state);
             foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values.ToArray())
             {
                 long markedEvent = zdo.GetLong(EventMarker, -1L);
@@ -469,6 +550,8 @@ namespace Seasons.BloodMoon
             PruneMissingExtras(state);
             if (!state.IsCombatLive)
                 CleanupExtraEnemies(state);
+            if (spawnPoolChanged)
+                BloodMoonPersistence.Save(state);
         }
 
         internal static void ResetClientState()
