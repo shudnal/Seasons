@@ -47,6 +47,13 @@ namespace Seasons.BloodMoon
             rpc.Register<ZPackage>(RpcRelayResult, OnRelayResultRpc);
         }
 
+        internal static void ResetRuntime()
+        {
+            pendingOfferings.Clear();
+            nextRequestId = 0L;
+            authorizedCompletionDepth = 0;
+        }
+
         internal static bool ShouldRelay(OfferingBowl bowl)
         {
             // Every normal boss-producing bowl initiation goes through the server. A late joiner can
