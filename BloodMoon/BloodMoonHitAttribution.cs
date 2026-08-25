@@ -252,7 +252,8 @@ namespace Seasons.BloodMoon
             }
             else
             {
-                if (sourceZdo.GetOwner() != sender || attribution.SourcePlayerId != 0L)
+                if (sourceZdo.GetOwner() != sender || attribution.SourcePlayerId != 0L ||
+                    !BloodMoonEnemyDeathReports.IsEligibleBloodEnemyZdo(attribution.EventId, sourceZdo))
                     return;
             }
 
