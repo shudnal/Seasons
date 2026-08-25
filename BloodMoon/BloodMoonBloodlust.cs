@@ -131,7 +131,6 @@ namespace Seasons.BloodMoon
             nextHealingGrantSequenceByPlayer.Clear();
             lastHealingGrantSequenceByEvent.Clear();
             serverHealingWindows.Clear();
-            registeredRpc = null;
         }
 
         internal static MovementState ApplyWalkingMovement(Player player)
