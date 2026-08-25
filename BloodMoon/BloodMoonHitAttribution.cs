@@ -238,28 +238,29 @@ namespace Seasons.BloodMoon
                 return;
 
             ZDO sourceZdo = ZDOMan.instance.GetZDO(attribution.SourceCharacterId);
-            if (sourceZdo == null)
-                return;
 
-            // Attribution is immutable at source creation. The source ZDO may legitimately migrate to
-            // another owner before this target-owner RPC arrives, so receive-time ownership is not part
-            // of source identity. Durable player/summon/event markers remain the stable validation data.
+            // The attribution packet was emitted while the source object still existed and is immutable
+            // for the lifetime of the projectile/AOE. A participant can disconnect, a temporary summon can
+            // be cleaned up, or an old Blood enemy can unload before this target-owner RPC arrives. If the
+            // source ZDO still exists, validate its stable identity markers; if it has already disappeared,
+            // preserve the captured attribution shape and let current event/target policy decide damage.
             if (attribution.SourceType == BloodMoonCombatSourceType.Participant)
             {
-                if (attribution.SourcePlayerId == 0L || sourceZdo.GetLong(ZDOVars.s_playerID, 0L) != attribution.SourcePlayerId)
+                if (attribution.SourcePlayerId == 0L || sourceZdo != null && sourceZdo.GetLong(ZDOVars.s_playerID, 0L) != attribution.SourcePlayerId)
                     return;
             }
             else if (attribution.SourceType == BloodMoonCombatSourceType.ParticipantSummon)
             {
-                if (!BloodMoonSummons.ValidateMarkedSummonZdo(sourceZdo, attribution.EventId, attribution.SourcePlayerId))
+                if (attribution.SourcePlayerId == 0L || sourceZdo != null && !BloodMoonSummons.ValidateMarkedSummonZdo(sourceZdo, attribution.EventId, attribution.SourcePlayerId))
                     return;
             }
             else
             {
-                if (attribution.SourcePlayerId != 0L || !BloodMoonEnemyDeathReports.IsEligibleBloodEnemyZdo(attribution.EventId, sourceZdo))
+                if (attribution.SourcePlayerId != 0L || sourceZdo != null && !BloodMoonEnemyDeathReports.IsEligibleBloodEnemyZdo(attribution.EventId, sourceZdo))
                     return;
             }
 
+            _ = sender;
             AddPending(attribution, target);
         }
 
