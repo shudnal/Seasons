@@ -56,7 +56,15 @@ namespace Seasons.BloodMoon
         internal static string GetExpectedPrefabName(long eventId)
         {
             BloodMoonEventState state = BloodMoonController.Instance?.State;
-            return state != null && state.EventId == eventId ? BloodMoonSpawner.GetFrozenSpawnPrefabName(state) : string.Empty;
+            if (state != null && state.EventId == eventId)
+            {
+                string currentPrefabName = BloodMoonSpawner.GetFrozenSpawnPrefabName(state);
+                if (!string.IsNullOrEmpty(currentPrefabName))
+                    return currentPrefabName;
+            }
+
+            long worldUid = state?.WorldUid ?? ZNet.m_world?.m_uid ?? 0L;
+            return BloodMoonSpawnPoolRegistry.GetPrefabName(worldUid, eventId);
         }
     }
 
