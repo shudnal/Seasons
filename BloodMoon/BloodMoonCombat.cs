@@ -119,7 +119,6 @@ namespace Seasons.BloodMoon
         internal float BeforeHealth;
         internal long EventId;
         internal long CreditPlayerId;
-        internal long LifestealPlayerId;
         internal ZDOID CreditSourceId;
         internal BloodMoonCombatSourceType CreditSourceType;
         internal Character Target;
@@ -152,14 +151,12 @@ namespace Seasons.BloodMoon
                 return;
 
             observation.Reported = true;
-            if (observation.CreditPlayerId != 0L && !observation.CreditSourceId.IsNone())
-            {
-                BloodMoonCombat.RecordCreditedPlayer(target, observation.CreditPlayerId);
-                BloodMoonDamageCreditAuthority.ConfirmActualDamage(target, observation.EventId, observation.CreditSourceId,
-                    observation.CreditSourceType, observation.CreditPlayerId);
-            }
-            if (observation.LifestealPlayerId != 0L)
-                BloodMoonBloodlust.ReportActualDamage(target, observation.EventId, observation.LifestealPlayerId, actualDamage);
+            if (observation.CreditPlayerId == 0L || observation.CreditSourceId.IsNone())
+                return;
+
+            BloodMoonCombat.RecordCreditedPlayer(target, observation.CreditPlayerId);
+            BloodMoonDamageCreditAuthority.ConfirmActualDamage(target, observation.EventId, observation.CreditSourceId,
+                observation.CreditSourceType, observation.CreditPlayerId, actualDamage);
         }
 
         internal static void End(BloodMoonDamageObservation observation)
@@ -227,24 +224,19 @@ namespace Seasons.BloodMoon
                 }
             }
 
-            if (BloodMoonInteractionRules.IsBloodEnemy(__instance))
+            if (BloodMoonInteractionRules.IsBloodEnemy(__instance) &&
+                BloodMoonDamageCreditAuthority.TryResolveCreditableSource(attacker, attribution,
+                    out BloodMoonCombatSourceType creditSourceType, out ZDOID creditSourceId, out long creditPlayerId))
             {
-                bool creditable = BloodMoonDamageCreditAuthority.TryResolveCreditableSource(attacker, attribution,
-                    out BloodMoonCombatSourceType creditSourceType, out ZDOID creditSourceId, out long creditPlayerId);
-                long lifestealPlayerId = TryGetLifestealPlayerId(attacker, attribution, out long sourcePlayerId) ? sourcePlayerId : 0L;
-                if (creditable || lifestealPlayerId != 0L)
+                __state = new BloodMoonDamageObservation
                 {
-                    __state = new BloodMoonDamageObservation
-                    {
-                        BeforeHealth = Mathf.Max(0f, __instance.GetHealth()),
-                        EventId = BloodMoonNetwork.ClientGlobal.EventId,
-                        CreditPlayerId = creditable ? creditPlayerId : 0L,
-                        CreditSourceId = creditable ? creditSourceId : ZDOID.None,
-                        CreditSourceType = creditable ? creditSourceType : BloodMoonCombatSourceType.None,
-                        LifestealPlayerId = lifestealPlayerId
-                    };
-                    BloodMoonDamageObservationContext.Begin(__instance, __state);
-                }
+                    BeforeHealth = Mathf.Max(0f, __instance.GetHealth()),
+                    EventId = BloodMoonNetwork.ClientGlobal.EventId,
+                    CreditPlayerId = creditPlayerId,
+                    CreditSourceId = creditSourceId,
+                    CreditSourceType = creditSourceType
+                };
+                BloodMoonDamageObservationContext.Begin(__instance, __state);
             }
             return true;
         }
@@ -258,23 +250,6 @@ namespace Seasons.BloodMoon
         {
             BloodMoonDamageObservationContext.End(__state);
             return __exception;
-        }
-
-        private static bool TryGetLifestealPlayerId(Character attacker, BloodMoonHitAttributionData attribution, out long playerId)
-        {
-            playerId = 0L;
-            if (attribution != null)
-            {
-                if (attribution.SourceType != BloodMoonCombatSourceType.Participant || !BloodMoonHitAttribution.CanCredit(attribution))
-                    return false;
-                playerId = attribution.SourcePlayerId;
-                return playerId != 0L;
-            }
-
-            if (attacker is not Player player || !BloodMoonInteractionRules.IsActiveParticipant(player))
-                return false;
-            playerId = player.GetPlayerID();
-            return playerId != 0L;
         }
     }
 
