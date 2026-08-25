@@ -35,6 +35,9 @@ namespace Seasons.BloodMoon
 
         internal static void Begin(long currentEventId)
         {
+            if (eventId == currentEventId && publishingStartedAtRealtime > 0f)
+                return;
+
             eventId = currentEventId;
             publishingStartedAtRealtime = Time.realtimeSinceStartup;
             serverRecords.Clear();
