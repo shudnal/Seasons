@@ -180,19 +180,6 @@ namespace Seasons.BloodMoon
         }
     }
 
-    [HarmonyPatch(typeof(BloodMoonSpawnReportValidation), nameof(BloodMoonSpawnReportValidation.GetExpectedPrefabName))]
-    internal static class BloodMoonSpawnPoolRegistryLookupPatch
-    {
-        private static void Postfix(long eventId, ref string __result)
-        {
-            if (!string.IsNullOrEmpty(__result))
-                return;
-
-            long worldUid = BloodMoonController.Instance?.State?.WorldUid ?? ZNet.m_world?.m_uid ?? 0L;
-            __result = BloodMoonSpawnPoolRegistry.GetPrefabName(worldUid, eventId);
-        }
-    }
-
     [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnDestroy))]
     internal static class BloodMoonSpawnPoolRegistryWorldPatch
     {
