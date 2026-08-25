@@ -77,6 +77,7 @@ namespace Seasons.BloodMoon
         private static float retryTimer;
         private static ZRoutedRpc registeredRpc;
         private static bool pendingLocalProfileCaptured;
+        private static bool storeDirty;
 
         internal static void RegisterRpc()
         {
@@ -89,14 +90,16 @@ namespace Seasons.BloodMoon
             rpc.Register<ZPackage>(RpcAck, OnAck);
         }
 
-        internal static void Capture(BloodMoonEventState state)
+        internal static bool Capture(BloodMoonEventState state)
         {
-            if (state == null || state.WorldUid == 0L || state.EventId < 0L || state.ResolutionCancelledBeforeCombat)
-                return;
+            if (state == null || state.WorldUid == 0L || state.EventId < 0L)
+                return false;
+            if (state.ResolutionCancelledBeforeCombat)
+                return true;
 
             EnsureLoaded(state.WorldUid);
             if (store == null)
-                return;
+                return false;
 
             bool changed = false;
             foreach (BloodMoonParticipantState participant in state.Participants.Values)
@@ -119,8 +122,11 @@ namespace Seasons.BloodMoon
             }
 
             if (changed)
-                Save();
-            retryTimer = 0f;
+                storeDirty = true;
+            bool durable = !storeDirty || Save();
+            if (durable)
+                retryTimer = 0f;
+            return durable;
         }
 
         internal static void TickServer(float dt)
@@ -130,7 +136,11 @@ namespace Seasons.BloodMoon
 
             RegisterRpc();
             EnsureLoaded(ZNet.m_world.m_uid);
-            if (store == null || store.Pending.Count == 0)
+            if (store == null)
+                return;
+            if (storeDirty && !Save())
+                return;
+            if (store.Pending.Count == 0)
                 return;
 
             retryTimer -= Mathf.Max(0f, dt);
@@ -151,7 +161,9 @@ namespace Seasons.BloodMoon
                 if (outcome == null)
                 {
                     store.Pending.Remove(entry.Key);
-                    Save();
+                    storeDirty = true;
+                    if (!Save())
+                        return;
                     continue;
                 }
 
@@ -197,6 +209,7 @@ namespace Seasons.BloodMoon
             pendingLocalAcks.Clear();
             pendingDreamCompletionKeys.Clear();
             pendingLocalProfileCaptured = false;
+            storeDirty = false;
         }
 
         internal static void OnLocalDreamPresentationCompleted(long worldUid, long eventId, long playerId)
@@ -343,6 +356,7 @@ namespace Seasons.BloodMoon
             if (store == null || store.WorldUid != worldUid || !store.Pending.Remove(MakeKey(eventId, playerId)))
                 return;
 
+            storeDirty = true;
             Save();
             LogInfo($"[BloodMoon][event:{eventId}][player:{playerId}][outcome] Durable outcome acknowledgement removed the server queue entry.");
         }
@@ -422,6 +436,7 @@ namespace Seasons.BloodMoon
                 return;
 
             loadedWorldUid = worldUid;
+            storeDirty = false;
             store = Load(worldUid);
             retryTimer = 0f;
         }
@@ -467,15 +482,16 @@ namespace Seasons.BloodMoon
             {
                 LogWarning($"[BloodMoon.Outcome] Recovered newest valid outcome snapshot from '{selected.Path}'. Rewriting canonical snapshot.");
                 store = result;
+                storeDirty = true;
                 Save();
             }
             return result;
         }
 
-        private static void Save()
+        private static bool Save()
         {
             if (store == null || store.WorldUid == 0L)
-                return;
+                return false;
 
             string path = GetPath(store.WorldUid);
             string temporary = path + ".new";
@@ -493,10 +509,14 @@ namespace Seasons.BloodMoon
                     File.Move(path, backup);
                 }
                 File.Move(temporary, path);
+                storeDirty = false;
+                return true;
             }
             catch (Exception ex)
             {
+                storeDirty = true;
                 LogError($"[BloodMoon.Outcome] Failed to save '{path}': {ex}");
+                return false;
             }
         }
 
