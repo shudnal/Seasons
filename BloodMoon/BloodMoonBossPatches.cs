@@ -1,6 +1,5 @@
 using HarmonyLib;
 using UnityEngine;
-using static Seasons.Seasons;
 
 namespace Seasons.BloodMoon
 {
@@ -50,10 +49,10 @@ namespace Seasons.BloodMoon
             }
 
             BloodMoonEventState state = BloodMoonController.Instance?.State;
-            if (state == null || ZDOMan.instance == null || !SeasonState.IsActive)
+            if (state == null || ZDOMan.instance == null)
                 return;
 
-            BloodMoonBosses.TickPending(state, seasonState.GetTotalSeconds());
+            BloodMoonBosses.TickPending(state);
         }
     }
 

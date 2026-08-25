@@ -82,7 +82,6 @@ namespace Seasons.BloodMoon
             if (state == null || ZDOMan.instance == null || ZNetScene.instance == null)
                 return;
 
-            double now = SeasonState.IsActive ? seasonState.GetTotalSeconds() : 0d;
             foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values.Where(HasParkingMarker).ToArray())
             {
                 if (!TryReadParkingRecord(zdo, out ParkingRecord record, out string error))
@@ -96,8 +95,7 @@ namespace Seasons.BloodMoon
                 if (matchingActiveEvent)
                 {
                     Vector3 parked = GetParkingPosition(zdo.m_uid);
-                    pendingRecords[zdo.m_uid] = record;
-                    pendingUntil[zdo.m_uid] = now + 5d;
+                    ArmPendingRecord(zdo, record);
                     Reassert(zdo, parked);
                     SynchronizeLoadedInstance(zdo, parked, zdo.GetRotation());
                     invalidRecordErrors.Remove(zdo.m_uid);

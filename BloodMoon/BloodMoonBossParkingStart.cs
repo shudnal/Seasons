@@ -40,8 +40,7 @@ namespace Seasons.BloodMoon
                     if (TryReadParkingRecord(zdo, out ParkingRecord record, out string error))
                     {
                         Vector3 existingParkingPosition = GetParkingPosition(zdo.m_uid);
-                        pendingRecords[zdo.m_uid] = record;
-                        pendingUntil[zdo.m_uid] = now + 5d;
+                        ArmPendingRecord(zdo, record);
                         Reassert(zdo, existingParkingPosition);
                         SynchronizeLoadedInstance(zdo, existingParkingPosition, zdo.GetRotation());
                     }
@@ -70,8 +69,7 @@ namespace Seasons.BloodMoon
                 OriginalPrefabHash = prefabHash,
                 ParkingTimestamp = (long)now
             };
-            pendingRecords[zdo.m_uid] = record;
-            pendingUntil[zdo.m_uid] = now + 5d;
+            ArmPendingRecord(zdo, record);
             WriteParkingRecord(zdo, record);
 
             Vector3 parked = GetParkingPosition(zdo.m_uid);

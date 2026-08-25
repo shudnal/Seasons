@@ -18,6 +18,7 @@ namespace Seasons.BloodMoon
 
         private const int LegacyParkingSchema = 1;
         private const int ParkingSchema = 2;
+        private const float ParkingConfirmationSeconds = 5f;
         private const float DiscoveryReportInterval = 1.5f;
         private const float DiscoveryMaxDistance = 160f;
         private const float EncounterWithdrawDistance = 120f;
@@ -40,7 +41,7 @@ namespace Seasons.BloodMoon
             internal long ParkingTimestamp;
         }
 
-        private static readonly Dictionary<ZDOID, double> pendingUntil = new Dictionary<ZDOID, double>();
+        private static readonly Dictionary<ZDOID, float> pendingUntil = new Dictionary<ZDOID, float>();
         private static readonly Dictionary<ZDOID, ParkingRecord> pendingRecords = new Dictionary<ZDOID, ParkingRecord>();
         private static readonly Dictionary<ZDOID, float> nextClientDiscoveryAt = new Dictionary<ZDOID, float>();
         private static readonly Dictionary<ZDOID, string> invalidRecordErrors = new Dictionary<ZDOID, string>();
@@ -71,8 +72,7 @@ namespace Seasons.BloodMoon
                     continue;
 
                 Vector3 parked = GetParkingPosition(zdo.m_uid);
-                pendingRecords[zdo.m_uid] = record;
-                pendingUntil[zdo.m_uid] = now + 5d;
+                ArmPendingRecord(zdo, record);
                 Reassert(zdo, parked);
                 SynchronizeLoadedInstance(zdo, parked, zdo.GetRotation());
             }
@@ -130,8 +130,7 @@ namespace Seasons.BloodMoon
                     if (TryReadParkingRecord(zdo, out ParkingRecord record, out string error))
                     {
                         Vector3 parked = GetParkingPosition(zdo.m_uid);
-                        pendingRecords[zdo.m_uid] = record;
-                        pendingUntil[zdo.m_uid] = seasonState.GetTotalSeconds() + 5d;
+                        ArmPendingRecord(zdo, record);
                         Reassert(zdo, parked);
                         SynchronizeLoadedInstance(zdo, parked, zdo.GetRotation());
                     }

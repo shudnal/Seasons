@@ -9,12 +9,13 @@ namespace Seasons.BloodMoon
 {
     internal static partial class BloodMoonBosses
     {
-        internal static void TickPending(BloodMoonEventState state, double now)
+        internal static void TickPending(BloodMoonEventState state)
         {
             if (state == null || ZDOMan.instance == null || pendingUntil.Count == 0)
                 return;
 
-            foreach (KeyValuePair<ZDOID, double> pending in pendingUntil.ToArray())
+            float now = Time.realtimeSinceStartup;
+            foreach (KeyValuePair<ZDOID, float> pending in pendingUntil.ToArray())
             {
                 if (pending.Value < now)
                 {
@@ -37,6 +38,15 @@ namespace Seasons.BloodMoon
                 Reassert(zdo, parked);
                 SynchronizeLoadedInstance(zdo, parked, zdo.GetRotation());
             }
+        }
+
+        private static void ArmPendingRecord(ZDO zdo, ParkingRecord record)
+        {
+            if (zdo == null || record == null)
+                return;
+
+            pendingRecords[zdo.m_uid] = record;
+            pendingUntil[zdo.m_uid] = Time.realtimeSinceStartup + ParkingConfirmationSeconds;
         }
 
         private static void WriteParkingRecord(ZDO zdo, ParkingRecord record)
