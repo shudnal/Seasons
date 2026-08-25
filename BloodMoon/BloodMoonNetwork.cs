@@ -9,7 +9,7 @@ namespace Seasons.BloodMoon
 {
     internal static class BloodMoonNetwork
     {
-        internal const int ProtocolVersion = 1;
+        internal const int ProtocolVersion = 2;
         private const int SyncPriorityGlobal = Priority.VeryLow + 4;
         private const int SyncPriorityParticipants = Priority.VeryLow + 3;
         private const int MaxPendingClientActions = 32;
