@@ -339,22 +339,12 @@ namespace Seasons.BloodMoon
 
             string markerKey = MakeOutcomeMarkerKey(worldUid, outcome.EventId);
             string processKey = MakeProcessAppliedKey(worldUid, outcome.EventId, outcome.PlayerId);
-            if (player.m_customData.ContainsKey(markerKey) && !processAppliedOutcomeKeys.Contains(processKey))
-                return LocalApplyResult.DurableMarkerPresent;
+            if (player.m_customData.ContainsKey(markerKey))
+                return processAppliedOutcomeKeys.Contains(processKey) ? LocalApplyResult.AppliedThisProcess : LocalApplyResult.DurableMarkerPresent;
 
             try
             {
                 BloodMoonSkills.ApplySerializedReward(player, outcome.RewardPayload);
-
-                string chronicleKey = $"Blood Moon {worldUid}:{outcome.EventId}";
-                bool chronicleChanged = !string.IsNullOrWhiteSpace(outcome.Chronicle) &&
-                    (!player.m_knownTexts.TryGetValue(chronicleKey, out string existing) || !string.Equals(existing, outcome.Chronicle, StringComparison.Ordinal));
-                if (chronicleChanged)
-                    player.AddKnownText(chronicleKey, outcome.Chronicle);
-                if (!string.IsNullOrWhiteSpace(outcome.Chronicle))
-                    BloodMoonDreams.Record(player, outcome.EventId, outcome.Chronicle);
-                if (chronicleChanged)
-                    player.Message(MessageHud.MessageType.Center, outcome.Chronicle);
 
                 string restedKey = RestedRemovalPrefix + worldUid.ToString(CultureInfo.InvariantCulture) + "." + outcome.EventId.ToString(CultureInfo.InvariantCulture);
                 if (!player.m_customData.ContainsKey(restedKey))
@@ -362,6 +352,16 @@ namespace Seasons.BloodMoon
                     player.GetSEMan()?.RemoveStatusEffect(SEMan.s_statusEffectRested);
                     player.m_customData[restedKey] = "1";
                 }
+
+                if (string.IsNullOrWhiteSpace(outcome.Chronicle))
+                    return LocalApplyResult.Failed;
+
+                string chronicleKey = $"Blood Moon {worldUid}:{outcome.EventId}";
+                if (!player.m_knownTexts.TryGetValue(chronicleKey, out string existing) || !string.Equals(existing, outcome.Chronicle, StringComparison.Ordinal))
+                    player.AddKnownText(chronicleKey, outcome.Chronicle);
+
+                if (!BloodMoonDreams.Present(player, outcome.EventId, outcome.Chronicle))
+                    return LocalApplyResult.Failed;
 
                 player.m_customData[markerKey] = "1";
                 processAppliedOutcomeKeys.Add(processKey);
@@ -495,35 +495,6 @@ namespace Seasons.BloodMoon
         private static string MakeProcessAppliedKey(long worldUid, long eventId, long playerId)
         {
             return worldUid.ToString(CultureInfo.InvariantCulture) + ":" + eventId.ToString(CultureInfo.InvariantCulture) + ":" + playerId.ToString(CultureInfo.InvariantCulture);
-        }
-    }
-
-    [HarmonyPatch(typeof(BloodMoonNetwork), nameof(BloodMoonNetwork.RegisterRpcs))]
-    internal static class BloodMoonOutcomeRpcRegistrationPatch
-    {
-        private static void Postfix()
-        {
-            BloodMoonOutcomeQueue.RegisterRpc();
-        }
-    }
-
-    [HarmonyPatch(typeof(BloodMoonController), "PublishOutcomes")]
-    internal static class BloodMoonOutcomeCapturePatch
-    {
-        [HarmonyPriority(Priority.First)]
-        private static void Prefix(BloodMoonController __instance)
-        {
-            BloodMoonOutcomeQueue.Capture(__instance?.State);
-        }
-    }
-
-    [HarmonyPatch(typeof(BloodMoonController), "FixedUpdate")]
-    internal static class BloodMoonOutcomeTickPatch
-    {
-        private static void Postfix()
-        {
-            // The controller runs FixedUpdate on all peers. TickServer internally gates the server role.
-            BloodMoonOutcomeQueue.TickServer(Time.fixedDeltaTime);
         }
     }
 
