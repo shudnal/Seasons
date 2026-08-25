@@ -392,6 +392,11 @@ namespace Seasons.BloodMoon
             if (!BloodMoonInteractionRules.IsEventCombatLive || collider == null)
                 return true;
 
+            // A stale source has its own guard which preserves vanilla collision/destruction while blocking
+            // event damage and side effects. Do not reinterpret it as a source in the current Blood Moon.
+            if (BloodMoonStaleAttribution.IsStale(__instance, __instance.m_nview))
+                return true;
+
             GameObject hitObject = Projectile.FindHitObject(collider);
             Character target = hitObject != null ? hitObject.GetComponent<Character>() : null;
             if (BloodMoonHitAttribution.TryGet(__instance, __instance.m_nview, out BloodMoonHitAttributionData attribution))
