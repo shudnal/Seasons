@@ -1,4 +1,3 @@
-using HarmonyLib;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -99,6 +98,7 @@ namespace Seasons.BloodMoon
             serverRecords.Clear();
             eventId = -1L;
             publishingStartedAtRealtime = 0f;
+            registeredRpc = null;
         }
 
         private static void Notify(long worldUid, long currentEventId, long playerId, bool completed)
@@ -173,7 +173,8 @@ namespace Seasons.BloodMoon
         {
             if (Player.m_localPlayer != null && Player.m_localPlayer.GetPlayerID() == playerId)
                 return true;
-            return controller.GetPeerForPlayer(playerId) != 0L;
+            long peerId = controller.GetPeerForPlayer(playerId);
+            return peerId != 0L && ZNet.instance != null && ZNet.instance.GetPeer(peerId) != null;
         }
 
         private static bool ValidateSender(long sender, long playerId)
@@ -189,25 +190,6 @@ namespace Seasons.BloodMoon
                 return false;
             ZDO playerZdo = ZDOMan.instance.GetZDO(peer.m_characterID);
             return playerZdo != null && playerZdo.GetLong(ZDOVars.s_playerID, 0L) == playerId;
-        }
-    }
-
-    [HarmonyPatch(typeof(BloodMoonOutcomeQueue), "TryAcknowledge")]
-    internal static class BloodMoonOutcomePresentationDurableAckPatch
-    {
-        private static void Postfix(long worldUid, long eventId, long playerId, bool __result)
-        {
-            if (__result)
-                BloodMoonOutcomePresentationHandshake.NotifyCompleted(worldUid, eventId, playerId);
-        }
-    }
-
-    [HarmonyPatch(typeof(ZNet), nameof(ZNet.OnDestroy))]
-    internal static class BloodMoonOutcomePresentationWorldCleanupPatch
-    {
-        private static void Prefix()
-        {
-            BloodMoonOutcomePresentationHandshake.ResetRuntime();
         }
     }
 }
