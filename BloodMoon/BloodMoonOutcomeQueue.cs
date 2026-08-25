@@ -22,6 +22,7 @@ namespace Seasons.BloodMoon
         private enum LocalApplyResult
         {
             Failed,
+            PresentationPending,
             AppliedThisProcess,
             DurableMarkerPresent
         }
@@ -66,6 +67,7 @@ namespace Seasons.BloodMoon
         };
 
         private static readonly Dictionary<string, PendingAck> pendingLocalAcks = new Dictionary<string, PendingAck>();
+        private static readonly HashSet<string> pendingDreamCompletionKeys = new HashSet<string>(StringComparer.Ordinal);
         // This deliberately survives ZNet world teardown. For cloud profiles, a marker is considered durable
         // only when it was not created by this running process, because vanilla PlayerProfile.Save() returns
         // true even when its cloud FileWriter fails and only a local recovery backup is produced.
@@ -155,11 +157,7 @@ namespace Seasons.BloodMoon
 
                 if (Player.m_localPlayer != null && Player.m_localPlayer.GetPlayerID() == outcome.PlayerId)
                 {
-                    LocalApplyResult result = TryApplyLocal(store.WorldUid, outcome);
-                    if (result == LocalApplyResult.DurableMarkerPresent)
-                        TryAcknowledge(store.WorldUid, outcome.EventId, outcome.PlayerId);
-                    else if (result == LocalApplyResult.AppliedThisProcess)
-                        QueueLocalAck(store.WorldUid, outcome);
+                    HandleLocalApplyResult(store.WorldUid, outcome, TryApplyLocal(store.WorldUid, outcome));
                     continue;
                 }
 
@@ -198,7 +196,22 @@ namespace Seasons.BloodMoon
             retryTimer = 0f;
             registeredRpc = null;
             pendingLocalAcks.Clear();
+            pendingDreamCompletionKeys.Clear();
             pendingLocalProfileCaptured = false;
+        }
+
+        internal static void OnLocalDreamPresentationCompleted(long worldUid, long eventId, long playerId)
+        {
+            Player player = Player.m_localPlayer;
+            if (player == null || player.GetPlayerID() != playerId || ZNet.m_world == null || ZNet.m_world.m_uid != worldUid)
+                return;
+
+            string processKey = MakeProcessAppliedKey(worldUid, eventId, playerId);
+            if (!pendingDreamCompletionKeys.Remove(processKey))
+                return;
+
+            MarkOutcomeApplied(player, worldUid, eventId, playerId);
+            QueueLocalAck(worldUid, new PendingOutcome { EventId = eventId, PlayerId = playerId });
         }
 
         internal static void OnLocalPlayerDataCaptured(PlayerProfile profile, Player player)
@@ -257,11 +270,7 @@ namespace Seasons.BloodMoon
             if (player == null || player.GetPlayerID() != outcome.PlayerId || ZNet.m_world == null || ZNet.m_world.m_uid != worldUid)
                 return;
 
-            LocalApplyResult result = TryApplyLocal(worldUid, outcome);
-            if (result == LocalApplyResult.DurableMarkerPresent)
-                TryAcknowledge(worldUid, outcome.EventId, outcome.PlayerId);
-            else if (result == LocalApplyResult.AppliedThisProcess)
-                QueueLocalAck(worldUid, outcome);
+            HandleLocalApplyResult(worldUid, outcome, TryApplyLocal(worldUid, outcome));
         }
 
         private static void OnAck(long sender, ZPackage pkg)
@@ -276,6 +285,14 @@ namespace Seasons.BloodMoon
                 return;
 
             RemovePendingOutcome(worldUid, eventId, playerId);
+        }
+
+        private static void HandleLocalApplyResult(long worldUid, PendingOutcome outcome, LocalApplyResult result)
+        {
+            if (result == LocalApplyResult.DurableMarkerPresent)
+                TryAcknowledge(worldUid, outcome.EventId, outcome.PlayerId);
+            else if (result == LocalApplyResult.AppliedThisProcess)
+                QueueLocalAck(worldUid, outcome);
         }
 
         private static void QueueLocalAck(long worldUid, PendingOutcome outcome)
@@ -360,11 +377,17 @@ namespace Seasons.BloodMoon
                 if (!player.m_knownTexts.TryGetValue(chronicleKey, out string existing) || !string.Equals(existing, outcome.Chronicle, StringComparison.Ordinal))
                     player.AddKnownText(chronicleKey, outcome.Chronicle);
 
+                bool dreamAlreadyPresented = BloodMoonDreams.IsPresented(player, outcome.EventId);
                 if (!BloodMoonDreams.Present(player, outcome.EventId, outcome.Chronicle))
                     return LocalApplyResult.Failed;
 
-                player.m_customData[markerKey] = "1";
-                processAppliedOutcomeKeys.Add(processKey);
+                if (!dreamAlreadyPresented)
+                {
+                    pendingDreamCompletionKeys.Add(processKey);
+                    return LocalApplyResult.PresentationPending;
+                }
+
+                MarkOutcomeApplied(player, worldUid, outcome.EventId, outcome.PlayerId);
                 return LocalApplyResult.AppliedThisProcess;
             }
             catch (Exception ex)
@@ -372,6 +395,12 @@ namespace Seasons.BloodMoon
                 LogWarning($"[BloodMoon][event:{outcome.EventId}][player:{outcome.PlayerId}][outcome] Deferred outcome application failed: {ex}");
                 return LocalApplyResult.Failed;
             }
+        }
+
+        private static void MarkOutcomeApplied(Player player, long worldUid, long eventId, long playerId)
+        {
+            player.m_customData[MakeOutcomeMarkerKey(worldUid, eventId)] = "1";
+            processAppliedOutcomeKeys.Add(MakeProcessAppliedKey(worldUid, eventId, playerId));
         }
 
         private static bool ValidateSender(long sender, long playerId)
