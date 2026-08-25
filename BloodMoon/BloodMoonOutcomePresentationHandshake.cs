@@ -193,50 +193,6 @@ namespace Seasons.BloodMoon
         }
     }
 
-    [HarmonyPatch(typeof(BloodMoonNetwork), nameof(BloodMoonNetwork.RegisterRpcs))]
-    internal static class BloodMoonOutcomePresentationRpcRegistrationPatch
-    {
-        private static void Postfix()
-        {
-            BloodMoonOutcomePresentationHandshake.RegisterRpc();
-        }
-    }
-
-    [HarmonyPatch(typeof(BloodMoonController), "SetResolutionStep")]
-    internal static class BloodMoonOutcomePresentationResolutionPatch
-    {
-        [HarmonyPriority(Priority.First)]
-        private static bool Prefix(BloodMoonController __instance, BloodMoonResolutionStep step)
-        {
-            if (step != BloodMoonResolutionStep.ReleasingClients)
-                return true;
-
-            if (!BloodMoonOutcomePresentationHandshake.CanRelease(__instance?.State, out string timedOutPlayers))
-                return false;
-
-            if (!string.IsNullOrEmpty(timedOutPlayers) && __instance?.State != null)
-                LogWarning($"[BloodMoon][event:{__instance.State.EventId}][resolution] Releasing after outcome presentation timeout for player(s) {timedOutPlayers}.");
-            return true;
-        }
-
-        private static void Postfix(BloodMoonController __instance, BloodMoonResolutionStep step)
-        {
-            if (step == BloodMoonResolutionStep.PublishingOutcomes && __instance?.State != null)
-                BloodMoonOutcomePresentationHandshake.Begin(__instance.State.EventId);
-        }
-    }
-
-    [HarmonyPatch(typeof(BloodMoonController), "RecoverServerState")]
-    internal static class BloodMoonOutcomePresentationRecoveryPatch
-    {
-        private static void Postfix(BloodMoonController __instance)
-        {
-            BloodMoonEventState state = __instance?.State;
-            if (state != null && state.Phase == BloodMoonEventPhase.Resolving && state.ResolutionStep == BloodMoonResolutionStep.PublishingOutcomes)
-                BloodMoonOutcomePresentationHandshake.Begin(state.EventId);
-        }
-    }
-
     [HarmonyPatch(typeof(BloodMoonOutcomeQueue), "TryAcknowledge")]
     internal static class BloodMoonOutcomePresentationDurableAckPatch
     {
