@@ -1,4 +1,5 @@
 using HarmonyLib;
+using UnityEngine;
 
 namespace Seasons.BloodMoon
 {
@@ -41,12 +42,25 @@ namespace Seasons.BloodMoon
         }
     }
 
+    [HarmonyPatch(typeof(OfferingBowl), nameof(OfferingBowl.InitiateSpawnBoss))]
+    internal static class BloodMoonOfferingInitiateSpawnBossPatch
+    {
+        [HarmonyPriority(Priority.First)]
+        private static bool Prefix(OfferingBowl __instance, Vector3 point, bool removeItemsFromInventory)
+        {
+            if (!BloodMoonOfferingAuthority.ShouldRelay(__instance))
+                return true;
+            return !BloodMoonOfferingAuthority.TryRequest(__instance, point, removeItemsFromInventory);
+        }
+    }
+
     [HarmonyPatch(typeof(OfferingBowl), nameof(OfferingBowl.RPC_SpawnBoss))]
     internal static class BloodMoonOfferingSpawnBossPatch
     {
+        [HarmonyPriority(Priority.First)]
         private static bool Prefix(OfferingBowl __instance)
         {
-            return BloodMoonInteractionRules.CanUseBossOffering(__instance);
+            return BloodMoonOfferingAuthority.IsAuthorizedCompletion || BloodMoonInteractionRules.CanUseBossOffering(__instance);
         }
     }
 }
