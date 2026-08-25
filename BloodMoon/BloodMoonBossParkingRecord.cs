@@ -95,7 +95,8 @@ namespace Seasons.BloodMoon
                 EventId = zdo.GetLong(ParkedEventMarker, -1L),
                 OriginalPosition = originalPosition,
                 OriginalRotation = originalRotation,
-                OriginalPrefabHash = originalPrefabHash
+                OriginalPrefabHash = originalPrefabHash,
+                ParkingTimestamp = zdo.GetLong(ParkingTimestampMarker, 0L)
             };
             return true;
         }
@@ -125,8 +126,15 @@ namespace Seasons.BloodMoon
 
             // Schema 1 never changed boss rotation while parking, so the current ZDO rotation is
             // the durable original rotation for an in-place upgrade.
-            zdo.Set(OriginalRotationMarker, originalRotation);
-            zdo.Set(ParkingSchemaMarker, ParkingSchema);
+            ParkingRecord record = new ParkingRecord
+            {
+                EventId = zdo.GetLong(ParkedEventMarker, -1L),
+                OriginalPosition = originalPosition,
+                OriginalRotation = originalRotation,
+                OriginalPrefabHash = originalPrefabHash,
+                ParkingTimestamp = zdo.GetLong(ParkingTimestampMarker, 0L)
+            };
+            WriteParkingRecord(zdo, record);
             ZDOMan.instance?.ForceSendZDO(zdo.m_uid);
             LogInfo($"[BloodMoon.Recovery] Upgraded legacy parking record for boss {zdo.m_uid} from schema {LegacyParkingSchema} to {ParkingSchema}.");
             return true;

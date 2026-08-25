@@ -38,6 +38,7 @@ namespace Seasons.BloodMoon
             zdo.Set(ParkedEventMarker, -1L);
             ZDOMan.instance?.ForceSendZDO(zdo.m_uid);
             pendingUntil.Remove(zdo.m_uid);
+            pendingRecords.Remove(zdo.m_uid);
             invalidRecordErrors.Remove(zdo.m_uid);
         }
 

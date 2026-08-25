@@ -16,27 +16,39 @@ namespace Seasons.BloodMoon
                 if (pending.Value < now)
                 {
                     pendingUntil.Remove(pending.Key);
+                    pendingRecords.Remove(pending.Key);
                     continue;
                 }
 
                 ZDO zdo = ZDOMan.instance.GetZDO(pending.Key);
-                if (zdo == null || zdo.GetLong(ParkedEventMarker, -1L) != state.EventId)
+                if (zdo == null || !pendingRecords.TryGetValue(pending.Key, out ParkingRecord record) ||
+                    record.EventId != state.EventId || zdo.GetPrefab() != record.OriginalPrefabHash)
                 {
                     pendingUntil.Remove(pending.Key);
+                    pendingRecords.Remove(pending.Key);
                     continue;
                 }
 
-                if (!TryReadParkingRecord(zdo, out _, out string error))
-                {
-                    LogInvalidRecordOnce(zdo, error);
-                    pendingUntil.Remove(pending.Key);
-                    continue;
-                }
-
+                WriteParkingRecord(zdo, record);
                 Vector3 parked = GetParkingPosition(zdo.m_uid);
                 Reassert(zdo, parked);
                 SynchronizeLoadedInstance(zdo, parked, zdo.GetRotation());
             }
+        }
+
+        private static void WriteParkingRecord(ZDO zdo, ParkingRecord record)
+        {
+            if (zdo == null || record == null || ZDOMan.instance == null)
+                return;
+
+            if (zdo.GetOwner() != ZDOMan.GetSessionID())
+                zdo.SetOwner(ZDOMan.GetSessionID());
+            zdo.Set(ParkingSchemaMarker, ParkingSchema);
+            zdo.Set(OriginalPositionMarker, record.OriginalPosition);
+            zdo.Set(OriginalRotationMarker, record.OriginalRotation);
+            zdo.Set(OriginalPrefabHashMarker, record.OriginalPrefabHash);
+            zdo.Set(ParkingTimestampMarker, record.ParkingTimestamp);
+            zdo.Set(ParkedEventMarker, record.EventId);
         }
 
         private static void Reassert(ZDO zdo, Vector3 position)

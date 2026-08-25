@@ -36,11 +36,12 @@ namespace Seasons.BloodMoon
             {
                 if (parkedEvent == state.EventId)
                 {
-                    if (TryReadParkingRecord(zdo, out _, out string error))
+                    if (TryReadParkingRecord(zdo, out ParkingRecord record, out string error))
                     {
                         Vector3 existingParkingPosition = GetParkingPosition(zdo.m_uid);
-                        Reassert(zdo, existingParkingPosition);
+                        pendingRecords[zdo.m_uid] = record;
                         pendingUntil[zdo.m_uid] = now + 5d;
+                        Reassert(zdo, existingParkingPosition);
                         SynchronizeLoadedInstance(zdo, existingParkingPosition, zdo.GetRotation());
                     }
                     else
@@ -60,16 +61,20 @@ namespace Seasons.BloodMoon
                 return;
             }
 
-            zdo.Set(ParkingSchemaMarker, ParkingSchema);
-            zdo.Set(OriginalPositionMarker, originalPosition);
-            zdo.Set(OriginalRotationMarker, originalRotation);
-            zdo.Set(OriginalPrefabHashMarker, prefabHash);
-            zdo.Set(ParkingTimestampMarker, (long)now);
-            zdo.Set(ParkedEventMarker, state.EventId);
+            ParkingRecord record = new ParkingRecord
+            {
+                EventId = state.EventId,
+                OriginalPosition = originalPosition,
+                OriginalRotation = originalRotation,
+                OriginalPrefabHash = prefabHash,
+                ParkingTimestamp = (long)now
+            };
+            pendingRecords[zdo.m_uid] = record;
+            pendingUntil[zdo.m_uid] = now + 5d;
+            WriteParkingRecord(zdo, record);
 
             Vector3 parked = GetParkingPosition(zdo.m_uid);
             Reassert(zdo, parked);
-            pendingUntil[zdo.m_uid] = now + 5d;
             SynchronizeLoadedInstance(zdo, parked, originalRotation);
             invalidRecordErrors.Remove(zdo.m_uid);
             LogInfo($"[BloodMoon][event:{state.EventId}][boss:{zdo.m_uid}] parked from {originalPosition} to {parked}.");

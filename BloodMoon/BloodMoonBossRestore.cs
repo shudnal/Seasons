@@ -25,6 +25,7 @@ namespace Seasons.BloodMoon
             }
 
             pendingUntil.Clear();
+            pendingRecords.Clear();
         }
 
         internal static bool RestoreNearest(BloodMoonEventState state, Vector3 point)
@@ -71,6 +72,7 @@ namespace Seasons.BloodMoon
 
             ClearParkingMetadata(zdo);
             pendingUntil.Remove(id);
+            pendingRecords.Remove(id);
             invalidRecordErrors.Remove(id);
             LogInfo($"[BloodMoon][event:{currentEventId}][boss:{id}] restored event {record.EventId} transform to {record.OriginalPosition}.");
         }
@@ -94,9 +96,10 @@ namespace Seasons.BloodMoon
                 if (matchingActiveEvent)
                 {
                     Vector3 parked = GetParkingPosition(zdo.m_uid);
+                    pendingRecords[zdo.m_uid] = record;
+                    pendingUntil[zdo.m_uid] = now + 5d;
                     Reassert(zdo, parked);
                     SynchronizeLoadedInstance(zdo, parked, zdo.GetRotation());
-                    pendingUntil[zdo.m_uid] = now + 5d;
                     invalidRecordErrors.Remove(zdo.m_uid);
                     if (location == ParkingLocation.InsideWorld)
                         LogWarning($"[BloodMoon.Recovery] Completed interrupted parking transaction for boss {zdo.m_uid} in event {record.EventId}.");

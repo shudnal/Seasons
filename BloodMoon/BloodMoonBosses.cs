@@ -37,9 +37,11 @@ namespace Seasons.BloodMoon
             internal Vector3 OriginalPosition;
             internal Quaternion OriginalRotation;
             internal int OriginalPrefabHash;
+            internal long ParkingTimestamp;
         }
 
         private static readonly Dictionary<ZDOID, double> pendingUntil = new Dictionary<ZDOID, double>();
+        private static readonly Dictionary<ZDOID, ParkingRecord> pendingRecords = new Dictionary<ZDOID, ParkingRecord>();
         private static readonly Dictionary<ZDOID, float> nextClientDiscoveryAt = new Dictionary<ZDOID, float>();
         private static readonly Dictionary<ZDOID, string> invalidRecordErrors = new Dictionary<ZDOID, string>();
         private static long clientDiscoveryEventId = -1L;
@@ -59,7 +61,7 @@ namespace Seasons.BloodMoon
                 .Where(zdo => zdo.GetLong(ParkedEventMarker, -1L) == state.EventId)
                 .ToArray())
             {
-                if (!TryReadParkingRecord(zdo, out _, out string error))
+                if (!TryReadParkingRecord(zdo, out ParkingRecord record, out string error))
                 {
                     LogInvalidRecordOnce(zdo, error);
                     continue;
@@ -70,8 +72,9 @@ namespace Seasons.BloodMoon
                     continue;
 
                 Vector3 parked = GetParkingPosition(zdo.m_uid);
-                Reassert(zdo, parked);
+                pendingRecords[zdo.m_uid] = record;
                 pendingUntil[zdo.m_uid] = now + 5d;
+                Reassert(zdo, parked);
                 SynchronizeLoadedInstance(zdo, parked, zdo.GetRotation());
             }
         }
@@ -125,11 +128,12 @@ namespace Seasons.BloodMoon
             {
                 if (parkedEvent == state.EventId)
                 {
-                    if (TryReadParkingRecord(zdo, out _, out string error))
+                    if (TryReadParkingRecord(zdo, out ParkingRecord record, out string error))
                     {
                         Vector3 parked = GetParkingPosition(zdo.m_uid);
-                        Reassert(zdo, parked);
+                        pendingRecords[zdo.m_uid] = record;
                         pendingUntil[zdo.m_uid] = seasonState.GetTotalSeconds() + 5d;
+                        Reassert(zdo, parked);
                         SynchronizeLoadedInstance(zdo, parked, zdo.GetRotation());
                     }
                     else
@@ -167,6 +171,7 @@ namespace Seasons.BloodMoon
         internal static void ResetRuntimeState()
         {
             pendingUntil.Clear();
+            pendingRecords.Clear();
             invalidRecordErrors.Clear();
             nextMarkerScan = 0d;
             ResetClientState();
