@@ -68,27 +68,26 @@ BloodMoon/BloodMoonBossRuntime.cs
 
 ## Follow-up compiler corrections
 
-The next local Visual Studio compile exposed two source regressions introduced during the boss-parking split:
+Local compilation after the project-item fix exposed two actual source regressions introduced by the boss partial-class split:
 
 ```text
-CS0136 BloodMoonBossParkingStart.cs: local 'record' shadowed a later local in the same method scope
-CS0103 BloodMoonBosses.cs: TryValidateDiscoverySender was referenced but not carried over from the pre-split implementation
+CS0136 BloodMoonBossParkingStart.cs: local 'record' shadowed an out variable in an enclosing scope
+CS0103 BloodMoonBosses.cs: TryValidateDiscoverySender was referenced but no longer existed
 ```
 
-They were corrected in:
+Fixed in:
 
 ```text
 597c928c11fd67be60eff63e615b8bbc29d7243c
 fix: repair Blood Moon boss parking compilation
 ```
 
-The correction:
+The first fix renamed the existing-marker `out ParkingRecord` variable so the later new-record declaration has a distinct scope name.
 
-- renames the existing-record `out` variable to `existingRecord`, leaving the new parking transaction local as `record`;
-- restores `TryValidateDiscoverySender` with the previous server/listen-host and routed-peer identity validation, including active participant validation and server-authoritative reporter position lookup.
+The second restored `TryValidateDiscoverySender` from the pre-split boss implementation. The helper still validates active participation, listen-host identity, remote peer character ZDO identity, and reads the reporter position from the authoritative player ZDO.
 
-When splitting a production class into partial files, static review must compare the complete pre-split member set against the resulting partial member set so private helpers are not silently dropped.
+When splitting a production class into partial files, static review must compare not only public/internal call sites but also the complete set of private helpers and nested types from the pre-split file.
 
 ## Verification boundary
 
-The assistant does not build or launch the Valheim mod. The correction was verified statically against the repository project file, current source, and the pre-split `BloodMoonBosses.cs` implementation. Local Visual Studio compilation remains the acceptance check for compiler errors.
+The assistant does not build or launch the Valheim mod. The correction was verified statically against the repository project file and the current `BloodMoon` directory listing. Local Visual Studio compilation remains the acceptance check for compiler errors.
