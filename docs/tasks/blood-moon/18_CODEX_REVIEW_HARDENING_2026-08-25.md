@@ -10,7 +10,7 @@ PR: #42
 base: master
 state: draft / open / not merged
 previous Codex-reviewed head: 75e6d27cb47171ebd3fe409313e06ae4a0142dab
-runtime-code head immediately before this checkpoint: d3a56aa6c130ab88ae45dfd71ebc49524ced3c37
+runtime-code head immediately before this checkpoint update: 8694cc6f4ad37d64820f194c31bc25b1150d68fc
 ```
 
 The exact documentation-inclusive review head must be taken from PR #42 after this file is committed and used verbatim in the next Codex review request.
@@ -51,6 +51,8 @@ Stale negative acknowledgements from an owner already superseded by another rela
 
 There is no arbitrary wall-clock expiry for an accepted request. It remains pending until a successful completion acknowledgement, a world change, or the bowl/ZDO becoming invalid. This avoids converting an unusually long but otherwise normal ownership migration into a silent loss of an already accepted vanilla action.
 
+The central `ZNet.OnDestroy` Blood Moon lifecycle cleanup now explicitly clears pending offering requests. The cached `ZRoutedRpc` registration reference is deliberately retained, preserving the existing no-duplicate-registration invariant if runtime state resets while the same transport object remains alive.
+
 Vanilla behavior used for this design was verified from `assemblies_combined`: `OfferingBowl.InitiateSpawnBoss` routes `RPC_SpawnBoss` to the bowl ZDO owner; `RPC_SpawnBoss` performs the owner/queue/`CanSpawnBoss` checks, schedules the delayed boss spawn, and only then sends the normal requester-side item-removal/feedback RPCs.
 
 ### 3. Listen-host zone owners rejected their own spawn leases
@@ -88,7 +90,7 @@ If another ordinary mod displaced Blood Moon while the event was active, a later
 
 ## Static verification after the fixes
 
-The diff from the previous reviewed head `75e6d27cb47171ebd3fe409313e06ae4a0142dab` through runtime head `d3a56aa6c130ab88ae45dfd71ebc49524ced3c37` changes only these runtime files:
+The diff from the previous reviewed head `75e6d27cb47171ebd3fe409313e06ae4a0142dab` through runtime head `8694cc6f4ad37d64820f194c31bc25b1150d68fc` changes only these runtime files:
 
 ```text
 BloodMoon/BloodMoonDamageCreditAuthority.cs
@@ -96,11 +98,14 @@ BloodMoon/BloodMoonEnemyDeathReports.cs
 BloodMoon/BloodMoonEnvironment.cs
 BloodMoon/BloodMoonNetwork.cs
 BloodMoon/BloodMoonOfferingAuthority.cs
+BloodMoon/BloodMoonWorldLifecycle.cs
 ```
 
 All five review threads from that Codex pass were answered and resolved before this checkpoint.
 
-The OfferingBowl relay was additionally audited for normal ordering edges after the review fix: stale negative ACKs are ignored, skipped/resolved events do not inherit the frozen cutoff, and accepted requests have no arbitrary migration timeout.
+The OfferingBowl relay was additionally audited for normal ordering and lifecycle edges after the review fix: stale negative ACKs are ignored, skipped/resolved events do not inherit the frozen cutoff, accepted requests have no arbitrary migration timeout, and world teardown explicitly removes any remaining accepted request state.
+
+Vanilla `OfferingBowl.UseItem` was also rechecked before considering removal of the client-side interaction guard. It can perform `SetGlobalKey` after `InitiateSpawnBoss` while requester-side offering item removal still happens only after owner-side `RPC_SpawnBoss` acceptance. The existing client-side Marked/Active guard is therefore retained rather than replacing the whole vanilla interaction path with an asynchronous duplicated implementation solely to eliminate a short stale-snapshot false-deny window.
 
 ## Priority owner-side runtime acceptance
 
@@ -113,6 +118,7 @@ The complete acceptance matrix remains `08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md`.
 - accepted pre-cutoff offering followed by `Marked` before owner relay completes;
 - bowl ownership migration, including a temporary ownerless/disconnected interval, before completion;
 - stale negative relay acknowledgement after a newer owner has been selected;
+- world teardown/switch while an accepted offering is pending;
 - skipped Blood Moon event followed by normal boss offering during the old schedule window;
 - positive damage and lethal death while target ownership migrates before server receipt;
 - direct, projectile, AOE and summon damage correlation under ordinary multiplayer ownership changes;
