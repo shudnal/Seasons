@@ -182,7 +182,6 @@ namespace Seasons.BloodMoon
             pendingConfirmations.Clear();
             confirmedCredits.Clear();
             nextConfirmationOrder = 0L;
-            registeredRpc = null;
         }
 
         private static ZPackage CreateAuthorizationPackage(long eventId, ZDOID targetId, ZDOID sourceId,
