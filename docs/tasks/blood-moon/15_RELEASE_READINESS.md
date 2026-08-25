@@ -32,56 +32,73 @@ commit: cf2cda3a4c5c05e62cb8052a61753e5dcaecc28e
 
 The assistant did not build or run the Valheim mod. This checkpoint can become static/review ready, but runtime release approval requires owner-side Valheim testing.
 
-## Current hardening gate
+## Current hardened architecture
 
-The latest manual runtime-code hardening completed before documentation freeze at:
+The latest static hardening includes:
 
-```text
-3e653828134b7cbeaf888e9044e2b7ddca9bd98b
-```
-
-The documentation freeze itself advances the branch. A new exact-head Codex review must therefore be requested after this file is committed. The exact reviewed SHA and review result are recorded in the PR timeline so no follow-up documentation-only commit invalidates that reviewed head.
-
-The current hardened architecture includes:
-
-- explicit event/participant/resolution state machines;
+- explicit server event/participant/resolution state machines;
 - world-bound newest-valid persistence recovery;
-- CCS global/public state plus targeted private RPC state;
-- monotonic explicit resync and reconnect skill baselines;
+- CCS global/public snapshots plus targeted private RPC state;
+- monotonic same-event resync and reconnect skill baselines;
 - real-time-calendar-safe net-time handling;
 - Unity monotonic client lease expiry;
 - server-validated per-zone spawn leases and frozen extra-enemy prefab identity;
-- exact prefab/`MonsterAI` validation and stale prior-event cleanup history;
+- exact prefab/`MonsterAI` spawn validation and stale prior-event cleanup history;
 - dynamic existing-monster Blood behavior without persistent conversion mutation;
-- owner-side final combat permission guard plus early attack/projectile/AOE filtering;
-- vanilla projectile collision lifecycle for active and stale Blood attribution;
+- owner-side final damage guard plus early direct/projectile/AOE filtering;
+- preserved vanilla projectile collision lifecycle for both active and stale Blood attribution;
 - actual-HP-loss-based death credit and Bloodlust lifesteal;
-- server-controlled Bloodlust damage/movement/lifesteal endpoints and rolling healing cap;
-- durable Defeated local terminal state and report retry after reconnect;
+- server-controlled Bloodlust damage/movement/lifesteal endpoints with rolling healing cap;
+- durable local Defeated terminal state and reconnect report retry;
 - source-recipe-bound Blood Craft with source station/quality semantics;
 - Blood Craft preflight support for `m_requireOnlyOneIngredient`;
+- verified vanilla Blood Craft world-sink signatures;
 - persistent outdoor boss parking/restoration and navigation-context withdrawal;
 - live/completion skill reward accounting;
 - independent durable per-player outcome queue;
 - immediate current-resolution native DreamText presentation;
-- bounded presentation start/completion handshake separate from durable profile acknowledgement;
-- consolidated production resolution guards rather than corrective self-patches.
+- bounded Dream presentation start/completion handshake separate from durable profile acknowledgement;
+- consolidated production resolution guards instead of corrective self-patches;
+- routed-RPC registration lifetime protection across world teardown.
+
+## Routed-RPC teardown invariant
+
+Current Valheim `ZRoutedRpc.Register` stores method handlers with `Dictionary.Add`. `ZNet.OnDestroy` does not synchronously discard the current `ZRoutedRpc` method table.
+
+Therefore Blood Moon subsystem runtime reset must not clear its cached transport reference while that routed-RPC object may still be alive. The outcome queue and outcome-presentation handshake now clear only their event/store state during teardown. A new network session is detected by object-reference change and registers handlers once on the new routed-RPC instance.
+
+A fresh full-diff audit found no remaining `registeredRpc = null` reset in the Blood Moon changes.
 
 ## Exact static source checks in the latest pass
 
-The latest hardening pass re-verified the relevant current Valheim code for:
+The latest hardening re-read the current Valheim source for:
 
 - Player/Character death semantics and `CheckDeath` ordering;
 - `Character.RPC_Damage` and actual health loss;
 - `Projectile.OnHit`, TTL, skill/adrenaline and spawn-on-hit behavior;
 - current vanilla `IDestructible.Damage(HitData)` implementations;
-- movement calculations used for temporary movement modifiers;
+- movement calculations used for temporary Bloodlust movement modifiers;
 - `Recipe.GetAmount`;
 - `InventoryGui.OnCraftPressed`, `SetupRequirementList`, `HideRequirement` and `DoCrafting`;
 - `OfferingBowl` inventory/item-stand/RPC/delayed-spawn flow;
-- existing network/ZDO/spawn/persistence APIs recorded in the prior review trail.
+- `ZRoutedRpc.Register` and `ZNet.OnDestroy` transport lifetime;
+- Blood Craft world-sink signatures for `ItemStand`, `ArmorStand`, `Fermenter`, `CookingStation`, `Smelter`, `Turret` and `Catapult`;
+- existing network/ZDO/spawn/profile-persistence APIs documented by the earlier review trail.
 
-A compile-oriented source audit also removed direct relational operators from enum comparisons and rechecked private Harmony targets currently used by the Blood Moon subsystem. This is not a build claim.
+A compile-oriented source audit also removed direct relational operators from enum comparisons and rechecked current private Harmony targets. This is not a build claim.
+
+## Final Codex gate
+
+The earlier Codex request for head `a2728234234308c03045ac7f0cc298382094d10c` is superseded because later runtime-code fixes changed the branch.
+
+After this documentation commit, request Codex review on the new exact `feat/blood-moon` head. The final review is accepted only if:
+
+1. the exact reviewed SHA equals the current PR head;
+2. there is no unresolved confirmed finding;
+3. all inline review threads are resolved;
+4. the result is recorded in the PR timeline without another documentation-only commit.
+
+If a confirmed issue is found, fix it and review the new exact head again.
 
 ## Owner-side runtime acceptance gate
 
@@ -96,6 +113,7 @@ The complete matrix remains `08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md`. The follow
 - late join in Marked and Active;
 - disconnect/reconnect in Active and Resolving;
 - dedicated-server restart in Active and every persisted resolution step;
+- world unload/reload in the same process, specifically checking duplicate RPC registration absence;
 - disable during Forewarning/Marked without normal outcome or time advance;
 - 04:15 / 05:45 / 06:00 transitions and input/fade release.
 
@@ -117,10 +135,10 @@ The complete matrix remains `08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md`. The follow
 - blocked/resisted/zero-damage hits do not steal death credit;
 - actual damaging hit updates credit;
 - outgoing/incoming endpoint interpolation across progress;
-- movement interpolation and restoration across walk/run/crouch/swim;
+- movement interpolation and field restoration across walk/run/crouch/swim;
 - lifesteal from actual enemy HP loss;
 - rolling maximum-health-per-second lifesteal cap;
-- no lifesteal from participant summons unless explicitly changed later;
+- no direct lifesteal from participant summons unless deliberately changed later;
 - no building/tree/rock/tamed/NPC/boss/other-player Blood-source damage;
 - stale projectiles collide and expire without damage/credit/persistent spawn effects.
 
@@ -163,7 +181,7 @@ The last scenario is an explicit runtime boundary. Vanilla source confirms resou
 - permanent item upgrade is not free;
 - multi-craft near stack limits;
 - temporary/permanent/different-owner/different-event stack isolation;
-- external inventories and all guarded vanilla world sinks;
+- `ItemStand`, `ArmorStand`, `Fermenter`, `CookingStation`, `Smelter`, `Turret` and `Catapult` reject temporary Blood Craft items;
 - reconnect/restart with valid temporary inventory;
 - stale temporary inventory from another world/event/owner;
 - temporary summon cleanup;
@@ -182,7 +200,7 @@ The last scenario is an explicit runtime boundary. Vanilla source confirms resou
 - next ordinary sleep remains vanilla after the outcome;
 - local profile persistence acknowledgement;
 - cloud profile fresh-process acknowledgement;
-- cloud save failure retains server queue entry;
+- cloud save failure retains the server queue entry;
 - repeated delivery remains idempotent while durable acknowledgement is pending.
 
 ### Presentation and systems
