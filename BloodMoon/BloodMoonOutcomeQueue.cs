@@ -17,6 +17,14 @@ namespace Seasons.BloodMoon
         private const string RpcDeliver = "Seasons.BloodMoon.OutcomeDeliver";
         private const string RpcAck = "Seasons.BloodMoon.OutcomeAck";
         private const string RestedRemovalPrefix = "Seasons.BloodMoon.RestedRemoved.";
+        private const string OutcomeAppliedPrefix = "Seasons.BloodMoon.OutcomeApplied.";
+
+        private enum LocalApplyResult
+        {
+            Failed,
+            AppliedThisProcess,
+            DurableMarkerPresent
+        }
 
         [Serializable]
         private sealed class Store
@@ -58,6 +66,10 @@ namespace Seasons.BloodMoon
         };
 
         private static readonly Dictionary<string, PendingAck> pendingLocalAcks = new Dictionary<string, PendingAck>();
+        // This deliberately survives ZNet world teardown. For cloud profiles, a marker is considered durable
+        // only when it was not created by this running process, because vanilla PlayerProfile.Save() returns
+        // true even when its cloud FileWriter fails and only a local recovery backup is produced.
+        private static readonly HashSet<string> processAppliedOutcomeKeys = new HashSet<string>(StringComparer.Ordinal);
         private static Store store;
         private static long loadedWorldUid;
         private static float retryTimer;
@@ -143,7 +155,10 @@ namespace Seasons.BloodMoon
 
                 if (Player.m_localPlayer != null && Player.m_localPlayer.GetPlayerID() == outcome.PlayerId)
                 {
-                    if (TryApplyLocal(store.WorldUid, outcome))
+                    LocalApplyResult result = TryApplyLocal(store.WorldUid, outcome);
+                    if (result == LocalApplyResult.DurableMarkerPresent)
+                        TryAcknowledge(store.WorldUid, outcome.EventId, outcome.PlayerId);
+                    else if (result == LocalApplyResult.AppliedThisProcess)
                         QueueLocalAck(store.WorldUid, outcome);
                     continue;
                 }
@@ -201,6 +216,12 @@ namespace Seasons.BloodMoon
                 !ReferenceEquals(profile, Game.instance.GetPlayerProfile()))
                 return;
 
+            // Vanilla PlayerProfile.SavePlayerToDisk() always returns true after a cloud FileWriter failure,
+            // so its bool result is not a durable cloud-write acknowledgement. Keep the server queue entry
+            // until a fresh process observes the outcome marker loaded back from the character profile.
+            if (profile.m_fileSource == FileHelpers.FileSource.Cloud)
+                return;
+
             foreach (KeyValuePair<string, PendingAck> entry in pendingLocalAcks.ToArray())
             {
                 PendingAck ack = entry.Value;
@@ -210,27 +231,8 @@ namespace Seasons.BloodMoon
                     continue;
                 }
 
-                if (ZNet.m_world == null || ZNet.m_world.m_uid != ack.WorldUid || Player.m_localPlayer == null ||
-                    Player.m_localPlayer.GetPlayerID() != ack.PlayerId)
-                    continue;
-
-                if (ZNet.instance != null && ZNet.instance.IsServer())
-                {
-                    RemovePendingOutcome(ack.WorldUid, ack.EventId, ack.PlayerId);
+                if (TryAcknowledge(ack.WorldUid, ack.EventId, ack.PlayerId))
                     pendingLocalAcks.Remove(entry.Key);
-                    continue;
-                }
-
-                if (ZRoutedRpc.instance == null)
-                    continue;
-
-                ZPackage pkg = new ZPackage();
-                pkg.Write(BloodMoonNetwork.ProtocolVersion);
-                pkg.Write(ack.WorldUid);
-                pkg.Write(ack.EventId);
-                pkg.Write(ack.PlayerId);
-                ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.instance.GetServerPeerID(), RpcAck, pkg);
-                pendingLocalAcks.Remove(entry.Key);
             }
 
             pendingLocalProfileCaptured = pendingLocalAcks.Count > 0;
@@ -254,10 +256,12 @@ namespace Seasons.BloodMoon
             Player player = Player.m_localPlayer;
             if (player == null || player.GetPlayerID() != outcome.PlayerId || ZNet.m_world == null || ZNet.m_world.m_uid != worldUid)
                 return;
-            if (!TryApplyLocal(worldUid, outcome))
-                return;
 
-            QueueLocalAck(worldUid, outcome);
+            LocalApplyResult result = TryApplyLocal(worldUid, outcome);
+            if (result == LocalApplyResult.DurableMarkerPresent)
+                TryAcknowledge(worldUid, outcome.EventId, outcome.PlayerId);
+            else if (result == LocalApplyResult.AppliedThisProcess)
+                QueueLocalAck(worldUid, outcome);
         }
 
         private static void OnAck(long sender, ZPackage pkg)
@@ -290,7 +294,31 @@ namespace Seasons.BloodMoon
                 PlayerId = outcome.PlayerId
             };
             pendingLocalProfileCaptured = false;
-            LogInfo($"[BloodMoon][event:{outcome.EventId}][player:{outcome.PlayerId}][outcome] Applied locally; acknowledgement deferred until the player profile is saved.");
+            LogInfo($"[BloodMoon][event:{outcome.EventId}][player:{outcome.PlayerId}][outcome] Applied locally; acknowledgement deferred until durable character persistence is proven.");
+        }
+
+        private static bool TryAcknowledge(long worldUid, long eventId, long playerId)
+        {
+            if (worldUid == 0L || eventId < 0L || playerId == 0L || ZNet.m_world == null || ZNet.m_world.m_uid != worldUid ||
+                Player.m_localPlayer == null || Player.m_localPlayer.GetPlayerID() != playerId)
+                return false;
+
+            if (ZNet.instance != null && ZNet.instance.IsServer())
+            {
+                RemovePendingOutcome(worldUid, eventId, playerId);
+                return true;
+            }
+
+            if (ZRoutedRpc.instance == null)
+                return false;
+
+            ZPackage pkg = new ZPackage();
+            pkg.Write(BloodMoonNetwork.ProtocolVersion);
+            pkg.Write(worldUid);
+            pkg.Write(eventId);
+            pkg.Write(playerId);
+            ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.instance.GetServerPeerID(), RpcAck, pkg);
+            return true;
         }
 
         private static void RemovePendingOutcome(long worldUid, long eventId, long playerId)
@@ -300,14 +328,19 @@ namespace Seasons.BloodMoon
                 return;
 
             Save();
-            LogInfo($"[BloodMoon][event:{eventId}][player:{playerId}][outcome] Durable outcome acknowledged after player-profile persistence.");
+            LogInfo($"[BloodMoon][event:{eventId}][player:{playerId}][outcome] Durable outcome acknowledgement removed the server queue entry.");
         }
 
-        private static bool TryApplyLocal(long worldUid, PendingOutcome outcome)
+        private static LocalApplyResult TryApplyLocal(long worldUid, PendingOutcome outcome)
         {
             Player player = Player.m_localPlayer;
             if (player == null || outcome == null || outcome.PlayerId != player.GetPlayerID() || ZNet.m_world == null || ZNet.m_world.m_uid != worldUid)
-                return false;
+                return LocalApplyResult.Failed;
+
+            string markerKey = MakeOutcomeMarkerKey(worldUid, outcome.EventId);
+            string processKey = MakeProcessAppliedKey(worldUid, outcome.EventId, outcome.PlayerId);
+            if (player.m_customData.ContainsKey(markerKey) && !processAppliedOutcomeKeys.Contains(processKey))
+                return LocalApplyResult.DurableMarkerPresent;
 
             try
             {
@@ -329,12 +362,15 @@ namespace Seasons.BloodMoon
                     player.GetSEMan()?.RemoveStatusEffect(SEMan.s_statusEffectRested);
                     player.m_customData[restedKey] = "1";
                 }
-                return true;
+
+                player.m_customData[markerKey] = "1";
+                processAppliedOutcomeKeys.Add(processKey);
+                return LocalApplyResult.AppliedThisProcess;
             }
             catch (Exception ex)
             {
                 LogWarning($"[BloodMoon][event:{outcome.EventId}][player:{outcome.PlayerId}][outcome] Deferred outcome application failed: {ex}");
-                return false;
+                return LocalApplyResult.Failed;
             }
         }
 
@@ -449,6 +485,16 @@ namespace Seasons.BloodMoon
         private static string MakeLocalAckKey(long worldUid, long eventId, long playerId)
         {
             return worldUid.ToString(CultureInfo.InvariantCulture) + ":" + MakeKey(eventId, playerId);
+        }
+
+        private static string MakeOutcomeMarkerKey(long worldUid, long eventId)
+        {
+            return OutcomeAppliedPrefix + worldUid.ToString(CultureInfo.InvariantCulture) + "." + eventId.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static string MakeProcessAppliedKey(long worldUid, long eventId, long playerId)
+        {
+            return worldUid.ToString(CultureInfo.InvariantCulture) + ":" + eventId.ToString(CultureInfo.InvariantCulture) + ":" + playerId.ToString(CultureInfo.InvariantCulture);
         }
     }
 
