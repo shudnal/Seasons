@@ -134,7 +134,7 @@ namespace Seasons.BloodMoon
             long sequence = ++nextDamageReportSequence;
             if (ZNet.instance != null && ZNet.instance.IsServer())
             {
-                long localOwner = ZDOMan.instance != null ? ZDOMan.instance.GetSessionID() : 0L;
+                long localOwner = ZDOMan.instance != null ? ZDOMan.GetSessionID() : 0L;
                 AcceptDamageReport(localOwner, eventId, sourcePlayerId, targetId, sequence, actualDamage, trustedLocalOwner: true);
                 return;
             }
@@ -264,7 +264,7 @@ namespace Seasons.BloodMoon
             long owner = targetZdo.GetOwner();
             if (owner == 0L || ZDOMan.instance == null)
                 return false;
-            return trustedLocalOwner ? owner == ZDOMan.instance.GetSessionID() : owner == sender;
+            return trustedLocalOwner ? owner == ZDOMan.GetSessionID() : owner == sender;
         }
 
         private static bool TryApplyServerHealingCap(long playerId, float requested, out float granted)
