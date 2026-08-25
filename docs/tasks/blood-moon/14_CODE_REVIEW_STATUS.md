@@ -1,6 +1,6 @@
 # Blood Moon code review status
 
-This file records the repository/Codex review trail for draft PR #42 and the final continuation checkpoint after implementation hardening.
+This file records the Codex/manual review trail for draft PR #42 and the current exact continuation rule.
 
 ## Pull request
 
@@ -12,11 +12,11 @@ state: draft / open / not merged
 URL: https://github.com/shudnal/Seasons/pull/42
 ```
 
-The PR must remain draft and unmerged until the owner explicitly approves it.
+The PR must remain draft and unmerged until explicit owner approval.
 
 ## Authoritative game source
 
-All game/API verification for review fixes uses:
+All game/API verification for this review sequence uses:
 
 ```text
 repository: https://github.com/shudnal/assemblies_combined
@@ -25,118 +25,78 @@ commit: cf2cda3a4c5c05e62cb8052a61753e5dcaecc28e
 
 No assistant-side Valheim build or runtime test was performed.
 
-## Review chronology
+## Earlier Codex chronology
 
-The branch received repeated full-diff Codex passes. Every confirmed inline finding listed below was fixed on `feat/blood-moon` and its review thread was resolved before another exact-head review was requested.
+The branch received repeated full-diff Codex passes. Confirmed findings were fixed before later passes, and the associated inline threads were resolved.
 
 ### Pass 1 — `f11ff4d4ff`
 
-Five findings were accepted and fixed:
+Confirmed fixes included:
 
-1. explicit resync did not preserve private skill sequence/live-bonus baselines;
-2. generic world cleanup could remove valid active Blood Craft items during recovery;
-3. disabling the feature before combat could follow the normal morning-advance path;
-4. random-event suppression could leak across world teardown;
-5. boss withdrawal used XZ proximity without sufficient interior-context discrimination.
-
-Representative fixes include:
-
-```text
-86e7292681048a09fcd51e2f59365e98f1b2730a
-831dc32b585562c4d071a3f47780f35deedb908d
-ddbb65649e721742864f4da468b83f76882f386d
-621429699a140a92e937aace93c6800cea5ebe10
-2da9849b0144656e944becb4cae36ea9bb93ca22
-565fc4890fe34c678fdca1366df0a1a4c94a2ec9
-```
+- private skill baselines in resync;
+- active Blood Craft preservation during restart recovery;
+- pre-combat disable avoiding morning time advance;
+- random-event suppression cleanup on world teardown;
+- boss-withdrawal interior-context filtering.
 
 ### Pass 2 — `ddbb65649e`
 
-Six findings were accepted and fixed, including:
+Confirmed fixes included:
 
-1. environmental/null-attacker hazards were incorrectly blocked against participants;
-2. private resync could fire before local Player creation and never retry;
-3. direct attack Harmony attributes did not reliably enumerate both attack methods;
-4. mixed interior/surface zones could route the whole spawn allowance to one context;
-5. a modified zone owner could report a living enemy as dead;
-6. chronicle keys were not world-scoped.
+- environmental/null-attacker damage remaining valid for participants;
+- local-player-ready resync retry;
+- explicit direct-attack target enumeration;
+- mixed surface/interior spawn routing;
+- server-observed enemy-death validation;
+- world-scoped chronicle keys.
 
-The same audit established that skill interception must patch the real `Player.RaiseSkill` override rather than the base Character method.
+This pass also confirmed that skill interception must target the real `Player.RaiseSkill` override.
 
 ### Pass 3 — `e870e5805b`
 
-The next pass and associated manual freeze work hardened:
+Hardening covered:
 
-- undelivered per-player outcomes so later events cannot overwrite them;
-- stale/late resync ordering with monotonic envelopes;
-- immutable AI/projectile/AOE source context;
-- real-time-calendar handling so calendar absolute seconds never become Valheim net time.
+- outcomes surviving later annual event replacement;
+- monotonic explicit resync;
+- immutable projectile/AOE source context;
+- real-time-calendar net-time separation.
 
 ### Pass 4 — `f7ed0e6bdc`
 
-Confirmed findings included:
+Confirmed fixes included:
 
-- lease expiry compared independent client/server clock domains;
-- canonical event persistence could hide a newer valid `.new` snapshot;
-- claimed Blood-enemy source attribution was not sufficiently verified at RPC ingress;
-- interaction routing stopped too early during `Resolving` while Blood behavior was still active;
-- disabled source/upgrade recipes could remain visible through Blood Craft.
-
-The fixes introduced client-local lease rebasing, newest-valid snapshot selection and stronger raw-ZDO attribution/recipe validation.
-
-The durable outcome store was also brought to the same newest-valid canonical/`.new`/`.old` recovery model.
-
-### Intermediate clean review — `daf5f5bb3b`
-
-Codex reported no major issues on this exact head after interior spawn-context hardening.
-
-Further manual hardening then changed runtime code, so the branch correctly continued through new exact-head reviews instead of treating this result as final.
+- client/server lease clock-domain separation;
+- newest-valid event persistence selection;
+- stronger Blood-enemy attribution validation;
+- combat routing through early Resolving until Blood behavior disables;
+- disabled Blood Craft recipe exclusion.
 
 ### Pass 5 — `688b901477`
 
-Five new findings were accepted and fixed:
+Confirmed fixes included:
 
-1. spawn reports could accept an arbitrary client-marked ZDO instead of the configured extra-enemy prefab;
-2. boss discovery still lacked the same navigation/interior context required by boss withdrawal;
-3. the mixed-context spawn interceptor could race the resolution spawn freeze;
-4. durable outcome acknowledgement occurred before Player-profile persistence;
-5. a late defeat RPC could still rewrite participant state after resolution started.
+- exact prefab/`MonsterAI` validation for extra-enemy reports;
+- boss discovery navigation context;
+- resolution spawn-race prevention;
+- persistence-aware durable outcome acknowledgement;
+- late Defeated report rejection after resolution starts.
 
-Fixes added exact prefab/`MonsterAI` validation, navigation-context discovery, resolution-phase spawn rejection, persistence-aware outcome acknowledgement and a combat-live defeat-report guard.
-
-Manual review after this pass also found that cleanup must include a valid extra whose report was completely lost; resolution now scans current-event markers but destroys only ZDOs that pass authoritative extra-enemy validation.
+Manual follow-up also ensured that a valid extra whose report was completely lost remains cleanable at resolution without trusting arbitrary event markers.
 
 ### Pass 6 — `51c6e99098`
 
-Two findings were accepted and fixed:
+Confirmed fixes included:
 
-1. dormant `EventId == -1` cleanup matched the default `-1` marker on ordinary world ZDOs;
-2. extra-enemy validation depended on the live config value, so changing the configured prefab during an active event/restart could strand legitimate extras.
-
-The fixes:
-
-- short-circuit dormant cleanup without scanning ordinary world ZDOs;
-- freeze the extra-enemy prefab identity once per event;
-- persist that identity in event state;
-- reuse the existing lease `PoolRevision` as the stable prefab hash;
-- make both normal and mixed-context spawning resolve the lease's frozen prefab;
-- validate reports, deferred reports and cleanup against the frozen identity rather than live config.
+- dormant `EventId == -1` cleanup safety;
+- frozen per-event extra-enemy prefab identity so config changes cannot strand legitimate extras.
 
 ### Pass 7 — `0b423b0350`
 
-One finding was accepted and fixed:
+Confirmed fix:
 
-- after the current event state was replaced, the destroy guard no longer knew the frozen prefab identity for an extra marked with a prior event ID, so stale prior-event extras could survive recovery permanently.
+- durable server-side spawn-pool history preserves verifiable cleanup for extras from prior events after the current event state has been replaced.
 
-The fix adds a server-only durable spawn-pool registry:
-
-```text
-world UID -> event ID -> frozen prefab name
-```
-
-The registry is written from authoritative frozen event state, retains complete event history, uses newest-valid canonical/`.new`/`.old` recovery, and lets stale-event cleanup retain exact prefab + `MonsterAI` validation without trusting client markers.
-
-### Code-freeze clean review — `0be8eb89d6`
+### Earlier clean code review — `0be8eb89d600a95720f08387041fb7ab15ccd5f7`
 
 Codex result:
 
@@ -144,50 +104,99 @@ Codex result:
 Didn't find any major issues.
 ```
 
-Exact full SHA:
+Later documentation-inclusive review correctly found that the claimed client lease clock was not actually monotonic.
+
+### Documentation review finding — fixed at `9f8e24d6fd8adb656aa37d067cd5b4a466224105`
+
+The lease remaining lifetime is now bounded once on receipt and tracked against Unity `Time.realtimeSinceStartup`. OS wall-clock corrections can no longer prematurely expire or extend a received lease.
+
+## Post-review manual hardening
+
+The exact pre-documentation hardening head for the latest manual pass was:
 
 ```text
-0be8eb89d600a95720f08387041fb7ab15ccd5f7
+3e653828134b7cbeaf888e9044e2b7ddca9bd98b
 ```
 
-At that checkpoint all inline review threads were resolved.
+This pass intentionally reopened static scrutiny instead of treating the earlier clean review as permanent. It found and fixed additional issues not covered by the previous review head.
 
-## Important manual findings incorporated between Codex passes
+### Projectile collision lifecycle
 
-Manual freeze audits also fixed or reconfirmed issues that were not always raised as standalone Codex comments:
+An active Blood-source projectile hitting world geometry previously risked skipping vanilla hit lifecycle, and stale event-attributed projectiles could phase through geometry after event end. The current implementation preserves vanilla collision/effect/attach/destroy behavior while suppressing forbidden damage, skill/adrenaline credit and stale persistent spawn effects.
 
-- 06:00 frozen transition broadcasts the correct net time;
-- restart gives persisted participants bounded reconnect grace;
-- stale projectile/AOE attribution cannot revive under a later event ID;
-- schedule search uses the configured total year length;
-- Fader cloud clones reactivate correctly after vanilla environment switching;
-- teleport spatial suspension is heartbeat/TTL based;
-- rejected spawn cleanup is bound to immutable ZDOID creator identity;
-- raw SpawnSystem zone ownership is independently verified;
-- completion reward replay is monotonic;
-- Blood Craft multi-craft respects vanilla stack limits;
-- cancelled pre-combat events never replay success outcomes;
-- `PlayerProfile.Save() == true` is not accepted as cloud durability proof because current vanilla cloud failure can still produce `true` after only a local recovery backup;
-- valid unreported extras remain cleanable at resolution;
-- frozen spawn-pool identity is persisted before any event lease can create a valid extra.
+### World damage coverage
 
-## Documentation freeze
+The world-damage guard was expanded to the current vanilla `IDestructible` implementations with `Damage(HitData)`, including `HitArea` and `Raven` in addition to build pieces, generic destructibles, rocks and trees.
 
-After the clean code-freeze review, only internal task documentation is being updated:
+### Bloodlust implementation hardening
 
-- `13_IMPLEMENTATION_REPORT.md`;
-- this file;
-- `15_RELEASE_READINESS.md`.
+Bloodlust now has explicit server-controlled full-factor endpoints for outgoing damage, incoming damage, movement and actual-damage lifesteal.
 
-A final Codex request must review the resulting documentation-inclusive head. If that pass reports a confirmed runtime/code/documentation issue, fix it and review again. The final clean result may be recorded in the PR timeline without modifying these files again, so the reviewed head remains exact.
+Death credit and lifesteal are committed only after positive owner-observed HP loss. Lifesteal target reports additionally require server-side raw Blood-enemy ZDO validation and a rolling max-health-per-second cap.
 
-## Final invariants before owner playtest
+### Blood Craft source-recipe semantics and preflight
 
-The repository checkpoint is acceptable only when all of the following remain true:
+Temporary item markers retain exact source recipe identity. Source station type and normal quality-level progression are preserved while materials remain free.
 
-- no unresolved review thread exists;
-- the final documentation-inclusive Codex pass has no confirmed finding;
-- PR #42 is still draft/open/unmerged;
-- no plugin version, public README, Thunderstore changelog or packaging/release metadata was changed;
-- no assistant-side Valheim build/runtime execution is claimed;
-- owner-side runtime acceptance remains the next gate.
+`Recipe.GetAmount` preflight is now guarded for Blood Craft, closing the `m_requireOnlyOneIngredient` empty-resource dereference path that occurs before `DoCrafting`. Temporary-upgrade material rows are hidden while source station/quality rules remain enforced.
+
+### Immediate DreamText outcome path
+
+Outcome DreamText no longer intercepts or changes the next normal sleep. Resolution presents a dedicated native-`SleepText` UI immediately, with independent local input protection.
+
+A separate presentation handshake now waits for connected clients to start/complete the presentation before `ReleasingClients`, subject to bounded real-time fail-safe timeouts. Durable profile acknowledgement remains a separate persistence concern.
+
+### Durable local Defeated state
+
+The short recovery timer is no longer the only local evidence of Defeated. A world/event-bound player custom-data marker restores terminal local state after process loss and retries the Defeated notification while the server still reports the participant as combat-active.
+
+### Actual-damage death credit
+
+A zero-damage, fully blocked or fully resisted accepted hit can no longer overwrite the previous real damaging source used for enemy death credit.
+
+### Resolution consolidation
+
+Production controller code now directly owns:
+
+- pre-combat feature-disable cancellation;
+- late Defeated rejection;
+- real-time fade timeout;
+- real-time-calendar morning guard;
+- ordinary-world net-time broadcast;
+- outcome-presentation release gating.
+
+Corrective self-patches for those behaviors were deleted after integration. This also removed a stale Harmony patch that still targeted the no-longer-existing `ReplayResolvedOutcomes` method.
+
+### Compile-oriented source audit
+
+A manual C# source audit found relational comparisons being used directly on `BloodMoonResolutionStep` enum values. These were replaced with explicit `(int)` comparisons.
+
+New Harmony signatures for `Recipe.GetAmount`, `InventoryGui.SetupRequirementList` and related crafting paths were re-verified against the exact game-source commit.
+
+This is static source review only. It is not a build result.
+
+## Current review state
+
+At the time of this documentation freeze:
+
+- all previously listed inline review threads were resolved;
+- PR #42 remained draft/open/unmerged;
+- the latest manual hardening changed runtime code after the earlier clean Codex head;
+- therefore a new exact-head Codex review is required after `13_IMPLEMENTATION_REPORT.md`, this file and `15_RELEASE_READINESS.md` are frozen.
+
+The resulting documentation-inclusive review SHA and Codex result must be recorded in the PR timeline without another documentation-only commit. If the new review reports a confirmed issue, fix it and request another exact-head review; the new reviewed SHA then replaces the previous checkpoint.
+
+## Runtime gate
+
+Even a clean final Codex pass does not substitute for owner-side Valheim testing. Priority runtime acceptance remains documented in `13_IMPLEMENTATION_REPORT.md`, `15_RELEASE_READINESS.md` and the authoritative `08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md`.
+
+## Final invariants
+
+Before owner-side playtest handoff, all of the following must remain true:
+
+- final documentation-inclusive Codex pass has no unresolved confirmed finding;
+- all inline review threads are resolved;
+- PR #42 is draft/open/unmerged;
+- plugin version, public README, Thunderstore changelog and packaging/release metadata are unchanged;
+- no assistant-side Valheim build/runtime result is claimed;
+- any remaining runtime-only uncertainty is stated explicitly rather than presented as proven behavior.
