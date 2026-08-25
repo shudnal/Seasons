@@ -241,20 +241,22 @@ namespace Seasons.BloodMoon
             if (sourceZdo == null)
                 return;
 
+            // Attribution is immutable at source creation. The source ZDO may legitimately migrate to
+            // another owner before this target-owner RPC arrives, so receive-time ownership is not part
+            // of source identity. Durable player/summon/event markers remain the stable validation data.
             if (attribution.SourceType == BloodMoonCombatSourceType.Participant)
             {
-                if (sourceZdo.GetOwner() != sender || attribution.SourcePlayerId == 0L || sourceZdo.GetLong(ZDOVars.s_playerID, 0L) != attribution.SourcePlayerId)
+                if (attribution.SourcePlayerId == 0L || sourceZdo.GetLong(ZDOVars.s_playerID, 0L) != attribution.SourcePlayerId)
                     return;
             }
             else if (attribution.SourceType == BloodMoonCombatSourceType.ParticipantSummon)
             {
-                if (sourceZdo.GetOwner() != sender || !BloodMoonSummons.ValidateMarkedSummonZdo(sourceZdo, attribution.EventId, attribution.SourcePlayerId))
+                if (!BloodMoonSummons.ValidateMarkedSummonZdo(sourceZdo, attribution.EventId, attribution.SourcePlayerId))
                     return;
             }
             else
             {
-                if (sourceZdo.GetOwner() != sender || attribution.SourcePlayerId != 0L ||
-                    !BloodMoonEnemyDeathReports.IsEligibleBloodEnemyZdo(attribution.EventId, sourceZdo))
+                if (attribution.SourcePlayerId != 0L || !BloodMoonEnemyDeathReports.IsEligibleBloodEnemyZdo(attribution.EventId, sourceZdo))
                     return;
             }
 
