@@ -37,6 +37,13 @@ namespace Seasons.BloodMoon
             public string Chronicle = string.Empty;
         }
 
+        private sealed class PendingAck
+        {
+            internal long WorldUid;
+            internal long EventId;
+            internal long PlayerId;
+        }
+
         private sealed class Candidate
         {
             internal string Path;
@@ -50,10 +57,12 @@ namespace Seasons.BloodMoon
             ObjectCreationHandling = ObjectCreationHandling.Replace
         };
 
+        private static readonly Dictionary<string, PendingAck> pendingLocalAcks = new Dictionary<string, PendingAck>();
         private static Store store;
         private static long loadedWorldUid;
         private static float retryTimer;
         private static ZRoutedRpc registeredRpc;
+        private static bool pendingLocalProfileCaptured;
 
         internal static void RegisterRpc()
         {
@@ -135,10 +144,7 @@ namespace Seasons.BloodMoon
                 if (Player.m_localPlayer != null && Player.m_localPlayer.GetPlayerID() == outcome.PlayerId)
                 {
                     if (TryApplyLocal(store.WorldUid, outcome))
-                    {
-                        store.Pending.Remove(entry.Key);
-                        Save();
-                    }
+                        QueueLocalAck(store.WorldUid, outcome);
                     continue;
                 }
 
@@ -176,6 +182,58 @@ namespace Seasons.BloodMoon
             loadedWorldUid = 0L;
             retryTimer = 0f;
             registeredRpc = null;
+            pendingLocalAcks.Clear();
+            pendingLocalProfileCaptured = false;
+        }
+
+        internal static void OnLocalPlayerDataCaptured(PlayerProfile profile, Player player)
+        {
+            if (pendingLocalAcks.Count == 0 || profile == null || player == null || Game.instance == null ||
+                !ReferenceEquals(profile, Game.instance.GetPlayerProfile()) || player != Player.m_localPlayer)
+                return;
+
+            pendingLocalProfileCaptured = true;
+        }
+
+        internal static void OnLocalProfileSaved(PlayerProfile profile, bool success)
+        {
+            if (!success || !pendingLocalProfileCaptured || pendingLocalAcks.Count == 0 || profile == null || Game.instance == null ||
+                !ReferenceEquals(profile, Game.instance.GetPlayerProfile()))
+                return;
+
+            foreach (KeyValuePair<string, PendingAck> entry in pendingLocalAcks.ToArray())
+            {
+                PendingAck ack = entry.Value;
+                if (ack == null)
+                {
+                    pendingLocalAcks.Remove(entry.Key);
+                    continue;
+                }
+
+                if (ZNet.m_world == null || ZNet.m_world.m_uid != ack.WorldUid || Player.m_localPlayer == null ||
+                    Player.m_localPlayer.GetPlayerID() != ack.PlayerId)
+                    continue;
+
+                if (ZNet.instance != null && ZNet.instance.IsServer())
+                {
+                    RemovePendingOutcome(ack.WorldUid, ack.EventId, ack.PlayerId);
+                    pendingLocalAcks.Remove(entry.Key);
+                    continue;
+                }
+
+                if (ZRoutedRpc.instance == null)
+                    continue;
+
+                ZPackage pkg = new ZPackage();
+                pkg.Write(BloodMoonNetwork.ProtocolVersion);
+                pkg.Write(ack.WorldUid);
+                pkg.Write(ack.EventId);
+                pkg.Write(ack.PlayerId);
+                ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.instance.GetServerPeerID(), RpcAck, pkg);
+                pendingLocalAcks.Remove(entry.Key);
+            }
+
+            pendingLocalProfileCaptured = pendingLocalAcks.Count > 0;
         }
 
         private static void OnDeliver(long sender, ZPackage pkg)
@@ -199,12 +257,7 @@ namespace Seasons.BloodMoon
             if (!TryApplyLocal(worldUid, outcome))
                 return;
 
-            ZPackage ack = new ZPackage();
-            ack.Write(BloodMoonNetwork.ProtocolVersion);
-            ack.Write(worldUid);
-            ack.Write(outcome.EventId);
-            ack.Write(outcome.PlayerId);
-            ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.instance.GetServerPeerID(), RpcAck, ack);
+            QueueLocalAck(worldUid, outcome);
         }
 
         private static void OnAck(long sender, ZPackage pkg)
@@ -218,12 +271,36 @@ namespace Seasons.BloodMoon
             if (ZNet.m_world == null || ZNet.m_world.m_uid != worldUid || !ValidateSender(sender, playerId))
                 return;
 
+            RemovePendingOutcome(worldUid, eventId, playerId);
+        }
+
+        private static void QueueLocalAck(long worldUid, PendingOutcome outcome)
+        {
+            if (worldUid == 0L || outcome == null || outcome.EventId < 0L || outcome.PlayerId == 0L)
+                return;
+
+            string key = MakeLocalAckKey(worldUid, outcome.EventId, outcome.PlayerId);
+            if (pendingLocalAcks.ContainsKey(key))
+                return;
+
+            pendingLocalAcks[key] = new PendingAck
+            {
+                WorldUid = worldUid,
+                EventId = outcome.EventId,
+                PlayerId = outcome.PlayerId
+            };
+            pendingLocalProfileCaptured = false;
+            LogInfo($"[BloodMoon][event:{outcome.EventId}][player:{outcome.PlayerId}][outcome] Applied locally; acknowledgement deferred until the player profile is saved.");
+        }
+
+        private static void RemovePendingOutcome(long worldUid, long eventId, long playerId)
+        {
             EnsureLoaded(worldUid);
-            if (store == null || !store.Pending.Remove(MakeKey(eventId, playerId)))
+            if (store == null || store.WorldUid != worldUid || !store.Pending.Remove(MakeKey(eventId, playerId)))
                 return;
 
             Save();
-            LogInfo($"[BloodMoon][event:{eventId}][player:{playerId}][outcome] Durable outcome acknowledged.");
+            LogInfo($"[BloodMoon][event:{eventId}][player:{playerId}][outcome] Durable outcome acknowledged after player-profile persistence.");
         }
 
         private static bool TryApplyLocal(long worldUid, PendingOutcome outcome)
@@ -368,6 +445,11 @@ namespace Seasons.BloodMoon
         {
             return eventId.ToString(CultureInfo.InvariantCulture) + ":" + playerId.ToString(CultureInfo.InvariantCulture);
         }
+
+        private static string MakeLocalAckKey(long worldUid, long eventId, long playerId)
+        {
+            return worldUid.ToString(CultureInfo.InvariantCulture) + ":" + MakeKey(eventId, playerId);
+        }
     }
 
     [HarmonyPatch(typeof(BloodMoonNetwork), nameof(BloodMoonNetwork.RegisterRpcs))]
@@ -396,6 +478,24 @@ namespace Seasons.BloodMoon
         {
             // The controller runs FixedUpdate on all peers. TickServer internally gates the server role.
             BloodMoonOutcomeQueue.TickServer(Time.fixedDeltaTime);
+        }
+    }
+
+    [HarmonyPatch(typeof(PlayerProfile), nameof(PlayerProfile.SavePlayerData))]
+    internal static class BloodMoonOutcomePlayerDataCapturePatch
+    {
+        private static void Postfix(PlayerProfile __instance, Player player)
+        {
+            BloodMoonOutcomeQueue.OnLocalPlayerDataCaptured(__instance, player);
+        }
+    }
+
+    [HarmonyPatch(typeof(PlayerProfile), nameof(PlayerProfile.Save))]
+    internal static class BloodMoonOutcomeProfileSavePatch
+    {
+        private static void Postfix(PlayerProfile __instance, bool __result)
+        {
+            BloodMoonOutcomeQueue.OnLocalProfileSaved(__instance, __result);
         }
     }
 
