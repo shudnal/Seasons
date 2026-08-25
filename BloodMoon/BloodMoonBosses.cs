@@ -160,6 +160,32 @@ namespace Seasons.BloodMoon
             Park(state, zdo, seasonState.GetTotalSeconds());
         }
 
+        private static bool TryValidateDiscoverySender(BloodMoonEventState state, long sender, long playerId, out Vector3 position)
+        {
+            position = Vector3.zero;
+            if (state == null || playerId == 0L || ZNet.instance == null || ZRoutedRpc.instance == null || ZDOMan.instance == null ||
+                !state.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant) || !participant.IsCombatActive)
+                return false;
+
+            if (sender == ZRoutedRpc.instance.GetServerPeerID())
+            {
+                Player player = Player.m_localPlayer;
+                if (player == null || player.GetPlayerID() != playerId)
+                    return false;
+                position = player.transform.position;
+                return true;
+            }
+
+            ZNetPeer peer = ZNet.instance.GetPeer(sender);
+            if (peer == null || peer.m_characterID.IsNone())
+                return false;
+            ZDO playerZdo = ZDOMan.instance.GetZDO(peer.m_characterID);
+            if (playerZdo == null || playerZdo.GetLong(ZDOVars.s_playerID, 0L) != playerId)
+                return false;
+            position = playerZdo.GetPosition();
+            return true;
+        }
+
         internal static void ResetClientState()
         {
             nextClientDiscoveryAt.Clear();

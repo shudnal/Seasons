@@ -37,10 +37,10 @@ namespace Seasons.BloodMoon
             {
                 if (parkedEvent == state.EventId)
                 {
-                    if (TryReadParkingRecord(zdo, out ParkingRecord record, out string error))
+                    if (TryReadParkingRecord(zdo, out ParkingRecord existingRecord, out string error))
                     {
                         Vector3 existingParkingPosition = GetParkingPosition(zdo.m_uid);
-                        ArmPendingRecord(zdo, record);
+                        ArmPendingRecord(zdo, existingRecord);
                         Reassert(zdo, existingParkingPosition);
                         SynchronizeLoadedInstance(zdo, existingParkingPosition, zdo.GetRotation());
                     }
