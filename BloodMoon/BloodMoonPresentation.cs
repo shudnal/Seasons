@@ -30,7 +30,7 @@ namespace Seasons.BloodMoon
                 return;
 
             bool forceEnvironment = snapshot.Phase == BloodMoonEventPhase.Active || snapshot.Phase == BloodMoonEventPhase.AutoCompleting ||
-                snapshot.Phase == BloodMoonEventPhase.Resolving && snapshot.ResolutionStep < BloodMoonResolutionStep.RestoringWorldSystems;
+                snapshot.Phase == BloodMoonEventPhase.Resolving && (int)snapshot.ResolutionStep < (int)BloodMoonResolutionStep.RestoringWorldSystems;
             if (forceEnvironment)
                 BloodMoonEnvironment.AcquireForcedEnvironment();
             else
