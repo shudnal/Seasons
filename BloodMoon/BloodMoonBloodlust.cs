@@ -68,18 +68,23 @@ namespace Seasons.BloodMoon
             rpc.Register<ZPackage>(RpcHealingGrant, OnHealingGrant);
         }
 
-        internal static float GetFactor(BloodMoonParticipantState participant)
+        internal static float GetEarnedFactor(BloodMoonParticipantState participant)
         {
-            if (participant == null || !participant.IsCombatActive)
+            if (participant == null)
                 return 0f;
             if (participant.GoalReached)
                 return 1f;
             return Mathf.Clamp01(participant.CombatPoints / Mathf.Max(1f, BloodMoonConfig.GoalPoints.Value));
         }
 
+        internal static float GetFactor(BloodMoonParticipantState participant)
+        {
+            return participant != null && participant.IsCombatActive ? GetEarnedFactor(participant) : 0f;
+        }
+
         internal static float GetCombatProgressPercent(BloodMoonParticipantState participant)
         {
-            return GetFactor(participant) * 100f;
+            return GetEarnedFactor(participant) * 100f;
         }
 
         internal static float GetLocalFactor(Player player)
