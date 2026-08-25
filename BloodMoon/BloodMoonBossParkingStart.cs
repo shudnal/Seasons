@@ -11,12 +11,12 @@ namespace Seasons.BloodMoon
     {
         internal static bool ParkNearest(BloodMoonEventState state, Vector3 point, double now)
         {
-            if (state == null || ZDOMan.instance == null)
+            if (state == null || !state.IsCombatLive || state.EventId < 0L || ZDOMan.instance == null)
                 return false;
 
             ZDO zdo = ZDOMan.instance.m_objectsByID.Values
                 .Where(IsAliveBossZdo)
-                .Where(item => item.Persistent && !Character.InInterior(item.GetPosition()))
+                .Where(item => item.Persistent && !HasParkingMarker(item) && !Character.InInterior(item.GetPosition()))
                 .OrderBy(item => Utils.DistanceXZ(item.GetPosition(), point))
                 .FirstOrDefault();
             if (zdo == null)
@@ -28,7 +28,8 @@ namespace Seasons.BloodMoon
 
         private static void Park(BloodMoonEventState state, ZDO zdo, double now)
         {
-            if (state == null || zdo == null || !zdo.Persistent || !IsAliveBossZdo(zdo))
+            if (state == null || !state.IsCombatLive || state.EventId < 0L || zdo == null ||
+                !zdo.Persistent || !IsAliveBossZdo(zdo))
                 return;
 
             long parkedEvent = zdo.GetLong(ParkedEventMarker, -1L);
