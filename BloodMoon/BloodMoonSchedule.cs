@@ -56,19 +56,35 @@ namespace Seasons.BloodMoon
 
         internal static BloodMoonEventPhase GetExpectedPhase(BloodMoonScheduleSnapshot schedule, double now)
         {
+            BloodMoonEventPhase expected;
             if (schedule == null || !schedule.IsValid || now < schedule.ForewarningAt)
-                return BloodMoonEventPhase.Dormant;
-            if (now < schedule.MarkedAt)
-                return BloodMoonEventPhase.Forewarning;
-            if (now < schedule.ActiveAt)
-                return BloodMoonEventPhase.Marked;
-            if (now < schedule.AutoCompleteAt)
-                return BloodMoonEventPhase.Active;
-            if (now < schedule.ForcedEndAt)
-                return BloodMoonEventPhase.AutoCompleting;
-            if (now < schedule.MorningAt)
-                return BloodMoonEventPhase.Resolving;
-            return BloodMoonEventPhase.Resolved;
+                expected = BloodMoonEventPhase.Dormant;
+            else if (now < schedule.MarkedAt)
+                expected = BloodMoonEventPhase.Forewarning;
+            else if (now < schedule.ActiveAt)
+                expected = BloodMoonEventPhase.Marked;
+            else if (now < schedule.AutoCompleteAt)
+                expected = BloodMoonEventPhase.Active;
+            else if (now < schedule.ForcedEndAt)
+                expected = BloodMoonEventPhase.AutoCompleting;
+            else if (now < schedule.MorningAt)
+                expected = BloodMoonEventPhase.Resolving;
+            else
+                expected = BloodMoonEventPhase.Resolved;
+
+            // A large forward skip may land beyond ForcedEnd while the persisted event is still in
+            // Forewarning/Marked/Active. The controller can traverse Marked -> Active -> AutoCompleting
+            // in one call, preserving enrollment, suppression and Active initialization side effects.
+            // Let that happen before the following server tick starts the normal resolution pipeline.
+            if (expected == BloodMoonEventPhase.Resolving || expected == BloodMoonEventPhase.Resolved)
+            {
+                BloodMoonEventState state = BloodMoonController.Instance?.State;
+                if (state != null && state.EventId == schedule.EventWorldDay &&
+                    (state.Phase == BloodMoonEventPhase.Forewarning || state.Phase == BloodMoonEventPhase.Marked || state.Phase == BloodMoonEventPhase.Active))
+                    return BloodMoonEventPhase.AutoCompleting;
+            }
+
+            return expected;
         }
 
         private static double ToAbsolute(double eventDayStart, double dayLength, float hour)
