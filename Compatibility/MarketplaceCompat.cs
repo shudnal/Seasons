@@ -37,15 +37,16 @@ namespace Seasons.Compatibility
             if (clientType != null)
             {
                 MethodInfo method = AccessTools.Method(clientType, "DoMapMagic", Type.EmptyTypes);
-                FieldInfo colors = AccessTools.Field(clientType, "originalMapColors");
-                if (method != null && method.IsStatic && colors != null && colors.IsStatic && !colors.IsInitOnly &&
-                    (colors.FieldType == typeof(Color[]) || colors.FieldType == typeof(Color32[])))
+                FieldInfo mapColors = AccessTools.Field(clientType, "originalMapColors");
+                FieldInfo heightColors = AccessTools.Field(clientType, "originalHeightColors");
+
+                bool mapApiSupported = method != null && method.IsStatic && IsWritableColorArrayField(mapColors);
+                bool heightApiSupported = heightColors == null || IsWritableColorArrayField(heightColors);
+                if (mapApiSupported && heightApiSupported)
                 {
                     methodDoMapMagic = method;
-                    fieldOriginalMapColors = colors;
-                    FieldInfo heightColors = AccessTools.Field(clientType, "originalHeightColors");
-                    if (heightColors != null && heightColors.IsStatic)
-                        fieldOriginalHeightColors = heightColors;
+                    fieldOriginalMapColors = mapColors;
+                    fieldOriginalHeightColors = heightColors;
                 }
             }
 
@@ -63,21 +64,29 @@ namespace Seasons.Compatibility
             if (!isEnabled || methodDoMapMagic == null || fieldOriginalMapColors == null ||
                 minimap == null || minimap != Minimap.instance || !minimap.m_hasGenerated ||
                 minimap.m_mapTexture == null || !minimap.m_mapTexture.isReadable ||
-                minimap.m_heightTexture == null || minimap.m_fogTexture == null || minimap.m_explored == null)
+                minimap.m_heightTexture == null || !minimap.m_heightTexture.isReadable ||
+                minimap.m_fogTexture == null || minimap.m_explored == null)
                 return;
 
             try
             {
-                // Recent Marketplace versions also use their original height-map snapshot.
-                // Do not invoke their asynchronous redraw before their own map initialization,
-                // and do not overwrite that baseline with an already modified height texture.
-                if (fieldOriginalHeightColors != null && fieldOriginalHeightColors.GetValue(null) == null)
+                if (!TryReadPixels(minimap.m_mapTexture, fieldOriginalMapColors.FieldType, out object mapColors))
                     return;
 
-                object colors = fieldOriginalMapColors.FieldType == typeof(Color32[])
-                    ? (object)minimap.m_mapTexture.GetPixels32()
-                    : minimap.m_mapTexture.GetPixels();
-                fieldOriginalMapColors.SetValue(null, colors);
+                object heightColors = null;
+                if (fieldOriginalHeightColors != null &&
+                    !TryReadPixels(minimap.m_heightTexture, fieldOriginalHeightColors.FieldType, out heightColors))
+                    return;
+
+                // Marketplace 9.9.4 snapshots both arrays in its Minimap.LoadMapData and
+                // Minimap.GenerateWorldMap postfixes before calling DoMapMagic(). Do the same
+                // here. Setting only originalMapColors is unsafe because 9.9.4 DoMapMagic()
+                // checks that field for null but then accesses originalHeightColors.Length
+                // unconditionally.
+                fieldOriginalMapColors.SetValue(null, mapColors);
+                if (fieldOriginalHeightColors != null)
+                    fieldOriginalHeightColors.SetValue(null, heightColors);
+
                 methodDoMapMagic.Invoke(null, null);
                 reportedUpdateFailure = false;
             }
@@ -93,6 +102,31 @@ namespace Seasons.Compatibility
                     : exception;
                 LogWarning($"[Marketplace] Could not refresh territory map colors; the next map update will retry.\n{cause}");
             }
+        }
+
+        private static bool IsWritableColorArrayField(FieldInfo field)
+        {
+            return field != null && field.IsStatic && !field.IsInitOnly &&
+                (field.FieldType == typeof(Color[]) || field.FieldType == typeof(Color32[]));
+        }
+
+        private static bool TryReadPixels(Texture2D texture, Type arrayType, out object pixels)
+        {
+            pixels = null;
+            if (texture == null || !texture.isReadable)
+                return false;
+
+            if (arrayType == typeof(Color[]))
+            {
+                pixels = texture.GetPixels();
+                return true;
+            }
+            if (arrayType == typeof(Color32[]))
+            {
+                pixels = texture.GetPixels32();
+                return true;
+            }
+            return false;
         }
     }
 }
