@@ -4,6 +4,11 @@ namespace Seasons.BloodMoon
 {
     internal static class BloodMoonEnemyDeathReports
     {
+        internal static bool TryValidate(long sender, long eventId, long creditedPlayerId, ZDOID enemyId, out float serverPoints)
+        {
+            return TryValidate(sender, eventId, creditedPlayerId, enemyId, out serverPoints, out _);
+        }
+
         internal static bool TryValidate(long sender, long eventId, long creditedPlayerId, ZDOID enemyId,
             out float serverPoints, out Vector3 enemyPosition)
         {
