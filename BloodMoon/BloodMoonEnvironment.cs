@@ -120,36 +120,43 @@ namespace Seasons.BloodMoon
             return 0f;
         }
 
-        internal static EnvOverlayState ApplyOverlay(EnvSetup env)
+        internal static void ApplyOverlay(EnvSetup env, EnvSetState patchState)
         {
             float factor = GetVisualFactor();
             if (env == null || factor <= 0f)
             {
                 SetParticleFactor(factor);
-                return null;
+                return;
             }
 
             EnsureRegistered();
             if (bloodEnvironment == null || env.m_name == EnvironmentName)
             {
                 SetParticleFactor(factor);
-                return null;
+                return;
             }
 
-            EnvOverlayState state = new EnvOverlayState(env);
+            EnvOverlayState overlay = new EnvOverlayState(env);
+            if (patchState != null)
+                patchState.Overlay = overlay;
             LerpColors(env, bloodEnvironment, factor);
-            env.m_windMin = Mathf.Lerp(state.WindMin, bloodEnvironment.m_windMin, factor);
-            env.m_windMax = Mathf.Lerp(state.WindMax, bloodEnvironment.m_windMax, factor);
-            env.m_sunAngle = Mathf.Lerp(state.SunAngle, bloodEnvironment.m_sunAngle, factor);
+            env.m_windMin = Mathf.Lerp(overlay.WindMin, bloodEnvironment.m_windMin, factor);
+            env.m_windMax = Mathf.Lerp(overlay.WindMax, bloodEnvironment.m_windMax, factor);
+            env.m_sunAngle = Mathf.Lerp(overlay.SunAngle, bloodEnvironment.m_sunAngle, factor);
             SetParticleFactor(factor);
-            return state;
         }
 
-        internal static void RestoreOverlay(EnvSetup env, EnvOverlayState state)
+        internal static void RestoreOverlay(EnvSetup env, EnvSetState patchState)
         {
-            state?.Restore(env);
+            if (patchState == null || patchState.Restored)
+                return;
+
+            patchState.Restored = true;
+            patchState.Overlay?.Restore(env);
             // EnvMan.SetEnv owns environment-object activation and may have disabled the Blood Moon
             // cloud clone after the prefix. Reapply our independent visual lease after vanilla finishes.
+            // The invocation flag prevents the finalizer from repeating this restoration after other
+            // Harmony postfixes had a chance to make their own changes.
             SetParticleFactor(GetVisualFactor());
         }
 
@@ -242,6 +249,12 @@ namespace Seasons.BloodMoon
             }
         }
 
+        internal sealed class EnvSetState
+        {
+            internal EnvOverlayState Overlay;
+            internal bool Restored;
+        }
+
         internal sealed class EnvOverlayState
         {
             private readonly Color ambNight;
@@ -300,18 +313,19 @@ namespace Seasons.BloodMoon
     internal static class BloodMoonEnvManSetEnvPatch
     {
         [HarmonyPriority(Priority.Last - 10)]
-        private static void Prefix(EnvSetup env, ref BloodMoonEnvironment.EnvOverlayState __state)
+        private static void Prefix(EnvSetup env, out BloodMoonEnvironment.EnvSetState __state)
         {
-            __state = BloodMoonEnvironment.ApplyOverlay(env);
+            __state = new BloodMoonEnvironment.EnvSetState();
+            BloodMoonEnvironment.ApplyOverlay(env, __state);
         }
 
         [HarmonyPriority(Priority.First + 10)]
-        private static void Postfix(EnvSetup env, BloodMoonEnvironment.EnvOverlayState __state)
+        private static void Postfix(EnvSetup env, BloodMoonEnvironment.EnvSetState __state)
         {
             BloodMoonEnvironment.RestoreOverlay(env, __state);
         }
 
-        private static Exception Finalizer(Exception __exception, EnvSetup env, BloodMoonEnvironment.EnvOverlayState __state)
+        private static Exception Finalizer(Exception __exception, EnvSetup env, BloodMoonEnvironment.EnvSetState __state)
         {
             BloodMoonEnvironment.RestoreOverlay(env, __state);
             return __exception;
