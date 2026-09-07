@@ -154,7 +154,7 @@ namespace Seasons
 
             Color32[] normalColors = new Color32[size * size];
             Color32[] winterColors = new Color32[size * size];
-            Color32 fallbackColor = Color.white;
+            Dictionary<Heightmap.Biome, List<int>> deferredColors = new Dictionary<Heightmap.Biome, List<int>>();
             Exception generationError = null;
             Stopwatch stopwatch = Stopwatch.StartNew();
             Thread worker = new Thread(() =>
@@ -169,8 +169,22 @@ namespace Seasons
                             float z = (row - halfSize) * pixelSize + halfPixel;
                             Heightmap.Biome biome = generator.GetBiome(x, z);
                             int index = row * size + column;
-                            normalColors[index] = normalPalette.TryGetValue(biome, out Color32 normal) ? normal : fallbackColor;
-                            winterColors[index] = winterPalette.TryGetValue(biome, out Color32 winter) ? winter : fallbackColor;
+                            if (normalPalette.TryGetValue(biome, out Color32 normal) && winterPalette.TryGetValue(biome, out Color32 winter))
+                            {
+                                normalColors[index] = normal;
+                                winterColors[index] = winter;
+                            }
+                            else
+                            {
+                                // Modded biome IDs need not be declared enum members. Defer their
+                                // palette lookup to the main thread rather than painting them white.
+                                if (!deferredColors.TryGetValue(biome, out List<int> indices))
+                                {
+                                    indices = new List<int>();
+                                    deferredColors.Add(biome, indices);
+                                }
+                                indices.Add(index);
+                            }
                         }
                     }
                 }
@@ -189,6 +203,17 @@ namespace Seasons
             {
                 LogWarning($"Could not generate seasonal minimap colors:\n{generationError}");
                 yield break;
+            }
+
+            foreach (KeyValuePair<Heightmap.Biome, List<int>> entry in deferredColors)
+            {
+                Color32 normal = m_minimap.GetPixelColor(entry.Key);
+                Color32 winter = GetWinterPixelColor(entry.Key);
+                foreach (int index in entry.Value)
+                {
+                    normalColors[index] = normal;
+                    winterColors[index] = winter;
+                }
             }
 
             m_mapTexture = normalColors;
