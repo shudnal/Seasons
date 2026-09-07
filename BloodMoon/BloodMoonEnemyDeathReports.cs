@@ -6,14 +6,7 @@ namespace Seasons.BloodMoon
     {
         internal static bool TryValidate(long sender, long eventId, long creditedPlayerId, ZDOID enemyId, out float serverPoints)
         {
-            return TryValidate(sender, eventId, creditedPlayerId, enemyId, out serverPoints, out _);
-        }
-
-        internal static bool TryValidate(long sender, long eventId, long creditedPlayerId, ZDOID enemyId,
-            out float serverPoints, out Vector3 enemyPosition)
-        {
             serverPoints = 0f;
-            enemyPosition = Vector3.zero;
             BloodMoonController controller = BloodMoonController.Instance;
             BloodMoonEventState state = controller?.State;
             if (state == null || !state.IsCombatLive || state.EventId != eventId || creditedPlayerId == 0L || enemyId.IsNone() ||
@@ -34,8 +27,7 @@ namespace Seasons.BloodMoon
                 return false;
 
             serverPoints = BloodMoonCombat.GetPointsForEnemy(enemyId, 0f);
-            enemyPosition = enemyZdo.GetPosition();
-            return serverPoints > 0f && !float.IsNaN(serverPoints) && !float.IsInfinity(serverPoints) && IsFinite(enemyPosition);
+            return serverPoints > 0f && !float.IsNaN(serverPoints) && !float.IsInfinity(serverPoints);
         }
 
         internal static bool CanPendingValidate(long sender, long eventId, long creditedPlayerId, ZDOID enemyId)
@@ -94,13 +86,6 @@ namespace Seasons.BloodMoon
                 return true;
             long peerId = controller.GetPeerForPlayer(playerId);
             return peerId != 0L && ZNet.instance != null && ZNet.instance.GetPeer(peerId) != null;
-        }
-
-        private static bool IsFinite(Vector3 value)
-        {
-            return !float.IsNaN(value.x) && !float.IsInfinity(value.x) &&
-                !float.IsNaN(value.y) && !float.IsInfinity(value.y) &&
-                !float.IsNaN(value.z) && !float.IsInfinity(value.z);
         }
     }
 }
