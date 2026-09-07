@@ -28,6 +28,7 @@ namespace Seasons.BloodMoon
         private const string RpcClientAction = "Seasons.BloodMoon.ClientAction";
         private const string ParticipantDetailAction = "participant-detail";
         private const string ResyncStateAction = "resync-state";
+        private const string ResolutionFadeAction = "resolution-fade";
 
         [Serializable]
         private sealed class ResyncEnvelope
@@ -58,6 +59,19 @@ namespace Seasons.BloodMoon
 
         internal static BloodMoonGlobalSnapshot ClientGlobal { get; private set; } = new BloodMoonGlobalSnapshot();
         internal static BloodMoonParticipantSnapshot ClientParticipants { get; private set; } = new BloodMoonParticipantSnapshot();
+
+        internal static void ResetSession()
+        {
+            ClientGlobal = new BloodMoonGlobalSnapshot();
+            ClientParticipants = new BloodMoonParticipantSnapshot();
+            BloodMoonParticipantDetails.Reset();
+            pendingClientActions.Clear();
+            lastGlobalSignature = string.Empty;
+            lastParticipantSignature = string.Empty;
+            // Keep publisher revisions increasing for this process. Resetting them could produce
+            // the identical CCS value on reopening the same world and suppress its notification.
+            // RPC registration is tied to the ZRoutedRpc instance, not to a world-day event ID.
+        }
 
         internal static void InitializeValues()
         {
@@ -406,7 +420,7 @@ namespace Seasons.BloodMoon
 
         private static void OnSpawnReport(long sender, ZPackage pkg)
         {
-            if (!ReadHeader(pkg, out long eventId, out _) || ZNet.instance == null || !ZNet.instance.IsServer())
+            if (!ReadHeader(pkg, out long eventId, out _) || ZNet.instance == null || !ZNet.instance.IsServer() || !IsFromServerOrReadyPeer(sender))
                 return;
             long groupId = pkg.ReadLong();
             int groupRevision = pkg.ReadInt();
@@ -420,14 +434,38 @@ namespace Seasons.BloodMoon
             BloodMoonSpawner.AcceptSpawnReport(state, sender, groupId, groupRevision, zoneX, zoneY, leaseRevision, spawnedId, seasonState.GetTotalSeconds());
         }
 
+        private static bool IsFromServerOrReadyPeer(long sender)
+        {
+            return IsFromServer(sender) || ZNet.instance?.GetPeer(sender)?.IsReady() == true;
+        }
+
         private static void OnFade(long sender, ZPackage pkg)
         {
-            if (!ReadHeader(pkg, out long eventId, out _) || ZNet.instance == null || ZNet.instance.IsServer() || !IsFromServer(sender))
+            if (!ReadHeader(pkg, out long eventId, out _) || eventId < 0L || ZNet.instance == null || ZNet.instance.IsServer() || !IsFromServer(sender))
                 return;
             bool begin = pkg.ReadBool();
+            if (ClientGlobal.EventId != eventId)
+            {
+                // A fade may precede its CCS snapshot, but it must not affect a different event.
+                QueueClientAction(eventId, ResolutionFadeAction, begin ? "1" : "0");
+                return;
+            }
+            ApplyResolutionFade(eventId, begin);
+        }
+
+        private static void ApplyResolutionFade(long eventId, bool begin)
+        {
+            if (eventId < 0L || ClientGlobal.EventId != eventId)
+                return;
+            if (begin && (ClientGlobal.Phase == BloodMoonEventPhase.Dormant ||
+                ClientGlobal.Phase == BloodMoonEventPhase.Resolved || ClientGlobal.Phase == BloodMoonEventPhase.Skipped ||
+                ClientGlobal.Phase == BloodMoonEventPhase.Resolving &&
+                (int)ClientGlobal.ResolutionStep >= (int)BloodMoonResolutionStep.ReleasingClients))
+                return;
+
             BloodMoonPresentation.SetResolutionFade(begin);
-            ZPackage ack = CreateHeader(eventId, GetLocalPlayerId());
-            SendToServer(RpcFadeAck, ack);
+            if (begin && GetLocalPlayerId() != 0L)
+                SendToServer(RpcFadeAck, CreateHeader(eventId, GetLocalPlayerId()));
         }
 
         private static void OnFadeAck(long sender, ZPackage pkg)
@@ -439,15 +477,16 @@ namespace Seasons.BloodMoon
 
         private static void OnResync(long sender, ZPackage pkg)
         {
-            if (!ReadHeader(pkg, out _, out long playerId) || ZNet.instance == null || !ZNet.instance.IsServer())
+            if (!ReadHeader(pkg, out _, out long playerId) || ZNet.instance == null || !ZNet.instance.IsServer() || !IsFromServerOrReadyPeer(sender))
                 return;
 
             BloodMoonEventState state = BloodMoonController.Instance?.State;
             if (state == null)
                 return;
 
+            bool validPlayer = TryValidateSenderPlayer(sender, playerId);
             BloodMoonParticipantState own = null;
-            if (TryValidateSenderPlayer(sender, playerId) && state.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant))
+            if (validPlayer && state.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant))
                 own = participant;
 
             ResyncEnvelope envelope = new ResyncEnvelope
@@ -458,7 +497,7 @@ namespace Seasons.BloodMoon
             };
             string payload = JsonConvert.SerializeObject(envelope);
 
-            if (Player.m_localPlayer != null && Player.m_localPlayer.GetPlayerID() == playerId)
+            if (validPlayer && IsFromServer(sender) && Player.m_localPlayer != null && Player.m_localPlayer.GetPlayerID() == playerId)
                 ApplyResyncEnvelope(payload);
             else if (sender != 0L)
                 SendClientAction(sender, state.EventId, ResyncStateAction, payload);
@@ -512,7 +551,9 @@ namespace Seasons.BloodMoon
                 FightingAt = participant.FightingAt,
                 GoalReachedAt = participant.GoalReachedAt,
                 ExitedAt = participant.ExitedAt,
-                ResolvedAt = participant.ResolvedAt
+                ResolvedAt = participant.ResolvedAt,
+                LiveSkillBonusUsed = participant.LiveSkillBonusUsed,
+                LastSkillReportSequence = participant.LastSkillReportSequence
             };
         }
 
@@ -571,6 +612,12 @@ namespace Seasons.BloodMoon
                 return;
 
             long eventId = envelope.Global.EventId;
+            // Publisher revisions increase across events within a network session. A delayed
+            // response from the previous event must not replace a newer CCS snapshot.
+            if (eventId != ClientGlobal.EventId && envelope.Global.Revision <= ClientGlobal.Revision ||
+                eventId != ClientParticipants.EventId && envelope.Participants.Revision <= ClientParticipants.Revision)
+                return;
+
             BloodMoonParticipantDetails.Reset();
             ClientGlobal = envelope.Global;
             ClientParticipants = envelope.Participants;
@@ -589,6 +636,11 @@ namespace Seasons.BloodMoon
             if (action == ParticipantDetailAction)
             {
                 BloodMoonParticipantDetails.Apply(eventId, payload);
+                return;
+            }
+            if (action == ResolutionFadeAction)
+            {
+                ApplyResolutionFade(eventId, payload == "1");
                 return;
             }
             BloodMoonController.HandleClientAction(eventId, action, payload);
@@ -628,7 +680,7 @@ namespace Seasons.BloodMoon
                 BloodMoonGlobalSnapshot snapshot = string.IsNullOrEmpty(GlobalStateJson.Value)
                     ? new BloodMoonGlobalSnapshot()
                     : JsonConvert.DeserializeObject<BloodMoonGlobalSnapshot>(GlobalStateJson.Value) ?? new BloodMoonGlobalSnapshot();
-                if (snapshot.EventId == ClientGlobal.EventId && snapshot.Revision < ClientGlobal.Revision)
+                if (snapshot.Schema != BloodMoonStateSchema.Current || snapshot.Revision < ClientGlobal.Revision)
                     return;
                 if (snapshot.EventId != ClientGlobal.EventId)
                     BloodMoonParticipantDetails.Reset();
@@ -649,7 +701,7 @@ namespace Seasons.BloodMoon
                 BloodMoonParticipantSnapshot snapshot = string.IsNullOrEmpty(ParticipantStateJson.Value)
                     ? new BloodMoonParticipantSnapshot()
                     : JsonConvert.DeserializeObject<BloodMoonParticipantSnapshot>(ParticipantStateJson.Value) ?? new BloodMoonParticipantSnapshot();
-                if (snapshot.EventId == ClientParticipants.EventId && snapshot.Revision < ClientParticipants.Revision)
+                if (snapshot.Schema != BloodMoonStateSchema.Current || snapshot.Revision < ClientParticipants.Revision)
                     return;
                 ClientParticipants = snapshot;
                 BloodMoonStatus.UpdateLocal();
