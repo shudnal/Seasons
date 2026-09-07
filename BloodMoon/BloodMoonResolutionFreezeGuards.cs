@@ -9,19 +9,6 @@ namespace Seasons.BloodMoon
             return BloodMoonNetwork.ClientGlobal.Phase == BloodMoonEventPhase.Resolving;
         }
 
-        [HarmonyPatch(typeof(Player), nameof(Player.RaiseSkill))]
-        private static class PlayerRaiseSkillPatch
-        {
-            [HarmonyPriority(Priority.First)]
-            private static bool Prefix(Player __instance)
-            {
-                if (!IsFrozenForNewCombatWork() || __instance == null || __instance != Player.m_localPlayer)
-                    return true;
-                BloodMoonParticipantState participant = BloodMoonInteractionRules.GetLocalParticipant();
-                return participant == null || !participant.IsCombatActive;
-            }
-        }
-
         [HarmonyPatch(typeof(BloodMoonSpawner), "TrySpawnFromLease")]
         private static class SpawnLeasePatch
         {
@@ -41,6 +28,10 @@ namespace Seasons.BloodMoon
                 if (!IsFrozenForNewCombatWork() || __instance == null)
                     return true;
 
+                // Resolution freezes Blood Moon combat results while the fade/cleanup transaction
+                // completes, but it must not suppress unrelated vanilla skill progression. Skill
+                // accounting already stops naturally because the event is no longer in Active or
+                // AutoCompleting on the authoritative server.
                 if (__instance is Player player && BloodMoonInteractionRules.IsActiveParticipant(player))
                     return false;
                 if (BloodMoonInteractionRules.IsBloodEnemy(__instance))
