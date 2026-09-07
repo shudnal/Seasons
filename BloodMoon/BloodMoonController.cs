@@ -57,11 +57,6 @@ namespace Seasons.BloodMoon
             BloodMoonBloodlust.RegisterRpc();
             BloodMoonOutcomeQueue.RegisterRpc();
             BloodMoonOutcomePresentationHandshake.RegisterRpc();
-            BloodMoonPresentation.Tick(Time.fixedDeltaTime);
-            BloodMoonSpawner.TickClient(Time.fixedDeltaTime);
-            BloodMoonRecovery.TickClientProtection(Time.fixedDeltaTime);
-            BloodCraft.TickLocal();
-            BloodMoonOutcomeQueue.TickServer(Time.fixedDeltaTime);
 
             if (ZNet.instance == null || ZNet.m_world == null || !SeasonState.IsActive)
             {
@@ -77,6 +72,15 @@ namespace Seasons.BloodMoon
 
             hadWorld = true;
             EnsureWorldLoaded();
+
+            // Initialize this world before consuming snapshots, leases, items or recovery state.
+            // Clients intentionally have no authoritative State; that is not a reload signal.
+            BloodMoonPresentation.Tick(Time.fixedDeltaTime);
+            BloodMoonSpawner.TickClient(Time.fixedDeltaTime);
+            BloodMoonRecovery.TickClientProtection(Time.fixedDeltaTime);
+            BloodCraft.TickLocal();
+            BloodMoonOutcomeQueue.TickServer(Time.fixedDeltaTime);
+
             if (!ZNet.instance.IsServer() || State == null)
                 return;
 
@@ -92,7 +96,7 @@ namespace Seasons.BloodMoon
         private void EnsureWorldLoaded()
         {
             long worldUid = ZNet.m_world.m_uid;
-            if (worldUid == loadedWorldUid && State != null)
+            if (worldUid == loadedWorldUid && (!ZNet.instance.IsServer() || State != null))
                 return;
 
             if (State != null && ZNet.instance.IsServer())
@@ -100,7 +104,10 @@ namespace Seasons.BloodMoon
 
             CleanupClientWorldState();
             loadedWorldUid = worldUid;
+            serverTickTimer = 0f;
+            groupTickTimer = 0f;
             State = ZNet.instance.IsServer() ? BloodMoonPersistence.Load(worldUid) : null;
+            BloodMoonPresentation.OnWorldChanged();
 
             if (ZNet.instance.IsServer())
             {
@@ -112,8 +119,11 @@ namespace Seasons.BloodMoon
                     worldSaveSubscribed = true;
                 }
             }
-
-            BloodMoonPresentation.OnWorldChanged();
+            else
+            {
+                // CCS may have delivered the current snapshot before Game/EnvMan became ready.
+                BloodMoonPresentation.OnGlobalSnapshot(BloodMoonNetwork.ClientGlobal);
+            }
         }
 
         private void CleanupClientWorldState()
@@ -202,7 +212,9 @@ namespace Seasons.BloodMoon
         private void TryCreateScheduledEvent(double now)
         {
             BloodMoonScheduleSnapshot schedule = BloodMoonSchedule.FindCurrentOrNext(now);
-            if (schedule == null || schedule.EventWorldDay == State.LastCreatedEventId || schedule.EventWorldDay == State.LastResolvedEventId)
+            // Rewinding net time must not replay an older event, including one from a previous
+            // year. These values are high-water marks, not just duplicate checks for one day.
+            if (schedule == null || schedule.EventWorldDay <= Math.Max(State.LastCreatedEventId, State.LastResolvedEventId))
                 return;
 
             BloodMoonEventPhase expected = BloodMoonSchedule.GetExpectedPhase(schedule, now);
@@ -226,7 +238,6 @@ namespace Seasons.BloodMoon
                 return;
             }
 
-            long previousCreated = State.LastCreatedEventId;
             long previousResolved = State.LastResolvedEventId;
             double firstEnabled = State.FirstEnabledAt;
             State = BloodMoonPersistence.CreateClean(loadedWorldUid);
@@ -240,8 +251,6 @@ namespace Seasons.BloodMoon
             State.SpawnsStopped = false;
             State.EnrollmentFrozen = false;
             State.Revision = 0;
-            if (previousCreated > State.EventId)
-                LogWarning($"[BloodMoon][event:{State.EventId}][phase] Previous event id {previousCreated} is newer than scheduled event id.");
             Touch(now, persist: true, publish: true);
             BloodMoonPresentation.EnsureEnvironmentRegistered();
             LogInfo($"[BloodMoon][event:{State.EventId}][phase] Created Forewarning schedule for autumn day {schedule.AutumnDay}.");
@@ -249,6 +258,8 @@ namespace Seasons.BloodMoon
 
         private void AdvanceToExpectedPhase(BloodMoonEventPhase expected, double now)
         {
+            // Time selects the next forward phase. It is not a rollback of inventory,
+            // world entities, terminal participant outcomes or already acquired skills.
             if (expected == BloodMoonEventPhase.Resolving || expected == BloodMoonEventPhase.Resolved)
             {
                 if (State.Phase != BloodMoonEventPhase.Resolving && State.Phase != BloodMoonEventPhase.Resolved)
@@ -325,7 +336,7 @@ namespace Seasons.BloodMoon
                 if (!participant.IsCombatActive || participant.GoalReached)
                     continue;
                 float combatProgress = GetCombatProgress(participant);
-                float display = Mathf.Max(combatProgress, automaticFloor);
+                float display = Mathf.Max(participant.DisplayProgress, Mathf.Max(combatProgress, automaticFloor));
                 if (Mathf.Abs(display - participant.DisplayProgress) >= 0.05f)
                 {
                     participant.DisplayProgress = display;
@@ -477,7 +488,7 @@ namespace Seasons.BloodMoon
 
                 float combatProgress = GetCombatProgress(participant);
                 float automaticFloor = GetAutomaticFloor(now);
-                participant.DisplayProgress = Mathf.Max(combatProgress, automaticFloor);
+                participant.DisplayProgress = Mathf.Max(participant.DisplayProgress, Mathf.Max(combatProgress, automaticFloor));
                 if (!participant.GoalReached && combatProgress >= 100f)
                 {
                     participant.GoalReached = true;
@@ -515,7 +526,9 @@ namespace Seasons.BloodMoon
 
         internal void OnFadeAcknowledged(long sender, long eventId, long playerId)
         {
-            if (!ValidateSender(sender, eventId, playerId, out BloodMoonParticipantState participant))
+            if (State == null || State.Phase != BloodMoonEventPhase.Resolving ||
+                State.ResolutionStep != BloodMoonResolutionStep.AwaitingClientFade ||
+                !ValidateSender(sender, eventId, playerId, out BloodMoonParticipantState participant))
                 return;
             participant.FadeAcknowledged = true;
             Touch(seasonState.GetTotalSeconds(), persist: false, publish: true);
@@ -523,7 +536,7 @@ namespace Seasons.BloodMoon
 
         internal void BeginResolution(string reason, double now)
         {
-            if (State == null || State.Phase == BloodMoonEventPhase.Resolving || State.Phase == BloodMoonEventPhase.Resolved)
+            if (State == null || !State.IsEventLive || State.Phase == BloodMoonEventPhase.Resolving)
                 return;
 
             if (string.Equals(reason, FeatureDisabledReason, StringComparison.Ordinal) &&
@@ -557,8 +570,8 @@ namespace Seasons.BloodMoon
                 case BloodMoonResolutionStep.StoppingSpawns:
                     State.SpawnsStopped = true;
                     BloodMoonSpawner.StopServerLeases(State);
-                    SendFadeToParticipants(begin: true);
                     SetResolutionStep(BloodMoonResolutionStep.AwaitingClientFade, now);
+                    SendFadeToParticipants(begin: true);
                     break;
 
                 case BloodMoonResolutionStep.AwaitingClientFade:
@@ -631,7 +644,7 @@ namespace Seasons.BloodMoon
                     break;
 
                 case BloodMoonResolutionStep.Complete:
-                    State.LastResolvedEventId = State.EventId;
+                    State.LastResolvedEventId = Math.Max(State.LastResolvedEventId, State.EventId);
                     State.Phase = BloodMoonEventPhase.Resolved;
                     State.BloodBehaviorEnabled = false;
                     State.SpawnsStopped = true;
@@ -746,29 +759,36 @@ namespace Seasons.BloodMoon
 
         internal void DebugSetPhase(BloodMoonEventPhase target)
         {
-            if (ZNet.instance == null || !ZNet.instance.IsServer() || !SeasonState.IsActive)
+            if (ZNet.instance == null || !ZNet.instance.IsServer() || !SeasonState.IsActive ||
+                (target != BloodMoonEventPhase.Forewarning && target != BloodMoonEventPhase.Marked && target != BloodMoonEventPhase.Active))
                 return;
 
-            double now = seasonState.GetTotalSeconds();
-            if (State == null || State.EventId < 0L || State.Schedule == null || State.Phase == BloodMoonEventPhase.Resolved || State.Phase == BloodMoonEventPhase.Skipped ||
-                target == BloodMoonEventPhase.Forewarning && State.Phase != BloodMoonEventPhase.Forewarning)
+            if (State != null && State.IsEventLive &&
+                (State.Phase == BloodMoonEventPhase.Resolving || (int)target < (int)State.Phase))
             {
-                if (State != null && State.IsEventLive)
-                    DebugCleanup();
+                LogWarning($"[BloodMoon] Cannot roll back live phase {State.Phase} to {target}. Use 'seasons bloodmoon cleanup' before an explicit debug restart; acquired skills and recorded outcomes are not rolled back.");
+                return;
+            }
 
+            double now = seasonState.GetTotalSeconds();
+            if (State == null || State.EventId < 0L || State.Schedule == null || State.Phase == BloodMoonEventPhase.Resolved || State.Phase == BloodMoonEventPhase.Skipped)
+            {
                 int day = seasonState.GetCurrentWorldDay();
                 double firstEnabled = State?.FirstEnabledAt > 0d ? State.FirstEnabledAt : now;
+                long previousCreated = State?.LastCreatedEventId ?? -1L;
                 long previousResolved = State?.LastResolvedEventId ?? -1L;
                 State = BloodMoonPersistence.CreateClean(loadedWorldUid);
                 State.FirstEnabledAt = firstEnabled;
                 State.EventId = day;
-                State.LastCreatedEventId = day;
+                State.LastCreatedEventId = Math.Max(previousCreated, day);
                 State.LastResolvedEventId = previousResolved;
-                State.Schedule = CreateDebugSchedule(day, now);
                 State.Phase = BloodMoonEventPhase.Forewarning;
-                Touch(now, persist: true, publish: true);
             }
 
+            // Explicit admin starts use the normal phase durations, anchored to the requested
+            // phase. Equal Forewarning/Marked/Active timestamps previously skipped preparation.
+            State.Schedule = CreateDebugSchedule(State.Schedule?.EventWorldDay ?? seasonState.GetCurrentWorldDay(), now, target);
+            Touch(now, persist: true, publish: true);
             if (target == BloodMoonEventPhase.Forewarning)
                 return;
             if (State.Phase == BloodMoonEventPhase.Forewarning)
@@ -781,7 +801,8 @@ namespace Seasons.BloodMoon
 
         internal void DebugSetProgress(long playerId, float percent)
         {
-            if (State == null || !State.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant))
+            if (State == null || !State.IsCombatLive || float.IsNaN(percent) || float.IsInfinity(percent) ||
+                !State.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant) || !participant.IsCombatActive)
                 return;
 
             float clamped = Mathf.Clamp(percent, 0f, 100f);
@@ -811,10 +832,13 @@ namespace Seasons.BloodMoon
             double now = SeasonState.IsActive ? seasonState.GetTotalSeconds() : 0d;
             if (State != null)
             {
+                BloodMoonSpawner.StopServerLeases(State);
                 BloodMoonSpawner.CleanupExtraEnemies(State);
                 BloodMoonBosses.RestoreAll(State);
                 BloodMoonSummons.CleanupEvent(State.EventId, now);
                 BroadcastClientAction("cleanup-craft");
+                BroadcastClientAction("resolution-complete");
+                SendFadeToParticipants(begin: false);
                 if (State.EventId >= 0L)
                 {
                     lastCreated = Math.Max(lastCreated, State.EventId);
@@ -822,6 +846,7 @@ namespace Seasons.BloodMoon
                 }
             }
             BloodCraft.CleanupLocal(Player.m_localPlayer);
+            BloodMoonPresentation.OnResolutionComplete();
             BloodMoonEnvironment.ReleaseForcedEnvironment();
             BloodMoonRandEventSuppression.Release();
             BloodMoonHitAttribution.Reset();
@@ -867,7 +892,7 @@ namespace Seasons.BloodMoon
 
             foreach (ZNetPeer peer in ZNet.instance.m_peers)
             {
-                if (!peer.IsReady() || peer.m_characterID.IsNone())
+                if (peer == null || !peer.IsReady() || peer.m_characterID.IsNone())
                     continue;
                 ZDO zdo = ZDOMan.instance.GetZDO(peer.m_characterID);
                 if (zdo == null)
@@ -952,19 +977,23 @@ namespace Seasons.BloodMoon
             }
         }
 
-        private BloodMoonScheduleSnapshot CreateDebugSchedule(int day, double now)
+        private BloodMoonScheduleSnapshot CreateDebugSchedule(int day, double now, BloodMoonEventPhase target)
         {
             double dayLength = Math.Max(1d, seasonState.GetDayLengthInSeconds());
+            double targetHour = target == BloodMoonEventPhase.Active ? BloodMoonConfig.ActiveHour
+                : target == BloodMoonEventPhase.Marked ? BloodMoonConfig.MarkedHour
+                : BloodMoonConfig.ForewarningHour - 72d;
+            double dayStart = now - dayLength * targetHour / 24d;
             return new BloodMoonScheduleSnapshot
             {
                 EventWorldDay = day,
                 AutumnDay = seasonState.GetDayInSeason(day),
-                ForewarningAt = now,
-                MarkedAt = now,
-                ActiveAt = now,
-                AutoCompleteAt = now + dayLength * 0.25d,
-                ForcedEndAt = now + dayLength * 0.5d,
-                MorningAt = now + dayLength * 0.5d + 1d
+                ForewarningAt = dayStart + dayLength * (BloodMoonConfig.ForewarningHour - 72d) / 24d,
+                MarkedAt = dayStart + dayLength * BloodMoonConfig.MarkedHour / 24d,
+                ActiveAt = dayStart + dayLength * BloodMoonConfig.ActiveHour / 24d,
+                AutoCompleteAt = dayStart + dayLength * BloodMoonConfig.AutoCompleteHour / 24d,
+                ForcedEndAt = dayStart + dayLength * BloodMoonConfig.ForcedEndHour / 24d,
+                MorningAt = dayStart + dayLength * BloodMoonConfig.MorningHour / 24d
             };
         }
 
