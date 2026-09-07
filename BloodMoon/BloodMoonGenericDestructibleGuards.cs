@@ -94,15 +94,11 @@ namespace Seasons.BloodMoon
         [HarmonyPriority(Priority.First)]
         private static bool Prefix()
         {
-            if (BloodMoonInteractionRules.IsEventCombatLive)
-                return true;
-
-            BloodMoonHitAttributionData attribution =
-                BloodMoonAttackContext.Attribution;
-
-            return attribution == null ||
-                   attribution.SourceType ==
-                   BloodMoonCombatSourceType.None;
+            // BloodMoonStaleProjectileGuardPatch owns this invocation-scoped flag while
+            // vanilla Projectile.OnHit is allowed to finish its physical collision lifecycle.
+            // Generic modded IDestructible targets must obey the same stale-damage block as
+            // the explicitly patched vanilla destructibles.
+            return !BloodMoonStaleAttribution.BlockingProjectileDamage;
         }
     }
 }
