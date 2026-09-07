@@ -86,11 +86,14 @@ namespace Seasons.BloodMoon
             if (id.IsNone() || eventId < 0L || string.IsNullOrEmpty(prefabName))
                 return;
 
+            // Retransmission does not extend a rejected object's observation window.
+            if (watches.TryGetValue(id, out Watch existing) && existing.EventId == eventId)
+                return;
             watches[id] = new Watch
             {
                 EventId = eventId,
                 PrefabName = prefabName,
-                ExpiresAt = now + WatchLifetimeSeconds
+                ExpiresAt = Time.realtimeSinceStartup + WatchLifetimeSeconds
             };
         }
 
@@ -102,7 +105,7 @@ namespace Seasons.BloodMoon
             foreach (KeyValuePair<ZDOID, Watch> entry in new List<KeyValuePair<ZDOID, Watch>>(watches))
             {
                 ZDO zdo = ZDOMan.instance.GetZDO(entry.Key);
-                if (zdo != null)
+                if (zdo != null && zdo.GetLong(BloodMoonSpawner.EventMarker, -1L) >= 0L)
                 {
                     if (BloodMoonSpawnReportValidation.IsAllowedExtraEnemyZdo(zdo, entry.Value.EventId, entry.Value.PrefabName))
                     {
@@ -117,7 +120,9 @@ namespace Seasons.BloodMoon
                     continue;
                 }
 
-                if (now >= entry.Value.ExpiresAt)
+                // ZDO creation can arrive before the custom spawn markers. Keep waiting for
+                // those markers, without ever treating an ordinary unmarked ZDO as disposable.
+                if (Time.realtimeSinceStartup >= entry.Value.ExpiresAt)
                     watches.Remove(entry.Key);
             }
         }
@@ -139,7 +144,8 @@ namespace Seasons.BloodMoon
                 return false;
 
             long eventId = state.EventId;
-            if (eventId < 0L || state.ExtraEnemyZdos.Contains(spawnedId.ToString()))
+            if (eventId < 0L || state.ExtraEnemyZdos.Contains(spawnedId.ToString()) ||
+                BloodMoonSpawnReportValidation.GetPendingReports()?.Contains(spawnedId) == true)
                 return false;
 
             string expectedPrefabName = BloodMoonSpawner.GetFrozenSpawnPrefabName(state);
@@ -178,19 +184,24 @@ namespace Seasons.BloodMoon
             if (zdo != null)
             {
                 long markedEvent = zdo.GetLong(BloodMoonSpawner.EventMarker, -1L);
-                if (markedEvent != eventId)
-                {
-                    LogWarning($"[BloodMoon][event:{eventId}][spawn] Ignoring report for unmarked or foreign ZDO {spawnedId}; marker={markedEvent}.");
+                if (markedEvent >= 0L && markedEvent != eventId)
                     return false;
-                }
-
-                if (zdo.GetLong(BloodMoonSpawner.GroupMarker, -1L) != groupId || zdo.GetSector() != new Vector2i(zoneX, zoneY))
-                    return Reject(spawnedId, eventId, expectedPrefabName, now);
-
-                if (!BloodMoonSpawnReportValidation.IsAllowedExtraEnemyZdo(zdo, eventId, expectedPrefabName))
-                {
-                    LogWarning($"[BloodMoon][event:{eventId}][spawn] Rejected ZDO {spawnedId}: prefab does not match frozen spawn pool '{expectedPrefabName}'.");
+                if (zdo.GetPrefab() != 0 && zdo.GetPrefab() != expectedPoolIdentity)
                     return false;
+
+                // A valid report can precede custom-field replication. The original method
+                // reserves one token and waits for complete metadata in that case.
+                if (!BloodMoonSpawner.IsSpawnMetadataPending(zdo))
+                {
+                    if (zdo.GetLong(BloodMoonSpawner.GroupMarker, -1L) != groupId ||
+                        !BloodMoonSpawner.WasSpawnedInZone(zdo, zoneX, zoneY))
+                        return Reject(spawnedId, eventId, expectedPrefabName, now);
+
+                    if (!BloodMoonSpawnReportValidation.IsAllowedExtraEnemyZdo(zdo, eventId, expectedPrefabName))
+                    {
+                        LogWarning($"[BloodMoon][event:{eventId}][spawn] Rejected ZDO {spawnedId}: prefab does not match frozen spawn pool '{expectedPrefabName}'.");
+                        return false;
+                    }
                 }
             }
 
