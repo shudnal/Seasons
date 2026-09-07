@@ -12,6 +12,8 @@ namespace Seasons.BloodMoon
         internal static readonly int EventMarker = "Seasons.BloodMoon.SpawnedEventId".GetStableHashCode();
         internal static readonly int GroupMarker = "Seasons.BloodMoon.GroupId".GetStableHashCode();
         internal static readonly int RoleMarker = "Seasons.BloodMoon.Role".GetStableHashCode();
+        internal static readonly int SpawnZoneXMarker = "Seasons.BloodMoon.SpawnZoneX".GetStableHashCode();
+        internal static readonly int SpawnZoneYMarker = "Seasons.BloodMoon.SpawnZoneY".GetStableHashCode();
 
         private const double PendingReportLifetimeSeconds = 30d;
         private const double PendingCleanupLifetimeSeconds = 30d;
@@ -27,8 +29,10 @@ namespace Seasons.BloodMoon
         }
 
         private static readonly Dictionary<string, BloodMoonSpawnLeaseState> clientLeases = new Dictionary<string, BloodMoonSpawnLeaseState>();
+        private static readonly Dictionary<string, BloodMoonSpawnLeaseState> clientLeaseHistory = new Dictionary<string, BloodMoonSpawnLeaseState>();
         private static readonly Dictionary<ZDOID, PendingSpawnReport> pendingSpawnReports = new Dictionary<ZDOID, PendingSpawnReport>();
         private static readonly Dictionary<ZDOID, double> pendingCleanupZdos = new Dictionary<ZDOID, double>();
+        private static long clientLeaseEventId = -1L;
         private static float clientSpawnTimer;
         private static float serverMaintenanceTimer;
 
@@ -209,12 +213,34 @@ namespace Seasons.BloodMoon
 
         internal static void ReceiveLease(BloodMoonSpawnLeaseState lease)
         {
-            if (lease == null || lease.EventId != BloodMoonNetwork.ClientGlobal.EventId || lease.OwnerSessionId != ZDOMan.GetSessionID())
+            if (lease == null || lease.EventId < 0L || lease.EventId != BloodMoonNetwork.ClientGlobal.EventId ||
+                ZDOMan.instance == null || lease.OwnerSessionId != ZDOMan.GetSessionID() || lease.LeaseRevision <= 0)
                 return;
+
+            if (clientLeaseEventId != lease.EventId)
+            {
+                clientLeaseEventId = lease.EventId;
+                clientLeases.Clear();
+                clientLeaseHistory.Clear();
+            }
+
             string key = MakeLeaseKey(lease.GroupId, lease.ZoneX, lease.ZoneY);
-            if (clientLeases.TryGetValue(key, out BloodMoonSpawnLeaseState current) && current.LeaseRevision > lease.LeaseRevision)
-                return;
+            lease.Allowance = Math.Max(0, lease.Allowance);
+            if (clientLeaseHistory.TryGetValue(key, out BloodMoonSpawnLeaseState current))
+            {
+                if (current.LeaseRevision > lease.LeaseRevision)
+                    return;
+                if (current.LeaseRevision == lease.LeaseRevision)
+                {
+                    if (current.OwnerSessionId != lease.OwnerSessionId || current.GroupRevision != lease.GroupRevision || current.PoolRevision != lease.PoolRevision)
+                        return;
+                    // Renewal extends a lease; it does not replenish tokens spent before the
+                    // server received our reports. Keep history even after the active lease expires.
+                    lease.Allowance = Math.Min(lease.Allowance, current.Allowance);
+                }
+            }
             clientLeases[key] = lease;
+            clientLeaseHistory[key] = lease;
         }
 
         internal static void TickClient(float dt)
@@ -243,6 +269,10 @@ namespace Seasons.BloodMoon
                 if (!OwnsLoadedZone(zone))
                     continue;
                 TrySpawnFromLease(lease, zone);
+                // Listen-host reporting can synchronously deliver a renewal during SpawnMarked.
+                if (clientLeaseHistory.TryGetValue(entry.Key, out BloodMoonSpawnLeaseState renewed) &&
+                    renewed.EventId == lease.EventId && renewed.LeaseRevision == lease.LeaseRevision)
+                    renewed.Allowance = Math.Min(renewed.Allowance, Math.Max(0, lease.Allowance));
             }
         }
 
@@ -374,6 +404,8 @@ namespace Seasons.BloodMoon
             zdo.Set(EventMarker, lease.EventId);
             zdo.Set(GroupMarker, lease.GroupId);
             zdo.Set(RoleMarker, (int)role);
+            zdo.Set(SpawnZoneXMarker, zone.x);
+            zdo.Set(SpawnZoneYMarker, zone.y);
 
             MonsterAI ai = spawned.GetComponent<MonsterAI>();
             if (ai != null)
@@ -382,9 +414,28 @@ namespace Seasons.BloodMoon
                 ai.m_despawnInDay = false;
             }
 
+            ZDOMan.instance?.ForceSendZDO(zdo.m_uid);
             BloodMoonNetwork.SendSpawnReport(lease.EventId, lease.GroupId, lease.GroupRevision, zone.x, zone.y, lease.LeaseRevision, zdo.m_uid);
             LogInfo($"[BloodMoon][event:{lease.EventId}][zone:{zone}][spawn] {prefab.name} {zdo.m_uid} group={lease.GroupId} lease={lease.LeaseRevision}.");
             return true;
+        }
+
+        internal static bool WasSpawnedInZone(ZDO zdo, int zoneX, int zoneY)
+        {
+            if (zdo == null)
+                return false;
+            int originalX = zdo.GetInt(SpawnZoneXMarker, int.MinValue);
+            int originalY = zdo.GetInt(SpawnZoneYMarker, int.MinValue);
+            if (originalX != int.MinValue && originalY != int.MinValue)
+                return originalX == zoneX && originalY == zoneY;
+            // Older in-flight reports have no spawn-position record. Never rewrite a marked
+            // creature's origin as it moves across a sector boundary after being instantiated.
+            return zdo.GetSector() == new Vector2i(zoneX, zoneY);
+        }
+
+        internal static bool IsSpawnMetadataPending(ZDO zdo)
+        {
+            return zdo == null || zdo.GetLong(EventMarker, -1L) < 0L || zdo.GetLong(GroupMarker, long.MinValue) == long.MinValue;
         }
 
         internal static void AcceptSpawnReport(BloodMoonEventState state, long sender, long groupId, int groupRevision, int zoneX, int zoneY, int leaseRevision, ZDOID spawnedId, double now)
@@ -419,11 +470,11 @@ namespace Seasons.BloodMoon
                 ZoneX = zoneX,
                 ZoneY = zoneY,
                 SpawnedId = spawnedId,
-                ExpiresAt = now + PendingReportLifetimeSeconds
+                ExpiresAt = Time.realtimeSinceStartup + PendingReportLifetimeSeconds
             };
 
             ZDO zdo = ZDOMan.instance?.GetZDO(spawnedId);
-            if (zdo == null)
+            if (IsSpawnMetadataPending(zdo))
             {
                 pendingSpawnReports[spawnedId] = report;
                 BloodMoonPersistence.Save(state);
@@ -446,7 +497,7 @@ namespace Seasons.BloodMoon
             foreach (KeyValuePair<ZDOID, PendingSpawnReport> entry in pendingSpawnReports.ToArray())
             {
                 PendingSpawnReport report = entry.Value;
-                if (report.EventId != state.EventId || now >= report.ExpiresAt)
+                if (report.EventId != state.EventId || Time.realtimeSinceStartup >= report.ExpiresAt)
                 {
                     ZDO expired = ZDOMan.instance.GetZDO(entry.Key);
                     if (expired != null && expired.GetLong(EventMarker, -1L) == report.EventId)
@@ -457,7 +508,7 @@ namespace Seasons.BloodMoon
                 }
 
                 ZDO zdo = ZDOMan.instance.GetZDO(entry.Key);
-                if (zdo == null)
+                if (IsSpawnMetadataPending(zdo))
                     continue;
 
                 if (ValidateSpawnedZdo(report, zdo))
@@ -475,7 +526,7 @@ namespace Seasons.BloodMoon
         private static bool ValidateSpawnedZdo(PendingSpawnReport report, ZDO zdo)
         {
             return report != null && zdo != null && zdo.GetLong(EventMarker, -1L) == report.EventId &&
-                zdo.GetLong(GroupMarker, -1L) == report.GroupId && zdo.GetSector() == new Vector2i(report.ZoneX, report.ZoneY);
+                zdo.GetLong(GroupMarker, -1L) == report.GroupId && WasSpawnedInZone(zdo, report.ZoneX, report.ZoneY);
         }
 
         internal static void StopServerLeases(BloodMoonEventState state)
@@ -487,10 +538,9 @@ namespace Seasons.BloodMoon
 
         internal static void CleanupExtraEnemies(BloodMoonEventState state)
         {
-            if (state == null || ZDOMan.instance == null)
+            if (state == null || state.EventId < 0L || ZDOMan.instance == null)
                 return;
 
-            double now = SeasonState.IsActive ? seasonState.GetTotalSeconds() : 0d;
             foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values
                 .Where(zdo => zdo.GetLong(EventMarker, -1L) == state.EventId)
                 .ToArray())
@@ -499,7 +549,7 @@ namespace Seasons.BloodMoon
             }
 
             foreach (PendingSpawnReport report in pendingSpawnReports.Values.Where(report => report.EventId == state.EventId).ToArray())
-                pendingCleanupZdos[report.SpawnedId] = now + PendingCleanupLifetimeSeconds;
+                pendingCleanupZdos[report.SpawnedId] = Time.realtimeSinceStartup + PendingCleanupLifetimeSeconds;
             pendingSpawnReports.Clear();
             state.ExtraEnemyZdos.Clear();
             state.SpawnLeases.Clear();
@@ -514,13 +564,12 @@ namespace Seasons.BloodMoon
             foreach (KeyValuePair<ZDOID, double> pending in pendingCleanupZdos.ToArray())
             {
                 ZDO zdo = ZDOMan.instance.GetZDO(pending.Key);
-                if (zdo != null)
+                if (zdo != null && zdo.GetLong(EventMarker, -1L) >= 0L)
                 {
-                    if (zdo.GetLong(EventMarker, -1L) >= 0L)
-                        DestroyZdo(pending.Key);
+                    DestroyZdo(pending.Key);
                     pendingCleanupZdos.Remove(pending.Key);
                 }
-                else if (now >= pending.Value)
+                else if (Time.realtimeSinceStartup >= pending.Value)
                 {
                     pendingCleanupZdos.Remove(pending.Key);
                 }
@@ -557,6 +606,8 @@ namespace Seasons.BloodMoon
         internal static void ResetClientState()
         {
             clientLeases.Clear();
+            clientLeaseHistory.Clear();
+            clientLeaseEventId = -1L;
             clientSpawnTimer = 0f;
             serverMaintenanceTimer = 0f;
             if (ZNet.instance == null || !ZNet.instance.IsServer())
@@ -616,7 +667,7 @@ namespace Seasons.BloodMoon
         private static bool Prefix(CharacterDrop __instance, ref List<KeyValuePair<GameObject, int>> __result)
         {
             Character character = __instance.GetComponent<Character>();
-            if (!BloodMoonInteractionRules.IsBloodMoonSpawned(character))
+            if (!BloodMoonInteractionRules.HasBloodMoonSpawnMarker(character))
                 return true;
             __result = new List<KeyValuePair<GameObject, int>>();
             return false;
@@ -629,7 +680,7 @@ namespace Seasons.BloodMoon
         private static void Prefix(Ragdoll __instance, CharacterDrop characterDrop)
         {
             Character character = characterDrop != null ? characterDrop.GetComponent<Character>() : null;
-            if (!BloodMoonInteractionRules.IsBloodMoonSpawned(character) || __instance.m_nview == null || !__instance.m_nview.IsValid())
+            if (!BloodMoonInteractionRules.HasBloodMoonSpawnMarker(character) || __instance.m_nview == null || !__instance.m_nview.IsValid())
                 return;
 
             ZDO source = character.m_nview.GetZDO();
