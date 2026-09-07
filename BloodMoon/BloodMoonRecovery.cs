@@ -50,7 +50,7 @@ namespace Seasons.BloodMoon
 
         internal static bool TryInterceptDefeat(Player player)
         {
-            if (player == null)
+            if (player == null || player != Player.m_localPlayer)
                 return false;
             long playerId = player.GetPlayerID();
             long eventId = BloodMoonNetwork.ClientGlobal.EventId;
@@ -70,9 +70,19 @@ namespace Seasons.BloodMoon
 
         internal static void ApplyDefeat(Player player)
         {
-            if (player == null)
-                return;
             long eventId = BloodMoonNetwork.ClientGlobal.EventId;
+            if (player == null || player != Player.m_localPlayer || eventId < 0L || GetCurrentWorldUid() == 0L)
+                return;
+
+            // The player owner has already applied normal defeat recovery before reporting it.
+            // An acknowledgement (including a delayed one after protection expired) must never
+            // heal, cleanse or grant another protection window. Durable defeat survives reload.
+            if (IsLocallyExited(player.GetPlayerID()))
+            {
+                BloodMoonStatus.RemoveLocal();
+                return;
+            }
+
             MarkDefeated(player, eventId, immediateReportAlreadyScheduled: false);
             RestoreCombatResources(player);
             RemoveDamagingDots(player);
@@ -281,7 +291,9 @@ namespace Seasons.BloodMoon
             long worldUid = GetCurrentWorldUid();
             if (worldUid == 0L)
                 return;
-            if (persisted == null || persisted.WorldUid != worldUid || persisted.EventId < 0L || persisted.Remaining <= 0f || persisted.SavedUtcTicks <= 0L)
+            if (persisted == null || persisted.WorldUid != worldUid || persisted.EventId < 0L ||
+                float.IsNaN(persisted.Remaining) || float.IsInfinity(persisted.Remaining) ||
+                persisted.Remaining <= 0f || persisted.SavedUtcTicks <= 0L || persisted.SavedUtcTicks > DateTime.MaxValue.Ticks)
             {
                 player.m_customData.Remove(RecoveryDataKey);
                 return;
@@ -289,7 +301,7 @@ namespace Seasons.BloodMoon
 
             double elapsed = Math.Max(0d, TimeSpan.FromTicks(Math.Max(0L, DateTime.UtcNow.Ticks - persisted.SavedUtcTicks)).TotalSeconds);
             bool stageOne = persisted.StageOne;
-            float remaining = persisted.Remaining - (float)elapsed;
+            float remaining = Mathf.Min(persisted.Remaining, stageOne ? StageOneDuration : StageTwoDuration) - (float)elapsed;
             if (stageOne && remaining <= 0f)
             {
                 stageOne = false;
