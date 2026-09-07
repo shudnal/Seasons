@@ -8,11 +8,17 @@ Only working branch: `feat/blood-moon`
 
 Existing implementation and runtime hardening: draft PR #42. Continue from its current head; do not start another branch or recreate the implementation from the early planning text.
 
-**Current continuation checkpoint:**
+**Current continuation and project-conformance checkpoint:**
 
-`docs/tasks/blood-moon/23_PR42_RUNTIME_HARDENING_AND_CLOCK_POLICY.md`
+`docs/tasks/blood-moon/25_PROJECT_CONFORMANCE_MATRIX.md`
 
-That checkpoint records the Marketplace/minimap corrections, client lifecycle and spawn hardening, accepted `skiptime` behavior, evidence limits, and owner-side validation scenarios. The exact code-review request and reviewed commit belong in the PR timeline.
+The matrix maps accepted behavior to the effective implementation, records current precedence between old and new documents, lists source-level findings fixed during the conformance audit, and separates static conformance from owner-side runtime/visual gates.
+
+Immediately preceding late corrections are:
+
+- `docs/tasks/blood-moon/22_DREAMTEXT_AND_INPUT_POLICY.md`
+- `docs/tasks/blood-moon/23_PR42_RUNTIME_HARDENING_AND_CLOCK_POLICY.md`
+- `docs/tasks/blood-moon/24_MARKETPLACE_9_9_4_COMPATIBILITY.md`
 
 For game classes, read `https://github.com/shudnal/assemblies_combined` first.
 
@@ -36,25 +42,42 @@ Do not use the old external drafts `BloodMoon_Design_Document.md` or `BloodMoon_
 12. `docs/tasks/blood-moon/11_VALHEIM_NETWORK_AI_AND_CCS_RESEARCH.md`
 13. `docs/tasks/blood-moon/12_RELATED_MODS_RESEARCH.md`
 
-Files `01`-`08` define product/subsystem requirements, `09` records accepted implementation decisions, `10` defines implementation order/scope, and `11`-`12` record source research.
+Files `01`-`08` define the original product/subsystem requirements, `09` records accepted implementation decisions, `10` defines implementation order/scope, and `11`-`12` record source research. They must be read together with the later authoritative corrections below.
 
 ### Implementation evidence and later corrections
+
+Historical implementation/review evidence:
 
 - `docs/tasks/blood-moon/13_IMPLEMENTATION_REPORT.md`
 - `docs/tasks/blood-moon/14_CODE_REVIEW_STATUS.md`
 - `docs/tasks/blood-moon/15_RELEASE_READINESS.md`
-- `docs/tasks/blood-moon/16_CLIENT_TRUST_BOUNDARY.md`
 - `docs/tasks/blood-moon/17_HARDENING_CHECKPOINT_2026-08-25.md`
 - `docs/tasks/blood-moon/18_CODEX_REVIEW_HARDENING_2026-08-25.md`
 - `docs/tasks/blood-moon/19_NEW_PR_COMMENTS_2026-08-25.md`
-- `docs/tasks/blood-moon/20_RUNTIME_JSON_AND_ZDO_PARKING.md`
 - `docs/tasks/blood-moon/21_CLASSIC_CSPROJ_COMPILE_ITEMS.md`
+
+Current authoritative corrections/clarifications in their explicit scope:
+
+- `docs/tasks/blood-moon/16_CLIENT_TRUST_BOUNDARY.md`
+- `docs/tasks/blood-moon/20_RUNTIME_JSON_AND_ZDO_PARKING.md`
 - `docs/tasks/blood-moon/22_DREAMTEXT_AND_INPUT_POLICY.md`
 - `docs/tasks/blood-moon/23_PR42_RUNTIME_HARDENING_AND_CLOCK_POLICY.md`
+- `docs/tasks/blood-moon/24_MARKETPLACE_9_9_4_COMPATIBILITY.md`
+- `docs/tasks/blood-moon/25_PROJECT_CONFORMANCE_MATRIX.md`
 
-Read the later corrections before modifying the corresponding subsystem. In their explicit scope, later accepted decisions override earlier proposals. In particular, client trust, JSON/ZDO persistence, vanilla DreamText/input presentation, and clock control must not be reconstructed from superseded early assumptions.
+### Precedence rules
 
-Implementation/review reports are evidence for the commits they identify, not a guarantee that a later head has passed review or runtime testing. The absence of an exception in the owner's initial playtest does not establish multiplayer correctness.
+Read later corrections before modifying the corresponding subsystem. In their explicit scope, later accepted decisions override earlier proposals and historical implementation reports.
+
+In particular:
+
+- `22_DREAMTEXT_AND_INPUT_POLICY.md` overrides every earlier description of an immediate/forced Blood Moon DreamText screen, a DreamText presentation handshake, or Blood Moon-owned global input suppression. Current behavior is a profile-backed pending Blood Moon dream consumed by the next ordinary vanilla sleep; Blood Moon does not patch `Player.TakeInput`.
+- `23_PR42_RUNTIME_HARDENING_AND_CLOCK_POLICY.md` overrides older ambiguous time-control wording. Natural/`skiptime` progression is forward-only; backward time is not gameplay rollback; required forward transition side effects still run.
+- `24_MARKETPLACE_9_9_4_COMPATIBILITY.md` supersedes the Marketplace 9.8.9 API evidence in `23` for the current Marketplace territory-map contract.
+- `25_PROJECT_CONFORMANCE_MATRIX.md` is the current cross-subsystem conformance checkpoint. It also clarifies stale wording such as old group-coordinator terminology, Blood Craft schema/station semantics, current damage/death trust flow, and which historical report claims are no longer current.
+- `13`, `14` and `15` remain valuable evidence for the commits/reviews they describe, but they are historical checkpoints rather than current product authority when they conflict with `22`-`25`.
+
+Implementation/review reports are evidence for the commits they identify, not a guarantee that a later head has passed review or runtime testing. The absence of an exception in an owner playtest does not establish multiplayer correctness.
 
 ## 2. Event purpose
 
@@ -66,7 +89,7 @@ Buildings, tamed creatures, NPCs, bosses, and resource objects are not valid Blo
 
 The event's explicit durable reward is combat skill experience. There is no event currency, material/cosmetic reward catalogue, reputation/key reward, or permanent event equipment. Existing monsters retain their ordinary loot and are not restored after being killed; that accepted direct-conversion consequence is distinct from an event reward system. Event-created extras do not drop loot.
 
-Blood Craft is a temporary tool, not a reward. It removes the resource barrier to trying known weapons, armor, magic, ammunition, and consumables, while retaining only the acquired skill experience after the temporary inventory is cleaned up.
+Blood Craft is a temporary tool, not a reward. It removes the material-resource barrier to trying known weapons, armor, magic, ammunition, and consumables while preserving the source crafting-station and station-level requirements. Only acquired skill experience and normal non-event consequences remain after temporary inventory cleanup.
 
 ## 3. Core cycle
 
@@ -85,11 +108,11 @@ Late-autumn nightly forewarning
 -> Early completion or forced end at 05:45
 -> Resolution and cleanup
 -> Parked bosses restored
--> Time advances toward the scheduled 06:00 morning
--> Outcome, chronicle, Rested removal and presentation
+-> Time advances toward the scheduled 06:00 morning where applicable
+-> Outcome/chronicle is persisted and a Blood Moon dream becomes pending for a future ordinary sleep
 ```
 
-The current presentation contract is in `22_DREAMTEXT_AND_INPUT_POLICY.md`. This cycle is not authorization to introduce a separate DreamText overlay or input-lock mechanism contrary to that document.
+The current DreamText/input presentation contract is exclusively defined by `22_DREAMTEXT_AND_INPUT_POLICY.md`. This cycle is not authorization to introduce a separate DreamText overlay or a global input-lock mechanism.
 
 ## 4. Key accepted decisions
 
@@ -118,13 +141,13 @@ GoalReached = true
 ExitReason = None | Defeated | Withdrawn | Disconnected
 ```
 
-Reaching the genuine combat objective fixes Success for that event ID. A later defeat, withdrawal, or disconnect does not revoke that success or its completion entitlement, but affects the chronicle and presentation. Automatic display completion is not genuine combat success.
+Reaching the genuine combat objective fixes Success for that event ID. A later defeat, withdrawal, or disconnect does not revoke that success or its completion entitlement, but affects the chronicle and eventual DreamText. Automatic display completion is not genuine combat success.
 
 ### Bosses
 
-Boss-producing `OfferingBowl` interactions are blocked from 18:00. Persistent outdoor bosses are parked by server-owned raw-ZDO relocation to a far XZ sector and later restored to their original position.
+Boss-producing `OfferingBowl` interactions are blocked from the Marked cutoff. A request accepted server-side before the cutoff may complete afterward. Persistent outdoor bosses are parked by server-owned raw-ZDO relocation to a far XZ sector and later restored to their durable original transform.
 
-Nonpersistent and interior bosses are not parked. An affected player fighting such an unparkable boss receives terminal Withdrawn. Boss animation, target, velocity, coroutine, HUD, and runtime-only state do not have to be restored; the same persistent ZDO must return to the original position. Lingering boss projectiles, AOE, and summons are not explicitly removed.
+Nonpersistent and interior bosses are not parked. An affected player in the same validated encounter/navigation context receives terminal Withdrawn. Boss animation, target, velocity, coroutine, HUD, and other runtime-only state do not have to be reconstructed; the same persistent ZDO must be restored. Lingering boss projectiles, AOE, and summons are not explicitly removed.
 
 ### Player contexts
 
@@ -132,19 +155,23 @@ Mounted and generic attached players are supported without forced detach. Ship/o
 
 Teleport temporarily excludes a player as a spawn anchor, then participation continues. Approaching the world edge causes terminal Withdrawn before the dangerous boundary. Body blocking by terminal players is not given a special collision system.
 
-### Networking
+### Networking and spawning
 
 Ordinary CCS `CustomSyncedValue` carries the current global event state and public participant routing snapshot. `SequencedCustomSyncedValue` is not required. Addressed player/group operations use the feature's RPCs.
 
-The local Player owns defeat detection; the server receives a notification and enforces identity/event/idempotency boundaries rather than independently proving zero health. Each zone's actual owner performs extra spawning. The server controls group/cap/pool rules without requiring live Character instances on a dedicated server.
+The local Player owns defeat detection; the server receives a notification and enforces identity/event/idempotency boundaries rather than independently proving zero health. Damage/progress hardening uses the source/target authority split documented by the current implementation and matrix, without turning the feature into a hostile-client anti-cheat system.
 
-Read `16_CLIENT_TRUST_BOUNDARY.md` and the networking/runtime addenda before adding validation or persistence rules.
+There is no group-wide spawn coordinator. Each relevant zone's actual current owner performs extra spawning for that zone only. The server controls group/cap/pool rules and per-zone leases without requiring live Character instances on a dedicated server.
+
+Read `16_CLIENT_TRUST_BOUNDARY.md`, `20_RUNTIME_JSON_AND_ZDO_PARKING.md`, `23_PR42_RUNTIME_HARDENING_AND_CLOCK_POLICY.md` and `25_PROJECT_CONFORMANCE_MATRIX.md` before adding validation, persistence or spawn-authority rules.
 
 ### Time changes and administrative control
 
-Normal time and `skiptime` can advance the event through its legal transitions. Backward time changes do not roll back phases, acquired experience, temporary-item cleanup, terminal outcomes, or event history.
+Normal time and `skiptime` can advance the event through its legal transitions. Required transition side effects are preserved even when a large forward jump crosses multiple phases. A jump past forced end enters the normal resolution transaction rather than assigning `Resolved` directly.
 
-Explicit admin commands control diagnostic phase starts. Starting an earlier phase of a live event requires explicit cleanup first; a debug restart is not a reward rollback or an independent production event if it reuses the same world-day ID. `23_PR42_RUNTIME_HARDENING_AND_CLOCK_POLICY.md` contains the exact policy and scenarios.
+Backward time changes do not roll back phases, acquired experience, temporary-item cleanup, terminal outcomes, killed creatures, parked-boss history, or event history.
+
+Explicit admin commands control diagnostic phase starts. Starting an earlier phase of a live event requires explicit cleanup first; a debug restart is not a reward rollback or an independent production event if it reuses the same world-day ID. `23_PR42_RUNTIME_HARDENING_AND_CLOCK_POLICY.md` contains the detailed policy and scenarios.
 
 ## 5. Development and continuation rules
 
@@ -152,8 +179,10 @@ Work directly in `feat/blood-moon` using logical commits. Do not create addition
 
 Before changing a game-method patch, read its actual source in `assemblies_combined`. When fixing a Blood Moon method, inspect existing internal Harmony adapters too; some earlier hardening is implemented in those adapters. Prefer a direct production correction to adding another overriding wrapper.
 
-Maintain decisions, patch-point reasoning, defects/fixes, and the next continuation point in the repository. All new or rewritten repository documentation, comments, logs, and identifiers must be English except intentional localization resources.
+Maintain decisions, patch-point reasoning, defects/fixes, and the next continuation point in the repository. New or rewritten implementation-facing documentation, comments, logs, and identifiers should use English except intentional localization resources.
 
-Do not change version, public README, Thunderstore changelog, packaging, or release metadata without a separate request. Do not compile or run the Valheim mod on the assistant side under the current owner instruction. Clearly distinguish static inspection, requested review, completed review, and owner-side runtime evidence.
+Do not change version, public README, Thunderstore changelog, packaging, or release metadata without a separate request. Do not claim an assistant-side Valheim build/runtime result. Clearly distinguish static inspection, requested review, completed review, and owner-side runtime evidence.
 
-After changes, request Codex review on the exact current PR head. Fix confirmed findings without treating an older review as approval for newer code. Keep PR #42 draft, open, and unmerged until the owner decides otherwise.
+After implementation changes, request Codex review on the exact current PR head. The final pass must be a complete **project-conformance review**, not merely a latest-delta review: Codex must read this index and `25_PROJECT_CONFORMANCE_MATRIX.md`, apply the precedence rules above, and review the full effective `master...feat/blood-moon` behavior including internal Harmony adapters.
+
+Fix confirmed findings without treating an older review as approval for newer code. Keep PR #42 draft, open, and unmerged until the owner decides otherwise.
