@@ -67,12 +67,21 @@ namespace Seasons.BloodMoon
             return faction != Character.Faction.Players && faction != Character.Faction.PlayerSpawned && faction != Character.Faction.TrainingDummy;
         }
 
-        internal static bool IsBloodMoonSpawned(Character character)
+        private static long GetSpawnedEventId(Character character)
         {
             if (character == null || character.m_nview == null || !character.m_nview.IsValid())
-                return false;
-            ZDO zdo = character.m_nview.GetZDO();
-            return zdo != null && zdo.GetLong(BloodMoonSpawner.EventMarker, -1L) == BloodMoonNetwork.ClientGlobal.EventId;
+                return -1L;
+            return character.m_nview.GetZDO()?.GetLong(BloodMoonSpawner.EventMarker, -1L) ?? -1L;
+        }
+
+        // Loot suppression is a lifetime property of an event-created extra, even while its
+        // snapshot is unavailable or stale cleanup is pending. Unmarked creatures never qualify.
+        internal static bool HasBloodMoonSpawnMarker(Character character) => GetSpawnedEventId(character) >= 0L;
+
+        internal static bool IsBloodMoonSpawned(Character character)
+        {
+            long eventId = BloodMoonNetwork.ClientGlobal.EventId;
+            return eventId >= 0L && GetSpawnedEventId(character) == eventId;
         }
 
         internal static bool IsBloodMoonExtra(Character character) => IsBloodMoonSpawned(character);
@@ -81,8 +90,10 @@ namespace Seasons.BloodMoon
         {
             if (!IsEventCombatLive || !IsEligibleExistingMonster(character))
                 return false;
-            if (IsBloodMoonSpawned(character))
-                return true;
+
+            long spawnedEventId = GetSpawnedEventId(character);
+            if (spawnedEventId >= 0L)
+                return spawnedEventId == BloodMoonNetwork.ClientGlobal.EventId;
 
             foreach (Player player in GetLoadedActiveParticipants(preferFighting: false))
             {
@@ -178,7 +189,7 @@ namespace Seasons.BloodMoon
         {
             if (BloodMoonNetwork.ClientParticipants.EventId != BloodMoonNetwork.ClientGlobal.EventId || BloodMoonNetwork.ClientParticipants.Participants == null)
                 return null;
-            BloodMoonParticipantState routing = BloodMoonNetwork.ClientParticipants.Participants.FirstOrDefault(participant => participant.PlayerId == playerId);
+            BloodMoonParticipantState routing = BloodMoonNetwork.ClientParticipants.Participants.FirstOrDefault(participant => participant != null && participant.PlayerId == playerId);
             return BloodMoonParticipantDetails.MergeOwnDetail(routing);
         }
 
@@ -188,6 +199,8 @@ namespace Seasons.BloodMoon
             List<Player> goalReached = new List<Player>();
             foreach (Player player in Player.GetAllPlayers())
             {
+                if (player == null)
+                    continue;
                 BloodMoonParticipantState participant = GetParticipant(player.GetPlayerID());
                 if (participant == null || !participant.IsCombatActive || !IsActiveParticipant(player) || player.IsDead() || player.IsTeleporting() || player.InDebugFlyMode() || player.InGhostMode())
                     continue;
