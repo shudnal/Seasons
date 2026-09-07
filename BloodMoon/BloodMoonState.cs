@@ -1,6 +1,7 @@
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace Seasons.BloodMoon
@@ -106,6 +107,11 @@ namespace Seasons.BloodMoon
         [JsonProperty] public long LastSkillReportSequence;
         [JsonProperty] public Dictionary<int, float> SkillContribution = new Dictionary<int, float>();
         [JsonProperty] public Dictionary<int, float> LiveSkillBonusEquivalent = new Dictionary<int, float>();
+
+        // The ledger remains the single durable source; snapshots project its total without
+        // introducing a second independently persisted budget counter.
+        [JsonIgnore]
+        public float LiveSkillBonusUsed => LiveSkillBonusEquivalent?.Values.Sum() ?? 0f;
 
         public bool IsCombatActive => Phase == BloodMoonParticipantPhase.Fighting || Phase == BloodMoonParticipantPhase.GoalReached;
         public bool IsTerminal => Phase == BloodMoonParticipantPhase.Exited || Phase == BloodMoonParticipantPhase.Resolved;
