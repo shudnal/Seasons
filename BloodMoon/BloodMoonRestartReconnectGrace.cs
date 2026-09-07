@@ -1,16 +1,17 @@
 using HarmonyLib;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine;
 using static Seasons.Seasons;
 
 namespace Seasons.BloodMoon
 {
     internal static class BloodMoonRestartReconnectGrace
     {
-        private const double GraceSeconds = 30d;
+        private const float GraceSeconds = 30f;
         private static readonly HashSet<long> awaitingReconnect = new HashSet<long>();
         private static long eventId = -1L;
-        private static double until;
+        private static float until;
 
         internal static void Begin(BloodMoonEventState state)
         {
@@ -20,7 +21,9 @@ namespace Seasons.BloodMoon
                 return;
 
             eventId = state.EventId;
-            until = seasonState.GetTotalSeconds() + GraceSeconds;
+            // This is a networking grace period, not a calendar deadline. skiptime and
+            // wall-clock corrections must neither expire it early nor extend it indefinitely.
+            until = Time.realtimeSinceStartup + GraceSeconds;
             foreach (BloodMoonParticipantState participant in state.Participants.Values)
             {
                 if (participant.Phase == BloodMoonParticipantPhase.Marked || participant.IsCombatActive)
@@ -36,7 +39,7 @@ namespace Seasons.BloodMoon
             if (controller == null || state == null || state.EventId != eventId || awaitingReconnect.Count == 0)
                 return;
 
-            if (now >= until)
+            if (Time.realtimeSinceStartup >= until)
             {
                 awaitingReconnect.Clear();
                 return;
@@ -53,7 +56,7 @@ namespace Seasons.BloodMoon
 
         internal static bool ShouldDefer(long currentEventId, long playerId, BloodMoonParticipantExitReason reason, double now)
         {
-            if (reason != BloodMoonParticipantExitReason.Disconnected || currentEventId != eventId || now >= until)
+            if (reason != BloodMoonParticipantExitReason.Disconnected || currentEventId != eventId || Time.realtimeSinceStartup >= until)
                 return false;
             return awaitingReconnect.Contains(playerId);
         }
@@ -61,7 +64,7 @@ namespace Seasons.BloodMoon
         internal static void Reset()
         {
             eventId = -1L;
-            until = 0d;
+            until = 0f;
             awaitingReconnect.Clear();
         }
     }
