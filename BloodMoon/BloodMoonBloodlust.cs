@@ -23,9 +23,10 @@ namespace Seasons.BloodMoon
             }
         }
 
-        internal struct MovementState
+        internal sealed class MovementState
         {
             internal bool Applied;
+            internal bool Restored;
             internal float Speed;
             internal float WalkSpeed;
             internal float RunSpeed;
@@ -135,16 +136,18 @@ namespace Seasons.BloodMoon
 
         internal static MovementState ApplyWalkingMovement(Player player)
         {
-            MovementState state = default;
             float multiplier = GetMovementMultiplier(player);
             if (player == null || Mathf.Approximately(multiplier, 1f))
-                return state;
+                return null;
 
-            state.Applied = true;
-            state.Speed = player.m_speed;
-            state.WalkSpeed = player.m_walkSpeed;
-            state.RunSpeed = player.m_runSpeed;
-            state.CrouchSpeed = player.m_crouchSpeed;
+            MovementState state = new MovementState
+            {
+                Applied = true,
+                Speed = player.m_speed,
+                WalkSpeed = player.m_walkSpeed,
+                RunSpeed = player.m_runSpeed,
+                CrouchSpeed = player.m_crouchSpeed
+            };
             player.m_speed *= multiplier;
             player.m_walkSpeed *= multiplier;
             player.m_runSpeed *= multiplier;
@@ -154,21 +157,24 @@ namespace Seasons.BloodMoon
 
         internal static MovementState ApplySwimmingMovement(Player player)
         {
-            MovementState state = default;
             float multiplier = GetMovementMultiplier(player);
             if (player == null || Mathf.Approximately(multiplier, 1f))
-                return state;
+                return null;
 
-            state.Applied = true;
-            state.SwimSpeed = player.m_swimSpeed;
+            MovementState state = new MovementState
+            {
+                Applied = true,
+                SwimSpeed = player.m_swimSpeed
+            };
             player.m_swimSpeed *= multiplier;
             return state;
         }
 
         internal static void RestoreWalkingMovement(Player player, MovementState state)
         {
-            if (player == null || !state.Applied)
+            if (player == null || state == null || !state.Applied || state.Restored)
                 return;
+            state.Restored = true;
             player.m_speed = state.Speed;
             player.m_walkSpeed = state.WalkSpeed;
             player.m_runSpeed = state.RunSpeed;
@@ -177,8 +183,9 @@ namespace Seasons.BloodMoon
 
         internal static void RestoreSwimmingMovement(Player player, MovementState state)
         {
-            if (player == null || !state.Applied)
+            if (player == null || state == null || !state.Applied || state.Restored)
                 return;
+            state.Restored = true;
             player.m_swimSpeed = state.SwimSpeed;
         }
 
@@ -309,7 +316,7 @@ namespace Seasons.BloodMoon
     {
         private static void Prefix(Character __instance, out BloodMoonBloodlust.MovementState __state)
         {
-            __state = __instance is Player player ? BloodMoonBloodlust.ApplyWalkingMovement(player) : default;
+            __state = __instance is Player player ? BloodMoonBloodlust.ApplyWalkingMovement(player) : null;
         }
 
         private static void Postfix(Character __instance, BloodMoonBloodlust.MovementState __state)
@@ -331,7 +338,7 @@ namespace Seasons.BloodMoon
     {
         private static void Prefix(Character __instance, out BloodMoonBloodlust.MovementState __state)
         {
-            __state = __instance is Player player ? BloodMoonBloodlust.ApplySwimmingMovement(player) : default;
+            __state = __instance is Player player ? BloodMoonBloodlust.ApplySwimmingMovement(player) : null;
         }
 
         private static void Postfix(Character __instance, BloodMoonBloodlust.MovementState __state)
