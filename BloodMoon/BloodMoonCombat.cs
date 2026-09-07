@@ -87,6 +87,27 @@ namespace Seasons.BloodMoon
         [ThreadStatic]
         internal static BloodMoonHitAttributionData Attribution;
 
+        // A proc may synchronously execute another Attack/Aoe/Projectile before its caller
+        // has finished. Restore that caller's context, rather than clearing thread state.
+        // Dispose is idempotent because Harmony can execute both postfix and finalizer.
+        internal sealed class Scope : IDisposable
+        {
+            private readonly Character previousAttacker = Attacker;
+            private readonly BloodMoonHitAttributionData previousAttribution = Attribution;
+            private readonly bool previousAllowedHit = AllowedCharacterHit;
+            private bool disposed;
+
+            public void Dispose()
+            {
+                if (disposed)
+                    return;
+                disposed = true;
+                Attacker = previousAttacker;
+                Attribution = previousAttribution;
+                AllowedCharacterHit = previousAllowedHit;
+            }
+        }
+
         internal static bool IsActive => Attacker != null || Attribution != null;
         internal static bool IsParticipantSource => BloodMoonInteractionRules.IsParticipantCombatSource(Attacker) ||
             Attribution?.SourceType == BloodMoonCombatSourceType.Participant || Attribution?.SourceType == BloodMoonCombatSourceType.ParticipantSummon;
@@ -172,7 +193,7 @@ namespace Seasons.BloodMoon
 
     internal struct BloodMoonProjectileHitState
     {
-        internal bool ContextStarted;
+        internal BloodMoonAttackContext.Scope Context;
         internal bool RestoreHealthReturn;
         internal float HealthReturn;
     }
@@ -272,7 +293,8 @@ namespace Seasons.BloodMoon
             if (__instance.IsDead() || __instance.GetHealth() > 0f || !__instance.IsOwner())
                 return true;
 
-            if (__instance is Player player && player == Player.m_localPlayer && BloodMoonInteractionRules.IsActiveParticipant(player))
+            if (BloodMoonInteractionRules.IsEventCombatLive && __instance is Player player &&
+                player == Player.m_localPlayer && BloodMoonInteractionRules.IsActiveParticipant(player))
             {
                 if (BloodMoonRecovery.TryInterceptDefeat(player))
                 {
@@ -308,24 +330,31 @@ namespace Seasons.BloodMoon
                 yield return area;
         }
 
-        private static void Prefix(Attack __instance)
+        private static void Prefix(Attack __instance, out BloodMoonAttackContext.Scope __state)
         {
+            __state = null;
             Character attacker = __instance.m_character;
             if (BloodMoonInteractionRules.IsEventCombatLive &&
                 (BloodMoonInteractionRules.IsParticipantCombatSource(attacker) || BloodMoonInteractionRules.IsBloodEnemy(attacker)))
+            {
+                __state = new BloodMoonAttackContext.Scope();
                 BloodMoonAttackContext.Begin(attacker);
+            }
+            else if (BloodMoonAttackContext.IsActive)
+            {
+                __state = new BloodMoonAttackContext.Scope();
+                BloodMoonAttackContext.End();
+            }
         }
 
-        private static void Postfix()
+        private static void Postfix(BloodMoonAttackContext.Scope __state)
         {
-            if (BloodMoonAttackContext.Attribution == null)
-                BloodMoonAttackContext.End();
+            __state?.Dispose();
         }
 
-        private static Exception Finalizer(Exception __exception)
+        private static Exception Finalizer(Exception __exception, BloodMoonAttackContext.Scope __state)
         {
-            if (BloodMoonAttackContext.Attribution == null)
-                BloodMoonAttackContext.End();
+            __state?.Dispose();
             return __exception;
         }
     }
@@ -418,6 +447,11 @@ namespace Seasons.BloodMoon
         private static bool Prefix(Projectile __instance, Collider collider, out BloodMoonProjectileHitState __state)
         {
             __state = default;
+            if (BloodMoonAttackContext.IsActive)
+            {
+                __state.Context = new BloodMoonAttackContext.Scope();
+                BloodMoonAttackContext.End();
+            }
             if (!BloodMoonInteractionRules.IsEventCombatLive || collider == null)
                 return true;
 
@@ -433,9 +467,9 @@ namespace Seasons.BloodMoon
                 if (target != null && !BloodMoonHitAttribution.CanDamage(attribution, target))
                     return false;
 
+                __state.Context ??= new BloodMoonAttackContext.Scope();
                 BloodMoonAttackContext.Begin(attribution);
                 BloodMoonAttackContext.AllowedCharacterHit = target != null && BloodMoonInteractionRules.IsBloodEnemy(target);
-                __state.ContextStarted = true;
                 SuppressWorldHealthReturn(__instance, target, ref __state);
                 return true;
             }
@@ -449,9 +483,9 @@ namespace Seasons.BloodMoon
             if (target != null && !BloodMoonCombat.CanDirectDamage(owner, target, __instance.m_originalHitData, out _))
                 return false;
 
+            __state.Context ??= new BloodMoonAttackContext.Scope();
             BloodMoonAttackContext.Begin(owner);
             BloodMoonAttackContext.AllowedCharacterHit = target != null && BloodMoonInteractionRules.IsBloodEnemy(target);
-            __state.ContextStarted = true;
             SuppressWorldHealthReturn(__instance, target, ref __state);
             return true;
         }
@@ -478,10 +512,15 @@ namespace Seasons.BloodMoon
 
         private static void Restore(Projectile projectile, BloodMoonProjectileHitState state)
         {
-            if (projectile != null && state.RestoreHealthReturn)
-                projectile.m_healthReturn = state.HealthReturn;
-            if (state.ContextStarted)
-                BloodMoonAttackContext.End();
+            try
+            {
+                if (projectile != null && state.RestoreHealthReturn)
+                    projectile.m_healthReturn = state.HealthReturn;
+            }
+            finally
+            {
+                state.Context?.Dispose();
+            }
         }
     }
 
@@ -517,30 +556,33 @@ namespace Seasons.BloodMoon
     [HarmonyPatch(typeof(Aoe), nameof(Aoe.OnHit))]
     internal static class BloodMoonAoeOnHitAttributionPatch
     {
-        private static void Prefix(Aoe __instance, Collider collider, out bool __state)
+        private static void Prefix(Aoe __instance, Collider collider, out BloodMoonAttackContext.Scope __state)
         {
-            __state = false;
+            __state = null;
+            if (BloodMoonAttackContext.IsActive)
+            {
+                __state = new BloodMoonAttackContext.Scope();
+                BloodMoonAttackContext.End();
+            }
             if (collider == null || !BloodMoonHitAttribution.TryGet(__instance, __instance.m_nview, out BloodMoonHitAttributionData attribution))
                 return;
             GameObject hitObject = Projectile.FindHitObject(collider);
             Character target = hitObject != null ? hitObject.GetComponent<Character>() : null;
             if (target == null || !BloodMoonHitAttribution.CanDamage(attribution, target))
                 return;
+            __state ??= new BloodMoonAttackContext.Scope();
             BloodMoonAttackContext.Begin(attribution);
             BloodMoonAttackContext.AllowedCharacterHit = BloodMoonInteractionRules.IsBloodEnemy(target);
-            __state = true;
         }
 
-        private static void Postfix(bool __state)
+        private static void Postfix(BloodMoonAttackContext.Scope __state)
         {
-            if (__state)
-                BloodMoonAttackContext.End();
+            __state?.Dispose();
         }
 
-        private static Exception Finalizer(Exception __exception, bool __state)
+        private static Exception Finalizer(Exception __exception, BloodMoonAttackContext.Scope __state)
         {
-            if (__state)
-                BloodMoonAttackContext.End();
+            __state?.Dispose();
             return __exception;
         }
     }
