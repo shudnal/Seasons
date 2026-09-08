@@ -7,23 +7,35 @@ namespace Seasons.BloodMoon
         internal static bool TryValidate(long sender, long eventId, long creditedPlayerId, ZDOID enemyId, out float serverPoints)
         {
             serverPoints = 0f;
-            BloodMoonController controller = BloodMoonController.Instance;
-            BloodMoonEventState state = controller?.State;
-            if (state == null || !state.IsCombatLive || state.EventId != eventId || creditedPlayerId == 0L || enemyId.IsNone() ||
-                ZDOMan.instance == null || ZRoutedRpc.instance == null || ZNetScene.instance == null)
-                return false;
-
-            if (!state.Participants.TryGetValue(creditedPlayerId, out BloodMoonParticipantState participant) || !participant.IsCombatActive || !IsConnectedParticipant(controller, creditedPlayerId))
+            if (!TryValidateParticipantContext(sender, eventId, creditedPlayerId, enemyId, out BloodMoonController controller, out BloodMoonEventState state))
                 return false;
 
             ZDO enemyZdo = ZDOMan.instance.GetZDO(enemyId);
-            // Ownership can migrate after the owner observes death but before its routed report reaches
-            // the server. Event identity, observed dead state and matched damage credit remain stable
-            // validation inputs; receive-time ownership does not.
-            if (enemyZdo == null || !IsEligibleBloodEnemyZdo(state.EventId, enemyZdo) || !IsObservedDead(enemyZdo))
+            if (enemyZdo != null)
+            {
+                if (!IsEligibleBloodEnemyZdo(state.EventId, enemyZdo) || !IsObservedDead(enemyZdo))
+                    return false;
+                serverPoints = BloodMoonCombat.GetPointsForEnemy(enemyId, 0f);
+            }
+            else if (!BloodMoonEnemyDeathPending.TryGetRetainedDeathEvidence(eventId, enemyId, out serverPoints))
+            {
                 return false;
+            }
 
             if (!BloodMoonDamageCreditAuthority.TryGetConfirmedCredit(eventId, enemyId, out long confirmedPlayerId) || confirmedPlayerId != creditedPlayerId)
+                return false;
+
+            return serverPoints > 0f && !float.IsNaN(serverPoints) && !float.IsInfinity(serverPoints);
+        }
+
+        internal static bool TryCapturePendingDeathEvidence(long sender, long eventId, long creditedPlayerId, ZDOID enemyId, out float serverPoints)
+        {
+            serverPoints = 0f;
+            if (!TryValidateParticipantContext(sender, eventId, creditedPlayerId, enemyId, out _, out BloodMoonEventState state))
+                return false;
+
+            ZDO enemyZdo = ZDOMan.instance.GetZDO(enemyId);
+            if (enemyZdo == null || !IsEligibleBloodEnemyZdo(state.EventId, enemyZdo) || !IsObservedDead(enemyZdo))
                 return false;
 
             serverPoints = BloodMoonCombat.GetPointsForEnemy(enemyId, 0f);
@@ -32,16 +44,19 @@ namespace Seasons.BloodMoon
 
         internal static bool CanPendingValidate(long sender, long eventId, long creditedPlayerId, ZDOID enemyId)
         {
-            BloodMoonController controller = BloodMoonController.Instance;
-            BloodMoonEventState state = controller?.State;
-            if (state == null || !state.IsCombatLive || state.EventId != eventId || creditedPlayerId == 0L || enemyId.IsNone() ||
-                ZDOMan.instance == null || ZRoutedRpc.instance == null || ZNetScene.instance == null)
+            if (!TryValidateParticipantContext(sender, eventId, creditedPlayerId, enemyId, out _, out BloodMoonEventState state))
                 return false;
-            if (!state.Participants.TryGetValue(creditedPlayerId, out BloodMoonParticipantState participant) || !participant.IsCombatActive || !IsConnectedParticipant(controller, creditedPlayerId))
-                return false;
+
+            if (BloodMoonEnemyDeathPending.TryGetRetainedDeathEvidence(eventId, enemyId, out _))
+                return true;
 
             ZDO enemyZdo = ZDOMan.instance.GetZDO(enemyId);
             return enemyZdo != null && IsEligibleBloodEnemyZdo(state.EventId, enemyZdo);
+        }
+
+        internal static bool CanUseRetainedDeathEvidence(long sender, long eventId, long creditedPlayerId, ZDOID enemyId)
+        {
+            return TryValidateParticipantContext(sender, eventId, creditedPlayerId, enemyId, out _, out _);
         }
 
         internal static bool IsObservedDead(ZDO zdo)
@@ -78,6 +93,19 @@ namespace Seasons.BloodMoon
                 return zdo.GetBool(ZDOVars.s_aggravated, false);
 
             return true;
+        }
+
+        private static bool TryValidateParticipantContext(long sender, long eventId, long creditedPlayerId, ZDOID enemyId,
+            out BloodMoonController controller, out BloodMoonEventState state)
+        {
+            controller = BloodMoonController.Instance;
+            state = controller?.State;
+            if (state == null || !state.IsCombatLive || state.EventId != eventId || creditedPlayerId == 0L || enemyId.IsNone() ||
+                ZDOMan.instance == null || ZRoutedRpc.instance == null || ZNetScene.instance == null)
+                return false;
+
+            return state.Participants.TryGetValue(creditedPlayerId, out BloodMoonParticipantState participant) &&
+                participant.IsCombatActive && IsConnectedParticipant(controller, creditedPlayerId);
         }
 
         private static bool IsConnectedParticipant(BloodMoonController controller, long playerId)
