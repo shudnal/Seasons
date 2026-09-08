@@ -269,8 +269,10 @@ namespace Seasons.BloodMoon
 
             ZDO targetZdo = ZDOMan.instance.GetZDO(targetId);
             ZDO sourceZdo = ZDOMan.instance.GetZDO(sourceId);
-            if (targetZdo == null || sourceZdo == null || !BloodMoonEnemyDeathReports.IsEligibleBloodEnemyZdo(eventId, targetZdo) ||
-                !ValidateSource(controller, sender, eventId, sourceZdo, sourceType, playerId, trustedLocalSource))
+            bool targetIsKnownBloodEnemy = targetZdo != null
+                ? BloodMoonEnemyDeathReports.IsEligibleBloodEnemyZdo(eventId, targetZdo)
+                : BloodMoonEnemyDeathPending.TryGetRetainedDeathEvidence(eventId, targetId, out _);
+            if (!targetIsKnownBloodEnemy || !ValidateSource(controller, sender, eventId, sourceZdo, sourceType, playerId, trustedLocalSource))
                 return;
 
             PurgeExpired();
@@ -301,9 +303,13 @@ namespace Seasons.BloodMoon
 
             ZDO targetZdo = ZDOMan.instance.GetZDO(targetId);
             // The sender was the target owner when it observed the positive HP loss. Normal ZDO
-            // ownership can migrate before this routed RPC reaches the server, so current ownership is
-            // deliberately not used as a receive-time invariant.
-            if (targetZdo == null || !BloodMoonEnemyDeathReports.IsEligibleBloodEnemyZdo(eventId, targetZdo))
+            // ownership or the ordinary dead-ZDO cleanup may complete before this routed RPC reaches
+            // the server. A bounded retained death record is therefore an equivalent target-evidence
+            // source for the already observed lethal hit.
+            bool targetIsKnownBloodEnemy = targetZdo != null
+                ? BloodMoonEnemyDeathReports.IsEligibleBloodEnemyZdo(eventId, targetZdo)
+                : BloodMoonEnemyDeathPending.TryGetRetainedDeathEvidence(eventId, targetId, out _);
+            if (!targetIsKnownBloodEnemy)
                 return;
 
             PurgeExpired();
@@ -337,16 +343,18 @@ namespace Seasons.BloodMoon
 
             if (sourceType == BloodMoonCombatSourceType.Participant)
             {
-                if (sourceZdo.GetLong(ZDOVars.s_playerID, 0L) != playerId)
+                // Player ownership can migrate before the routed authorization reaches the server. The
+                // stable binding is the routed peer <-> participant identity; when the source ZDO still
+                // exists, also require its durable player id to match.
+                if (sourceZdo != null && sourceZdo.GetLong(ZDOVars.s_playerID, 0L) != playerId)
                     return false;
-                // A participant authorization is still bound to that participant's routed peer. The
-                // source ZDO itself may have changed owner before the RPC is delivered.
                 return trustedLocalSource || controller.GetPeerForPlayer(playerId) == sender;
             }
 
             // Summon ownership may migrate for the same reason. Its durable event/owner marker, rather
-            // than receive-time ZDO ownership, identifies the supported source.
-            return BloodMoonSummons.ValidateMarkedSummonZdo(sourceZdo, eventId, playerId);
+            // than receive-time ZDO ownership, identifies the supported source. Unlike a Player source,
+            // an absent summon ZDO has no independent server-side identity proof.
+            return sourceZdo != null && BloodMoonSummons.ValidateMarkedSummonZdo(sourceZdo, eventId, playerId);
         }
 
         private static bool TryConsumeAuthorization(AuthorizationKey key)
