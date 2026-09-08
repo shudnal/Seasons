@@ -107,8 +107,8 @@ namespace Seasons.BloodMoon
 
     /// <summary>
     /// Exactly-once death progress is not considered acknowledged until the ReportedEnemyDeaths marker
-    /// and awarded progress are recoverable from BloodMoonPersistence. The enemy owner's player profile
-    /// retains the report until a server ACK, giving normal disconnect/reconnect a replay source as well.
+    /// and awarded progress are recoverable from BloodMoonPersistence. The enemy owner keeps a profile-backed
+    /// replay record until ACK, so a server restart after a failed state write still has a normal-client replay source.
     /// </summary>
     internal static class BloodMoonEnemyDeathDurability
     {
@@ -134,7 +134,7 @@ namespace Seasons.BloodMoon
         [ThreadStatic] private static long scopePlayerId;
         [ThreadStatic] private static long scopeSender;
         [ThreadStatic] private static ZDOID scopeEnemyId;
-        [ThreadStatic] private static bool scopeWasReported;
+        [ThreadStatic] private static float scopeReplayPoints;
         [ThreadStatic] private static bool scopeSaveAttempted;
         [ThreadStatic] private static bool scopeSaveSucceeded;
         [ThreadStatic] private static bool scopeConsumeRequested;
@@ -159,11 +159,17 @@ namespace Seasons.BloodMoon
             string key = MakeProfileKey(worldUid, eventId, enemyId);
             if (local.m_customData.ContainsKey(key))
                 return;
-            local.m_customData[key] = playerId.ToString(CultureInfo.InvariantCulture);
+
+            // GetPointsForEnemy is the same server-side formula (10 * replicated level) used by normal
+            // validation. This value is only sent on retries; the first report still carries zero and must
+            // pass the ordinary dead-ZDO + matched lethal-credit path.
+            float replayPoints = BloodMoonCombat.GetPointsForEnemy(enemyId, 0f);
+            local.m_customData[key] = playerId.ToString(CultureInfo.InvariantCulture) + "|" +
+                Mathf.Max(0f, replayPoints).ToString("R", CultureInfo.InvariantCulture);
             Game.instance?.SavePlayerProfile(false);
         }
 
-        internal static bool BeginServerReport(long sender, long eventId, long playerId, ZDOID enemyId)
+        internal static bool BeginServerReport(long sender, long eventId, long playerId, ZDOID enemyId, float clientPoints)
         {
             BloodMoonEventState state = BloodMoonController.Instance?.State;
             if (state == null || state.EventId != eventId)
@@ -179,18 +185,32 @@ namespace Seasons.BloodMoon
                 return false;
             }
 
-            if (!BloodMoonEnemyDeathReports.TryValidate(sender, eventId, playerId, enemyId, out _))
-                return true;
-
             deathScope = true;
             scopeEventId = eventId;
             scopePlayerId = playerId;
             scopeSender = sender;
             scopeEnemyId = enemyId;
-            scopeWasReported = false;
+            scopeReplayPoints = IsValidReplayPoints(clientPoints) ? clientPoints : 0f;
             scopeSaveAttempted = false;
             scopeSaveSucceeded = false;
             scopeConsumeRequested = false;
+
+            if (BloodMoonEnemyDeathReports.TryValidate(sender, eventId, playerId, enemyId, out _))
+                return true;
+
+            // Leave the original method to perform its normal no-op validation result, but do not leak a
+            // replay hint into unrelated validation calls.
+            ClearScope();
+            return true;
+        }
+
+        internal static bool TryGetCurrentProfileReplay(long eventId, long playerId, ZDOID enemyId, out float serverPoints)
+        {
+            serverPoints = 0f;
+            if (!deathScope || scopeEventId != eventId || scopePlayerId != playerId || scopeEnemyId != enemyId ||
+                !IsValidReplayPoints(scopeReplayPoints))
+                return false;
+            serverPoints = scopeReplayPoints;
             return true;
         }
 
@@ -200,7 +220,7 @@ namespace Seasons.BloodMoon
                 return;
 
             BloodMoonEventState state = BloodMoonController.Instance?.State;
-            bool accepted = state != null && state.EventId == scopeEventId && !scopeWasReported && state.ReportedEnemyDeaths.Contains(scopeEnemyId.ToString());
+            bool accepted = state != null && state.EventId == scopeEventId && state.ReportedEnemyDeaths.Contains(scopeEnemyId.ToString());
             long sender = scopeSender;
             long eventId = scopeEventId;
             long playerId = scopePlayerId;
@@ -317,10 +337,34 @@ namespace Seasons.BloodMoon
             {
                 string enemyText = entry.Key.Substring(prefix.Length);
                 if (!BloodMoonSpawner.TryParseZdoId(enemyText, out ZDOID enemyId) ||
-                    !long.TryParse(entry.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long playerId) || playerId == 0L)
+                    !TryParseProfileValue(entry.Value, out long playerId, out float replayPoints))
                     continue;
-                BloodMoonNetwork.SendEnemyDeath(eventId, enemyId, playerId, 0f);
+                BloodMoonNetwork.SendEnemyDeath(eventId, enemyId, playerId, replayPoints);
             }
+        }
+
+        private static bool TryParseProfileValue(string value, out long playerId, out float replayPoints)
+        {
+            playerId = 0L;
+            replayPoints = 0f;
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            string[] parts = value.Split('|');
+            if (!long.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out playerId) || playerId == 0L)
+                return false;
+            if (parts.Length > 1)
+                float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out replayPoints);
+            replayPoints = IsValidReplayPoints(replayPoints) ? replayPoints : 0f;
+            return true;
+        }
+
+        private static bool IsValidReplayPoints(float points)
+        {
+            if (points <= 0f || float.IsNaN(points) || float.IsInfinity(points))
+                return false;
+            float level = points / 10f;
+            return Mathf.Abs(level - Mathf.Round(level)) <= 0.0001f;
         }
 
         private static void OnAckRpc(long sender, ZPackage package)
@@ -372,7 +416,7 @@ namespace Seasons.BloodMoon
             scopePlayerId = 0L;
             scopeSender = 0L;
             scopeEnemyId = ZDOID.None;
-            scopeWasReported = false;
+            scopeReplayPoints = 0f;
             scopeSaveAttempted = false;
             scopeSaveSucceeded = false;
             scopeConsumeRequested = false;
@@ -395,9 +439,9 @@ namespace Seasons.BloodMoon
     internal static class BloodMoonEnemyDeathDurabilityScopePatch
     {
         [HarmonyPriority(Priority.First - 50)]
-        private static bool Prefix(long sender, long eventId, long playerId, ZDOID enemyId)
+        private static bool Prefix(long sender, long eventId, long playerId, ZDOID enemyId, float clientPoints)
         {
-            return BloodMoonEnemyDeathDurability.BeginServerReport(sender, eventId, playerId, enemyId);
+            return BloodMoonEnemyDeathDurability.BeginServerReport(sender, eventId, playerId, enemyId, clientPoints);
         }
 
         private static void Postfix()
