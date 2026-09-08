@@ -19,6 +19,7 @@ namespace Seasons.BloodMoon
 
             bool bossInterior = Character.InInterior(bossPosition);
             Location bossLocation = bossInterior ? Location.GetLocation(bossPosition) : null;
+            Vector2i bossZone = ZoneSystem.GetZone(bossPosition);
 
             foreach (BloodMoonParticipantState participant in state.Participants.Values.Where(item => item.IsCombatActive).ToArray())
             {
@@ -29,8 +30,22 @@ namespace Seasons.BloodMoon
                 if (participantInterior != bossInterior)
                     continue;
 
-                if (bossInterior && bossLocation != null && Location.GetLocation(position) != bossLocation)
-                    continue;
+                if (bossInterior)
+                {
+                    Location participantLocation = Location.GetLocation(position);
+                    if (bossLocation != null || participantLocation != null)
+                    {
+                        if (participantLocation != bossLocation)
+                            continue;
+                    }
+                    else if (ZoneSystem.GetZone(position) != bossZone)
+                    {
+                        // Some modded interiors have no Location component. In that case the same
+                        // interior/surface flag is not enough: Valheim keeps unrelated interiors in
+                        // different map zones, so require the same zone as the navigation-context fallback.
+                        continue;
+                    }
+                }
 
                 if (Utils.DistanceXZ(position, bossPosition) > EncounterWithdrawDistance)
                     continue;
