@@ -104,37 +104,42 @@ namespace Seasons.BloodMoon
 
         internal static void CleanupForPlayer(long eventId, long playerId, double now)
         {
+            _ = now;
             if (eventId < 0L || playerId == 0L)
                 return;
             DestroyServerTemporarySummons(eventId, playerId);
-            playerCleanupWatches[(eventId, playerId)] = now + 5d;
+            playerCleanupWatches[(eventId, playerId)] = Time.realtimeSinceStartup + 5d;
         }
 
         internal static void CleanupEvent(long eventId, double now)
         {
+            _ = now;
             if (eventId < 0L)
                 return;
             DestroyServerTemporarySummons(eventId, 0L);
-            eventCleanupWatches[eventId] = now + 5d;
+            eventCleanupWatches[eventId] = Time.realtimeSinceStartup + 5d;
         }
 
         internal static void TickServer(BloodMoonEventState state, double now)
         {
-            if (ZNet.instance == null || !ZNet.instance.IsServer() || ZDOMan.instance == null || now < nextCleanupScan ||
+            _ = state;
+            _ = now;
+            double realtime = Time.realtimeSinceStartup;
+            if (ZNet.instance == null || !ZNet.instance.IsServer() || ZDOMan.instance == null || realtime < nextCleanupScan ||
                 playerCleanupWatches.Count == 0 && eventCleanupWatches.Count == 0)
                 return;
 
-            nextCleanupScan = now + 1d;
+            nextCleanupScan = realtime + 1d;
             foreach (KeyValuePair<(long EventId, long PlayerId), double> watch in playerCleanupWatches.ToArray())
             {
                 DestroyServerTemporarySummons(watch.Key.EventId, watch.Key.PlayerId);
-                if (now >= watch.Value)
+                if (realtime >= watch.Value)
                     playerCleanupWatches.Remove(watch.Key);
             }
             foreach (KeyValuePair<long, double> watch in eventCleanupWatches.ToArray())
             {
                 DestroyServerTemporarySummons(watch.Key, 0L);
-                if (now >= watch.Value)
+                if (realtime >= watch.Value)
                     eventCleanupWatches.Remove(watch.Key);
             }
         }
