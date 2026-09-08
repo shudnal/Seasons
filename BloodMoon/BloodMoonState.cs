@@ -156,6 +156,7 @@ namespace Seasons.BloodMoon
     {
         [JsonProperty] public int Schema = BloodMoonStateSchema.Current;
         [JsonProperty] public long WorldUid;
+        [JsonProperty] public long PersistenceGeneration;
         [JsonProperty] public long EventId = -1;
         [JsonProperty] public BloodMoonEventPhase Phase = BloodMoonEventPhase.Dormant;
         [JsonProperty] public BloodMoonResolutionStep ResolutionStep = BloodMoonResolutionStep.None;
