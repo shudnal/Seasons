@@ -1,7 +1,10 @@
 using HarmonyLib;
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using UnityEngine;
+using static Seasons.Seasons;
 
 namespace Seasons.BloodMoon
 {
@@ -20,7 +23,7 @@ namespace Seasons.BloodMoon
         }
 
         private static readonly Dictionary<ZDOID, PendingReport> pending = new Dictionary<ZDOID, PendingReport>();
-        [System.ThreadStatic]
+        [ThreadStatic]
         private static bool replaying;
 
         internal static bool ShouldDefer(long sender, long eventId, long playerId, ZDOID enemyId)
@@ -32,8 +35,6 @@ namespace Seasons.BloodMoon
                 Time.realtimeSinceStartup < existing.ExpiresAt)
                 return true;
 
-            // Capture the authoritative facts that can disappear with the dead ZDO. The report is still
-            // not creditable until the independently matched damage authorization/confirmation arrives.
             if (!BloodMoonEnemyDeathReports.TryCapturePendingDeathEvidence(sender, eventId, playerId, enemyId, out float serverPoints))
                 return false;
 
@@ -104,6 +105,280 @@ namespace Seasons.BloodMoon
         internal static bool IsReplaying => replaying;
     }
 
+    /// <summary>
+    /// Exactly-once death progress is not considered acknowledged until the ReportedEnemyDeaths marker
+    /// and awarded progress are recoverable from BloodMoonPersistence. The enemy owner's player profile
+    /// retains the report until a server ACK, giving normal disconnect/reconnect a replay source as well.
+    /// </summary>
+    internal static class BloodMoonEnemyDeathDurability
+    {
+        private const string RpcAck = "Seasons.BloodMoon.EnemyDeathAck";
+        private const string ProfilePrefix = "Seasons.BloodMoon.PendingEnemyDeath.";
+        private const float RetrySeconds = 2f;
+
+        private sealed class ServerPending
+        {
+            internal long Sender;
+            internal long EventId;
+            internal long PlayerId;
+            internal ZDOID EnemyId;
+        }
+
+        private static readonly Dictionary<ZDOID, ServerPending> serverPending = new Dictionary<ZDOID, ServerPending>();
+        private static readonly HashSet<string> durableDeaths = new HashSet<string>(StringComparer.Ordinal);
+        private static ZRoutedRpc registeredRpc;
+        private static float retryTimer;
+
+        [ThreadStatic] private static bool deathScope;
+        [ThreadStatic] private static long scopeEventId;
+        [ThreadStatic] private static long scopePlayerId;
+        [ThreadStatic] private static long scopeSender;
+        [ThreadStatic] private static ZDOID scopeEnemyId;
+        [ThreadStatic] private static bool scopeWasReported;
+        [ThreadStatic] private static bool scopeSaveAttempted;
+        [ThreadStatic] private static bool scopeSaveSucceeded;
+        [ThreadStatic] private static bool scopeConsumeRequested;
+
+        internal static void RegisterRpc()
+        {
+            ZRoutedRpc rpc = ZRoutedRpc.instance;
+            if (rpc == null || ReferenceEquals(registeredRpc, rpc))
+                return;
+            registeredRpc = rpc;
+            retryTimer = 0f;
+            rpc.Register<ZPackage>(RpcAck, OnAckRpc);
+        }
+
+        internal static void TrackLocal(long eventId, ZDOID enemyId, long playerId)
+        {
+            Player local = Player.m_localPlayer;
+            long worldUid = ZNet.m_world?.m_uid ?? 0L;
+            if (local == null || worldUid == 0L || eventId < 0L || enemyId.IsNone() || playerId == 0L)
+                return;
+
+            string key = MakeProfileKey(worldUid, eventId, enemyId);
+            if (local.m_customData.ContainsKey(key))
+                return;
+            local.m_customData[key] = playerId.ToString(CultureInfo.InvariantCulture);
+            Game.instance?.SavePlayerProfile(false);
+        }
+
+        internal static bool BeginServerReport(long sender, long eventId, long playerId, ZDOID enemyId)
+        {
+            BloodMoonEventState state = BloodMoonController.Instance?.State;
+            if (state == null || state.EventId != eventId)
+                return true;
+
+            string deathKey = MakeDurableKey(eventId, enemyId);
+            if (state.ReportedEnemyDeaths.Contains(enemyId.ToString()))
+            {
+                if (durableDeaths.Contains(deathKey))
+                    SendAck(sender, eventId, enemyId);
+                else
+                    serverPending[enemyId] = new ServerPending { Sender = sender, EventId = eventId, PlayerId = playerId, EnemyId = enemyId };
+                return false;
+            }
+
+            if (!BloodMoonEnemyDeathReports.TryValidate(sender, eventId, playerId, enemyId, out _))
+                return true;
+
+            deathScope = true;
+            scopeEventId = eventId;
+            scopePlayerId = playerId;
+            scopeSender = sender;
+            scopeEnemyId = enemyId;
+            scopeWasReported = false;
+            scopeSaveAttempted = false;
+            scopeSaveSucceeded = false;
+            scopeConsumeRequested = false;
+            return true;
+        }
+
+        internal static void EndServerReport()
+        {
+            if (!deathScope)
+                return;
+
+            BloodMoonEventState state = BloodMoonController.Instance?.State;
+            bool accepted = state != null && state.EventId == scopeEventId && !scopeWasReported && state.ReportedEnemyDeaths.Contains(scopeEnemyId.ToString());
+            long sender = scopeSender;
+            long eventId = scopeEventId;
+            long playerId = scopePlayerId;
+            ZDOID enemyId = scopeEnemyId;
+            bool durable = accepted && scopeSaveAttempted && scopeSaveSucceeded;
+            bool consume = scopeConsumeRequested;
+            ClearScope();
+
+            if (!accepted)
+                return;
+
+            if (durable)
+            {
+                durableDeaths.Add(MakeDurableKey(eventId, enemyId));
+                if (consume)
+                    BloodMoonDamageCreditAuthority.ConsumeConfirmedCredit(eventId, enemyId);
+                SendAck(sender, eventId, enemyId);
+                return;
+            }
+
+            serverPending[enemyId] = new ServerPending
+            {
+                Sender = sender,
+                EventId = eventId,
+                PlayerId = playerId,
+                EnemyId = enemyId
+            };
+        }
+
+        internal static bool InterceptConsume(long eventId, ZDOID targetId)
+        {
+            if (!deathScope || eventId != scopeEventId || targetId != scopeEnemyId)
+                return false;
+            scopeConsumeRequested = true;
+            return true;
+        }
+
+        internal static void ObserveSave(BloodMoonEventState state, bool succeeded)
+        {
+            if (succeeded)
+                CaptureDurable(state);
+            if (!deathScope || state == null || state.EventId != scopeEventId)
+                return;
+            scopeSaveAttempted = true;
+            scopeSaveSucceeded |= succeeded;
+        }
+
+        internal static bool ShouldBlockPublish(BloodMoonEventState state)
+        {
+            if (state == null)
+                return false;
+            if (deathScope && state.EventId == scopeEventId && scopeSaveAttempted && !scopeSaveSucceeded)
+                return true;
+            return serverPending.Values.Any(item => item.EventId == state.EventId && !durableDeaths.Contains(MakeDurableKey(item.EventId, item.EnemyId)));
+        }
+
+        internal static void Tick(float dt)
+        {
+            RegisterRpc();
+            RetryLocal(dt);
+
+            if (ZNet.instance == null || !ZNet.instance.IsServer() || serverPending.Count == 0)
+                return;
+
+            BloodMoonEventState state = BloodMoonController.Instance?.State;
+            foreach (ServerPending pending in serverPending.Values.ToArray())
+            {
+                if (state == null || state.EventId != pending.EventId || !state.ReportedEnemyDeaths.Contains(pending.EnemyId.ToString()))
+                {
+                    serverPending.Remove(pending.EnemyId);
+                    continue;
+                }
+
+                string key = MakeDurableKey(pending.EventId, pending.EnemyId);
+                if (!durableDeaths.Contains(key) && !BloodMoonPersistence.Save(state))
+                    continue;
+
+                durableDeaths.Add(key);
+                BloodMoonDamageCreditAuthority.ConsumeConfirmedCredit(pending.EventId, pending.EnemyId);
+                SendAck(pending.Sender, pending.EventId, pending.EnemyId);
+                serverPending.Remove(pending.EnemyId);
+                BloodMoonNetwork.Publish(state, SeasonState.IsActive ? seasonState.GetTotalSeconds() : state.UpdatedAt);
+            }
+        }
+
+        internal static bool HasUndurableDeath(long eventId)
+        {
+            return serverPending.Values.Any(item => item.EventId == eventId && !durableDeaths.Contains(MakeDurableKey(item.EventId, item.EnemyId)));
+        }
+
+        internal static void Reset()
+        {
+            serverPending.Clear();
+            durableDeaths.Clear();
+            retryTimer = 0f;
+            ClearScope();
+        }
+
+        private static void RetryLocal(float dt)
+        {
+            Player local = Player.m_localPlayer;
+            long worldUid = ZNet.m_world?.m_uid ?? 0L;
+            long eventId = BloodMoonNetwork.ClientGlobal.EventId;
+            if (local == null || worldUid == 0L || eventId < 0L)
+                return;
+
+            retryTimer -= Mathf.Max(0f, dt);
+            if (retryTimer > 0f)
+                return;
+            retryTimer = RetrySeconds;
+
+            string prefix = ProfilePrefix + worldUid.ToString(CultureInfo.InvariantCulture) + "." + eventId.ToString(CultureInfo.InvariantCulture) + ".";
+            foreach (KeyValuePair<string, string> entry in local.m_customData.Where(entry => entry.Key.StartsWith(prefix, StringComparison.Ordinal)).ToArray())
+            {
+                string enemyText = entry.Key.Substring(prefix.Length);
+                if (!BloodMoonSpawner.TryParseZdoId(enemyText, out ZDOID enemyId) ||
+                    !long.TryParse(entry.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long playerId) || playerId == 0L)
+                    continue;
+                BloodMoonNetwork.SendEnemyDeath(eventId, enemyId, playerId, 0f);
+            }
+        }
+
+        private static void OnAckRpc(long sender, ZPackage package)
+        {
+            if (package == null || ZRoutedRpc.instance == null || sender != ZRoutedRpc.instance.GetServerPeerID() ||
+                package.ReadInt() != BloodMoonNetwork.ProtocolVersion)
+                return;
+            long eventId = package.ReadLong();
+            ZDOID enemyId = package.ReadZDOID();
+            Player local = Player.m_localPlayer;
+            long worldUid = ZNet.m_world?.m_uid ?? 0L;
+            if (local == null || worldUid == 0L || eventId < 0L || enemyId.IsNone())
+                return;
+            if (local.m_customData.Remove(MakeProfileKey(worldUid, eventId, enemyId)))
+                Game.instance?.SavePlayerProfile(false);
+        }
+
+        private static void SendAck(long peerId, long eventId, ZDOID enemyId)
+        {
+            if (peerId == 0L || ZNet.instance == null || !ZNet.instance.IsServer() || ZRoutedRpc.instance == null)
+                return;
+            ZPackage package = new ZPackage();
+            package.Write(BloodMoonNetwork.ProtocolVersion);
+            package.Write(eventId);
+            package.Write(enemyId);
+            ZRoutedRpc.instance.InvokeRoutedRPC(peerId, RpcAck, package);
+        }
+
+        private static void CaptureDurable(BloodMoonEventState state)
+        {
+            if (state == null || state.EventId < 0L || state.ReportedEnemyDeaths == null)
+                return;
+            foreach (string enemy in state.ReportedEnemyDeaths)
+                durableDeaths.Add(state.EventId.ToString(CultureInfo.InvariantCulture) + ":" + enemy);
+        }
+
+        private static string MakeDurableKey(long eventId, ZDOID enemyId) => eventId.ToString(CultureInfo.InvariantCulture) + ":" + enemyId;
+
+        private static string MakeProfileKey(long worldUid, long eventId, ZDOID enemyId)
+        {
+            return ProfilePrefix + worldUid.ToString(CultureInfo.InvariantCulture) + "." +
+                eventId.ToString(CultureInfo.InvariantCulture) + "." + enemyId;
+        }
+
+        private static void ClearScope()
+        {
+            deathScope = false;
+            scopeEventId = -1L;
+            scopePlayerId = 0L;
+            scopeSender = 0L;
+            scopeEnemyId = ZDOID.None;
+            scopeWasReported = false;
+            scopeSaveAttempted = false;
+            scopeSaveSucceeded = false;
+            scopeConsumeRequested = false;
+        }
+    }
+
     [HarmonyPatch(typeof(BloodMoonController), nameof(BloodMoonController.OnEnemyDeathReport))]
     internal static class BloodMoonEnemyDeathPendingReportPatch
     {
@@ -116,12 +391,101 @@ namespace Seasons.BloodMoon
         }
     }
 
+    [HarmonyPatch(typeof(BloodMoonController), nameof(BloodMoonController.OnEnemyDeathReport))]
+    internal static class BloodMoonEnemyDeathDurabilityScopePatch
+    {
+        [HarmonyPriority(Priority.First - 50)]
+        private static bool Prefix(long sender, long eventId, long playerId, ZDOID enemyId)
+        {
+            return BloodMoonEnemyDeathDurability.BeginServerReport(sender, eventId, playerId, enemyId);
+        }
+
+        private static void Postfix()
+        {
+            BloodMoonEnemyDeathDurability.EndServerReport();
+        }
+
+        private static Exception Finalizer(Exception __exception)
+        {
+            BloodMoonEnemyDeathDurability.EndServerReport();
+            return __exception;
+        }
+    }
+
+    [HarmonyPatch(typeof(BloodMoonDamageCreditAuthority), nameof(BloodMoonDamageCreditAuthority.ConsumeConfirmedCredit))]
+    internal static class BloodMoonEnemyDeathDeferredCreditConsumePatch
+    {
+        [HarmonyPriority(Priority.First + 100)]
+        private static bool Prefix(long eventId, ZDOID targetId)
+        {
+            return !BloodMoonEnemyDeathDurability.InterceptConsume(eventId, targetId);
+        }
+    }
+
+    [HarmonyPatch(typeof(BloodMoonPersistence), nameof(BloodMoonPersistence.Save))]
+    internal static class BloodMoonEnemyDeathDurableSavePatch
+    {
+        private static void Postfix(BloodMoonEventState state, bool __result)
+        {
+            BloodMoonEnemyDeathDurability.ObserveSave(state, __result);
+        }
+    }
+
+    [HarmonyPatch(typeof(BloodMoonPersistence), nameof(BloodMoonPersistence.Load))]
+    internal static class BloodMoonEnemyDeathDurableLoadPatch
+    {
+        private static void Postfix(BloodMoonEventState __result)
+        {
+            if (__result != null && BloodMoonPersistence.Save(__result))
+                BloodMoonEnemyDeathDurability.ObserveSave(__result, true);
+        }
+    }
+
+    [HarmonyPatch(typeof(BloodMoonNetwork), nameof(BloodMoonNetwork.Publish))]
+    internal static class BloodMoonEnemyDeathPublishDurabilityPatch
+    {
+        [HarmonyPriority(Priority.First + 100)]
+        private static bool Prefix(BloodMoonEventState state)
+        {
+            return !BloodMoonEnemyDeathDurability.ShouldBlockPublish(state);
+        }
+    }
+
+    [HarmonyPatch(typeof(BloodMoonNetwork), nameof(BloodMoonNetwork.SendEnemyDeath))]
+    internal static class BloodMoonEnemyDeathClientPersistencePatch
+    {
+        [HarmonyPriority(Priority.First)]
+        private static void Prefix(long eventId, ZDOID enemyId, long creditedPlayerId)
+        {
+            BloodMoonEnemyDeathDurability.TrackLocal(eventId, enemyId, creditedPlayerId);
+        }
+    }
+
+    [HarmonyPatch(typeof(BloodMoonNetwork), nameof(BloodMoonNetwork.RegisterRpcs))]
+    internal static class BloodMoonEnemyDeathAckRegistrationPatch
+    {
+        private static void Postfix() => BloodMoonEnemyDeathDurability.RegisterRpc();
+    }
+
     [HarmonyPatch(typeof(BloodMoonController), "FixedUpdate")]
     internal static class BloodMoonEnemyDeathPendingTickPatch
     {
         private static void Postfix()
         {
             BloodMoonEnemyDeathPending.Process();
+            BloodMoonEnemyDeathDurability.Tick(Time.fixedDeltaTime);
+        }
+    }
+
+    [HarmonyPatch(typeof(BloodMoonController), nameof(BloodMoonController.BeginResolution))]
+    internal static class BloodMoonEnemyDeathResolutionDurabilityPatch
+    {
+        [HarmonyPriority(Priority.First + 100)]
+        private static bool Prefix(BloodMoonController __instance)
+        {
+            long eventId = __instance?.State?.EventId ?? -1L;
+            BloodMoonEnemyDeathDurability.Tick(0f);
+            return eventId < 0L || !BloodMoonEnemyDeathDurability.HasUndurableDeath(eventId);
         }
     }
 
@@ -131,6 +495,7 @@ namespace Seasons.BloodMoon
         private static void Prefix()
         {
             BloodMoonEnemyDeathPending.Reset();
+            BloodMoonEnemyDeathDurability.Reset();
         }
     }
 }
