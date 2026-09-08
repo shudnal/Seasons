@@ -20,20 +20,31 @@ namespace Seasons.BloodMoon
             if (!state.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant) || !ValidateSender(sender, playerId))
                 return;
 
-            long previousSequence = participant.LastSkillReportSequence;
-            if (state.IsCombatLive && participant.IsCombatActive)
-                BloodMoonSkills.AcceptServerReport(participant, sequence, skill, baseEquivalent, liveBonusEquivalent);
+            bool drainWindowOpen = state.IsCombatLive ||
+                state.Phase == BloodMoonEventPhase.Resolving && (int)state.ResolutionStep < (int)BloodMoonResolutionStep.PublishingOutcomes;
+            if (!drainWindowOpen || !participant.IsCombatActive)
+                return;
 
-            if (participant.LastSkillReportSequence != previousSequence)
+            long previousSequence = participant.LastSkillReportSequence;
+            BloodMoonSkills.AcceptServerReport(participant, sequence, skill, baseEquivalent, liveBonusEquivalent);
+            bool changed = participant.LastSkillReportSequence != previousSequence;
+
+            if (changed)
             {
                 state.UpdatedAt = SeasonState.IsActive ? seasonState.GetTotalSeconds() : state.UpdatedAt;
                 state.Revision++;
-                BloodMoonPersistence.Save(state);
-                BloodMoonNetwork.Publish(state, state.UpdatedAt);
             }
 
-            // A duplicate/retried report still receives the current durable high-water mark. This makes
-            // a lost ACK harmless while never acknowledging a sequence that the server did not accept.
+            // The client removes its profile-backed pending report only after this exact participant
+            // high-water is recoverable from the server's canonical/.new/.old persistence set. A failed
+            // save leaves the report pending; a duplicate retry persists the already-applied in-memory
+            // state again and is safe because AcceptServerReport is sequence-idempotent.
+            if (!BloodMoonPersistence.Save(state))
+                return;
+
+            if (changed)
+                BloodMoonNetwork.Publish(state, state.UpdatedAt);
+
             BloodMoonSkillReportReliability.SendAck(sender, eventId, playerId, participant.LastSkillReportSequence);
         }
 
@@ -158,7 +169,10 @@ namespace Seasons.BloodMoon
                 SaveRecord(player, record);
 
             BloodMoonEventPhase phase = BloodMoonNetwork.ClientGlobal.Phase;
-            if (phase != BloodMoonEventPhase.Active && phase != BloodMoonEventPhase.AutoCompleting || record.Pending.Count == 0)
+            bool drainWindowOpen = phase == BloodMoonEventPhase.Active || phase == BloodMoonEventPhase.AutoCompleting ||
+                phase == BloodMoonEventPhase.Resolving &&
+                (int)BloodMoonNetwork.ClientGlobal.ResolutionStep < (int)BloodMoonResolutionStep.PublishingOutcomes;
+            if (!drainWindowOpen || record.Pending.Count == 0)
                 return;
 
             retryTimer -= Mathf.Max(0f, dt);
@@ -374,6 +388,18 @@ namespace Seasons.BloodMoon
     [HarmonyPatch(typeof(BloodMoonSkills), "EnsureLocalEvent")]
     internal static class BloodMoonSkillPersistedSequencePatch
     {
+        [HarmonyPriority(Priority.First)]
+        private static bool Prefix(ref bool __result)
+        {
+            // The phase transition to Resolving freezes event skill accounting. Reports already produced
+            // during Active/AutoCompleting continue through the durable retry/drain path below, but a new
+            // ordinary Run/Jump/etc. RaiseSkill during resolution must remain vanilla-only.
+            if (BloodMoonNetwork.ClientGlobal.Phase != BloodMoonEventPhase.Resolving)
+                return true;
+            __result = false;
+            return false;
+        }
+
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(Player player, ref bool __result)
         {
