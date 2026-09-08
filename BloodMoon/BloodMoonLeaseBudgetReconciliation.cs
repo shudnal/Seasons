@@ -16,7 +16,16 @@ namespace Seasons.BloodMoon
         [HarmonyPriority(Priority.First)]
         private static void Prefix(BloodMoonEventState state)
         {
-            if (state == null || state.SpawnLeases == null || state.SpawnLeases.Count == 0)
+            if (state == null)
+                return;
+
+            // A valid marked ZDO is authoritative evidence that an event extra exists even if its routed
+            // spawn report was lost. Discover it before expired/invalid leases release reservations and
+            // before replacement allowance is calculated, so replicated live extras never disappear from
+            // the server/group caps merely because one report RPC was lost.
+            DiscoverReplicatedExtras(state);
+
+            if (state.SpawnLeases == null || state.SpawnLeases.Count == 0)
                 return;
 
             GetPendingCounts(state, out int pendingServer, out Dictionary<long, int> pendingByGroup);
@@ -46,15 +55,17 @@ namespace Seasons.BloodMoon
                 }
             }
 
-            HashSet<long> liveGroups = new HashSet<long>(state.Groups.Keys);
             foreach (BloodMoonSpawnLeaseState lease in state.SpawnLeases.Values)
             {
-                if (lease.EventId == state.EventId && liveGroups.Contains(lease.GroupId))
+                bool currentGroupRevision = lease.EventId == state.EventId &&
+                    state.Groups.TryGetValue(lease.GroupId, out BloodMoonGroupState group) &&
+                    group.Revision == lease.GroupRevision;
+                if (currentGroupRevision)
                     continue;
 
-                // UpdateServerLeases removes non-relevant group keys later in this invocation. Revoke the
-                // already-delivered client lease first, using the same revision and zero allowance. The client
-                // treats same-revision renewals as a minimum allowance, so reordering cannot resurrect tokens.
+                // UpdateServerLeases removes a topology-obsolete key later in this invocation. Revoke the
+                // already-delivered client lease first, including the common case where the group ID survives
+                // but its revision changed. Same-revision minimum allowance handling makes this order-safe.
                 if (lease.Allowance > 0)
                 {
                     lease.Allowance = 0;
@@ -87,7 +98,7 @@ namespace Seasons.BloodMoon
                 int groupBudget = Math.Max(0, groupCap - groupLive - groupPending);
 
                 foreach (BloodMoonSpawnLeaseState lease in state.SpawnLeases.Values
-                    .Where(lease => lease.EventId == state.EventId && lease.GroupId == group.GroupId)
+                    .Where(lease => lease.EventId == state.EventId && lease.GroupId == group.GroupId && lease.GroupRevision == group.Revision)
                     .OrderBy(lease => lease.ZoneX)
                     .ThenBy(lease => lease.ZoneY)
                     .ToArray())
@@ -102,10 +113,12 @@ namespace Seasons.BloodMoon
                 }
             }
 
-            HashSet<long> liveGroups = new HashSet<long>(state.Groups.Keys);
             foreach (BloodMoonSpawnLeaseState lease in state.SpawnLeases.Values.ToArray())
             {
-                if (lease.EventId == state.EventId && liveGroups.Contains(lease.GroupId))
+                bool currentGroupRevision = lease.EventId == state.EventId &&
+                    state.Groups.TryGetValue(lease.GroupId, out BloodMoonGroupState group) &&
+                    group.Revision == lease.GroupRevision;
+                if (currentGroupRevision)
                     continue;
                 if (lease.Allowance > 0)
                 {
@@ -143,6 +156,34 @@ namespace Seasons.BloodMoon
                     count++;
             }
             return count;
+        }
+
+        private static void DiscoverReplicatedExtras(BloodMoonEventState state)
+        {
+            if (state.EventId < 0L || state.ExtraEnemyZdos == null || ZDOMan.instance == null)
+                return;
+
+            string expectedPrefabName = BloodMoonSpawner.GetFrozenSpawnPrefabName(state);
+            if (string.IsNullOrEmpty(expectedPrefabName))
+                return;
+
+            bool changed = false;
+            foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values.ToArray())
+            {
+                if (zdo == null || zdo.GetLong(BloodMoonSpawner.EventMarker, -1L) != state.EventId ||
+                    !BloodMoonSpawnReportValidation.IsAllowedExtraEnemyZdo(zdo, state.EventId, expectedPrefabName))
+                    continue;
+
+                string id = zdo.m_uid.ToString();
+                if (!state.ExtraEnemyZdos.Add(id))
+                    continue;
+
+                changed = true;
+                Seasons.LogInfo($"[BloodMoon][event:{state.EventId}][spawn] Recovered replicated marked extra {zdo.m_uid} without requiring its original report RPC.");
+            }
+
+            if (changed)
+                BloodMoonPersistence.Save(state);
         }
 
         private static void GetPendingCounts(BloodMoonEventState state, out int serverCount, out Dictionary<long, int> byGroup)
