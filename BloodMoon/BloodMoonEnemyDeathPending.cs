@@ -436,7 +436,7 @@ namespace Seasons.BloodMoon
     {
         private static void Postfix(BloodMoonEventState __result)
         {
-            if (__result != null && BloodMoonPersistence.Save(__result))
+            if (__result != null)
                 BloodMoonEnemyDeathDurability.ObserveSave(__result, true);
         }
     }
