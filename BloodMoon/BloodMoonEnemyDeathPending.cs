@@ -15,6 +15,7 @@ namespace Seasons.BloodMoon
             internal long EventId;
             internal long PlayerId;
             internal ZDOID EnemyId;
+            internal float ServerPoints;
             internal float ExpiresAt;
         }
 
@@ -26,7 +27,14 @@ namespace Seasons.BloodMoon
         {
             if (replaying || BloodMoonEnemyDeathReports.TryValidate(sender, eventId, playerId, enemyId, out _))
                 return false;
-            if (!BloodMoonEnemyDeathReports.CanPendingValidate(sender, eventId, playerId, enemyId))
+
+            if (pending.TryGetValue(enemyId, out PendingReport existing) && existing.EventId == eventId && existing.PlayerId == playerId &&
+                Time.realtimeSinceStartup < existing.ExpiresAt)
+                return true;
+
+            // Capture the authoritative facts that can disappear with the dead ZDO. The report is still
+            // not creditable until the independently matched damage authorization/confirmation arrives.
+            if (!BloodMoonEnemyDeathReports.TryCapturePendingDeathEvidence(sender, eventId, playerId, enemyId, out float serverPoints))
                 return false;
 
             pending[enemyId] = new PendingReport
@@ -35,9 +43,20 @@ namespace Seasons.BloodMoon
                 EventId = eventId,
                 PlayerId = playerId,
                 EnemyId = enemyId,
+                ServerPoints = serverPoints,
                 ExpiresAt = Time.realtimeSinceStartup + PendingLifetimeSeconds
             };
             return true;
+        }
+
+        internal static bool TryGetRetainedDeathEvidence(long eventId, ZDOID enemyId, out float serverPoints)
+        {
+            serverPoints = 0f;
+            if (!pending.TryGetValue(enemyId, out PendingReport report) || report.EventId != eventId ||
+                Time.realtimeSinceStartup >= report.ExpiresAt)
+                return false;
+            serverPoints = report.ServerPoints;
+            return serverPoints > 0f && !float.IsNaN(serverPoints) && !float.IsInfinity(serverPoints);
         }
 
         internal static void Process()
@@ -49,7 +68,8 @@ namespace Seasons.BloodMoon
             foreach (PendingReport report in pending.Values.ToArray())
             {
                 BloodMoonEventState state = BloodMoonController.Instance?.State;
-                if (state == null || state.EventId != report.EventId || !state.IsCombatLive || state.ReportedEnemyDeaths.Contains(report.EnemyId.ToString()))
+                if (state == null || state.EventId != report.EventId || !state.IsCombatLive || state.ReportedEnemyDeaths.Contains(report.EnemyId.ToString()) ||
+                    !BloodMoonEnemyDeathReports.CanUseRetainedDeathEvidence(report.Sender, report.EventId, report.PlayerId, report.EnemyId))
                 {
                     pending.Remove(report.EnemyId);
                     continue;
@@ -70,7 +90,7 @@ namespace Seasons.BloodMoon
                     continue;
                 }
 
-                if (now >= report.ExpiresAt || !BloodMoonEnemyDeathReports.CanPendingValidate(report.Sender, report.EventId, report.PlayerId, report.EnemyId))
+                if (now >= report.ExpiresAt)
                     pending.Remove(report.EnemyId);
             }
         }
