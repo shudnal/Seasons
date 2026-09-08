@@ -86,6 +86,11 @@ namespace Seasons.BloodMoon
         {
             BloodMoonStatus.RemoveLocal();
             BloodMoonEnvironment.ReleaseForcedEnvironment();
+            // A debug cleanup may intentionally restart the same event id with LeaseSequence reset.
+            // Clear client-side revision history here as well as active leases so those fresh leases are
+            // not rejected as stale. This is harmless at ordinary resolution and applies to remote clients
+            // through the existing resolution-complete action.
+            BloodMoonSpawner.ResetClientState();
             resolutionFadeRequested = false;
             BloodMoonFadeInputGuard.SetResolution(false);
             if (behaviour != null)
