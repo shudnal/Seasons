@@ -5,15 +5,22 @@
 Date: 2026-09-08.
 
 Repository: `shudnal/Seasons`.
-
-Working branch: `feat/blood-moon`. Target branch: `master`. Keep PR #42 draft, open and unmerged.
+Working branch: `feat/blood-moon`.
+Target: `master`.
+PR #42 must remain draft, open and unmerged.
 
 Current review sequence:
 
 1. project-conformance matrix audit -> `25_PROJECT_CONFORMANCE_MATRIX.md`;
 2. full Codex project-conformance review of `231ae391891e330277868bf7733723333ea59521` -> six supported-runtime findings -> fixed/documented in `27_CODEX_CONFORMANCE_REVIEW_FIXES_2026-09-08.md`;
 3. full Codex project-conformance review of `6449ded3e66611380f1535670286fb40fd5b2bbf` -> four supported-runtime findings -> fixed/documented in `28_CODEX_CONFORMANCE_REVIEW_ROUND2_FIXES_2026-09-08.md`;
-4. next gate: another full project-conformance review of the exact current head after document `28`.
+4. exact head prepared for the next full project-conformance review:
+
+```text
+c9fca42adb16d365d7d8f590b8ac0aa8c44800bc
+```
+
+The exact review result belongs in the PR timeline. A later commit is not implicitly covered by an older review.
 
 This checkpoint is continuation metadata, not a gameplay-design override. `25_PROJECT_CONFORMANCE_MATRIX.md` remains the cross-subsystem matrix; later corrective checkpoints provide implementation evidence for their explicit review findings.
 
@@ -25,6 +32,7 @@ For current review work read, at minimum:
 
 - `docs/tasks/CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`;
 - `docs/tasks/blood-moon/25_PROJECT_CONFORMANCE_MATRIX.md`;
+- this file;
 - `docs/tasks/blood-moon/27_CODEX_CONFORMANCE_REVIEW_FIXES_2026-09-08.md`;
 - `docs/tasks/blood-moon/28_CODEX_CONFORMANCE_REVIEW_ROUND2_FIXES_2026-09-08.md`;
 - `docs/tasks/blood-moon/08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md`;
@@ -60,11 +68,11 @@ See document `27` for exact commits and runtime gates.
 
 ## 3. Corrections from the second full project-conformance review
 
-The review of `6449ded3...` explicitly stated it was reviewing the complete repository contract/matrix and produced four additional findings. All four were confirmed and corrected:
+The review of `6449ded3...` explicitly stated it was reviewing the complete repository contract/matrix and produced four additional findings. All four were confirmed, fixed, replied to in their inline threads, and resolved.
 
 ### Durable skill ACK
 
-`BloodMoonPersistence.Save` now reports whether the current generation is recoverable from `.json/.new/.old`. `SkillGainAck` is sent only after the participant sequence is durably recoverable. A failed save leaves the client pending report intact for retry.
+`BloodMoonPersistence.Save` now reports whether the current generation is recoverable from `.json/.new/.old`. `SkillGainAck` is sent only after the participant sequence is recoverable. A failed save leaves the client pending report intact for retry.
 
 Primary commits:
 
@@ -105,7 +113,31 @@ Commit:
 
 See document `28` for detailed invariants and runtime gates.
 
-## 4. Review requirements for the next exact head
+## 4. Documentation integrity repair
+
+During final review preparation, an attempted partial edit accidentally replaced `25_PROJECT_CONFORMANCE_MATRIX.md` with a truncated fragment in commit `ce06aa987cd549a917cdd08e986deeacfae2d375`.
+
+This was immediately repaired without manual reconstruction. Commit:
+
+```text
+e301daf6eda6a4db147143f8dc96263daa5ebd4b
+```
+
+restored the exact previously verified matrix blob:
+
+```text
+6efa1d5e97e71e93de571d30c0ace8aaca51d271
+```
+
+The authoritative index was then updated to explicitly list review checkpoints `26`-`28` in:
+
+```text
+c9fca42adb16d365d7d8f590b8ac0aa8c44800bc
+```
+
+No production code was changed by this documentation repair.
+
+## 5. Review requirements for exact head `c9fca42...`
 
 The next Codex request must again be a **complete project-conformance review**, not a latest-delta review.
 
@@ -119,8 +151,8 @@ Required scope:
 - ZDO/zone ownership migration;
 - reconnect/restart/world switch;
 - persistence failures and `.new/.old` recovery;
-- live-skill pending report persistence, ACK and outcome-boundary drain;
-- group merge/split topology and lease revocation;
+- live-skill pending report persistence, ACK only after recoverable save, and outcome-boundary drain;
+- group merge/split topology accounting and obsolete-lease revocation;
 - recovered forward time jumps and required phase side effects;
 - ordinary mod interoperability.
 
@@ -128,7 +160,7 @@ For every finding require a normal supported-client/runtime reproduction path an
 
 A clean result must identify the exact reviewed commit and explicitly state that the full PR was checked against the project contract/matrix.
 
-## 5. Evidence limits
+## 6. Evidence limits
 
 No assistant-side Seasons build, automated mod tests or Valheim run is claimed for the post-review corrections.
 
