@@ -108,10 +108,10 @@ namespace Seasons.BloodMoon
             }
         }
 
-        internal static void Save(BloodMoonEventState state)
+        internal static bool Save(BloodMoonEventState state)
         {
             if (state == null || state.WorldUid == 0L)
-                return;
+                return false;
 
             string path = GetStatePath(state.WorldUid);
             string directory = Path.GetDirectoryName(path);
@@ -122,11 +122,16 @@ namespace Seasons.BloodMoon
             state.PersistenceGeneration = Math.Max(cachedGeneration, Math.Max(0L, state.PersistenceGeneration)) + 1L;
             generationHighWater[state.WorldUid] = state.PersistenceGeneration;
 
+            bool durableTemporaryWritten = false;
             try
             {
                 string serialized = BloodMoonJson.SerializePersistence(state);
                 Directory.CreateDirectory(directory);
                 File.WriteAllText(temporary, serialized);
+                // File.WriteAllText closes the file before returning. From this point the current
+                // generation is recoverable even if canonical/backup rotation fails: Load() validates
+                // and considers .new alongside the canonical and .old snapshots.
+                durableTemporaryWritten = true;
                 if (File.Exists(path))
                 {
                     if (File.Exists(backup))
@@ -134,6 +139,7 @@ namespace Seasons.BloodMoon
                     File.Move(path, backup);
                 }
                 File.Move(temporary, path);
+                return true;
             }
             catch (Exception ex)
             {
@@ -147,6 +153,7 @@ namespace Seasons.BloodMoon
                 catch
                 {
                 }
+                return durableTemporaryWritten;
             }
         }
 
