@@ -14,13 +14,9 @@ Current review sequence:
 1. project-conformance matrix audit -> `25_PROJECT_CONFORMANCE_MATRIX.md`;
 2. full Codex project-conformance review of `231ae391891e330277868bf7733723333ea59521` -> six supported-runtime findings -> fixed/documented in `27_CODEX_CONFORMANCE_REVIEW_FIXES_2026-09-08.md`;
 3. full Codex project-conformance review of `6449ded3e66611380f1535670286fb40fd5b2bbf` -> four supported-runtime findings -> fixed/documented in `28_CODEX_CONFORMANCE_REVIEW_ROUND2_FIXES_2026-09-08.md`;
-4. exact head prepared for the next full project-conformance review:
+4. next gate: another full project-conformance review of the exact PR head identified by the new `@codex review` request and Codex review summary.
 
-```text
-c9fca42adb16d365d7d8f590b8ac0aa8c44800bc
-```
-
-The exact review result belongs in the PR timeline. A later commit is not implicitly covered by an older review.
+Do not encode the final exact review head as a self-referential value in this file: updating the file itself creates a newer head. The PR review request/timeline is authoritative for the exact submitted and reviewed SHA. The last implementation/index checkpoint before this handoff finalization is `c9fca42adb16d365d7d8f590b8ac0aa8c44800bc`.
 
 This checkpoint is continuation metadata, not a gameplay-design override. `25_PROJECT_CONFORMANCE_MATRIX.md` remains the cross-subsystem matrix; later corrective checkpoints provide implementation evidence for their explicit review findings.
 
@@ -129,15 +125,9 @@ restored the exact previously verified matrix blob:
 6efa1d5e97e71e93de571d30c0ace8aaca51d271
 ```
 
-The authoritative index was then updated to explicitly list review checkpoints `26`-`28` in:
+The authoritative index was then updated to explicitly list review checkpoints `26`-`28`. No production code was changed by this documentation repair.
 
-```text
-c9fca42adb16d365d7d8f590b8ac0aa8c44800bc
-```
-
-No production code was changed by this documentation repair.
-
-## 5. Review requirements for exact head `c9fca42...`
+## 5. Review requirements
 
 The next Codex request must again be a **complete project-conformance review**, not a latest-delta review.
 
