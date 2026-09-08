@@ -8,74 +8,130 @@ Repository: `shudnal/Seasons`.
 
 Working branch: `feat/blood-moon`. Target branch: `master`. Keep PR #42 draft, open and unmerged.
 
-This checkpoint completes the interrupted finalization of the project-conformance matrix task. It is not a new gameplay design and does not replace `25_PROJECT_CONFORMANCE_MATRIX.md`.
+Current review sequence:
 
-- Initial head inspected: `9b1255f040b3695ceed6fb0aeb596f9c90a65350`.
-- Corrective code commit: `14dda220258463e886e1b6ede6e405cd301515d0`.
-- Full-PR comparison base observed: `eff54feeb573813cb8f41844f563823d609cb71b` (`master`).
-- The exact final head submitted to Codex and its result belong in the PR timeline. A subsequent documentation commit is not implicitly covered by an older exact-head review.
+1. project-conformance matrix audit -> `25_PROJECT_CONFORMANCE_MATRIX.md`;
+2. full Codex project-conformance review of `231ae391891e330277868bf7733723333ea59521` -> six supported-runtime findings -> fixed/documented in `27_CODEX_CONFORMANCE_REVIEW_FIXES_2026-09-08.md`;
+3. full Codex project-conformance review of `6449ded3e66611380f1535670286fb40fd5b2bbf` -> four supported-runtime findings -> fixed/documented in `28_CODEX_CONFORMANCE_REVIEW_ROUND2_FIXES_2026-09-08.md`;
+4. next gate: another full project-conformance review of the exact current head after document `28`.
 
-## 1. What was already completed in Git
+This checkpoint is continuation metadata, not a gameplay-design override. `25_PROJECT_CONFORMANCE_MATRIX.md` remains the cross-subsystem matrix; later corrective checkpoints provide implementation evidence for their explicit review findings.
 
-The accepted mechanics are stored in `docs/tasks/CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md` and the subsystem documents it indexes. They are not dependent on retrieving an old chat or the rejected external design drafts.
+## 1. Authoritative mechanics and precedence
 
-The previous pass added `25_PROJECT_CONFORMANCE_MATRIX.md`, updated the authoritative index, and rewrote `08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md` as the current owner-side runtime checklist. The matrix records five conformance corrections:
+The accepted mechanics are stored in `docs/tasks/CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md` and the subsystem documents it indexes. They do not depend on retrieving an old chat or rejected external drafts.
 
-| Commit | Correction |
-| --- | --- |
-| `54d70665a54205e2f263e75f3ea5dedfec4d7a5b` | Apply stale Blood projectile damage protection to optional generic destructible targets. |
-| `56d65a0f7c0e81583ddfa15fb33d7fc3526d978a` | Restore temporary Bloodlust movement fields only once across postfix/finalizer paths. |
-| `79e40c2e73059c4da8422fd28b9e3c664c0b8b6d` | Restore temporary environment overlay fields only once across postfix/finalizer paths. |
-| `5475e795c81f03e205403b3269a9f8ee9d294335` | Do not globally suppress unrelated vanilla skill gains during resolution. |
-| `838a1e18abbb44375d20f2c914ed154e5a281d36` | Preserve required forward phase-transition side effects when time jumps beyond the forced end. |
+For current review work read, at minimum:
 
-These changes remain present. This continuation does not claim to have repeated the previous complete source audit or validated its conclusions in Valheim. Codex must independently challenge the matrix against the effective code, rather than treat its `PASS` labels as proof.
+- `docs/tasks/CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`;
+- `docs/tasks/blood-moon/25_PROJECT_CONFORMANCE_MATRIX.md`;
+- `docs/tasks/blood-moon/27_CODEX_CONFORMANCE_REVIEW_FIXES_2026-09-08.md`;
+- `docs/tasks/blood-moon/28_CODEX_CONFORMANCE_REVIEW_ROUND2_FIXES_2026-09-08.md`;
+- `docs/tasks/blood-moon/08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md`;
+- later accepted decisions `16`, `20`, `22`, `23`, `24` in their explicit scope.
 
-## 2. Interrupted finalization regressions and repair
+Historical reports `13`-`15` are evidence for the commits they describe, not authority over later accepted corrections.
 
-Two later finalization commits must not be treated as a valid baseline:
+Current decisions that must not regress include:
 
-- `335efa469b0dcc25f18155bdfe3a258b28d85c2a` changed the manifest from the owner's existing `1.9.0` to `1.8.2` and removed its final newline.
-- `9b1255f040b3695ceed6fb0aeb596f9c90a65350` also changed the plugin version to `1.8.2` and introduced two unresolved identifiers: `BepIncompatibility` and `cropsToSurviveWinter`.
+- next ordinary-sleep DreamText, not forced resolution DreamText;
+- no global Player input suppression;
+- genuine GoalReached remains sticky across later terminal exit;
+- automatic display completion is not genuine combat success/reward;
+- per-zone-owner spawning, no group-wide coordinator;
+- existing ordinary monsters keep ordinary loot; marked extras are no-loot and cleanup-scoped;
+- Blood Craft waives materials but keeps source station/level requirements;
+- established source-centred progress sharing;
+- forward-only clock reconciliation without gameplay rollback;
+- supported-client distributed correctness is in scope; modified-client-only anti-cheat is not a release blocker.
 
-`14dda220258463e886e1b6ede6e405cd301515d0` restores the exact file blobs from `a8a40675764d6cf1bdbaf61d6eafa1353fcbd9db`:
+## 2. Corrections from the first full project-conformance review
 
-| Path | Restored Git blob |
-| --- | --- |
-| `Seasons.cs` | `66fefba18617b5f1ec3d824d7754ea21416c8461` |
-| `package/thunderstore/Seasons/manifest.json` | `432ce1be0118d047a1ef6ee82431440cef4fb055` |
+The review of `231ae391...` identified six issues, all corrected before review round 2:
 
-The correct identifiers are `BepInIncompatibility` and `cropsToSurviveInWinter`. Both plugin and manifest retain the owner's `1.9.0`, introduced before the conformance pass. This is restoration of the existing branch version, not a new release/version decision.
+- bounded validated death evidence survives dead-ZDO cleanup long enough for reordered source authorization;
+- unsupported interior boss withdrawal requires matching navigation context;
+- state snapshot recovery uses monotonic `PersistenceGeneration` rather than game time;
+- client lease revision history resets on resolution/debug cleanup;
+- group caps account live extras/pending reports against current topology across merge/split;
+- live-skill deltas are profile-backed and retried/ACKed instead of fire-and-forget.
 
-The restored complete tree is `a0bb254ac8ad2ad1dadd11ea72b6b517f7063240`, identical to the tree at `a8a40675764d6cf1bdbaf61d6eafa1353fcbd9db`. GitHub comparison reports no changed files between those two commits. History is preserved through a normal forward commit; no force push or branch reset was used. All Blood Moon code, Marketplace corrections, matrix and acceptance documents are preserved.
+See document `27` for exact commits and runtime gates.
 
-Do not repeat the mistaken interpretation that "do not change version" means resetting this development branch to `master`'s `1.8.2`.
+## 3. Corrections from the second full project-conformance review
 
-## 3. Review evidence and pending gate
+The review of `6449ded3...` explicitly stated it was reviewing the complete repository contract/matrix and produced four additional findings. All four were confirmed and corrected:
 
-At the initial inspection, the latest completed Codex response was issue comment `5572373473`, for `3f3f794da36568f5d627acf2bd8fb97db50ff053`. Its request was explicitly focused on Marketplace 9.9.4. It predates the conformance-audit changes and is not approval of the final Blood Moon implementation.
+### Durable skill ACK
 
-The outstanding gate is a new **complete project-conformance review of the full PR**, not a review limited to the restoration commit, documentation delta, or Marketplace adapter.
+`BloodMoonPersistence.Save` now reports whether the current generation is recoverable from `.json/.new/.old`. `SkillGainAck` is sent only after the participant sequence is durably recoverable. A failed save leaves the client pending report intact for retry.
 
-Required reading:
+Primary commits:
 
-1. `docs/tasks/CHAT_2026-08-23_BLOOD_MOON_FIRST_VERTICAL_SLICE.md`.
-2. `25_PROJECT_CONFORMANCE_MATRIX.md` and this checkpoint.
-3. The complete authoritative subsystem set listed by the index, with particular attention to `16`, `20`, `22`, `23` and `24`.
-4. `08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md` for the remaining runtime evidence requirements.
+```text
+5fc7b08d65a150354808da678816797ae261f056
+0da937ad2ae5c786ee80eb6aa96aaf077c80aba2
+```
 
-Review the complete effective `master...feat/blood-moon` behavior and every major matrix section. Follow all internal Harmony adapters that alter the apparent base-method behavior. Read game classes in `shudnal/assemblies_combined` first; the existing source evidence checkpoint is `cf2cda3a4c5c05e62cb8052a61753e5dcaecc28e`.
+### Pre-resolution skill-report drain
 
-Require a reproducible supported-client path for each finding: authoritative requirement, affected code/adapter, triggering state or message ordering, consequence, and suggested correction. Legitimate latency, reordering, ownership migration, reconnect, persistence failure and ordinary mod interoperability are in scope. Fabricated RPCs, deliberately tampered markers and other modified-client-only anti-cheat scenarios remain outside the accepted scope in `16`.
+Already-produced Active/AutoCompleting reports retry and are accepted through early `Resolving` before `PublishingOutcomes`. New RaiseSkill calls after the local Resolving snapshot remain vanilla-only and cannot create new Blood Moon contribution/x3 bonus.
 
-Current decisions must remain intact: next ordinary-sleep DreamText; no global input suppression; sticky genuine success; no automatic-display reward; per-zone owner spawning; existing ordinary loot versus no-loot marked extras; source-station Blood Craft requirements; established source-centred progress sharing; and forward-only clock reconciliation without gameplay rollback.
+Commit:
 
-Inert presentation/input compatibility shells and their planned maintainability cleanup are not authorization to revive the superseded handshake/input-lock design. Music assets, automatic inferred enemy-pool progression and owner-controlled visual/balance tuning remain separately classified in the matrix.
+```text
+0da937ad2ae5c786ee80eb6aa96aaf077c80aba2
+```
 
-## 4. Evidence limits and continuation
+### Obsolete lease revocation
 
-This continuation used repository metadata, file contents, commit diffs and exact Git blob/tree comparison. It did not compile Seasons, run automated mod tests, launch Valheim, or claim a successful new owner-side build. No CI result was returned by the combined-status lookup for the initial head.
+A group/event lease that is about to become non-relevant is first sent to its owner with the same revision and `Allowance = 0`, before original lease cleanup removes it. Existing same-revision minimum semantics make this reorder-safe.
 
-A submitted review request, an acknowledgement/reaction, a running review and a completed review are different states. Record the exact reviewed commit and actual response. Do not accept a generic "no major issues" response as full matrix coverage unless the reviewer explicitly confirms that scope, as required by matrix section 16.
+Commit:
 
-After a completed full-scope review, triage confirmed findings in this same branch, update the affected matrix evidence, and request another review of the exact changed head when code changes. Owner-side compilation and the runtime checklist remain separate acceptance gates. Do not merge PR #42 or prepare a release without the owner.
+```text
+522e920584ebb9d56a8c4cc8097e5313b499ebd9
+```
+
+### Recovery after forward clock jump
+
+Persistence load no longer directly advances gameplay phases before assigning `BloodMoonController.State`. The first normal server tick traverses the standard `EnterMarked`/`EnterActive`/AutoCompleting bridge and preserves required side effects before resolution.
+
+Commit:
+
+```text
+58154db9a94c8fc2df8480ab2b250aeb8504a2a4
+```
+
+See document `28` for detailed invariants and runtime gates.
+
+## 4. Review requirements for the next exact head
+
+The next Codex request must again be a **complete project-conformance review**, not a latest-delta review.
+
+Required scope:
+
+- complete effective `master...feat/blood-moon` behavior;
+- all major sections of `25_PROJECT_CONFORMANCE_MATRIX.md`;
+- all internal Harmony adapters that modify apparent production behavior;
+- re-review the corrections in `27` and `28` for regressions/interactions;
+- supported-client latency/reordering;
+- ZDO/zone ownership migration;
+- reconnect/restart/world switch;
+- persistence failures and `.new/.old` recovery;
+- live-skill pending report persistence, ACK and outcome-boundary drain;
+- group merge/split topology and lease revocation;
+- recovered forward time jumps and required phase side effects;
+- ordinary mod interoperability.
+
+For every finding require a normal supported-client/runtime reproduction path and point to the conflicting project requirement/matrix row. Do not promote intentionally fabricated RPC/marker or modified-client-only attacks to release blockers.
+
+A clean result must identify the exact reviewed commit and explicitly state that the full PR was checked against the project contract/matrix.
+
+## 5. Evidence limits
+
+No assistant-side Seasons build, automated mod tests or Valheim run is claimed for the post-review corrections.
+
+Owner-side compilation and `08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md` remain separate acceptance gates. Visual/VFX/fade tuning, balance and localization remain owner-side work.
+
+PR #42 stays draft/open/unmerged until owner approval.
