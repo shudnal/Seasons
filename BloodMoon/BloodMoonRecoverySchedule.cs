@@ -12,71 +12,20 @@ namespace Seasons.BloodMoon
 
             double now = seasonState.GetTotalSeconds();
             BloodMoonEventPhase expected = BloodMoonSchedule.GetExpectedPhase(state.Schedule, now);
-            bool changed = false;
 
-            if (expected == BloodMoonEventPhase.Resolving || expected == BloodMoonEventPhase.Resolved)
-            {
-                foreach (BloodMoonParticipantState participant in state.Participants.Values)
-                {
-                    if (!participant.IsCombatActive || participant.GoalReached)
-                        continue;
-                    participant.AutoCompleted = true;
-                    participant.DisplayProgress = 100f;
-                }
+            // Persistence loading happens before BloodMoonController.State receives this object. Do not
+            // mutate a recovered Forewarning/Marked/Active state directly here: doing so would bypass
+            // EnterMarked/EnterActive side effects such as enrollment, suppression, environment setup and
+            // group/spawn initialization. The first normal server tick runs after State assignment and uses
+            // BloodMoonSchedule.GetExpectedPhase + AdvanceToExpectedPhase, including the AutoCompleting bridge
+            // for a large forward jump beyond ForcedEnd. Backward clock changes intentionally do nothing.
+            if ((int)expected > (int)state.Phase)
+                LogInfo($"[BloodMoon][event:{state.EventId}][phase] Recovery observed forward schedule target {expected}; deferring catch-up to normal controller transitions.");
 
-                state.Phase = BloodMoonEventPhase.Resolving;
-                state.ResolutionStep = BloodMoonResolutionStep.FreezingEnrollment;
-                state.EnrollmentFrozen = true;
-                changed = true;
-                LogWarning($"[BloodMoon][event:{state.EventId}][resolution] Recovery crossed frozen forced end; entering Resolving before first publish.");
-            }
-            else if (expected == BloodMoonEventPhase.AutoCompleting &&
-                (state.Phase == BloodMoonEventPhase.Forewarning || state.Phase == BloodMoonEventPhase.Marked || state.Phase == BloodMoonEventPhase.Active))
-            {
-                EnterRecoveredCombatPhase(state, BloodMoonEventPhase.AutoCompleting, now);
-                changed = true;
-            }
-            else if (expected == BloodMoonEventPhase.Active &&
-                (state.Phase == BloodMoonEventPhase.Forewarning || state.Phase == BloodMoonEventPhase.Marked))
-            {
-                EnterRecoveredCombatPhase(state, BloodMoonEventPhase.Active, now);
-                changed = true;
-            }
-            else if (expected == BloodMoonEventPhase.Marked && state.Phase == BloodMoonEventPhase.Forewarning)
-            {
-                state.Phase = BloodMoonEventPhase.Marked;
-                state.EnrollmentFrozen = false;
-                state.BloodBehaviorEnabled = false;
-                state.SpawnsStopped = false;
-                changed = true;
-            }
-
-            if (!changed)
-                return false;
-
-            state.UpdatedAt = now;
-            state.Revision++;
-            LogInfo($"[BloodMoon][event:{state.EventId}][phase] Recovered frozen schedule to {state.Phase} before first publish.");
-            return true;
+            return false;
         }
 
         // Compatibility wrapper for code paths introduced by the immediately preceding implementation commit.
         internal static void ReconcileForcedEnd(BloodMoonEventState state) => ReconcileLoadedState(state);
-
-        private static void EnterRecoveredCombatPhase(BloodMoonEventState state, BloodMoonEventPhase phase, double now)
-        {
-            state.Phase = phase;
-            state.EnrollmentFrozen = false;
-            state.BloodBehaviorEnabled = true;
-            state.SpawnsStopped = false;
-            foreach (BloodMoonParticipantState participant in state.Participants.Values)
-            {
-                if (participant.Phase != BloodMoonParticipantPhase.Marked)
-                    continue;
-                participant.Phase = BloodMoonParticipantPhase.Fighting;
-                if (participant.FightingAt <= 0d)
-                    participant.FightingAt = now;
-            }
-        }
     }
 }
