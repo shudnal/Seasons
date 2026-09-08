@@ -10,22 +10,36 @@ namespace Seasons.BloodMoon
             if (!TryValidateParticipantContext(sender, eventId, creditedPlayerId, enemyId, out BloodMoonController controller, out BloodMoonEventState state))
                 return false;
 
+            bool hasServerDeathEvidence = false;
             ZDO enemyZdo = ZDOMan.instance.GetZDO(enemyId);
             if (enemyZdo != null)
             {
                 if (!IsEligibleBloodEnemyZdo(state.EventId, enemyZdo) || !IsObservedDead(enemyZdo))
                     return false;
                 serverPoints = BloodMoonCombat.GetPointsForEnemy(enemyId, 0f);
+                hasServerDeathEvidence = true;
             }
-            else if (!BloodMoonEnemyDeathPending.TryGetRetainedDeathEvidence(eventId, enemyId, out serverPoints))
+            else if (BloodMoonEnemyDeathPending.TryGetRetainedDeathEvidence(eventId, enemyId, out serverPoints))
             {
-                return false;
+                hasServerDeathEvidence = true;
             }
 
-            if (!BloodMoonDamageCreditAuthority.TryGetConfirmedCredit(eventId, enemyId, out long confirmedPlayerId) || confirmedPlayerId != creditedPlayerId)
+            bool hasConfirmedCredit = BloodMoonDamageCreditAuthority.TryGetConfirmedCredit(eventId, enemyId, out long confirmedPlayerId) &&
+                confirmedPlayerId == creditedPlayerId;
+            if (hasServerDeathEvidence && hasConfirmedCredit)
+                return IsFinitePositive(serverPoints);
+
+            // A server restart after an accepted death but before a successful state write can lose both
+            // the dead ZDO and the in-memory matched lethal credit. The unmodified enemy owner keeps the
+            // report in its player profile until ACK. Per 16_CLIENT_TRUST_BOUNDARY.md this client-owned fact
+            // is trusted for correctness/recovery; hostile fabricated traffic is explicitly out of scope.
+            if (!BloodMoonEnemyDeathDurability.TryGetCurrentProfileReplay(eventId, creditedPlayerId, enemyId, out float replayPoints))
                 return false;
 
-            return serverPoints > 0f && !float.IsNaN(serverPoints) && !float.IsInfinity(serverPoints);
+            if (hasServerDeathEvidence && Mathf.Abs(serverPoints - replayPoints) > 0.001f)
+                return false;
+            serverPoints = hasServerDeathEvidence ? serverPoints : replayPoints;
+            return IsFinitePositive(serverPoints);
         }
 
         internal static bool TryCapturePendingDeathEvidence(long sender, long eventId, long creditedPlayerId, ZDOID enemyId, out float serverPoints)
@@ -39,7 +53,7 @@ namespace Seasons.BloodMoon
                 return false;
 
             serverPoints = BloodMoonCombat.GetPointsForEnemy(enemyId, 0f);
-            return serverPoints > 0f && !float.IsNaN(serverPoints) && !float.IsInfinity(serverPoints);
+            return IsFinitePositive(serverPoints);
         }
 
         internal static bool CanPendingValidate(long sender, long eventId, long creditedPlayerId, ZDOID enemyId)
@@ -114,6 +128,11 @@ namespace Seasons.BloodMoon
                 return true;
             long peerId = controller.GetPeerForPlayer(playerId);
             return peerId != 0L && ZNet.instance != null && ZNet.instance.GetPeer(peerId) != null;
+        }
+
+        private static bool IsFinitePositive(float value)
+        {
+            return value > 0f && !float.IsNaN(value) && !float.IsInfinity(value);
         }
     }
 }
