@@ -9,6 +9,7 @@ namespace Seasons.BloodMoon
     internal static class BloodMoonPersistence
     {
         private const string StateDirectoryName = "BloodMoon";
+        private static readonly Dictionary<long, long> generationHighWater = new Dictionary<long, long>();
 
         private sealed class Candidate
         {
@@ -48,25 +49,32 @@ namespace Seasons.BloodMoon
 
             if (valid.Count == 0)
             {
+                generationHighWater.Remove(worldUid);
                 if (anyFile)
                     LogError($"[BloodMoon.Persistence] No valid state snapshot could be recovered for world {worldUid}.");
                 return clean;
             }
 
-            // UpdatedAt is the durable state-change timestamp and remains monotonic across event replacement,
-            // where Revision intentionally starts over. EventId/Revision order semantic ties; the physical write
-            // timestamp resolves subsystem-only saves that intentionally do not touch the event revision.
+            long observedGeneration = valid.Max(candidate => Math.Max(0L, candidate.State.PersistenceGeneration));
+            generationHighWater[worldUid] = Math.Max(generationHighWater.TryGetValue(worldUid, out long cachedGeneration) ? cachedGeneration : 0L, observedGeneration);
+
+            // Every successful Save() assigns a monotonically increasing generation before writing the
+            // temporary snapshot. World/game time is intentionally not used as the primary ordering key:
+            // skiptime can move backwards and debug cleanup creates a replacement state whose UpdatedAt
+            // may be lower than the previous active snapshot. Legacy snapshots have generation zero and
+            // retain deterministic timestamp/revision tie-breaking below.
             Candidate selected = valid
-                .OrderByDescending(candidate => candidate.State.UpdatedAt)
+                .OrderByDescending(candidate => candidate.State.PersistenceGeneration)
+                .ThenByDescending(candidate => candidate.FileTicks)
+                .ThenByDescending(candidate => candidate.State.UpdatedAt)
                 .ThenByDescending(candidate => candidate.State.EventId)
                 .ThenByDescending(candidate => candidate.State.Revision)
-                .ThenByDescending(candidate => candidate.FileTicks)
                 .First();
 
             BloodMoonEventState loaded = selected.State;
             Normalize(loaded);
             bool reconciled = BloodMoonRecoverySchedule.ReconcileLoadedState(loaded);
-            LogInfo($"[BloodMoon.Persistence] Loaded event {loaded.EventId}, phase {loaded.Phase}, revision {loaded.Revision} from '{selected.Path}'.");
+            LogInfo($"[BloodMoon.Persistence] Loaded event {loaded.EventId}, phase {loaded.Phase}, revision {loaded.Revision}, generation {loaded.PersistenceGeneration} from '{selected.Path}'.");
 
             if (reconciled || !string.Equals(selected.Path, path, StringComparison.Ordinal))
             {
@@ -89,6 +97,7 @@ namespace Seasons.BloodMoon
                     state = null;
                     return false;
                 }
+                state.PersistenceGeneration = Math.Max(0L, state.PersistenceGeneration);
                 return true;
             }
             catch (Exception ex)
@@ -108,6 +117,10 @@ namespace Seasons.BloodMoon
             string directory = Path.GetDirectoryName(path);
             string temporary = path + ".new";
             string backup = path + ".old";
+
+            long cachedGeneration = generationHighWater.TryGetValue(state.WorldUid, out long generation) ? generation : 0L;
+            state.PersistenceGeneration = Math.Max(cachedGeneration, Math.Max(0L, state.PersistenceGeneration)) + 1L;
+            generationHighWater[state.WorldUid] = state.PersistenceGeneration;
 
             try
             {
@@ -151,6 +164,7 @@ namespace Seasons.BloodMoon
                     File.Delete(path + ".old");
                 if (File.Exists(path + ".new"))
                     File.Delete(path + ".new");
+                generationHighWater.Remove(worldUid);
             }
             catch (Exception ex)
             {
@@ -170,6 +184,7 @@ namespace Seasons.BloodMoon
 
         private static void Normalize(BloodMoonEventState state)
         {
+            state.PersistenceGeneration = Math.Max(0L, state.PersistenceGeneration);
             state.Participants ??= new Dictionary<long, BloodMoonParticipantState>();
             state.Groups ??= new Dictionary<long, BloodMoonGroupState>();
             state.SpawnLeases ??= new Dictionary<string, BloodMoonSpawnLeaseState>();
