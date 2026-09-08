@@ -17,8 +17,9 @@ Existing implementation and runtime hardening: draft PR #42. Continue from its c
 - `docs/tasks/blood-moon/26_PR42_CONFORMANCE_REVIEW_HANDOFF.md`
 - `docs/tasks/blood-moon/27_CODEX_CONFORMANCE_REVIEW_FIXES_2026-09-08.md`
 - `docs/tasks/blood-moon/28_CODEX_CONFORMANCE_REVIEW_ROUND2_FIXES_2026-09-08.md`
+- `docs/tasks/blood-moon/29_CODEX_CONFORMANCE_REVIEW_ROUND3_FIXES_2026-09-08.md`
 
-The matrix maps accepted behavior to the effective implementation, records current precedence between old and new documents, separates static conformance from owner-side runtime/visual gates, and is the required basis for complete PR reviews. Documents `26`-`28` are implementation/review evidence for later exact heads; they do not silently redefine gameplay.
+The matrix maps accepted behavior to the effective implementation, records current precedence between old and new documents, separates static conformance from owner-side runtime/visual gates, and is the required basis for complete PR reviews. Documents `26`-`29` are implementation/review evidence for later exact heads; they do not silently redefine gameplay.
 
 Immediately preceding accepted product/compatibility corrections are:
 
@@ -64,6 +65,7 @@ Historical implementation/review evidence:
 - `docs/tasks/blood-moon/26_PR42_CONFORMANCE_REVIEW_HANDOFF.md`
 - `docs/tasks/blood-moon/27_CODEX_CONFORMANCE_REVIEW_FIXES_2026-09-08.md`
 - `docs/tasks/blood-moon/28_CODEX_CONFORMANCE_REVIEW_ROUND2_FIXES_2026-09-08.md`
+- `docs/tasks/blood-moon/29_CODEX_CONFORMANCE_REVIEW_ROUND3_FIXES_2026-09-08.md`
 
 Current authoritative corrections/clarifications in their explicit scope:
 
@@ -84,7 +86,7 @@ In particular:
 - `23_PR42_RUNTIME_HARDENING_AND_CLOCK_POLICY.md` overrides older ambiguous time-control wording. Natural/`skiptime` progression is forward-only; backward time is not gameplay rollback; required forward transition side effects still run.
 - `24_MARKETPLACE_9_9_4_COMPATIBILITY.md` supersedes the Marketplace 9.8.9 API evidence section in `23` for the current Marketplace territory-map contract.
 - `25_PROJECT_CONFORMANCE_MATRIX.md` is the current cross-subsystem conformance checkpoint. It also clarifies stale wording such as old group-coordinator terminology, Blood Craft schema/station semantics, current damage/death trust flow, and which historical report claims are no longer current.
-- `26`-`28` record continuation and exact-head review/fix evidence. They may clarify how the matrix is implemented, but are not independent authorization to change accepted gameplay mechanics.
+- `26`-`29` record continuation and exact-head review/fix evidence. They may clarify how the matrix is implemented, but are not independent authorization to change accepted gameplay mechanics.
 - `13`, `14` and `15` remain valuable evidence for the commits/reviews they describe, but they are historical checkpoints rather than current product authority when they conflict with `22`-`25`.
 
 Implementation/review reports are evidence for the commits they identify, not a guarantee that a later head has passed review or runtime testing. The absence of an exception in an owner playtest does not establish multiplayer correctness.
@@ -193,6 +195,6 @@ Maintain decisions, patch-point reasoning, defects/fixes, and the next continuat
 
 Do not change version, public README, Thunderstore changelog, packaging, or release metadata without a separate request. Do not claim an assistant-side Valheim build/runtime result. Clearly distinguish static inspection, requested review, completed review, and owner-side runtime evidence.
 
-After implementation changes, request Codex review on the exact current PR head. The final pass must be a complete **project-conformance review**, not merely a latest-delta review: Codex must read this index and `25_PROJECT_CONFORMANCE_MATRIX.md`, then the current review checkpoints `26`-`28`, apply the precedence rules above, and review the full effective `master...feat/blood-moon` behavior including internal Harmony adapters.
+After implementation changes, request Codex review on the exact current PR head. The final pass must be a complete **project-conformance review**, not merely a latest-delta review: Codex must read this index and `25_PROJECT_CONFORMANCE_MATRIX.md`, then the current review checkpoints `26`-`29`, apply the precedence rules above, and review the full effective `master...feat/blood-moon` behavior including internal Harmony adapters.
 
 Fix confirmed findings without treating an older review as approval for newer code. Keep PR #42 draft, open, and unmerged until the owner decides otherwise.
