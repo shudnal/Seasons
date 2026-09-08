@@ -28,6 +28,10 @@ namespace Seasons.BloodMoon
                         new[] { "WorldUid", "EventId", "BonusBySkill" },
                     ["Seasons.BloodMoon.BloodMoonSkills+RewardApplicationRecord"] =
                         new[] { "Completed", "TargetProgress" },
+                    ["Seasons.BloodMoon.BloodMoonSkillReportReliability+PendingSkillGainReport"] =
+                        new[] { "Sequence", "Skill", "BaseEquivalent", "LiveBonusEquivalent" },
+                    ["Seasons.BloodMoon.BloodMoonSkillReportReliability+LiveSkillReportRecord"] =
+                        new[] { "WorldUid", "EventId", "PlayerId", "LastAckSequence", "LastSequence", "LiveBonusUsed", "Pending" },
                     ["Seasons.BloodMoon.BloodMoonSpawnPoolRegistry+Store"] =
                         new[] { "Schema", "WorldUid", "Revision", "UpdatedAtUtcTicks", "PrefabsByEvent" }
                 };
