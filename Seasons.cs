@@ -18,7 +18,7 @@ namespace Seasons
     [BepInPlugin(pluginID, pluginName, pluginVersion)]
     [BepInDependency("_shudnal.ConditionalConfigSync", BepInDependency.DependencyFlags.HardDependency)]
     [BepInIncompatibility("RustyMods.Seasonality")]
-    [BepIncompatibility("TastyChickenLegs.LongerDays")]
+    [BepInIncompatibility("TastyChickenLegs.LongerDays")]
     [BepInDependency(Compatibility.EpicLootCompat.GUID, BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency(Compatibility.MarketplaceCompat.GUID, BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency(Compatibility.EWDCompat.GUID, BepInDependency.DependencyFlags.SoftDependency)]
@@ -27,7 +27,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.8.2";
+        public const string pluginVersion = "1.9.0";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -881,7 +881,7 @@ namespace Seasons
         public static void FillListsToControl()
         {
             _PlantsToControlGrowth = ConfigToHashSet(cropsToControlGrowth.Value);
-            _PlantsToSurviveWinter = ConfigToHashSet(cropsToSurviveWinter.Value);
+            _PlantsToSurviveWinter = ConfigToHashSet(cropsToSurviveInWinter.Value);
 
             _WoodToControlDrop = ConfigToHashSet(woodListToControlDrop.Value);
             _MeatToControlDrop = ConfigToHashSet(meatListToControlDrop.Value);
