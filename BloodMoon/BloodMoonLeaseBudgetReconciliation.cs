@@ -49,8 +49,17 @@ namespace Seasons.BloodMoon
             HashSet<long> liveGroups = new HashSet<long>(state.Groups.Keys);
             foreach (BloodMoonSpawnLeaseState lease in state.SpawnLeases.Values)
             {
-                if (lease.EventId != state.EventId || !liveGroups.Contains(lease.GroupId))
+                if (lease.EventId == state.EventId && liveGroups.Contains(lease.GroupId))
+                    continue;
+
+                // UpdateServerLeases removes non-relevant group keys later in this invocation. Revoke the
+                // already-delivered client lease first, using the same revision and zero allowance. The client
+                // treats same-revision renewals as a minimum allowance, so reordering cannot resurrect tokens.
+                if (lease.Allowance > 0)
+                {
                     lease.Allowance = 0;
+                    BloodMoonNetwork.SendSpawnLease(lease.OwnerPeerId, lease);
+                }
             }
         }
 
