@@ -8,7 +8,7 @@ Repository: `shudnal/Seasons`. Working branch: `feat/blood-moon`. PR #42 remains
 
 This checkpoint records the four supported-runtime findings returned by the complete documentation-aware Codex review of exact head `5fa284568b8ca97170dd1b42cb226bbb114789b6` (review submitted 2026-09-09 07:14 UTC) and their corrective implementation. It is implementation/review evidence; it does not redefine gameplay outside the accepted project contract.
 
-The four corrections are implemented in the already compiled `BloodMoon/BloodMoonRound5LeaseFixes.cs`, so this round adds no classic-project compile entry and no version/release/package change.
+The four corrections are implemented in already compiled Blood Moon source files, so this round adds no classic-project compile entry and no version/release/package change.
 
 No assistant-side build, automated mod test or Valheim runtime execution is claimed.
 
@@ -19,6 +19,8 @@ Review comment: `3965660192`.
 A skill report produced while the participant was Active/AutoCompleting is profile-backed before send. Ordinary message reordering can deliver a Defeated/Withdrawn/Disconnected transition before that queued report or its retry. The old `BloodMoonSkillReports.Accept` rejected the report because `participant.IsCombatActive` had become false.
 
 Round 7 adds a terminal-only pre-outcome drain path. During combat or early `Resolving` before `PublishingOutcomes`, a correctly bound terminal participant may advance only the existing contiguous skill-report sequence. The normal `BloodMoonSkills.AcceptServerReport` implementation and its contiguous-sequence Harmony guard remain authoritative; state persistence must succeed before ACK. This can update skill contribution/live-bonus accounting but never changes the participant phase or exit reason and cannot create a new post-exit report on a compatible client.
+
+The existing scoped client retry already drains persisted pending reports according to the event phase rather than participant combat state, so the server-side terminal path is reachable after Defeated/Withdrawn/Disconnected.
 
 ## 2. Drain retained pre-exit enemy kills after Defeated/Withdrawn
 
@@ -48,16 +50,15 @@ Review comment: `3965660214`.
 
 `FindCurrentOrNext` discarded every schedule whose `MorningAt` was already in the past. If an already-enabled world remained Dormant and `skiptime` jumped from before Forewarning to after that event's morning, the event was never created, so none of the required Marked/Active/resolution side effects ran.
 
-Round 7 adds selection of the most recently crossed eligible Blood Moon schedule when:
+Round 7 adds selection of the most recently crossed eligible Blood Moon schedule when the event high-water allows it and then exposes that crossed schedule as `AutoCompleting` for the creation/catch-up decision. `TryCreateScheduledEvent` creates the normal Forewarning state, after which the existing controller forward-jump bridge traverses `EnterMarked -> EnterActive -> EnterAutoCompleting`; the next normal server tick enters the standard resolution transaction. Backward time remains non-rollback.
 
-- the current state is Dormant/Resolved/Skipped;
-- the feature's persisted `FirstEnabledAt` strictly predates that schedule's Forewarning window;
-- the event ID is above `LastCreatedEventId` / `LastResolvedEventId` high-water marks;
-- no currently-active schedule should take precedence.
+A follow-up sanity correction narrows this behavior to an **observed continuous-runtime clock crossing**. `BloodMoonController.TickServer` records the previous server-observed event time for the same world/state instance. The crossed schedule is eligible only if that previous tick was before its Forewarning boundary and the current tick is at/after its Morning boundary. This distinguishes an actual `skiptime`/forward clock jump from:
 
-A crossed schedule is exposed as `AutoCompleting` only for the creation/catch-up decision. `TryCreateScheduledEvent` creates the normal Forewarning state, then the existing controller flow and existing forward-jump bridge traverse `EnterMarked -> EnterActive -> EnterAutoCompleting`; the next normal server tick enters the standard resolution transaction. Backward time remains non-rollback. A world first enabled during or after the crossed window does not retroactively run that event.
+- server downtime spanning the event;
+- Blood Moon being disabled for the event window and enabled afterward;
+- the first tick after loading a world whose event already passed.
 
-The search is bounded to the current annual schedule horizon and chooses the most recent crossed eligible event rather than replaying an arbitrary backlog of historical events.
+Those cases do not retroactively replay a missed Blood Moon. World/state replacement and `ZNet.OnDestroy` reset the observation scope. A currently-active schedule still takes precedence over an older crossed schedule, and high-water marks prevent replay of already created/resolved events.
 
 ## Owner-side runtime gates
 
@@ -67,9 +68,11 @@ At minimum verify:
 2. Deliver a lethal enemy hit immediately before Defeated and separately before Withdrawn; delay the death replay until after the terminal reason is committed: points/GoalReached are applied exactly once without changing the terminal reason.
 3. OfferingBowl owner receives an accepted pre-cutoff relay, writes the attempt marker, then disappears before vanilla `SpawnBoss`: replacement ownership must retry rather than report completion. Repeat after successful `SpawnBoss`: replacement must not schedule a duplicate boss.
 4. Force `CanSpawnBoss`/queued-state no-op on a relay: no completion fact is written and the request is not falsely removed as successful.
-5. In an already-enabled Dormant world, `skiptime` from before Forewarning to after event morning: the event is created and traverses Marked/Active/AutoCompleting side effects before normal resolution.
-6. Enable Blood Moon only after an event window has already passed: that crossed event is not retroactively replayed.
-7. Jump across a completed event when an active current event window is also present: the current active schedule takes precedence over an older crossed schedule.
+5. In an already-enabled running Dormant world, observe a tick before Forewarning, then `skiptime` to after event morning: the event is created and traverses Marked/Active/AutoCompleting side effects before normal resolution.
+6. Shut the server down before Forewarning and restart it after the event morning: the missed event is not replayed retroactively.
+7. Keep Blood Moon disabled throughout an event window and re-enable it afterward: the missed event is not replayed retroactively.
+8. Enable Blood Moon only after an event window has already passed: that crossed event is not retroactively replayed.
+9. Jump across a completed event when an active current event window is also present: the current active schedule takes precedence over an older crossed schedule.
 
 ## Next review requirement
 
