@@ -183,74 +183,109 @@ namespace Seasons
 
         public IEnumerator GenerateWinterWorldMap()
         {
-            if (m_mapTexture == null || !m_sourceTexture || WorldGenerator.instance == null)
+            if (m_mapTexture == null || !m_sourceTexture || !m_minimap)
                 yield break;
 
             if (m_generation != null)
                 m_generation.Cancelled = true;
 
-            WorldGenerator world = WorldGenerator.instance;
             Texture2D sourceTexture = m_sourceTexture;
+            Color32[] sourcePixels = m_mapTexture;
+            ZNet sourceNetwork = ZNet.instance;
+            World sourceWorld = ZNet.m_world;
             int textureSize = m_minimap.m_textureSize;
             float pixelSize = m_minimap.m_pixelSize;
-            int center = textureSize / 2;
-            float halfPixel = pixelSize / 2f;
-            if (m_mapTexture.Length != textureSize * textureSize)
+            if (sourcePixels.Length != textureSize * textureSize)
                 yield break;
 
-            Dictionary<Heightmap.Biome, Color32> winterColors = new Dictionary<Heightmap.Biome, Color32>();
-            foreach (KeyValuePair<Heightmap.Biome, Color> entry in SeasonState.seasonBiomeSettings.SeasonalWinterMapColors)
-                winterColors[entry.Key] = entry.Value;
-
-            MapGeneration generation = new MapGeneration { Pixels = (Color32[])m_mapTexture.Clone() };
+            // Register the request before waiting so a reload or world exit can cancel it.
+            MapGeneration generation = new MapGeneration();
             m_generation = generation;
-            Stopwatch stopwatch = Stopwatch.StartNew();
 
-            // The worker only accesses captured world data and private managed buffers.
-            Thread worker = new Thread(() =>
+            bool IsCurrentRequest()
             {
-                try
-                {
-                    for (int y = 0; y < textureSize && !generation.Cancelled; y++)
-                    {
-                        float wy = (y - center) * pixelSize + halfPixel;
-                        for (int x = 0; x < textureSize; x++)
-                        {
-                            float wx = (x - center) * pixelSize + halfPixel;
-                            if (winterColors.TryGetValue(world.GetBiome(wx, wy), out Color32 color))
-                                generation.Pixels[y * textureSize + x] = color;
-                        }
-                    }
-                }
-                catch (Exception error)
-                {
-                    generation.Error = error;
-                }
-                finally
-                {
-                    generation.Completed = true;
-                }
-            }) { IsBackground = true, Name = "Seasons winter minimap" };
-            worker.Start();
-
-            yield return new WaitUntil(() => generation.Completed);
-
-            if (generation.Cancelled || m_generation != generation || world != WorldGenerator.instance
-                || !m_minimap || sourceTexture != m_minimap.m_mapTexture)
-                yield break;
-
-            m_generation = null;
-            m_generationCoroutine = null;
-            if (generation.Error != null)
-            {
-                LogWarning($"Unable to generate the winter minimap:\n{generation.Error}");
-                yield break;
+                return !generation.Cancelled && m_generation == generation && this && m_minimap && sourceTexture
+                    && sourceTexture == m_minimap.m_mapTexture && ReferenceEquals(sourcePixels, m_mapTexture)
+                    && ReferenceEquals(sourceNetwork, ZNet.instance) && ReferenceEquals(sourceWorld, ZNet.m_world)
+                    && textureSize == m_minimap.m_textureSize && pixelSize == m_minimap.m_pixelSize;
             }
 
-            m_mapWinterTexture = generation.Pixels;
-            m_initialized = true;
-            LogInfo($"Minimap variant controller initialized in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
-            UpdateColors(forceMapUpdate: true);
+            try
+            {
+                WorldGenerator world = null;
+                while (IsCurrentRequest())
+                {
+                    world = WorldGenerator.instance;
+                    if (world != null && (sourceWorld == null || ReferenceEquals(world.m_world, sourceWorld)))
+                        break;
+
+                    yield return null;
+                }
+
+                if (!IsCurrentRequest())
+                    yield break;
+
+                int center = textureSize / 2;
+                float halfPixel = pixelSize / 2f;
+                Dictionary<Heightmap.Biome, Color32> winterColors = new Dictionary<Heightmap.Biome, Color32>();
+                foreach (KeyValuePair<Heightmap.Biome, Color> entry in SeasonState.seasonBiomeSettings.SeasonalWinterMapColors)
+                    winterColors[entry.Key] = entry.Value;
+
+                generation.Pixels = (Color32[])sourcePixels.Clone();
+                Stopwatch stopwatch = Stopwatch.StartNew();
+
+                // The worker only accesses captured world data and private managed buffers.
+                Thread worker = new Thread(() =>
+                {
+                    try
+                    {
+                        for (int y = 0; y < textureSize && !generation.Cancelled; y++)
+                        {
+                            float wy = (y - center) * pixelSize + halfPixel;
+                            for (int x = 0; x < textureSize; x++)
+                            {
+                                float wx = (x - center) * pixelSize + halfPixel;
+                                if (winterColors.TryGetValue(world.GetBiome(wx, wy), out Color32 color))
+                                    generation.Pixels[y * textureSize + x] = color;
+                            }
+                        }
+                    }
+                    catch (Exception error)
+                    {
+                        generation.Error = error;
+                    }
+                    finally
+                    {
+                        generation.Completed = true;
+                    }
+                }) { IsBackground = true, Name = "Seasons winter minimap" };
+                worker.Start();
+
+                yield return new WaitUntil(() => generation.Completed || !IsCurrentRequest() || world != WorldGenerator.instance);
+
+                if (!IsCurrentRequest() || world != WorldGenerator.instance)
+                    yield break;
+
+                if (generation.Error != null)
+                {
+                    LogWarning($"Unable to generate the winter minimap:\n{generation.Error}");
+                    yield break;
+                }
+
+                m_mapWinterTexture = generation.Pixels;
+                m_initialized = true;
+                LogInfo($"Minimap variant controller initialized in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
+                UpdateColors(forceMapUpdate: true);
+            }
+            finally
+            {
+                generation.Cancelled = true;
+                if (m_generation == generation)
+                {
+                    m_generation = null;
+                    m_generationCoroutine = null;
+                }
+            }
         }
 
         public static Color GetWinterPixelColor(Heightmap.Biome biome)
