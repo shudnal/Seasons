@@ -17,11 +17,9 @@ namespace Seasons.BloodMoon
     {
         private const string RpcPrepare = "Seasons.BloodMoon.EnrollmentPrepare";
         private const string RpcReady = "Seasons.BloodMoon.EnrollmentReady";
-        private const float ProtectionTimeoutSeconds = 15f;
 
         private static ZRoutedRpc registeredRpc;
         private static long protectedEventId = -1L;
-        private static float protectedUntil;
         private static bool loggedProtection;
 
         internal static void RegisterRpc()
@@ -41,7 +39,6 @@ namespace Seasons.BloodMoon
                 return;
 
             protectedEventId = eventId;
-            protectedUntil = Time.realtimeSinceStartup + ProtectionTimeoutSeconds;
             loggedProtection = false;
             BloodMoonRecovery.ResetEvent(eventId);
             BloodMoonPresentation.OnEnrolled();
@@ -84,38 +81,50 @@ namespace Seasons.BloodMoon
 
         internal static bool ProtectPendingDeath(Player player)
         {
-            if (player == null || player != Player.m_localPlayer || protectedEventId < 0L)
+            if (player == null || player != Player.m_localPlayer)
                 return false;
 
-            if (Time.realtimeSinceStartup >= protectedUntil)
+            long globalEventId = BloodMoonNetwork.ClientGlobal.EventId;
+            if (protectedEventId >= 0L)
             {
-                ClearProtection();
+                // Event ids are monotonic world-day high-water marks. A genuinely newer event proves that
+                // an old prepare guard is stale; a lower/stale snapshot must not cancel protection while the
+                // matching event snapshot is still in flight.
+                if (globalEventId > protectedEventId)
+                    ClearProtection();
+                else if (globalEventId == protectedEventId)
+                {
+                    BloodMoonParticipantState participant = BloodMoonInteractionRules.GetLocalParticipant();
+                    if (participant != null && (participant.IsCombatActive || participant.IsTerminal))
+                    {
+                        ClearProtection();
+                        return false;
+                    }
+
+                    BloodMoonEventPhase phase = BloodMoonNetwork.ClientGlobal.Phase;
+                    if (phase == BloodMoonEventPhase.Resolving || phase == BloodMoonEventPhase.Resolved || phase == BloodMoonEventPhase.Skipped ||
+                        phase == BloodMoonEventPhase.Dormant)
+                    {
+                        ClearProtection();
+                        return false;
+                    }
+                }
+
+                if (protectedEventId >= 0L)
+                    return true;
+            }
+
+            // A late joiner can receive the already-active global snapshot before the server's targeted
+            // prepare RPC or participant routing snapshot. All connected players are enrollable during
+            // Active/AutoCompleting, so absence (or staged Marked state) here is transport convergence, not
+            // permission to take the vanilla tombstone/skill-loss death path.
+            BloodMoonEventPhase globalPhase = BloodMoonNetwork.ClientGlobal.Phase;
+            if (globalEventId < 0L || globalPhase != BloodMoonEventPhase.Active && globalPhase != BloodMoonEventPhase.AutoCompleting ||
+                BloodMoonRecovery.IsLocallyExited(player.GetPlayerID()))
                 return false;
-            }
 
-            // The prepare RPC itself is authoritative evidence that the server is staging this player for
-            // an already-active event. Keep protection even before CCS has delivered that event. Once the
-            // matching routing snapshot proves Fighting/terminal state, the ordinary Blood Moon death path
-            // owns behavior again.
-            if (BloodMoonNetwork.ClientGlobal.EventId == protectedEventId)
-            {
-                BloodMoonParticipantState participant = BloodMoonInteractionRules.GetLocalParticipant();
-                if (participant != null && (participant.IsCombatActive || participant.IsTerminal))
-                {
-                    ClearProtection();
-                    return false;
-                }
-
-                BloodMoonEventPhase phase = BloodMoonNetwork.ClientGlobal.Phase;
-                if (phase == BloodMoonEventPhase.Resolving || phase == BloodMoonEventPhase.Resolved || phase == BloodMoonEventPhase.Skipped ||
-                    phase == BloodMoonEventPhase.Dormant)
-                {
-                    ClearProtection();
-                    return false;
-                }
-            }
-
-            return true;
+            BloodMoonParticipantState localParticipant = BloodMoonInteractionRules.GetLocalParticipant();
+            return localParticipant == null || localParticipant.Phase == BloodMoonParticipantPhase.Marked;
         }
 
         internal static void LogProtection(Player player)
@@ -123,7 +132,8 @@ namespace Seasons.BloodMoon
             if (loggedProtection || player == null)
                 return;
             loggedProtection = true;
-            LogWarning($"[BloodMoon][event:{protectedEventId}][player:{player.GetPlayerID()}] Prevented vanilla death while late-join Fighting enrollment was awaiting its matching combat snapshot.");
+            long eventId = protectedEventId >= 0L ? protectedEventId : BloodMoonNetwork.ClientGlobal.EventId;
+            LogWarning($"[BloodMoon][event:{eventId}][player:{player.GetPlayerID()}] Prevented vanilla death while late-join enrollment/combat snapshots were converging.");
         }
 
         internal static void Reset()
@@ -134,7 +144,6 @@ namespace Seasons.BloodMoon
         private static void ClearProtection()
         {
             protectedEventId = -1L;
-            protectedUntil = 0f;
             loggedProtection = false;
         }
 
@@ -283,9 +292,6 @@ namespace Seasons.BloodMoon
                 !BloodMoonLateJoinEnrollment.ProtectPendingDeath(player))
                 return true;
 
-            // The prepare RPC was processed before the server accepted Fighting. Keep the player out of
-            // vanilla tombstone/respawn/skill-loss until the matching combat snapshot lets the ordinary
-            // Blood Moon Defeated interception take over.
             player.SetHealth(1f);
             BloodMoonLateJoinEnrollment.LogProtection(player);
             return false;
