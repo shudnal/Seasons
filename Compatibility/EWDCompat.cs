@@ -213,17 +213,17 @@ namespace Seasons.Compatibility
             }
         }
 
-        [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.GetAvailableEnvironments))]
+        [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.GetAvailableEnvironments), new Type[] { typeof(BiomeSector) })]
         public static class EnvMan_GetAvailableEnvironments_ApplySeasonalRulesAfterEWD
         {
             [HarmonyPriority(Priority.Last)]
             [HarmonyAfter(new string[1] { GUID })]
-            public static void Postfix(Heightmap.Biome biome, ref List<EnvEntry> __result)
+            public static void Postfix(BiomeSector biome, ref List<EnvEntry> __result)
             {
-                if (__result == null || !ShouldApplySeasonalRulesToAvailableEnvironments())
+                if (biome == null || __result == null || !ShouldApplySeasonalRulesToAvailableEnvironments())
                     return;
 
-                __result = SeasonState.ApplySeasonBiomeEnvironmentRules(biome, __result);
+                __result = SeasonState.ApplySeasonBiomeEnvironmentRules(biome.Biome, __result);
             }
         }
     }
