@@ -865,9 +865,12 @@ namespace Seasons
                 {
                     if (zdo.GetPrefab() == s_terrainCompilerPrefab && Mathf.Abs(worldDay - zdo.GetInt(SeasonsVars.s_terrainDecultivated, 0)) >= yearLength)
                     {
-                        zdo.Set(SeasonsVars.s_terrainDecultivated, worldDay);
-                        if (TerrainDecultivation.DecultivateGround(zdo))
-                            terrains++;
+                        if (TerrainDecultivation.TryDecultivateGround(zdo, out bool changed))
+                        {
+                            zdo.Set(SeasonsVars.s_terrainDecultivated, worldDay);
+                            if (changed)
+                                terrains++;
+                        }
                     }
                 }
             }
