@@ -238,4 +238,38 @@ namespace Seasons.BloodMoon
                 BloodMoonRound5Runtime.SaveProfile(player, "completed Blood Moon terminal markers");
         }
     }
+
+    // Profile-backed death replay normally lives on the peer that owned the dying enemy, which is not
+    // necessarily the credited participant. During the pre-outcome Resolving drain accept that retained
+    // replay from any still-ready ordinary event peer (or the listen-host server peer). Terminal RPCs keep
+    // their stricter player-peer binding; this relaxation is specific to enemy-owner death evidence.
+    [HarmonyPatch(typeof(BloodMoonEnemyDeathReports), nameof(BloodMoonEnemyDeathReports.TryValidate))]
+    internal static class BloodMoonEarlyResolvingOwnerReplayPatch
+    {
+        [HarmonyPriority(Priority.First + 400)]
+        private static bool Prefix(long sender, long eventId, long creditedPlayerId, ZDOID enemyId, ref float serverPoints, ref bool __result)
+        {
+            BloodMoonController controller = BloodMoonController.Instance;
+            BloodMoonEventState state = controller?.State;
+            if (state == null || state.EventId != eventId || state.IsCombatLive || !BloodMoonRound5Runtime.IsPreOutcomeDrainOpen(state) ||
+                !state.Participants.TryGetValue(creditedPlayerId, out BloodMoonParticipantState participant) || !participant.IsCombatActive ||
+                !IsReadyEventSender(sender) ||
+                !BloodMoonEnemyDeathDurability.TryGetCurrentProfileReplay(eventId, creditedPlayerId, enemyId, out float replayPoints))
+                return true;
+
+            serverPoints = replayPoints;
+            __result = replayPoints > 0f && !float.IsNaN(replayPoints) && !float.IsInfinity(replayPoints);
+            return false;
+        }
+
+        private static bool IsReadyEventSender(long sender)
+        {
+            if (ZRoutedRpc.instance == null || sender == 0L)
+                return false;
+            if (sender == ZRoutedRpc.instance.GetServerPeerID())
+                return true;
+            ZNetPeer peer = ZNet.instance?.GetPeer(sender);
+            return peer != null && peer.IsReady();
+        }
+    }
 }
