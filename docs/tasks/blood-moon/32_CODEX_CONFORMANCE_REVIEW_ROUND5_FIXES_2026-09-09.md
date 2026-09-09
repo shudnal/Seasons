@@ -28,6 +28,8 @@ The first ordinary validation still requires the actual dead enemy and matched l
 
 The drain occurs **before** `PublishingOutcomes`; no report is allowed to mutate an outcome after the serialization boundary.
 
+A normal client-owned enemy death report is retained by the peer that owned the dying enemy, which is not necessarily the credited participant. A post-review sanity correction therefore allows a profile-backed death replay during this bounded drain from any still-ready ordinary event peer (or the listen-host server peer), while the replay payload remains bound to the credited participant and event. Terminal-state RPCs retain their stricter player-peer binding. This is a correctness rule for normal ZDO ownership, not an anti-cheat relaxation beyond the accepted trust model.
+
 ### 3. Zone-owner migration did not retire a same-group/same-revision lease
 
 **Finding.** A lease whose group and group revision remained current was considered current even after the zone's actual spawn-system ownership migrated to another peer. Its delivered allowance could therefore race newly issued allowance for the replacement owner.
@@ -101,7 +103,8 @@ At minimum verify:
 7. Trigger server-side Withdrawn with persistence failure and restart: the client profile marker reasserts Withdrawn before outcome capture.
 8. Trigger Defeated immediately before forced end with delayed/lost first notification: retry during early Resolving still produces Defeated and no vanilla death semantics.
 9. Keep a participant disconnected past the drain bound: resolution eventually continues rather than remaining permanently stuck.
-10. Run the Ashlands/Deep North boundary scenarios from `31_LATE_BIOME_PRESENTATION_POLICY.md` in the same build.
+10. For a client-owned enemy, let a different peer own the enemy than the player credited for the lethal hit; delay profile replay until early Resolving and confirm the ready enemy-owner peer can deliver it without requiring `sender == creditedPlayer`.
+11. Run the Ashlands/Deep North boundary scenarios from `31_LATE_BIOME_PRESENTATION_POLICY.md` in the same build.
 
 ## Next review requirement
 
