@@ -97,6 +97,8 @@
     <Compile Include="BloodMoon\BloodMoonResyncMonotonic.cs" />
     <Compile Include="BloodMoon\BloodMoonResyncRetry.cs" />
     <Compile Include="BloodMoon\BloodMoonResyncSkillBaseline.cs" />
+    <Compile Include="BloodMoon\BloodMoonRound5Durability.cs" />
+    <Compile Include="BloodMoon\BloodMoonRound5LeaseFixes.cs" />
     <Compile Include="BloodMoon\BloodMoonSchedule.cs" />
     <Compile Include="BloodMoon\BloodMoonSkillReports.cs" />
     <Compile Include="BloodMoon\BloodMoonSkills.cs" />
@@ -190,7 +192,7 @@
       <HintPath>..\Assemblies\Managers\ConditionalConfigSync.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="netstandard, Version=2.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+    <Reference Include="netstandard, Version=2.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcc7b13fb5?">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\Assemblies\stable\netstandard.dll</HintPath>
     </Reference>
