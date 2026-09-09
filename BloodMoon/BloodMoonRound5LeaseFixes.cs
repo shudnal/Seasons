@@ -1,6 +1,8 @@
 using HarmonyLib;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using UnityEngine;
@@ -130,6 +132,45 @@ namespace Seasons.BloodMoon
         }
     }
 
+    internal static class BloodMoonRound5DrainTimeout
+    {
+        private const float MaximumHoldSeconds = 35f;
+        private static long eventId = -1L;
+        private static float startedAt;
+        private static bool warned;
+
+        internal static void Bound(BloodMoonController controller, ref bool hold)
+        {
+            if (!hold)
+            {
+                eventId = -1L;
+                startedAt = 0f;
+                warned = false;
+                return;
+            }
+
+            long currentEvent = controller?.State?.EventId ?? -1L;
+            if (currentEvent < 0L)
+                return;
+            if (eventId != currentEvent)
+            {
+                eventId = currentEvent;
+                startedAt = Time.realtimeSinceStartup;
+                warned = false;
+                return;
+            }
+
+            if (Time.realtimeSinceStartup - startedAt < MaximumHoldSeconds)
+                return;
+            hold = false;
+            if (!warned)
+            {
+                warned = true;
+                LogWarning($"[BloodMoon][event:{currentEvent}][resolution] Durable report drain reached its {MaximumHoldSeconds:0}s bound; continuing resolution.");
+            }
+        }
+    }
+
     [HarmonyPatch(typeof(BloodMoonRetiredLeaseReservations), nameof(BloodMoonRetiredLeaseReservations.RetireObsolete))]
     internal static class BloodMoonZoneOwnerLeaseRetirementPatch
     {
@@ -148,6 +189,53 @@ namespace Seasons.BloodMoon
         {
             BloodMoonRound5LeaseFixes.DiscoverReplicatedExtras(state);
             return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(BloodMoonOutcomeDrainGate), nameof(BloodMoonOutcomeDrainGate.ShouldHold))]
+    internal static class BloodMoonOutcomeDrainTimeoutPatch
+    {
+        [HarmonyPriority(Priority.Last)]
+        private static void Postfix(BloodMoonController controller, ref bool __result)
+        {
+            BloodMoonRound5DrainTimeout.Bound(controller, ref __result);
+        }
+    }
+
+    [HarmonyPatch(typeof(BloodMoonPresentation), nameof(BloodMoonPresentation.OnResolutionComplete))]
+    internal static class BloodMoonCompletedTerminalMarkerCleanupPatch
+    {
+        private const string PendingPrefix = "Seasons.BloodMoon.PendingTerminal.";
+        private const string LegacyDefeatedKey = "Seasons.BloodMoon.Defeated";
+
+        [HarmonyPriority(Priority.Last)]
+        private static void Postfix()
+        {
+            Player player = Player.m_localPlayer;
+            long worldUid = BloodMoonRound5Runtime.CurrentWorldUid;
+            long eventId = BloodMoonNetwork.ClientGlobal.EventId;
+            if (player == null || worldUid == 0L || eventId < 0L || player.GetPlayerID() == 0L)
+                return;
+
+            bool changed = player.m_customData.Remove(PendingPrefix + worldUid.ToString(CultureInfo.InvariantCulture) + "." +
+                eventId.ToString(CultureInfo.InvariantCulture) + "." + player.GetPlayerID().ToString(CultureInfo.InvariantCulture));
+
+            if (player.m_customData.TryGetValue(LegacyDefeatedKey, out string json) && !string.IsNullOrWhiteSpace(json))
+            {
+                try
+                {
+                    JObject source = JObject.Parse(json);
+                    if (source.Value<long?>("WorldUid") == worldUid && source.Value<long?>("EventId") == eventId)
+                        changed |= player.m_customData.Remove(LegacyDefeatedKey);
+                }
+                catch
+                {
+                    // Existing recovery code owns validation/removal of malformed legacy records.
+                }
+            }
+
+            if (changed)
+                BloodMoonRound5Runtime.SaveProfile(player, "completed Blood Moon terminal markers");
         }
     }
 }
