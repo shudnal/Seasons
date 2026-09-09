@@ -27,7 +27,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.8.2";
+        public const string pluginVersion = "1.9.0";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -399,6 +399,11 @@ namespace Seasons
         public static void LogWarning(object data)
         {
             instance.Logger.LogWarning(data);
+        }
+
+        public static void LogError(object data)
+        {
+            instance.Logger.LogError(data);
         }
 
         private ConfigDescription GetDescriptionSeparatedStrings(string description) =>

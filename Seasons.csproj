@@ -36,6 +36,84 @@
     <LangVersion>10.0</LangVersion>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="BloodMoon\BloodCraft.cs" />
+    <Compile Include="BloodMoon\BloodCraftContainerRecovery.cs" />
+    <Compile Include="BloodMoon\BloodCraftGraceGuards.cs" />
+    <Compile Include="BloodMoon\BloodCraftInvariants.cs" />
+    <Compile Include="BloodMoon\BloodCraftUnsafeAbilities.cs" />
+    <Compile Include="BloodMoon\BloodCraftVanillaPreflight.cs" />
+    <Compile Include="BloodMoon\BloodCraftWorldRecoveryPreservation.cs" />
+    <Compile Include="BloodMoon\BloodCraftWorldSinks.cs" />
+    <Compile Include="BloodMoon\BloodMoonAiContext.cs" />
+    <Compile Include="BloodMoon\BloodMoonAiPatches.cs" />
+    <Compile Include="BloodMoon\BloodMoonBloodlust.cs" />
+    <Compile Include="BloodMoon\BloodMoonBootstrap.cs" />
+    <Compile Include="BloodMoon\BloodMoonBossParkingDiagnostic.cs" />
+    <Compile Include="BloodMoon\BloodMoonBossParkingRecord.cs" />
+    <Compile Include="BloodMoon\BloodMoonBossParkingStart.cs" />
+    <Compile Include="BloodMoon\BloodMoonBossParkingValidation.cs" />
+    <Compile Include="BloodMoon\BloodMoonBossPatches.cs" />
+    <Compile Include="BloodMoon\BloodMoonBossRestore.cs" />
+    <Compile Include="BloodMoon\BloodMoonBossRuntime.cs" />
+    <Compile Include="BloodMoon\BloodMoonBossWithdrawalContext.cs" />
+    <Compile Include="BloodMoon\BloodMoonBosses.cs" />
+    <Compile Include="BloodMoon\BloodMoonCombat.cs" />
+    <Compile Include="BloodMoon\BloodMoonConfig.cs" />
+    <Compile Include="BloodMoon\BloodMoonController.cs" />
+    <Compile Include="BloodMoon\BloodMoonDamageCreditAuthority.cs" />
+    <Compile Include="BloodMoon\BloodMoonDestructibleTargets.cs" />
+    <Compile Include="BloodMoon\BloodMoonDiagnostics.cs" />
+    <Compile Include="BloodMoon\BloodMoonDreams.cs" />
+    <Compile Include="BloodMoon\BloodMoonEnemyDeathPending.cs" />
+    <Compile Include="BloodMoon\BloodMoonEnemyDeathReports.cs" />
+    <Compile Include="BloodMoon\BloodMoonEnvironment.cs" />
+    <Compile Include="BloodMoon\BloodMoonExtraRagdollLifetime.cs" />
+    <Compile Include="BloodMoon\BloodMoonFadeInputGuard.cs" />
+    <Compile Include="BloodMoon\BloodMoonGameplayGuards.cs" />
+    <Compile Include="BloodMoon\BloodMoonGenericDestructibleGuards.cs" />
+    <Compile Include="BloodMoon\BloodMoonGroups.cs" />
+    <Compile Include="BloodMoon\BloodMoonHitAttribution.cs" />
+    <Compile Include="BloodMoon\BloodMoonInteractionRules.cs" />
+    <Compile Include="BloodMoon\BloodMoonJson.cs" />
+    <Compile Include="BloodMoon\BloodMoonJsonContracts.cs" />
+    <Compile Include="BloodMoon\BloodMoonJsonNumbers.cs" />
+    <Compile Include="BloodMoon\BloodMoonJsonUnity.cs" />
+    <Compile Include="BloodMoon\BloodMoonLeaseBudgetReconciliation.cs" />
+    <Compile Include="BloodMoon\BloodMoonLeaseClientTime.cs" />
+    <Compile Include="BloodMoon\BloodMoonMixedContextSpawn.cs" />
+    <Compile Include="BloodMoon\BloodMoonNetwork.cs" />
+    <Compile Include="BloodMoon\BloodMoonNetworkSessionLifecycle.cs" />
+    <Compile Include="BloodMoon\BloodMoonOfferingAuthority.cs" />
+    <Compile Include="BloodMoon\BloodMoonOutcomePresentationHandshake.cs" />
+    <Compile Include="BloodMoon\BloodMoonOutcomeQueue.cs" />
+    <Compile Include="BloodMoon\BloodMoonParticipantDetails.cs" />
+    <Compile Include="BloodMoon\BloodMoonPersistence.cs" />
+    <Compile Include="BloodMoon\BloodMoonPresentation.cs" />
+    <Compile Include="BloodMoon\BloodMoonRandEventSuppression.cs" />
+    <Compile Include="BloodMoon\BloodMoonRecovery.cs" />
+    <Compile Include="BloodMoon\BloodMoonRecoverySchedule.cs" />
+    <Compile Include="BloodMoon\BloodMoonResolutionFreezeGuards.cs" />
+    <Compile Include="BloodMoon\BloodMoonRestartReconnectGrace.cs" />
+    <Compile Include="BloodMoon\BloodMoonResyncMonotonic.cs" />
+    <Compile Include="BloodMoon\BloodMoonResyncRetry.cs" />
+    <Compile Include="BloodMoon\BloodMoonResyncSkillBaseline.cs" />
+    <Compile Include="BloodMoon\BloodMoonRound5Durability.cs" />
+    <Compile Include="BloodMoon\BloodMoonRound5LeaseFixes.cs" />
+    <Compile Include="BloodMoon\BloodMoonSchedule.cs" />
+    <Compile Include="BloodMoon\BloodMoonSkillReports.cs" />
+    <Compile Include="BloodMoon\BloodMoonSkills.cs" />
+    <Compile Include="BloodMoon\BloodMoonSnapshots.cs" />
+    <Compile Include="BloodMoon\BloodMoonSpatialState.cs" />
+    <Compile Include="BloodMoon\BloodMoonSpawnPoolRegistry.cs" />
+    <Compile Include="BloodMoon\BloodMoonSpawnReportGuard.cs" />
+    <Compile Include="BloodMoon\BloodMoonSpawner.cs" />
+    <Compile Include="BloodMoon\BloodMoonStaleAttributionGuards.cs" />
+    <Compile Include="BloodMoon\BloodMoonState.cs" />
+    <Compile Include="BloodMoon\BloodMoonStatus.cs" />
+    <Compile Include="BloodMoon\BloodMoonSummons.cs" />
+    <Compile Include="BloodMoon\BloodMoonWorldEdge.cs" />
+    <Compile Include="BloodMoon\BloodMoonWorldLifecycle.cs" />
+    <Compile Include="BloodMoon\BloodMoonZoneOwnership.cs" />
     <Compile Include="Compatibility\HoneyPlusCompat.cs" />
     <Compile Include="Compatibility\MyLittleUICompat.cs" />
     <Compile Include="Compatibility\EWDCompat.cs" />
@@ -95,17 +173,17 @@
     <Reference Include="0Harmony">
       <HintPath>F:\Steam\steamapps\common\Valheim\BepInEx\core\0Harmony.dll</HintPath>
     </Reference>
-    <Reference Include="assembly_guiutils_publicized, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+    <Reference Include="assembly_guiutils, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\Assemblies\stable\publicized_assemblies\assembly_guiutils_publicized.dll</HintPath>
+      <HintPath>..\Assemblies\stable\publicized_assemblies\assembly_guiutils.dll</HintPath>
     </Reference>
-    <Reference Include="assembly_utils_publicized, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+    <Reference Include="assembly_utils, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\Assemblies\stable\publicized_assemblies\assembly_utils_publicized.dll</HintPath>
+      <HintPath>..\Assemblies\stable\publicized_assemblies\assembly_utils.dll</HintPath>
     </Reference>
-    <Reference Include="assembly_valheim_publicized, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+    <Reference Include="assembly_valheim, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\Assemblies\stable\publicized_assemblies\assembly_valheim_publicized.dll</HintPath>
+      <HintPath>..\Assemblies\stable\publicized_assemblies\assembly_valheim.dll</HintPath>
     </Reference>
     <Reference Include="BepInEx">
       <HintPath>F:\Steam\steamapps\common\Valheim\BepInEx\core\BepInEx.dll</HintPath>
@@ -182,6 +260,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Assets\blood_moon.png" />
     <EmbeddedResource Include="Assets\season_fall.png" />
     <EmbeddedResource Include="Assets\season_spring.png" />
     <EmbeddedResource Include="Assets\season_summer.png" />
