@@ -61,6 +61,12 @@ namespace Seasons.BloodMoon
 
         internal static void AcquireForcedEnvironment()
         {
+            if (!BloodMoonPresentationPolicy.AllowsEnvironmentalOverridesForCurrentBiome())
+            {
+                ReleaseForcedEnvironment();
+                return;
+            }
+
             EnsureRegistered();
             EnvMan envMan = EnvMan.instance;
             if (envMan == null || envMan.GetEnv(EnvironmentName) == null)
@@ -99,6 +105,9 @@ namespace Seasons.BloodMoon
 
         internal static float GetVisualFactor()
         {
+            if (!BloodMoonPresentationPolicy.AllowsEnvironmentalOverridesForCurrentBiome())
+                return 0f;
+
             BloodMoonGlobalSnapshot snapshot = BloodMoonNetwork.ClientGlobal;
             BloodMoonScheduleSnapshot schedule = snapshot.Schedule;
             if (schedule == null || !schedule.IsValid || !SeasonState.IsActive)
