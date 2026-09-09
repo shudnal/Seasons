@@ -18,14 +18,18 @@ Existing implementation and runtime hardening: draft PR #42. Continue from its c
 - `docs/tasks/blood-moon/27_CODEX_CONFORMANCE_REVIEW_FIXES_2026-09-08.md`
 - `docs/tasks/blood-moon/28_CODEX_CONFORMANCE_REVIEW_ROUND2_FIXES_2026-09-08.md`
 - `docs/tasks/blood-moon/29_CODEX_CONFORMANCE_REVIEW_ROUND3_FIXES_2026-09-08.md`
+- `docs/tasks/blood-moon/30_CODEX_CONFORMANCE_REVIEW_ROUND4_FIXES_2026-09-09.md`
+- `docs/tasks/blood-moon/32_CODEX_CONFORMANCE_REVIEW_ROUND5_FIXES_2026-09-09.md`
+- `docs/tasks/blood-moon/33_CODEX_CONFORMANCE_REVIEW_ROUND6_FIXES_2026-09-09.md`
 
-The matrix maps accepted behavior to the effective implementation, records current precedence between old and new documents, separates static conformance from owner-side runtime/visual gates, and is the required basis for complete PR reviews. Documents `26`-`29` are implementation/review evidence for later exact heads; they do not silently redefine gameplay.
+The matrix maps accepted behavior to the effective implementation, records current precedence between old and new documents, separates static conformance from owner-side runtime/visual gates, and is the required basis for complete PR reviews. Documents `26`-`30`, `32` and `33` are implementation/review evidence for later exact heads; they do not silently redefine gameplay. Checkpoint `33` completes the interrupted round-6 correction pass; the PR timeline identifies the exact next requested and reviewed head.
 
 Immediately preceding accepted product/compatibility corrections are:
 
 - `docs/tasks/blood-moon/22_DREAMTEXT_AND_INPUT_POLICY.md`
 - `docs/tasks/blood-moon/23_PR42_RUNTIME_HARDENING_AND_CLOCK_POLICY.md`
 - `docs/tasks/blood-moon/24_MARKETPLACE_9_9_4_COMPATIBILITY.md`
+- `docs/tasks/blood-moon/31_LATE_BIOME_PRESENTATION_POLICY.md`
 
 For game classes, read `https://github.com/shudnal/assemblies_combined` first.
 
@@ -66,6 +70,9 @@ Historical implementation/review evidence:
 - `docs/tasks/blood-moon/27_CODEX_CONFORMANCE_REVIEW_FIXES_2026-09-08.md`
 - `docs/tasks/blood-moon/28_CODEX_CONFORMANCE_REVIEW_ROUND2_FIXES_2026-09-08.md`
 - `docs/tasks/blood-moon/29_CODEX_CONFORMANCE_REVIEW_ROUND3_FIXES_2026-09-08.md`
+- `docs/tasks/blood-moon/30_CODEX_CONFORMANCE_REVIEW_ROUND4_FIXES_2026-09-09.md`
+- `docs/tasks/blood-moon/32_CODEX_CONFORMANCE_REVIEW_ROUND5_FIXES_2026-09-09.md`
+- `docs/tasks/blood-moon/33_CODEX_CONFORMANCE_REVIEW_ROUND6_FIXES_2026-09-09.md`
 
 Current authoritative corrections/clarifications in their explicit scope:
 
@@ -75,6 +82,7 @@ Current authoritative corrections/clarifications in their explicit scope:
 - `docs/tasks/blood-moon/23_PR42_RUNTIME_HARDENING_AND_CLOCK_POLICY.md`
 - `docs/tasks/blood-moon/24_MARKETPLACE_9_9_4_COMPATIBILITY.md`
 - `docs/tasks/blood-moon/25_PROJECT_CONFORMANCE_MATRIX.md`
+- `docs/tasks/blood-moon/31_LATE_BIOME_PRESENTATION_POLICY.md`
 
 ### Precedence rules
 
@@ -86,8 +94,9 @@ In particular:
 - `23_PR42_RUNTIME_HARDENING_AND_CLOCK_POLICY.md` overrides older ambiguous time-control wording. Natural/`skiptime` progression is forward-only; backward time is not gameplay rollback; required forward transition side effects still run.
 - `24_MARKETPLACE_9_9_4_COMPATIBILITY.md` supersedes the Marketplace 9.8.9 API evidence section in `23` for the current Marketplace territory-map contract.
 - `25_PROJECT_CONFORMANCE_MATRIX.md` is the current cross-subsystem conformance checkpoint. It also clarifies stale wording such as old group-coordinator terminology, Blood Craft schema/station semantics, current damage/death trust flow, and which historical report claims are no longer current.
-- `26`-`29` record continuation and exact-head review/fix evidence. They may clarify how the matrix is implemented, but are not independent authorization to change accepted gameplay mechanics.
-- `13`, `14` and `15` remain valuable evidence for the commits/reviews they describe, but they are historical checkpoints rather than current product authority when they conflict with `22`-`25`.
+- `31_LATE_BIOME_PRESENTATION_POLICY.md` preserves Blood Moon gameplay in Ashlands/Deep North while suppressing only its atmospheric/environmental presentation, including future moon-color and ray overrides.
+- `26`-`30`, `32` and `33` record continuation and exact-head review/fix evidence. They may clarify how the matrix is implemented, but are not independent authorization to change accepted gameplay mechanics.
+- `13`, `14` and `15` remain valuable evidence for the commits/reviews they describe, but they are historical checkpoints rather than current product authority when they conflict with `22`-`25` or `31`.
 
 Implementation/review reports are evidence for the commits they identify, not a guarantee that a later head has passed review or runtime testing. The absence of an exception in an owner playtest does not establish multiplayer correctness.
 
@@ -110,9 +119,9 @@ Late-autumn nightly forewarning
 -> Marked at 18:00
 -> Sleep and new boss sacrifices suppressed
 -> Blood Craft preparation from known eligible recipes
--> Linear red overlay on the current environment
+-> Linear red overlay on the current environment where presentation is permitted
 -> Active at 23:00
--> Forced Blood Moon environment
+-> Forced Blood Moon environment where presentation is permitted
 -> Persistent outdoor bosses parked through their ZDOs
 -> Eligible existing MonsterAI use Blood behavior
 -> Additional marked enemies spawn within caps
@@ -124,7 +133,7 @@ Late-autumn nightly forewarning
 -> Outcome/chronicle is persisted and a Blood Moon dream becomes pending for a future ordinary sleep
 ```
 
-The current DreamText/input presentation contract is exclusively defined by `22_DREAMTEXT_AND_INPUT_POLICY.md`. This cycle is not authorization to introduce a separate DreamText overlay or a global input-lock mechanism.
+The current DreamText/input presentation contract is exclusively defined by `22_DREAMTEXT_AND_INPUT_POLICY.md`. This cycle is not authorization to introduce a separate DreamText overlay or a global input-lock mechanism. Atmospheric presentation follows `31_LATE_BIOME_PRESENTATION_POLICY.md`; crossing a late-biome boundary does not change the gameplay cycle.
 
 ## 4. Key accepted decisions
 
@@ -132,7 +141,7 @@ The current DreamText/input presentation contract is exclusively defined by `22_
 
 All clients see one shared set of creatures. There is no personal visibility/collision layer, `AwaitingContact`, or first-contact record.
 
-At 23:00 a participant enters Fighting unless an encounter with an unparkable boss excludes that player. Existing eligible monsters are classified dynamically without a conversion ZDO marker. They retain ordinary loot/ragdolls and are not deleted at dawn. Additional custom-spawned enemies have a nonnegative `SpawnedEventId`; their lifetime provenance controls no-loot/fast-ragdoll behavior, and server cleanup removes them.
+At 23:00 a participant enters Fighting unless an encounter with an unparkable boss excludes that player. The transition uses the prepare/ready protection described in checkpoints `30` and `33`, including same-tick clock catch-up; Marked remains a transport-staging state until readiness is acknowledged. Existing eligible monsters are classified dynamically without a conversion ZDO marker. They retain ordinary loot/ragdolls and are not deleted at dawn. Additional custom-spawned enemies have a nonnegative `SpawnedEventId`; their lifetime provenance controls no-loot/fast-ragdoll behavior, and server cleanup removes them.
 
 Existing AI behavior is changed through conditional runtime patches, not persistent hunt/alert/max-health/shared-prefab mutation.
 
@@ -195,6 +204,6 @@ Maintain decisions, patch-point reasoning, defects/fixes, and the next continuat
 
 Do not change version, public README, Thunderstore changelog, packaging, or release metadata without a separate request. Do not claim an assistant-side Valheim build/runtime result. Clearly distinguish static inspection, requested review, completed review, and owner-side runtime evidence.
 
-After implementation changes, request Codex review on the exact current PR head. The final pass must be a complete **project-conformance review**, not merely a latest-delta review: Codex must read this index and `25_PROJECT_CONFORMANCE_MATRIX.md`, then the current review checkpoints `26`-`29`, apply the precedence rules above, and review the full effective `master...feat/blood-moon` behavior including internal Harmony adapters.
+After implementation changes, request Codex review on the exact current PR head. The final pass must be a complete **project-conformance review**, not merely a latest-delta review: Codex must read this index and `25_PROJECT_CONFORMANCE_MATRIX.md`, then the current review checkpoints `26`-`30`, `32` and `33`, apply the accepted policy `31` and precedence rules above, and review the full effective `master...feat/blood-moon` behavior including internal Harmony adapters.
 
 Fix confirmed findings without treating an older review as approval for newer code. Keep PR #42 draft, open, and unmerged until the owner decides otherwise.
