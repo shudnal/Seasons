@@ -114,12 +114,24 @@ namespace Seasons.BloodMoon
         {
             controller = BloodMoonController.Instance;
             state = controller?.State;
-            if (state == null || !state.IsCombatLive || state.EventId != eventId || creditedPlayerId == 0L || enemyId.IsNone() ||
-                ZDOMan.instance == null || ZRoutedRpc.instance == null || ZNetScene.instance == null)
+            if (state == null || state.EventId != eventId || creditedPlayerId == 0L || enemyId.IsNone() || sender == 0L ||
+                ZNet.instance == null || !ZNet.instance.IsServer() || ZDOMan.instance == null || ZRoutedRpc.instance == null || ZNetScene.instance == null ||
+                !state.Participants.TryGetValue(creditedPlayerId, out BloodMoonParticipantState participant))
                 return false;
 
-            return state.Participants.TryGetValue(creditedPlayerId, out BloodMoonParticipantState participant) &&
-                participant.IsCombatActive && IsConnectedParticipant(controller, creditedPlayerId);
+            bool readySender = sender == ZRoutedRpc.instance.GetServerPeerID() || ZNet.instance.GetPeer(sender)?.IsReady() == true;
+            if (!readySender)
+                return false;
+
+            bool retainedReplay = BloodMoonEnemyDeathDurability.TryGetCurrentProfileReplay(eventId, creditedPlayerId, enemyId, out _);
+            if (retainedReplay && BloodMoonRound5Runtime.IsPreOutcomeDrainOpen(state))
+            {
+                // This is an already-observed kill retained before disconnect, not a new attack by an
+                // exited participant. Replaying it never changes Exited back to Fighting/GoalReached.
+                return participant.IsCombatActive || participant.ExitReason == BloodMoonParticipantExitReason.Disconnected;
+            }
+
+            return state.IsCombatLive && participant.IsCombatActive && IsConnectedParticipant(controller, creditedPlayerId);
         }
 
         private static bool IsConnectedParticipant(BloodMoonController controller, long playerId)

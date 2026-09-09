@@ -138,6 +138,7 @@ namespace Seasons.BloodMoon
             BloodMoonBloodlust.ResetRuntime();
             BloodMoonRecovery.ResetRuntime();
             BloodMoonOutcomePresentationHandshake.ResetRuntime();
+            BloodMoonOutcomeDrainGate.Reset();
             BloodMoonWorldEdge.ResetRuntime();
             if (BloodMoonNetwork.ClientGlobal.EventId >= 0L)
                 BloodMoonSkills.ResetLocal(BloodMoonNetwork.ClientGlobal.EventId);
@@ -301,17 +302,20 @@ namespace Seasons.BloodMoon
             State.Phase = BloodMoonEventPhase.Active;
             State.BloodBehaviorEnabled = true;
             State.SpawnsStopped = false;
-            foreach (BloodMoonParticipantState participant in State.Participants.Values.Where(item => item.Phase == BloodMoonParticipantPhase.Marked))
-            {
-                participant.Phase = BloodMoonParticipantPhase.Fighting;
-                participant.FightingAt = now;
-            }
+            // Marked is also the transport staging state. Even a normal participant may still see
+            // Forewarning/Dormant when skiptime crosses both transitions in this server tick.
+            // Only the existing prepare/ready transaction may promote a participant to Fighting.
             BloodMoonEnvironment.AcquireForcedEnvironment();
             BloodMoonRandEventSuppression.StopActiveRandomEvent();
             BloodMoonGroups.Rebuild(State, now);
             BloodMoonSpawner.UpdateServerLeases(State, now);
             Touch(now, persist: true, publish: true);
-            LogInfo($"[BloodMoon][event:{State.EventId}][phase] Entered Active.");
+            foreach (BloodMoonParticipantState participant in State.Participants.Values.ToArray())
+            {
+                if (participant.Phase == BloodMoonParticipantPhase.Marked)
+                    BloodMoonLateJoinEnrollment.SendPrepare(this, participant);
+            }
+            LogInfo($"[BloodMoon][event:{State.EventId}][phase] Entered Active; Marked participants await combat-ready acknowledgement.");
         }
 
         private void EnterAutoCompleting(double now)
@@ -413,7 +417,8 @@ namespace Seasons.BloodMoon
             if (State == null || !State.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant) || !participant.IsCombatActive)
                 return;
             ExitParticipant(participant, BloodMoonParticipantExitReason.Withdrawn, seasonState.GetTotalSeconds());
-            DispatchClientAction(playerId, GetPeerForPlayer(playerId), "withdrawn");
+            if (participant.IsTerminal && participant.ExitReason == BloodMoonParticipantExitReason.Withdrawn)
+                DispatchClientAction(playerId, GetPeerForPlayer(playerId), "withdrawn");
         }
 
         private void ExitParticipant(BloodMoonParticipantState participant, BloodMoonParticipantExitReason reason, double now)
@@ -438,6 +443,8 @@ namespace Seasons.BloodMoon
                     continue;
 
                 ExitParticipant(participant, BloodMoonParticipantExitReason.Withdrawn, now);
+                if (!participant.IsTerminal || participant.ExitReason != BloodMoonParticipantExitReason.Withdrawn)
+                    continue;
                 DispatchClientAction(participant.PlayerId, GetPeerForPlayer(participant.PlayerId), "withdrawn");
                 float offset = Mathf.Max(0f, BloodMoonConfig.WorldEdgeWithdrawalSafetyOffset.Value);
                 LogWarning($"[BloodMoon][event:{State.EventId}][player:{participant.PlayerId}] Withdrawn at dynamic world-edge safety boundary (distance={Utils.LengthXZ(position):0.#}m, edge={ZoneSystemVariantController.s_waterEdge:0.#}m, offset={offset:0.#}m).");
@@ -448,9 +455,11 @@ namespace Seasons.BloodMoon
         {
             _ = clientPoints;
             if (!BloodMoonEnemyDeathReports.TryValidate(sender, eventId, playerId, enemyId, out float points) ||
-                !State.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant) || !participant.IsCombatActive)
+                !State.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant))
                 return;
 
+            // Validation distinguishes a new active kill from a retained pre-disconnect transaction.
+            // Applying the latter must preserve the source's terminal phase and exit reason.
             string key = enemyId.ToString();
             if (!State.ReportedEnemyDeaths.Add(key))
                 return;
@@ -492,7 +501,8 @@ namespace Seasons.BloodMoon
                 if (!participant.GoalReached && combatProgress >= 100f)
                 {
                     participant.GoalReached = true;
-                    participant.Phase = BloodMoonParticipantPhase.GoalReached;
+                    if (!participant.IsTerminal)
+                        participant.Phase = BloodMoonParticipantPhase.GoalReached;
                     participant.GoalReachedAt = now;
                     participant.DisplayProgress = 100f;
                     LogInfo($"[BloodMoon][event:{State.EventId}][player:{participant.PlayerId}] GoalReached at {participant.CombatPoints:0.##} combat points.");
@@ -693,7 +703,9 @@ namespace Seasons.BloodMoon
         {
             if (State == null || State.ResolutionCancelledBeforeCombat)
                 return true;
-            return BloodMoonOutcomeQueue.Capture(State);
+            // The outcome queue is a separate store. Its successful write cannot substitute for saving
+            // the participant terminal facts and progress from which its immutable payload is derived.
+            return BloodMoonPersistence.Save(State) && BloodMoonOutcomeQueue.Capture(State);
         }
 
         private void SendFadeToParticipants(bool begin)
@@ -853,6 +865,7 @@ namespace Seasons.BloodMoon
             BloodMoonDamageCreditAuthority.ResetRuntime();
             BloodMoonBloodlust.ResetRuntime();
             BloodMoonOutcomePresentationHandshake.ResetRuntime();
+            BloodMoonOutcomeDrainGate.Reset();
             State = BloodMoonPersistence.CreateClean(loadedWorldUid);
             State.FirstEnabledAt = firstEnabled;
             State.LastCreatedEventId = lastCreated;

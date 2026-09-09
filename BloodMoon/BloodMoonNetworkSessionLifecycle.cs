@@ -35,14 +35,23 @@ namespace Seasons.BloodMoon
         internal static void PrepareLocal(long eventId)
         {
             Player player = Player.m_localPlayer;
-            if (player == null || player.GetPlayerID() == 0L || eventId < 0L)
+            if (player == null || player.GetPlayerID() == 0L || eventId < 0L || eventId < BloodMoonNetwork.ClientGlobal.EventId)
                 return;
 
-            protectedEventId = eventId;
-            loggedProtection = false;
-            BloodMoonRecovery.ResetEvent(eventId);
-            BloodMoonPresentation.OnEnrolled();
+            BloodMoonParticipantState participant = BloodMoonInteractionRules.GetLocalParticipant();
+            if (participant == null || !participant.IsCombatActive)
+            {
+                if (protectedEventId != eventId)
+                {
+                    protectedEventId = eventId;
+                    loggedProtection = false;
+                    BloodMoonRecovery.ResetEvent(eventId);
+                    BloodMoonPresentation.OnEnrolled();
+                }
+            }
 
+            // Retry readiness without resetting a prepared or already Fighting player. The terminal
+            // evidence guard runs before this method and never allows a retry to clear a personal exit.
             if (ZRoutedRpc.instance == null)
                 return;
             ZPackage package = new ZPackage();
@@ -54,8 +63,8 @@ namespace Seasons.BloodMoon
 
         internal static void SendPrepare(BloodMoonController controller, BloodMoonParticipantState participant)
         {
-            if (controller == null || participant == null || participant.Phase != BloodMoonParticipantPhase.Marked || !participant.JoinedLate ||
-                controller.State == null)
+            if (controller == null || participant == null || participant.Phase != BloodMoonParticipantPhase.Marked ||
+                controller.State == null || !controller.State.IsCombatLive)
                 return;
 
             Player local = Player.m_localPlayer;
@@ -70,8 +79,8 @@ namespace Seasons.BloodMoon
                 return;
 
             // Do not route this through ClientAction: that path intentionally waits for a matching CCS
-            // snapshot. The purpose of this prepare RPC is to install the narrow death guard before the
-            // server is allowed to publish this late joiner as Fighting.
+            // snapshot. Every transition into Fighting needs the guard before server publication,
+            // including normal-night starts and a same-tick Forewarning -> Marked -> Active catch-up.
             ZPackage package = new ZPackage();
             package.Write(BloodMoonNetwork.ProtocolVersion);
             package.Write(controller.State.EventId);
@@ -133,7 +142,7 @@ namespace Seasons.BloodMoon
                 return;
             loggedProtection = true;
             long eventId = protectedEventId >= 0L ? protectedEventId : BloodMoonNetwork.ClientGlobal.EventId;
-            LogWarning($"[BloodMoon][event:{eventId}][player:{player.GetPlayerID()}] Prevented vanilla death while late-join enrollment/combat snapshots were converging.");
+            LogWarning($"[BloodMoon][event:{eventId}][player:{player.GetPlayerID()}] Prevented vanilla death while enrollment/combat snapshots were converging.");
         }
 
         internal static void Reset()
@@ -173,7 +182,7 @@ namespace Seasons.BloodMoon
             BloodMoonEventState state = controller?.State;
             if (state == null || !state.IsCombatLive || state.EventId != eventId || playerId == 0L ||
                 !state.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant) ||
-                participant.Phase != BloodMoonParticipantPhase.Marked || !participant.JoinedLate || !ValidateSender(controller, sender, playerId))
+                participant.Phase != BloodMoonParticipantPhase.Marked || !ValidateSender(controller, sender, playerId))
                 return;
 
             double now = seasonState.GetTotalSeconds();
@@ -194,7 +203,7 @@ namespace Seasons.BloodMoon
             }
 
             BloodMoonNetwork.Publish(state, now);
-            LogInfo($"[BloodMoon][event:{eventId}][player:{playerId}] Late-join enrollment acknowledged; participant entered Fighting.");
+            LogInfo($"[BloodMoon][event:{eventId}][player:{playerId}] Combat readiness acknowledged; participant entered Fighting.");
         }
 
         private static bool ValidateSender(BloodMoonController controller, long sender, long playerId)
@@ -276,7 +285,7 @@ namespace Seasons.BloodMoon
                 return;
             foreach (BloodMoonParticipantState participant in state.Participants.Values)
             {
-                if (participant.JoinedLate && participant.Phase == BloodMoonParticipantPhase.Marked)
+                if (participant.Phase == BloodMoonParticipantPhase.Marked)
                     BloodMoonLateJoinEnrollment.SendPrepare(__instance, participant);
             }
         }
