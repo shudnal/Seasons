@@ -4,11 +4,33 @@ using static Seasons.Seasons;
 
 namespace Seasons.BloodMoon
 {
+    internal static class BloodMoonPresentationPolicy
+    {
+        private const Heightmap.Biome ExcludedEnvironmentalBiomes = Heightmap.Biome.AshLands | Heightmap.Biome.DeepNorth;
+
+        internal static bool AllowsEnvironmentalOverridesForCurrentBiome()
+        {
+            Heightmap.Biome biome = Heightmap.Biome.None;
+            if (EnvMan.instance != null)
+                biome = EnvMan.instance.GetCurrentBiome();
+            else if (Player.m_localPlayer != null)
+                biome = Player.m_localPlayer.GetCurrentBiome();
+
+            return biome == Heightmap.Biome.None || (biome & ExcludedEnvironmentalBiomes) == 0;
+        }
+
+        internal static bool IsExcludedEnvironmentalBiome(Heightmap.Biome biome)
+        {
+            return (biome & ExcludedEnvironmentalBiomes) != 0;
+        }
+    }
+
     internal static class BloodMoonPresentation
     {
         private static BloodMoonPresentationBehaviour behaviour;
         private static BloodMoonEventPhase lastPhase = BloodMoonEventPhase.Dormant;
         private static bool resolutionFadeRequested;
+        private static bool? lastEnvironmentalOverridesAllowed;
 
         internal static bool IsResolutionFadeActive => resolutionFadeRequested;
 
@@ -29,9 +51,9 @@ namespace Seasons.BloodMoon
             if (snapshot == null)
                 return;
 
-            bool forceEnvironment = snapshot.Phase == BloodMoonEventPhase.Active || snapshot.Phase == BloodMoonEventPhase.AutoCompleting ||
-                snapshot.Phase == BloodMoonEventPhase.Resolving && (int)snapshot.ResolutionStep < (int)BloodMoonResolutionStep.RestoringWorldSystems;
-            if (forceEnvironment)
+            bool allowEnvironmentalOverrides = BloodMoonPresentationPolicy.AllowsEnvironmentalOverridesForCurrentBiome();
+            lastEnvironmentalOverridesAllowed = allowEnvironmentalOverrides;
+            if (allowEnvironmentalOverrides && ShouldForceEnvironment(snapshot))
                 BloodMoonEnvironment.AcquireForcedEnvironment();
             else
                 BloodMoonEnvironment.ReleaseForcedEnvironment();
@@ -49,6 +71,17 @@ namespace Seasons.BloodMoon
         {
             EnsureBehaviour();
             BloodMoonStatus.UpdateLocal();
+
+            bool allowEnvironmentalOverrides = BloodMoonPresentationPolicy.AllowsEnvironmentalOverridesForCurrentBiome();
+            if (!lastEnvironmentalOverridesAllowed.HasValue || lastEnvironmentalOverridesAllowed.Value != allowEnvironmentalOverrides)
+            {
+                lastEnvironmentalOverridesAllowed = allowEnvironmentalOverrides;
+                if (allowEnvironmentalOverrides && ShouldForceEnvironment(BloodMoonNetwork.ClientGlobal))
+                    BloodMoonEnvironment.AcquireForcedEnvironment();
+                else
+                    BloodMoonEnvironment.ReleaseForcedEnvironment();
+            }
+
             if (behaviour != null)
                 behaviour.VisualFactor = BloodMoonEnvironment.GetVisualFactor();
         }
@@ -144,6 +177,7 @@ namespace Seasons.BloodMoon
         internal static void CleanupTransientState()
         {
             lastPhase = BloodMoonEventPhase.Dormant;
+            lastEnvironmentalOverridesAllowed = null;
             resolutionFadeRequested = false;
             BloodMoonStatus.RemoveLocal();
             BloodMoonDreams.CleanupTransientPresentation();
@@ -165,6 +199,12 @@ namespace Seasons.BloodMoon
                 UnityEngine.Object.Destroy(behaviour);
                 behaviour = null;
             }
+        }
+
+        private static bool ShouldForceEnvironment(BloodMoonGlobalSnapshot snapshot)
+        {
+            return snapshot != null && (snapshot.Phase == BloodMoonEventPhase.Active || snapshot.Phase == BloodMoonEventPhase.AutoCompleting ||
+                snapshot.Phase == BloodMoonEventPhase.Resolving && (int)snapshot.ResolutionStep < (int)BloodMoonResolutionStep.RestoringWorldSystems);
         }
 
         private static void TriggerPhaseHook(BloodMoonEventPhase phase)
