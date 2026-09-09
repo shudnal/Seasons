@@ -105,7 +105,8 @@ namespace Seasons.BloodMoon
             if (player != null && player.GetPlayerID() == playerId)
                 EnsureDefeatLoaded(player);
             long eventId = BloodMoonNetwork.ClientGlobal.EventId;
-            return eventId >= 0L && locallyExited.Contains((eventId, playerId));
+            return eventId >= 0L && (locallyExited.Contains((eventId, playerId)) ||
+                BloodMoonTerminalReliability.HasLocalTerminal(eventId, playerId));
         }
 
         internal static bool HasProtection(Player player)

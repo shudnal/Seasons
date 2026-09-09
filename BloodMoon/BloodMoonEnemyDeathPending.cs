@@ -78,7 +78,8 @@ namespace Seasons.BloodMoon
 
                 if (BloodMoonEnemyDeathReports.TryValidate(report.Sender, report.EventId, report.PlayerId, report.EnemyId, out _))
                 {
-                    pending.Remove(report.EnemyId);
+                    // Validation inside the controller still needs this retained evidence if the actual
+                    // dead ZDO has already disappeared. Consume it only after the transaction accepts it.
                     replaying = true;
                     try
                     {
@@ -87,6 +88,8 @@ namespace Seasons.BloodMoon
                     finally
                     {
                         replaying = false;
+                        if (state.ReportedEnemyDeaths.Contains(report.EnemyId.ToString()))
+                            pending.Remove(report.EnemyId);
                     }
                     continue;
                 }
@@ -333,7 +336,14 @@ namespace Seasons.BloodMoon
             retryTimer = RetrySeconds;
 
             string prefix = ProfilePrefix + worldUid.ToString(CultureInfo.InvariantCulture) + "." + eventId.ToString(CultureInfo.InvariantCulture) + ".";
-            foreach (KeyValuePair<string, string> entry in local.m_customData.Where(entry => entry.Key.StartsWith(prefix, StringComparison.Ordinal)).ToArray())
+            KeyValuePair<string, string>[] reports = local.m_customData.Where(entry => entry.Key.StartsWith(prefix, StringComparison.Ordinal)).ToArray();
+            // Retention handlers may have left an unconfirmed record in memory after an I/O failure.
+            // The periodic replay route must obey the same durability gate as the retention ACK route.
+            // Verify once for the complete batch rather than saving the profile separately for each kill.
+            if (reports.Length == 0 || !BloodMoonRound5Runtime.SaveProfile(local, "pending enemy death replay batch"))
+                return;
+
+            foreach (KeyValuePair<string, string> entry in reports)
             {
                 string enemyText = entry.Key.Substring(prefix.Length);
                 if (!BloodMoonSpawner.TryParseZdoId(enemyText, out ZDOID enemyId) ||
@@ -438,7 +448,8 @@ namespace Seasons.BloodMoon
     [HarmonyPatch(typeof(BloodMoonController), nameof(BloodMoonController.OnEnemyDeathReport))]
     internal static class BloodMoonEnemyDeathDurabilityScopePatch
     {
-        [HarmonyPriority(Priority.First - 50)]
+        // Establish replay evidence before the pending-evidence guard makes its validation decision.
+        [HarmonyPriority(Priority.First + 50)]
         private static bool Prefix(long sender, long eventId, long playerId, ZDOID enemyId, float clientPoints)
         {
             return BloodMoonEnemyDeathDurability.BeginServerReport(sender, eventId, playerId, enemyId, clientPoints);
