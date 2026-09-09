@@ -73,6 +73,7 @@ namespace Seasons
         
         private static readonly MaterialPropertyBlock s_matBlock = new MaterialPropertyBlock();
         private static readonly List<ZDO> m_tempZDOList = new List<ZDO>();
+        private static readonly HashSet<ZoneSystem.SectorIndex> s_visitedSectorIndices = new HashSet<ZoneSystem.SectorIndex>();
         private static readonly List<Vector3> m_tempHits = new List<Vector3>();
 
         private static float s_freezeStatus = 0f;
@@ -182,7 +183,15 @@ namespace Seasons
             s_waterPlane = null;
             s_waterPlaneState = null;
             s_iceSurface = null;
+            s_iceFloe = null;
+            s_freezeStatus = 0f;
+            s_colliderHeight = 0f;
             waterStates.Clear();
+            m_tempZDOList.Clear();
+            s_visitedSectorIndices.Clear();
+            s_protectedHeightmaps.Clear();
+            s_tempHeightmaps.Clear();
+            ZoneSystem_GetGroundHeight_CheckForIceSurface.checkForIceSurface = false;
             m_instance = null;
             waterStateInitialized = false;
         }
@@ -193,13 +202,20 @@ namespace Seasons
             if (waterPlane != null)
                 s_waterPlane = waterPlane.GetComponentInChildren<MeshRenderer>();
 
-            s_waterPlaneState = new WaterState(s_waterPlane);
+            if (s_waterPlane != null)
+                s_waterPlaneState = new WaterState(s_waterPlane);
 
             Transform water = instance.m_zonePrefab.transform.Find("Water");
             if (water != null)
                 AddIceCollider(water);
 
-            s_iceFloe ??= ZoneSystem.instance.m_vegetation.Find(veg => veg.m_prefab?.name == _iceFloeName).Clone();
+            s_iceFloe = instance.m_vegetation.Find(veg => veg.m_prefab?.name == _iceFloeName)?.Clone();
+            if (s_iceFloe?.m_prefab == null)
+            {
+                LogWarning("Unable to initialize seasonal ice floes: the ice1 vegetation prefab was not found.");
+                return;
+            }
+
             s_iceFloe.m_biome = Biome.Ocean;
             if (!s_iceFloe.m_prefab.TryGetComponent<IceFloeClimb>(out _))
                 s_iceFloe.m_prefab.AddComponent<IceFloeClimb>();
@@ -280,46 +296,51 @@ namespace Seasons
             if (heightmap?.m_renderMesh == null)
                 return;
 
+            bool previousOverride = Heightmap_GetBiomeColor_TerrainColor.overrideColor;
             Heightmap_GetBiomeColor_TerrainColor.overrideColor = true;
-
-            int num = heightmap.m_width + 1;
-            Vector3 vector = heightmap.transform.position + new Vector3((float)((double)heightmap.m_width * (double)heightmap.m_scale * -0.5), 0f, (float)((double)heightmap.m_width * (double)heightmap.m_scale * -0.5));
             s_tempColors.Clear();
 
-            bool hasShieldedPosition = false;
-            for (int i = 0; i < num; i++)
-                for (int j = 0; j < num; j++)
-                    if (heightmap.m_isDistantLod)
-                    {
-                        float wx = vector.x + j * heightmap.m_scale;
-                        float wy = vector.z + i * heightmap.m_scale;
-                        Biome biome = WorldGenerator.instance.GetBiome(wx, wy);
-                        s_tempColors.Add(GetBiomeColor(biome));
-                    }
-                    else
-                    {
-                        float ix = DUtils.SmoothStep(0f, 1f, (float)j / heightmap.m_width);
-                        float iy = DUtils.SmoothStep(0f, 1f, (float)i / heightmap.m_width);
-                        Vector3 position = heightmap.transform.position + heightmap.CalcVertex(j, i);
-                        if (IsProtectedHeightmap(heightmap) && IsShieldedPosition(position))
+            try
+            {
+                int num = heightmap.m_width + 1;
+                Vector3 vector = heightmap.transform.position + new Vector3((float)((double)heightmap.m_width * (double)heightmap.m_scale * -0.5), 0f, (float)((double)heightmap.m_width * (double)heightmap.m_scale * -0.5));
+
+                bool hasShieldedPosition = false;
+                for (int i = 0; i < num; i++)
+                    for (int j = 0; j < num; j++)
+                        if (heightmap.m_isDistantLod)
                         {
-                            hasShieldedPosition = true;
-                            s_tempColors.Add(Heightmap_GetBiomeColor_TerrainColor.GetOriginalColor(heightmap, ix, iy));
+                            float wx = vector.x + j * heightmap.m_scale;
+                            float wy = vector.z + i * heightmap.m_scale;
+                            BiomeSector biome = WorldGenerator.instance.GetBiomeSector(wx, wy);
+                            s_tempColors.Add(GetBiomeColor(biome));
                         }
                         else
                         {
-                            s_tempColors.Add(heightmap.GetBiomeColor(ix, iy));
+                            float ix = DUtils.SmoothStep(0f, 1f, (float)j / heightmap.m_width);
+                            float iy = DUtils.SmoothStep(0f, 1f, (float)i / heightmap.m_width);
+                            Vector3 position = heightmap.transform.position + heightmap.CalcVertex(j, i);
+                            if (IsProtectedHeightmap(heightmap) && IsShieldedPosition(position))
+                            {
+                                hasShieldedPosition = true;
+                                s_tempColors.Add(Heightmap_GetBiomeColor_TerrainColor.GetOriginalColor(heightmap, ix, iy));
+                            }
+                            else
+                            {
+                                s_tempColors.Add(heightmap.GetBiomeColor(ix, iy));
+                            }
                         }
-                    }
 
+                if (hasShieldedPosition)
+                    SmoothenProtectedBorders(s_tempColors, heightmap.m_width + 1);
 
-            Heightmap_GetBiomeColor_TerrainColor.overrideColor = false;
-
-            if (hasShieldedPosition)
-                SmoothenProtectedBorders(s_tempColors, heightmap.m_width + 1);
-
-            heightmap.m_renderMesh.SetColors(s_tempColors);
-            s_tempColors.Clear();
+                heightmap.m_renderMesh.SetColors(s_tempColors);
+            }
+            finally
+            {
+                Heightmap_GetBiomeColor_TerrainColor.overrideColor = previousOverride;
+                s_tempColors.Clear();
+            }
         }
 
         public static void SmoothenProtectedBorders(List<Color32> colors, int size)
@@ -852,21 +873,22 @@ namespace Seasons
 
         public bool CheckWaterVolumeForIceFloes(WaterVolume waterVolume)
         {
-            if (waterVolume == null || waterVolume.m_heightmap == null)
+            if (waterVolume == null || waterVolume.m_heightmap == null || s_iceFloe?.m_prefab == null)
                 return true;
 
             Vector3 position = waterVolume.transform.position;
             if (WorldGenerator.instance.GetBiome(position) != Biome.Ocean)
                 return true;
 
-            Vector2i zoneID = ZoneSystem.GetZone(position);
+            Vector2s zoneID = ZoneSystem.GetZone(position);
 
             if (!ZoneSystem.instance.IsZoneLoaded(zoneID))
                 return false;
 
             m_tempZDOList.Clear();
-            ZDOMan.instance.FindObjects(zoneID, m_tempZDOList);
-            m_tempZDOList.RemoveAll(zdo => zdo.GetPrefab() != s_iceFloePrefab);
+            s_visitedSectorIndices.Clear();
+            ZDOMan.instance.FindObjects(zoneID, m_tempZDOList, s_visitedSectorIndices);
+            m_tempZDOList.RemoveAll(zdo => zdo.GetPrefab() != s_iceFloePrefab || ZoneSystem.GetZone(zdo.GetPosition()) != zoneID);
             
             if (IsTimeForIceFloes() && m_tempZDOList.Count > 0)
                 return true;
@@ -874,9 +896,10 @@ namespace Seasons
                 return true;
             else if (!IsTimeForIceFloes() && m_tempZDOList.Count > 0)
             {
-                LogFloeState($"Removing occasional floes: {m_tempZDOList.Count}");
+                LogFloeState($"Checking occasional floes: {m_tempZDOList.Count}");
                 foreach (ZDO zdo in m_tempZDOList)
-                    RemoveObject(zdo, force: true);
+                    if (zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
+                        RemoveObject(zdo, force: true);
             }
             else if (IsTimeForIceFloes() && m_tempZDOList.Count == 0)
             {
@@ -912,7 +935,7 @@ namespace Seasons
             return true;
         }
 
-        public static void PlaceIceFloes(Vector2i zoneID, Vector3 zoneCenterPos, List<ZoneSystem.ClearArea> clearAreas, ZoneSystem.SpawnMode mode, List<GameObject> spawnedObjects)
+        public static void PlaceIceFloes(Vector2s zoneID, Vector3 zoneCenterPos, List<ZoneSystem.ClearArea> clearAreas, ZoneSystem.SpawnMode mode, List<GameObject> spawnedObjects)
         {
             UnityEngine.Random.State state = UnityEngine.Random.state;
             int seed = WorldGenerator.instance.GetSeed();
@@ -1304,26 +1327,28 @@ namespace Seasons
         {
             bool wasOverridden = overrideColor;
             overrideColor = false;
-
-            Color result = heightmap.GetBiomeColor(ix, iy);
-
-            if (wasOverridden)
-                overrideColor = true;
-
-            return result;
+            try
+            {
+                return heightmap.GetBiomeColor(ix, iy);
+            }
+            finally
+            {
+                overrideColor = wasOverridden;
+            }
         }
 
         private static Color GetColorWithoutOverride(Biome biome)
         {
             bool wasOverridden = overrideColor;
             overrideColor = false;
-
-            Color result = Heightmap.GetBiomeColor(biome);
-
-            if (wasOverridden)
-                overrideColor = true;
-
-            return result;
+            try
+            {
+                return Heightmap.GetBiomeColor(biome);
+            }
+            finally
+            {
+                overrideColor = wasOverridden;
+            }
         }
 
         private static Color GetColorWithSeasonOverride(Season season, Heightmap heightmap, float ix, float iy)
@@ -1335,14 +1360,16 @@ namespace Seasons
             overrideColor = true;
             overrideSeason = true;
             seasonOverride = season;
-
-            Color result = heightmap.GetBiomeColor(ix, iy);
-
-            overrideSeason = wasOverriddenSeason;
-            seasonOverride = previousSeason;
-            overrideColor = wasOverriddenColor;
-
-            return result;
+            try
+            {
+                return heightmap.GetBiomeColor(ix, iy);
+            }
+            finally
+            {
+                overrideSeason = wasOverriddenSeason;
+                seasonOverride = previousSeason;
+                overrideColor = wasOverriddenColor;
+            }
         }
 
         private static Color GetColorWithSeasonOverride(Season season, Biome biome)
@@ -1354,14 +1381,16 @@ namespace Seasons
             overrideColor = true;
             overrideSeason = true;
             seasonOverride = season;
-
-            Color result = Heightmap.GetBiomeColor(biome);
-
-            overrideSeason = wasOverriddenSeason;
-            seasonOverride = previousSeason;
-            overrideColor = wasOverriddenColor;
-
-            return result;
+            try
+            {
+                return Heightmap.GetBiomeColor(biome);
+            }
+            finally
+            {
+                overrideSeason = wasOverriddenSeason;
+                seasonOverride = previousSeason;
+                overrideColor = wasOverriddenColor;
+            }
         }
 
         public static Color GetOriginalColor(Heightmap heightmap, float ix, float iy) => GetColorWithoutOverride(heightmap, ix, iy);
@@ -1410,17 +1439,17 @@ namespace Seasons
         [HarmonyPriority(Priority.First)]
         private static void Postfix(Heightmap __instance, float ix, float iy, ref Color __result)
         {
-            if (!plainsSwampBorderFix.Value)
-                return;
-
             if (!Heightmap_GetBiomeColor_TerrainColor.overrideColor || !SeasonState.IsActive || !UseTextureControllers())
                 return;
 
             // Swamp-Plains and Swamp-Mistlands borders -> Blackforest
-            if (__instance.IsBiomeEdge() && 0f < __result.r && __result.r < 1f && 0f < __result.a && __result.a < 1f)
+            if (plainsSwampBorderFix.Value && __instance.IsBiomeEdge() && 0f < __result.r && __result.r < 1f && 0f < __result.a && __result.a < 1f)
                 __result = new Color(0, __result.g, __result.r, __result.a);
 
-            // Terrain season transition recoloring PoC and tests
+            // Fixed-season samples must not recursively apply the transition blend.
+            if (Heightmap_GetBiomeColor_TerrainColor.overrideSeason)
+                return;
+
             if (seasonState.GetCurrentDay() == seasonState.GetDaysInSeason() && lastDayTerrainFactor.Value != 0f)
                 __result = Color.Lerp(__result, Heightmap_GetBiomeColor_TerrainColor.GetSeasonalColor(seasonState.GetNextSeason(), __instance, ix, iy), lastDayTerrainFactor.Value);
             else if (seasonState.GetCurrentDay() == 1 && firstDayTerrainFactor.Value != 0f)
@@ -1432,10 +1461,13 @@ namespace Seasons
     public static class Heightmap_RebuildRenderMesh_TerrainColor
     {
         [HarmonyPriority(Priority.First)]
-        private static void Prefix() => Heightmap_GetBiomeColor_TerrainColor.overrideColor = SeasonState.IsActive && UseTextureControllers();
+        private static void Prefix(ref bool __state)
+        {
+            __state = Heightmap_GetBiomeColor_TerrainColor.overrideColor;
+            Heightmap_GetBiomeColor_TerrainColor.overrideColor = SeasonState.IsActive && UseTextureControllers();
+        }
 
-        [HarmonyPriority(Priority.First)]
-        private static void Postfix() => Heightmap_GetBiomeColor_TerrainColor.overrideColor = false;
+        private static void Finalizer(bool __state) => Heightmap_GetBiomeColor_TerrainColor.overrideColor = __state;
     }
 
     [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.Awake))]
@@ -1499,15 +1531,6 @@ namespace Seasons
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(WaterVolume __instance)
         {
-            if (!UseTextureControllers())
-                return;
-
-            if (!SeasonState.IsActive)
-                return;
-
-            if (!waterStates.ContainsKey(__instance))
-                return;
-
             waterStates.Remove(__instance);
         }
     }
@@ -1677,27 +1700,30 @@ namespace Seasons
         }
     }
 
-    [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.CalcWave), new Type[] { typeof(Vector3), typeof(float), typeof(float), typeof(float) })]
+    [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.CalcWave), new Type[] { typeof(Vector3), typeof(float), typeof(float), typeof(float), typeof(float) })]
     public static class WaterVolume_CalcWave_FrozenOceanNoWaves
     {
-        private static bool s_isFrozenOcean;
-
-        private static void Prefix(ref float __state)
+        private struct WindState
         {
-            s_isFrozenOcean = IsWaterSurfaceFrozen();
-            if (!s_isFrozenOcean)
+            public bool Changed;
+            public float Alpha;
+        }
+
+        private static void Prefix(ref WindState __state)
+        {
+            __state = default;
+            if (!IsWaterSurfaceFrozen())
                 return;
 
-            __state = WaterVolume.s_globalWindAlpha;
+            __state.Changed = true;
+            __state.Alpha = WaterVolume.s_globalWindAlpha;
             WaterVolume.s_globalWindAlpha = 0f;
         }
 
-        private static void Postfix(float __state)
+        private static void Finalizer(WindState __state)
         {
-            if (!s_isFrozenOcean)
-                return;
-
-            WaterVolume.s_globalWindAlpha = __state;
+            if (__state.Changed)
+                WaterVolume.s_globalWindAlpha = __state.Alpha;
         }
     }
 
@@ -1796,7 +1822,7 @@ namespace Seasons
         }
     }
 
-    [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.CalcWave), new Type[] { typeof(Vector3), typeof(float), typeof(Vector4), typeof(float), typeof(float) })]
+    [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.CalcWave), new Type[] { typeof(Vector3), typeof(float), typeof(Vector4), typeof(float), typeof(float), typeof(float) })]
     public static class WaterVolume_CalcWave_FrozenOceanPreventWaves
     {
         private static void Prefix(ref float waterTime, ref float __state)
@@ -1870,6 +1896,9 @@ namespace Seasons
         private static bool Prefix(Floating __instance, float fixedDeltaTime)
         {
             if (!GameCamera.instance || __instance.m_nview is not ZNetView nview || !nview.IsValid() || nview.GetZDO()?.GetPrefab() != s_iceFloePrefab || !__instance.m_body)
+                return true;
+
+            if (!nview.GetZDO().GetBool(SeasonsVars.s_iceFloeWatermark))
                 return true;
 
             ZSyncTransform syncTransform = __instance.GetComponent<ZSyncTransform>();
@@ -1983,19 +2012,14 @@ namespace Seasons
     [HarmonyPatch(typeof(TombStone), nameof(TombStone.PositionCheck))]
     public static class TombStone_PositionCheck_FrozenSurfaceCheck
     {
-        private static void Prefix()
+        private static void Prefix(ref bool __state)
         {
-            if (!UseTextureControllers())
-                return;
-
-            if (!SeasonState.IsActive)
-                return;
-
-            if (!IsWaterSurfaceFrozen())
-                return;
-
-            ZoneSystem_GetGroundHeight_CheckForIceSurface.checkForIceSurface = true;
+            __state = ZoneSystem_GetGroundHeight_CheckForIceSurface.checkForIceSurface;
+            if (UseTextureControllers() && SeasonState.IsActive && IsWaterSurfaceFrozen())
+                ZoneSystem_GetGroundHeight_CheckForIceSurface.checkForIceSurface = true;
         }
+
+        private static void Finalizer(bool __state) => ZoneSystem_GetGroundHeight_CheckForIceSurface.checkForIceSurface = __state;
     }
 
     [HarmonyPatch(typeof(Player), nameof(Player.UpdateBiome))]
@@ -2019,7 +2043,8 @@ namespace Seasons
 
         private static void Postfix(Player __instance, Biome __state)
         {
-            seasonState.OnBiomeChange(__state, __instance.GetCurrentBiome());
+            if (__instance == Player.m_localPlayer && SeasonState.IsActive && UseTextureControllers())
+                seasonState.OnBiomeChange(__state, __instance.GetCurrentBiome());
         }
     }
 
@@ -2044,7 +2069,8 @@ namespace Seasons
     {
         private static void Postfix(EnvMan __instance)
         {
-            Instance?.CheckBiomeChanged(__instance.m_currentBiome);
+            if (__instance.m_currentBiome != null)
+                Instance?.CheckBiomeChanged(__instance.m_currentBiome.Biome);
         }
     }
 
