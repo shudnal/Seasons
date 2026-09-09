@@ -13,6 +13,9 @@ namespace Seasons.BloodMoon
 {
     internal static class BloodMoonRound5Runtime
     {
+        private static bool savingProfile;
+        private static float nextSaveWarningAt;
+
         internal static bool IsPreOutcomeDrainOpen(BloodMoonEventState state)
         {
             if (state == null)
@@ -25,35 +28,66 @@ namespace Seasons.BloodMoon
 
         internal static bool ValidateSenderPlayer(BloodMoonController controller, long sender, long playerId)
         {
-            if (controller == null || playerId == 0L || ZRoutedRpc.instance == null)
+            if (controller == null || sender == 0L || playerId == 0L || ZRoutedRpc.instance == null)
                 return false;
-
             if (sender == ZRoutedRpc.instance.GetServerPeerID())
                 return Player.m_localPlayer != null && Player.m_localPlayer.GetPlayerID() == playerId;
-
             return controller.GetPeerForPlayer(playerId) == sender;
         }
 
         internal static long CurrentWorldUid => ZNet.m_world != null ? ZNet.m_world.m_uid : 0L;
 
-        internal static void SaveProfile(Player player, string reason)
+        internal static bool SaveProfile(Player player, string reason)
         {
-            if (player == null || player != Player.m_localPlayer || Game.instance == null)
-                return;
+            Game game = Game.instance;
+            PlayerProfile profile = game != null ? game.GetPlayerProfile() : null;
+            if (savingProfile || player == null || player != Player.m_localPlayer || profile == null ||
+                string.IsNullOrEmpty(profile.m_filename) || profile.m_playerID != player.GetPlayerID())
+                return false;
+
+            savingProfile = true;
             try
             {
-                Game.instance.SavePlayerProfile(setLogoutPoint: false);
+                // Game.SavePlayerProfile is void, and PlayerProfile.Save can return true after a failed
+                // cloud write. Capture current data, use the normal save path, then verify the actual
+                // character data through vanilla's disk/cloud loader without creating a live Player.
+                profile.SavePlayerData(player);
+                game.SavePlayerProfile(setLogoutPoint: false);
+                byte[] expected = profile.m_playerData?.ToArray();
+                if (expected == null || !ReferenceEquals(game.GetPlayerProfile(), profile))
+                    return false;
+
+                PlayerProfile persisted = new PlayerProfile(profile.m_filename, profile.m_fileSource);
+                bool verified = persisted.Load() && persisted.m_playerID == player.GetPlayerID() &&
+                    persisted.m_playerData != null && expected.SequenceEqual(persisted.m_playerData);
+                if (!verified)
+                    WarnSave(reason, "saved character data could not be read back unchanged");
+                return verified;
             }
             catch (Exception ex)
             {
-                LogWarning($"[BloodMoon.Durability] Could not persist {reason}: {ex.Message}");
+                WarnSave(reason, ex.Message);
+                return false;
             }
+            finally
+            {
+                savingProfile = false;
+            }
+        }
+
+        private static void WarnSave(string reason, string detail)
+        {
+            if (Time.realtimeSinceStartup < nextSaveWarningAt)
+                return;
+            nextSaveWarningAt = Time.realtimeSinceStartup + 10f;
+            LogWarning($"[BloodMoon.Durability] Could not confirm {reason}: {detail}. Retention remains pending.");
         }
     }
 
     internal static class BloodMoonTerminalReliability
     {
         private const string ProfilePrefix = "Seasons.BloodMoon.PendingTerminal.";
+        private const string EvidencePrefix = "Seasons.BloodMoon.TerminalEvidence.";
         private const string LegacyDefeatedKey = "Seasons.BloodMoon.Defeated";
         private const string RpcRetain = "Seasons.BloodMoon.TerminalRetain";
         private const string RpcRetainAck = "Seasons.BloodMoon.TerminalRetainAck";
@@ -89,89 +123,74 @@ namespace Seasons.BloodMoon
             rpc.Register<ZPackage>(RpcAck, OnAckRpc);
         }
 
-        internal static bool BeginWithdrawal(BloodMoonController controller, BloodMoonParticipantState participant, BloodMoonParticipantExitReason reason)
+        internal static bool BeginWithdrawal(BloodMoonController controller, BloodMoonParticipantState participant,
+            ref BloodMoonParticipantExitReason reason)
         {
             if (committingTerminal || reason != BloodMoonParticipantExitReason.Withdrawn || controller?.State == null ||
                 participant == null || participant.IsTerminal)
                 return true;
 
             BloodMoonEventState state = controller.State;
-            long worldUid = state.WorldUid;
-            if (worldUid == 0L || state.EventId < 0L)
-                return true;
+            if (state.WorldUid == 0L || state.EventId < 0L || !BloodMoonRound5Runtime.IsPreOutcomeDrainOpen(state))
+                return false;
 
             Player local = Player.m_localPlayer;
             if (local != null && local.GetPlayerID() == participant.PlayerId)
             {
-                StoreLocal(local, worldUid, state.EventId, participant.PlayerId, reason);
+                if (!StoreLocal(local, state.WorldUid, state.EventId, participant.PlayerId, reason, out BloodMoonParticipantExitReason retained))
+                    return false;
+                reason = retained;
                 return true;
             }
 
-            long peer = controller.GetPeerForPlayer(participant.PlayerId);
-            if (peer == 0L)
-                return true;
-
-            string key = MakeServerKey(worldUid, state.EventId, participant.PlayerId, reason);
+            string key = MakeScope(state.WorldUid, state.EventId, participant.PlayerId);
             if (!pendingRetentions.TryGetValue(key, out PendingRetention pending))
             {
                 pending = new PendingRetention
                 {
-                    WorldUid = worldUid,
+                    WorldUid = state.WorldUid,
                     EventId = state.EventId,
                     PlayerId = participant.PlayerId,
-                    Reason = reason,
-                    NextSendAt = 0f
+                    Reason = reason
                 };
                 pendingRetentions[key] = pending;
             }
-            SendRetention(controller, pending, force: true);
+            SendRetention(controller, pending);
             return false;
         }
 
         internal static void AfterExit(BloodMoonController controller, BloodMoonParticipantState participant, BloodMoonParticipantExitReason reason)
         {
             BloodMoonEventState state = controller?.State;
-            if (state == null || participant == null || !participant.IsTerminal || participant.ExitReason != reason ||
-                reason != BloodMoonParticipantExitReason.Withdrawn && reason != BloodMoonParticipantExitReason.Defeated)
+            if (state == null || participant == null || !participant.IsTerminal || participant.ExitReason != reason || !IsPersonalReason(reason))
                 return;
-
-            if (!BloodMoonPersistence.Save(state))
-                return;
-            AcknowledgeTerminal(controller, state.WorldUid, state.EventId, participant.PlayerId, reason);
+            if (BloodMoonPersistence.Save(state))
+                AcknowledgeTerminal(controller, state.WorldUid, state.EventId, participant.PlayerId, reason);
         }
 
         internal static bool HandleDefeatedPrefix(BloodMoonController controller, long sender, long eventId, long playerId)
         {
             BloodMoonEventState state = controller?.State;
-            if (state == null || state.EventId != eventId || !state.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant) ||
-                !BloodMoonRound5Runtime.ValidateSenderPlayer(controller, sender, playerId))
-                return true;
-
-            if (participant.IsTerminal)
-            {
-                if (participant.ExitReason == BloodMoonParticipantExitReason.Disconnected)
-                    participant.ExitReason = BloodMoonParticipantExitReason.Defeated;
-                if (participant.ExitReason == BloodMoonParticipantExitReason.Defeated && BloodMoonPersistence.Save(state))
-                    SendTerminalAck(sender, state.WorldUid, eventId, playerId, BloodMoonParticipantExitReason.Defeated);
+            if (state == null || state.EventId != eventId || !BloodMoonRound5Runtime.ValidateSenderPlayer(controller, sender, playerId))
                 return false;
-            }
-
-            if (!participant.IsCombatActive || state.IsCombatLive)
-                return true;
-            if (!BloodMoonRound5Runtime.IsPreOutcomeDrainOpen(state))
-                return false;
-
             CommitTerminal(controller, sender, state.WorldUid, eventId, playerId, BloodMoonParticipantExitReason.Defeated);
             return false;
         }
 
-        internal static void StoreDefeatedBeforeSend(long eventId, long playerId)
+        internal static bool StoreDefeatedBeforeSend(long eventId, long playerId)
         {
             Player player = Player.m_localPlayer;
             long worldUid = BloodMoonRound5Runtime.CurrentWorldUid;
             if (player == null || player.GetPlayerID() != playerId || worldUid == 0L || eventId < 0L)
-                return;
-            StoreLocal(player, worldUid, eventId, playerId, BloodMoonParticipantExitReason.Defeated);
+                return false;
+
+            // Local defeat cannot be undone by an I/O failure. The immediate notification may still let
+            // the server durably save it; retained-report/retention ACKs require confirmed profile storage.
+            StoreLocal(player, worldUid, eventId, playerId, BloodMoonParticipantExitReason.Defeated, out BloodMoonParticipantExitReason retained);
+            if (retained == BloodMoonParticipantExitReason.Defeated)
+                return true;
+            SendLocalReport(player, eventId, retained);
+            return false;
         }
 
         internal static void StoreWithdrawal(Player player)
@@ -180,28 +199,22 @@ namespace Seasons.BloodMoon
             long eventId = BloodMoonNetwork.ClientGlobal.EventId;
             if (player == null || player != Player.m_localPlayer || worldUid == 0L || eventId < 0L)
                 return;
-            StoreLocal(player, worldUid, eventId, player.GetPlayerID(), BloodMoonParticipantExitReason.Withdrawn);
+            StoreLocal(player, worldUid, eventId, player.GetPlayerID(), BloodMoonParticipantExitReason.Withdrawn, out _);
+        }
+
+        internal static bool HasLocalTerminal(long eventId, long playerId)
+        {
+            Player player = Player.m_localPlayer;
+            return player != null && player.GetPlayerID() == playerId && TryLoadEvidence(player, eventId, out _);
         }
 
         internal static bool ShouldIgnoreEnrollment(long eventId)
         {
             Player player = Player.m_localPlayer;
-            if (player == null || eventId < 0L)
+            if (player == null || eventId < 0L || !TryLoadEvidence(player, eventId, out BloodMoonParticipantExitReason reason))
                 return false;
-
-            if (TryLoadLocal(player, eventId, out BloodMoonParticipantExitReason reason))
-            {
-                SendLocalReport(player, eventId, reason);
-                return true;
-            }
-
-            if (HasLegacyDefeated(player, eventId))
-            {
-                StoreLocal(player, BloodMoonRound5Runtime.CurrentWorldUid, eventId, player.GetPlayerID(), BloodMoonParticipantExitReason.Defeated);
-                SendLocalReport(player, eventId, BloodMoonParticipantExitReason.Defeated);
-                return true;
-            }
-            return false;
+            SendLocalReport(player, eventId, reason);
+            return true;
         }
 
         internal static void Tick(float dt)
@@ -211,10 +224,7 @@ namespace Seasons.BloodMoon
             TickServer();
         }
 
-        internal static bool HasPendingServer(long eventId)
-        {
-            return pendingRetentions.Values.Any(item => item.EventId == eventId);
-        }
+        internal static bool HasPendingServer(long eventId) => pendingRetentions.Values.Any(item => item.EventId == eventId);
 
         internal static void Reset()
         {
@@ -223,20 +233,25 @@ namespace Seasons.BloodMoon
             committingTerminal = false;
         }
 
+        internal static void OnResolutionComplete()
+        {
+            Player player = Player.m_localPlayer;
+            long worldUid = BloodMoonRound5Runtime.CurrentWorldUid;
+            long eventId = BloodMoonNetwork.ClientGlobal.EventId;
+            if (player == null || worldUid == 0L || eventId < 0L)
+                return;
+            CleanupAcknowledgedEvidence(player, worldUid, eventId, player.GetPlayerID());
+        }
+
         private static void TickLocal(float dt)
         {
             Player player = Player.m_localPlayer;
             long eventId = BloodMoonNetwork.ClientGlobal.EventId;
-            if (player == null || eventId < 0L || !TryLoadLocal(player, eventId, out BloodMoonParticipantExitReason reason))
+            if (player == null || eventId < 0L || !TryLoadPending(player, eventId, out BloodMoonParticipantExitReason reason))
                 return;
 
-            BloodMoonEventPhase phase = BloodMoonNetwork.ClientGlobal.Phase;
-            bool drainOpen = phase == BloodMoonEventPhase.Active || phase == BloodMoonEventPhase.AutoCompleting ||
-                phase == BloodMoonEventPhase.Resolving &&
-                (int)BloodMoonNetwork.ClientGlobal.ResolutionStep < (int)BloodMoonResolutionStep.PublishingOutcomes;
-            if (!drainOpen)
-                return;
-
+            // After the capture boundary only an identical already-persisted terminal fact may be ACKed.
+            // Keep retrying that acknowledgement; a resolution-complete action is not a storage receipt.
             localRetryTimer -= Mathf.Max(0f, dt);
             if (localRetryTimer > 0f)
                 return;
@@ -248,7 +263,6 @@ namespace Seasons.BloodMoon
         {
             if (ZNet.instance == null || !ZNet.instance.IsServer() || pendingRetentions.Count == 0)
                 return;
-
             BloodMoonController controller = BloodMoonController.Instance;
             BloodMoonEventState state = controller?.State;
             foreach (KeyValuePair<string, PendingRetention> entry in pendingRetentions.ToArray())
@@ -261,112 +275,110 @@ namespace Seasons.BloodMoon
                     continue;
                 }
 
-                if (participant.IsTerminal)
+                if (participant.IsTerminal && IsPersonalReason(participant.ExitReason))
                 {
-                    pendingRetentions.Remove(entry.Key);
                     if (BloodMoonPersistence.Save(state))
-                        AcknowledgeTerminal(controller, pending.WorldUid, pending.EventId, pending.PlayerId, pending.Reason);
+                        AcknowledgeTerminal(controller, state.WorldUid, state.EventId, participant.PlayerId, participant.ExitReason);
                     continue;
                 }
-
-                SendRetention(controller, pending, force: false);
+                if (!BloodMoonRound5Runtime.IsPreOutcomeDrainOpen(state))
+                {
+                    pendingRetentions.Remove(entry.Key);
+                    continue;
+                }
+                SendRetention(controller, pending);
             }
         }
 
-        private static void SendRetention(BloodMoonController controller, PendingRetention pending, bool force)
+        private static void SendRetention(BloodMoonController controller, PendingRetention pending)
         {
-            if (controller == null || pending == null || ZRoutedRpc.instance == null)
-                return;
-            float now = Time.realtimeSinceStartup;
-            if (!force && now < pending.NextSendAt)
+            if (controller == null || pending == null || ZRoutedRpc.instance == null || Time.realtimeSinceStartup < pending.NextSendAt)
                 return;
             long peer = controller.GetPeerForPlayer(pending.PlayerId);
             if (peer == 0L)
                 return;
-            pending.NextSendAt = now + RetrySeconds;
-
-            ZPackage package = new ZPackage();
-            package.Write(BloodMoonNetwork.ProtocolVersion);
-            package.Write(pending.WorldUid);
-            package.Write(pending.EventId);
-            package.Write(pending.PlayerId);
-            package.Write((int)pending.Reason);
-            ZRoutedRpc.instance.InvokeRoutedRPC(peer, RpcRetain, package);
+            pending.NextSendAt = Time.realtimeSinceStartup + RetrySeconds;
+            ZRoutedRpc.instance.InvokeRoutedRPC(peer, RpcRetain,
+                CreateTerminalPackage(pending.WorldUid, pending.EventId, pending.PlayerId, pending.Reason));
         }
 
         private static void OnRetainRpc(long sender, ZPackage package)
         {
-            if (!ReadTerminalPackage(sender, package, requireServerSender: true, out long worldUid, out long eventId, out long playerId,
-                    out BloodMoonParticipantExitReason reason))
+            if (!ReadTerminalPackage(sender, package, true, out long worldUid, out long eventId, out long playerId,
+                out BloodMoonParticipantExitReason requested))
                 return;
-
             Player player = Player.m_localPlayer;
-            if (player == null || player.GetPlayerID() != playerId || BloodMoonRound5Runtime.CurrentWorldUid != worldUid)
+            if (player == null || player.GetPlayerID() != playerId || BloodMoonRound5Runtime.CurrentWorldUid != worldUid ||
+                !StoreLocal(player, worldUid, eventId, playerId, requested, out BloodMoonParticipantExitReason retained))
                 return;
-            StoreLocal(player, worldUid, eventId, playerId, reason);
 
-            ZPackage ack = CreateTerminalPackage(worldUid, eventId, playerId, reason);
-            ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.instance.GetServerPeerID(), RpcRetainAck, ack);
+            // A stale server withdrawal request may race an earlier local defeat. ACK the first retained
+            // reason, never the conflicting requested reason, and do not ACK an unverified profile write.
+            ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.instance.GetServerPeerID(), RpcRetainAck,
+                CreateTerminalPackage(worldUid, eventId, playerId, retained));
         }
 
         private static void OnRetainAckRpc(long sender, ZPackage package)
         {
-            if (!ReadTerminalPackage(sender, package, requireServerSender: false, out long worldUid, out long eventId, out long playerId,
-                    out BloodMoonParticipantExitReason reason))
+            if (!ReadTerminalPackage(sender, package, false, out long worldUid, out long eventId, out long playerId,
+                out BloodMoonParticipantExitReason reason))
                 return;
-
             BloodMoonController controller = BloodMoonController.Instance;
-            if (!BloodMoonRound5Runtime.ValidateSenderPlayer(controller, sender, playerId))
-                return;
-            string key = MakeServerKey(worldUid, eventId, playerId, reason);
-            if (!pendingRetentions.Remove(key))
+            if (!BloodMoonRound5Runtime.ValidateSenderPlayer(controller, sender, playerId) ||
+                !pendingRetentions.ContainsKey(MakeScope(worldUid, eventId, playerId)))
                 return;
             CommitTerminal(controller, sender, worldUid, eventId, playerId, reason);
         }
 
         private static void OnReportRpc(long sender, ZPackage package)
         {
-            if (!ReadTerminalPackage(sender, package, requireServerSender: false, out long worldUid, out long eventId, out long playerId,
-                    out BloodMoonParticipantExitReason reason))
+            if (!ReadTerminalPackage(sender, package, false, out long worldUid, out long eventId, out long playerId,
+                out BloodMoonParticipantExitReason reason))
                 return;
             BloodMoonController controller = BloodMoonController.Instance;
-            if (!BloodMoonRound5Runtime.ValidateSenderPlayer(controller, sender, playerId))
-                return;
-            CommitTerminal(controller, sender, worldUid, eventId, playerId, reason);
+            if (BloodMoonRound5Runtime.ValidateSenderPlayer(controller, sender, playerId))
+                CommitTerminal(controller, sender, worldUid, eventId, playerId, reason);
         }
 
         private static void OnAckRpc(long sender, ZPackage package)
         {
-            if (!ReadTerminalPackage(sender, package, requireServerSender: true, out long worldUid, out long eventId, out long playerId,
-                    out BloodMoonParticipantExitReason reason))
+            if (!ReadTerminalPackage(sender, package, true, out long worldUid, out long eventId, out long playerId,
+                out BloodMoonParticipantExitReason reason))
                 return;
             Player player = Player.m_localPlayer;
-            if (player == null || player.GetPlayerID() != playerId || BloodMoonRound5Runtime.CurrentWorldUid != worldUid)
-                return;
-            ClearLocal(player, worldUid, eventId, playerId);
+            if (player != null && player.GetPlayerID() == playerId && BloodMoonRound5Runtime.CurrentWorldUid == worldUid)
+                AcknowledgeLocal(player, worldUid, eventId, playerId, reason);
         }
 
         private static void CommitTerminal(BloodMoonController controller, long sender, long worldUid, long eventId, long playerId,
             BloodMoonParticipantExitReason reason)
         {
             BloodMoonEventState state = controller?.State;
-            if (state == null || state.WorldUid != worldUid || state.EventId != eventId ||
-                reason != BloodMoonParticipantExitReason.Defeated && reason != BloodMoonParticipantExitReason.Withdrawn ||
+            if (state == null || state.WorldUid != worldUid || state.EventId != eventId || !IsPersonalReason(reason) ||
                 !state.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant))
                 return;
 
             if (participant.IsTerminal)
             {
-                if (participant.ExitReason == BloodMoonParticipantExitReason.Disconnected)
+                if (participant.ExitReason == BloodMoonParticipantExitReason.Disconnected && BloodMoonRound5Runtime.IsPreOutcomeDrainOpen(state))
+                {
                     participant.ExitReason = reason;
+                    state.Revision++;
+                    state.UpdatedAt = seasonState.GetTotalSeconds();
+                    DispatchTerminalAction(controller, state, participant, reason);
+                }
+                // A duplicate matching fact can be acknowledged after capture; a different fact must not
+                // rewrite the immutable outcome, nor clear the client's conflicting retained evidence.
                 if (participant.ExitReason == reason && BloodMoonPersistence.Save(state))
-                    SendTerminalAck(sender, worldUid, eventId, playerId, reason);
+                {
+                    BloodMoonNetwork.Publish(state, state.UpdatedAt);
+                    AcknowledgeTerminal(controller, worldUid, eventId, playerId, reason);
+                }
                 return;
             }
 
             if (!participant.IsCombatActive || !BloodMoonRound5Runtime.IsPreOutcomeDrainOpen(state) || ExitParticipantMethod == null)
                 return;
-
             committingTerminal = true;
             try
             {
@@ -377,106 +389,152 @@ namespace Seasons.BloodMoon
                 committingTerminal = false;
             }
 
+            if (!participant.IsTerminal || participant.ExitReason != reason)
+                return;
             DispatchTerminalAction(controller, state, participant, reason);
-            if (participant.IsTerminal && participant.ExitReason == reason && BloodMoonPersistence.Save(state))
-                SendTerminalAck(sender, worldUid, eventId, playerId, reason);
+            if (BloodMoonPersistence.Save(state))
+                AcknowledgeTerminal(controller, worldUid, eventId, playerId, reason);
         }
 
         private static void DispatchTerminalAction(BloodMoonController controller, BloodMoonEventState state, BloodMoonParticipantState participant,
             BloodMoonParticipantExitReason reason)
         {
-            if (controller == null || state == null || participant == null)
-                return;
             string action = reason == BloodMoonParticipantExitReason.Defeated ? "defeated" : "withdrawn";
             Player local = Player.m_localPlayer;
             if (local != null && local.GetPlayerID() == participant.PlayerId)
-            {
                 BloodMoonController.HandleClientAction(state.EventId, action, string.Empty);
-                return;
+            else
+            {
+                long peer = controller.GetPeerForPlayer(participant.PlayerId);
+                if (peer != 0L)
+                    BloodMoonNetwork.SendClientAction(peer, state.EventId, action);
             }
-            long peer = controller.GetPeerForPlayer(participant.PlayerId);
-            if (peer != 0L)
-                BloodMoonNetwork.SendClientAction(peer, state.EventId, action);
         }
 
         private static void AcknowledgeTerminal(BloodMoonController controller, long worldUid, long eventId, long playerId,
             BloodMoonParticipantExitReason reason)
         {
+            pendingRetentions.Remove(MakeScope(worldUid, eventId, playerId));
             Player local = Player.m_localPlayer;
             if (local != null && local.GetPlayerID() == playerId)
             {
-                ClearLocal(local, worldUid, eventId, playerId);
+                AcknowledgeLocal(local, worldUid, eventId, playerId, reason);
                 return;
             }
             long peer = controller?.GetPeerForPlayer(playerId) ?? 0L;
-            if (peer != 0L)
-                SendTerminalAck(peer, worldUid, eventId, playerId, reason);
-        }
-
-        private static void SendTerminalAck(long peer, long worldUid, long eventId, long playerId, BloodMoonParticipantExitReason reason)
-        {
-            if (peer == 0L || ZRoutedRpc.instance == null || ZNet.instance == null || !ZNet.instance.IsServer())
-                return;
-            ZRoutedRpc.instance.InvokeRoutedRPC(peer, RpcAck, CreateTerminalPackage(worldUid, eventId, playerId, reason));
+            if (peer != 0L && ZRoutedRpc.instance != null)
+                ZRoutedRpc.instance.InvokeRoutedRPC(peer, RpcAck, CreateTerminalPackage(worldUid, eventId, playerId, reason));
         }
 
         private static void SendLocalReport(Player player, long eventId, BloodMoonParticipantExitReason reason)
         {
-            if (player == null || ZRoutedRpc.instance == null)
-                return;
             long worldUid = BloodMoonRound5Runtime.CurrentWorldUid;
-            if (worldUid == 0L)
+            if (player == null || ZRoutedRpc.instance == null || worldUid == 0L || !IsPersonalReason(reason) ||
+                !BloodMoonRound5Runtime.SaveProfile(player, "retained terminal report"))
                 return;
             ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.instance.GetServerPeerID(), RpcReport,
                 CreateTerminalPackage(worldUid, eventId, player.GetPlayerID(), reason));
         }
 
-        private static void StoreLocal(Player player, long worldUid, long eventId, long playerId, BloodMoonParticipantExitReason reason)
+        private static bool StoreLocal(Player player, long worldUid, long eventId, long playerId, BloodMoonParticipantExitReason requested,
+            out BloodMoonParticipantExitReason retained)
         {
-            if (player == null || worldUid == 0L || eventId < 0L || playerId == 0L ||
-                reason != BloodMoonParticipantExitReason.Defeated && reason != BloodMoonParticipantExitReason.Withdrawn)
-                return;
-            string key = MakeProfileKey(worldUid, eventId, playerId);
-            string value = ((int)reason).ToString(CultureInfo.InvariantCulture);
-            if (player.m_customData.TryGetValue(key, out string existing) && existing == value)
-                return;
-            player.m_customData[key] = value;
-            BloodMoonRound5Runtime.SaveProfile(player, $"pending {reason} terminal marker");
+            retained = requested;
+            if (player == null || worldUid == 0L || worldUid != BloodMoonRound5Runtime.CurrentWorldUid || eventId < 0L ||
+                playerId == 0L || player.GetPlayerID() != playerId || !IsPersonalReason(requested))
+                return false;
+
+            if (TryLoadEvidence(player, eventId, out BloodMoonParticipantExitReason existing))
+                retained = existing;
+            string scope = MakeScope(worldUid, eventId, playerId);
+            string value = ((int)retained).ToString(CultureInfo.InvariantCulture);
+            player.m_customData[EvidencePrefix + scope] = value;
+            player.m_customData[ProfilePrefix + scope] = value;
+            // Retry persistence even when the same in-memory value was already present after a failure.
+            return BloodMoonRound5Runtime.SaveProfile(player, $"pending {retained} terminal marker");
         }
 
-        private static bool TryLoadLocal(Player player, long eventId, out BloodMoonParticipantExitReason reason)
+        private static bool TryLoadPending(Player player, long eventId, out BloodMoonParticipantExitReason reason)
         {
             reason = BloodMoonParticipantExitReason.None;
             long worldUid = BloodMoonRound5Runtime.CurrentWorldUid;
-            if (player == null || worldUid == 0L || eventId < 0L ||
-                !player.m_customData.TryGetValue(MakeProfileKey(worldUid, eventId, player.GetPlayerID()), out string raw) ||
-                !int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
-                return false;
-            reason = (BloodMoonParticipantExitReason)value;
-            return reason == BloodMoonParticipantExitReason.Defeated || reason == BloodMoonParticipantExitReason.Withdrawn;
+            return player != null && worldUid != 0L && eventId >= 0L &&
+                TryReadReason(player, ProfilePrefix + MakeScope(worldUid, eventId, player.GetPlayerID()), out reason);
         }
 
-        private static void ClearLocal(Player player, long worldUid, long eventId, long playerId)
+        private static bool TryLoadEvidence(Player player, long eventId, out BloodMoonParticipantExitReason reason)
         {
-            if (player == null || worldUid == 0L || eventId < 0L || playerId == 0L)
-                return;
-            if (player.m_customData.Remove(MakeProfileKey(worldUid, eventId, playerId)))
-                BloodMoonRound5Runtime.SaveProfile(player, "acknowledged Blood Moon terminal marker");
+            reason = BloodMoonParticipantExitReason.None;
+            long worldUid = BloodMoonRound5Runtime.CurrentWorldUid;
+            if (player == null || worldUid == 0L || eventId < 0L)
+                return false;
+            string scope = MakeScope(worldUid, eventId, player.GetPlayerID());
+            if (TryReadReason(player, EvidencePrefix + scope, out reason) || TryReadReason(player, ProfilePrefix + scope, out reason))
+                return true;
+            if (!HasLegacyDefeated(player, worldUid, eventId))
+                return false;
+            reason = BloodMoonParticipantExitReason.Defeated;
+            return true;
         }
 
-        private static bool HasLegacyDefeated(Player player, long eventId)
+        private static bool TryReadReason(Player player, string key, out BloodMoonParticipantExitReason reason)
+        {
+            reason = BloodMoonParticipantExitReason.None;
+            if (!player.m_customData.TryGetValue(key, out string value) ||
+                !int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed))
+                return false;
+            reason = (BloodMoonParticipantExitReason)parsed;
+            return IsPersonalReason(reason);
+        }
+
+        private static void AcknowledgeLocal(Player player, long worldUid, long eventId, long playerId, BloodMoonParticipantExitReason reason)
+        {
+            string scope = MakeScope(worldUid, eventId, playerId);
+            string pendingKey = ProfilePrefix + scope;
+            if (!TryReadReason(player, pendingKey, out BloodMoonParticipantExitReason pending) || pending != reason)
+                return;
+            if (TryReadReason(player, EvidencePrefix + scope, out BloodMoonParticipantExitReason first) && first != reason)
+                return;
+            player.m_customData[EvidencePrefix + scope] = ((int)reason).ToString(CultureInfo.InvariantCulture);
+            player.m_customData.Remove(pendingKey);
+            BloodMoonRound5Runtime.SaveProfile(player, "acknowledged terminal marker");
+
+            BloodMoonGlobalSnapshot snapshot = BloodMoonNetwork.ClientGlobal;
+            if (snapshot.EventId == eventId && (snapshot.Phase == BloodMoonEventPhase.Resolved ||
+                snapshot.Phase == BloodMoonEventPhase.Resolving && (int)snapshot.ResolutionStep >= (int)BloodMoonResolutionStep.ReleasingClients))
+                CleanupAcknowledgedEvidence(player, worldUid, eventId, playerId);
+        }
+
+        private static void CleanupAcknowledgedEvidence(Player player, long worldUid, long eventId, long playerId)
+        {
+            string scope = MakeScope(worldUid, eventId, playerId);
+            if (player.m_customData.ContainsKey(ProfilePrefix + scope))
+                return;
+            bool changed = player.m_customData.Remove(EvidencePrefix + scope);
+            if (HasLegacyDefeated(player, worldUid, eventId))
+                changed |= player.m_customData.Remove(LegacyDefeatedKey);
+            if (changed)
+                BloodMoonRound5Runtime.SaveProfile(player, "completed acknowledged terminal evidence");
+        }
+
+        private static bool HasLegacyDefeated(Player player, long worldUid, long eventId)
         {
             if (player == null || !player.m_customData.TryGetValue(LegacyDefeatedKey, out string json) || string.IsNullOrWhiteSpace(json))
                 return false;
             try
             {
                 JObject source = JObject.Parse(json);
-                return source.Value<long?>("WorldUid") == BloodMoonRound5Runtime.CurrentWorldUid && source.Value<long?>("EventId") == eventId;
+                return source.Value<long?>("WorldUid") == worldUid && source.Value<long?>("EventId") == eventId;
             }
             catch
             {
                 return false;
             }
+        }
+
+        private static bool IsPersonalReason(BloodMoonParticipantExitReason reason)
+        {
+            return reason == BloodMoonParticipantExitReason.Defeated || reason == BloodMoonParticipantExitReason.Withdrawn;
         }
 
         private static bool ReadTerminalPackage(long sender, ZPackage package, bool requireServerSender, out long worldUid, out long eventId,
@@ -486,16 +544,14 @@ namespace Seasons.BloodMoon
             eventId = -1L;
             playerId = 0L;
             reason = BloodMoonParticipantExitReason.None;
-            if (package == null || ZRoutedRpc.instance == null || package.ReadInt() != BloodMoonNetwork.ProtocolVersion)
-                return false;
-            if (requireServerSender && sender != ZRoutedRpc.instance.GetServerPeerID())
+            if (package == null || ZRoutedRpc.instance == null || package.ReadInt() != BloodMoonNetwork.ProtocolVersion ||
+                requireServerSender && sender != ZRoutedRpc.instance.GetServerPeerID())
                 return false;
             worldUid = package.ReadLong();
             eventId = package.ReadLong();
             playerId = package.ReadLong();
             reason = (BloodMoonParticipantExitReason)package.ReadInt();
-            return worldUid != 0L && eventId >= 0L && playerId != 0L &&
-                (reason == BloodMoonParticipantExitReason.Defeated || reason == BloodMoonParticipantExitReason.Withdrawn);
+            return worldUid != 0L && eventId >= 0L && playerId != 0L && IsPersonalReason(reason);
         }
 
         private static ZPackage CreateTerminalPackage(long worldUid, long eventId, long playerId, BloodMoonParticipantExitReason reason)
@@ -509,16 +565,10 @@ namespace Seasons.BloodMoon
             return package;
         }
 
-        private static string MakeProfileKey(long worldUid, long eventId, long playerId)
+        private static string MakeScope(long worldUid, long eventId, long playerId)
         {
-            return ProfilePrefix + worldUid.ToString(CultureInfo.InvariantCulture) + "." + eventId.ToString(CultureInfo.InvariantCulture) + "." +
+            return worldUid.ToString(CultureInfo.InvariantCulture) + "." + eventId.ToString(CultureInfo.InvariantCulture) + "." +
                 playerId.ToString(CultureInfo.InvariantCulture);
-        }
-
-        private static string MakeServerKey(long worldUid, long eventId, long playerId, BloodMoonParticipantExitReason reason)
-        {
-            return worldUid.ToString(CultureInfo.InvariantCulture) + ":" + eventId.ToString(CultureInfo.InvariantCulture) + ":" +
-                playerId.ToString(CultureInfo.InvariantCulture) + ":" + ((int)reason).ToString(CultureInfo.InvariantCulture);
         }
     }
 
@@ -531,6 +581,7 @@ namespace Seasons.BloodMoon
 
         private sealed class PendingRetention
         {
+            internal long WorldUid;
             internal long EventId;
             internal long PlayerId;
             internal ZDOID EnemyId;
@@ -556,30 +607,28 @@ namespace Seasons.BloodMoon
             if (points != 0f || ZNet.instance == null || !ZNet.instance.IsServer() || Player.m_localPlayer != null ||
                 enemyId.IsNone() || eventId < 0L || playerId == 0L)
                 return false;
-
             BloodMoonController controller = BloodMoonController.Instance;
             BloodMoonEventState state = controller?.State;
             if (state == null || state.EventId != eventId || !state.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant) ||
                 !participant.IsCombatActive)
                 return false;
 
-            long peer = controller.GetPeerForPlayer(playerId);
-            if (peer == 0L)
-                return false;
-
             float replayPoints = BloodMoonCombat.GetPointsForEnemy(enemyId, 0f);
             if (replayPoints <= 0f || float.IsNaN(replayPoints) || float.IsInfinity(replayPoints))
                 return false;
-
-            pending[enemyId] = new PendingRetention
+            if (!pending.TryGetValue(enemyId, out PendingRetention retention))
             {
-                EventId = eventId,
-                PlayerId = playerId,
-                EnemyId = enemyId,
-                Points = replayPoints,
-                NextSendAt = 0f
-            };
-            Send(controller, pending[enemyId], force: true);
+                retention = new PendingRetention
+                {
+                    WorldUid = state.WorldUid,
+                    EventId = eventId,
+                    PlayerId = playerId,
+                    EnemyId = enemyId,
+                    Points = replayPoints
+                };
+                pending[enemyId] = retention;
+            }
+            Send(controller, retention);
             return true;
         }
 
@@ -593,13 +642,19 @@ namespace Seasons.BloodMoon
             foreach (KeyValuePair<ZDOID, PendingRetention> entry in pending.ToArray())
             {
                 PendingRetention item = entry.Value;
-                if (state == null || state.EventId != item.EventId || !state.Participants.TryGetValue(item.PlayerId, out BloodMoonParticipantState participant) ||
-                    !participant.IsCombatActive)
+                if (state == null || state.WorldUid != item.WorldUid || state.EventId != item.EventId ||
+                    !state.Participants.TryGetValue(item.PlayerId, out BloodMoonParticipantState participant) ||
+                    state.ReportedEnemyDeaths.Contains(item.EnemyId.ToString()))
                 {
                     pending.Remove(entry.Key);
                     continue;
                 }
-                Send(controller, item, force: false);
+                if (!BloodMoonRound5Runtime.IsPreOutcomeDrainOpen(state))
+                    continue;
+                // The kill was observed before disconnect. Keep its retention transaction while the
+                // same player reconnects; terminal routing alone does not invalidate that past fact.
+                if (participant.IsCombatActive || participant.ExitReason == BloodMoonParticipantExitReason.Disconnected)
+                    Send(controller, item);
             }
         }
 
@@ -607,21 +662,17 @@ namespace Seasons.BloodMoon
 
         internal static void Reset() => pending.Clear();
 
-        private static void Send(BloodMoonController controller, PendingRetention item, bool force)
+        private static void Send(BloodMoonController controller, PendingRetention item)
         {
-            if (controller == null || item == null || ZRoutedRpc.instance == null)
-                return;
-            float now = Time.realtimeSinceStartup;
-            if (!force && now < item.NextSendAt)
+            if (controller == null || item == null || ZRoutedRpc.instance == null || Time.realtimeSinceStartup < item.NextSendAt)
                 return;
             long peer = controller.GetPeerForPlayer(item.PlayerId);
             if (peer == 0L)
                 return;
-            item.NextSendAt = now + RetrySeconds;
-
+            item.NextSendAt = Time.realtimeSinceStartup + RetrySeconds;
             ZPackage package = new ZPackage();
             package.Write(BloodMoonNetwork.ProtocolVersion);
-            package.Write(BloodMoonRound5Runtime.CurrentWorldUid);
+            package.Write(item.WorldUid);
             package.Write(item.EventId);
             package.Write(item.PlayerId);
             package.Write(item.EnemyId);
@@ -645,8 +696,12 @@ namespace Seasons.BloodMoon
                 return;
 
             string key = MakeProfileKey(worldUid, eventId, enemyId);
-            player.m_customData[key] = playerId.ToString(CultureInfo.InvariantCulture) + "|" + points.ToString("R", CultureInfo.InvariantCulture);
-            BloodMoonRound5Runtime.SaveProfile(player, "server-owned enemy death replay");
+            string value = playerId.ToString(CultureInfo.InvariantCulture) + "|" + points.ToString("R", CultureInfo.InvariantCulture);
+            if (player.m_customData.TryGetValue(key, out string existing) && existing != value)
+                return;
+            player.m_customData[key] = value;
+            if (!BloodMoonRound5Runtime.SaveProfile(player, "server-owned enemy death replay"))
+                return;
 
             ZPackage ack = new ZPackage();
             ack.Write(BloodMoonNetwork.ProtocolVersion);
@@ -670,12 +725,15 @@ namespace Seasons.BloodMoon
             BloodMoonController controller = BloodMoonController.Instance;
             BloodMoonEventState state = controller?.State;
             if (state == null || state.WorldUid != worldUid || state.EventId != eventId || !pending.TryGetValue(enemyId, out PendingRetention item) ||
-                item.PlayerId != playerId || Mathf.Abs(item.Points - points) > 0.001f ||
-                !BloodMoonRound5Runtime.ValidateSenderPlayer(controller, sender, playerId))
+                item.WorldUid != worldUid || item.PlayerId != playerId || Mathf.Abs(item.Points - points) > 0.001f ||
+                !BloodMoonRound5Runtime.ValidateSenderPlayer(controller, sender, playerId) || !BloodMoonRound5Runtime.IsPreOutcomeDrainOpen(state))
                 return;
 
-            pending.Remove(enemyId);
             controller.OnEnemyDeathReport(sender, eventId, playerId, enemyId, points);
+            // Accepted but not yet durably saved reports remain in the existing death-durability retry
+            // transaction, with the independently retained client record available for server restart.
+            if (state.ReportedEnemyDeaths.Contains(enemyId.ToString()))
+                pending.Remove(enemyId);
         }
 
         private static string MakeProfileKey(long worldUid, long eventId, ZDOID enemyId)
@@ -697,10 +755,7 @@ namespace Seasons.BloodMoon
 
         internal static void BeginRestart(BloodMoonEventState state)
         {
-            restartAwaiting.Clear();
-            restartEventId = -1L;
-            restartUntil = 0f;
-            settleUntil = 0f;
+            Reset();
             if (state == null || state.EventId < 0L ||
                 state.Phase != BloodMoonEventPhase.Marked && !state.IsCombatLive &&
                 !(state.Phase == BloodMoonEventPhase.Resolving && (int)state.ResolutionStep < (int)BloodMoonResolutionStep.PublishingOutcomes))
@@ -710,7 +765,8 @@ namespace Seasons.BloodMoon
             restartUntil = Time.realtimeSinceStartup + RestartReconnectSeconds;
             foreach (BloodMoonParticipantState participant in state.Participants.Values)
             {
-                if (participant.Phase == BloodMoonParticipantPhase.Marked || participant.IsCombatActive)
+                if (participant.Phase == BloodMoonParticipantPhase.Marked || participant.IsCombatActive ||
+                    participant.ExitReason == BloodMoonParticipantExitReason.Disconnected)
                     restartAwaiting.Add(participant.PlayerId);
             }
         }
@@ -747,9 +803,7 @@ namespace Seasons.BloodMoon
 
             if (now < minimumHoldUntil || now < settleUntil)
                 return true;
-            if (BloodMoonTerminalReliability.HasPendingServer(state.EventId) || BloodMoonServerOwnedDeathRetention.HasPending(state.EventId))
-                return true;
-            return false;
+            return BloodMoonTerminalReliability.HasPendingServer(state.EventId) || BloodMoonServerOwnedDeathRetention.HasPending(state.EventId);
         }
 
         internal static void Reset()
@@ -760,6 +814,7 @@ namespace Seasons.BloodMoon
             settleUntil = 0f;
             holdEventId = -1L;
             minimumHoldUntil = 0f;
+            BloodMoonRound5DrainTimeout.Reset();
         }
     }
 
@@ -1001,33 +1056,13 @@ namespace Seasons.BloodMoon
         }
     }
 
-    [HarmonyPatch(typeof(BloodMoonEnemyDeathReports), nameof(BloodMoonEnemyDeathReports.TryValidate))]
-    internal static class BloodMoonEarlyResolvingDeathReplayPatch
-    {
-        [HarmonyPriority(Priority.First + 200)]
-        private static bool Prefix(long sender, long eventId, long creditedPlayerId, ZDOID enemyId, ref float serverPoints, ref bool __result)
-        {
-            BloodMoonController controller = BloodMoonController.Instance;
-            BloodMoonEventState state = controller?.State;
-            if (state == null || state.EventId != eventId || state.IsCombatLive || !BloodMoonRound5Runtime.IsPreOutcomeDrainOpen(state) ||
-                !state.Participants.TryGetValue(creditedPlayerId, out BloodMoonParticipantState participant) || !participant.IsCombatActive ||
-                !BloodMoonRound5Runtime.ValidateSenderPlayer(controller, sender, creditedPlayerId) ||
-                !BloodMoonEnemyDeathDurability.TryGetCurrentProfileReplay(eventId, creditedPlayerId, enemyId, out float replayPoints))
-                return true;
-
-            serverPoints = replayPoints;
-            __result = replayPoints > 0f && !float.IsNaN(replayPoints) && !float.IsInfinity(replayPoints);
-            return false;
-        }
-    }
-
     [HarmonyPatch(typeof(BloodMoonController), "ExitParticipant")]
     internal static class BloodMoonWithdrawalRetentionPatch
     {
         [HarmonyPriority(Priority.First + 300)]
-        private static bool Prefix(BloodMoonController __instance, BloodMoonParticipantState participant, BloodMoonParticipantExitReason reason)
+        private static bool Prefix(BloodMoonController __instance, BloodMoonParticipantState participant, ref BloodMoonParticipantExitReason reason)
         {
-            return BloodMoonTerminalReliability.BeginWithdrawal(__instance, participant, reason);
+            return BloodMoonTerminalReliability.BeginWithdrawal(__instance, participant, ref reason);
         }
 
         [HarmonyPriority(Priority.Last)]
@@ -1045,28 +1080,15 @@ namespace Seasons.BloodMoon
         {
             return BloodMoonTerminalReliability.HandleDefeatedPrefix(__instance, sender, eventId, playerId);
         }
-
-        [HarmonyPriority(Priority.Last)]
-        private static void Postfix(BloodMoonController __instance, long sender, long eventId, long playerId)
-        {
-            BloodMoonEventState state = __instance?.State;
-            if (state != null && state.EventId == eventId && state.Participants.TryGetValue(playerId, out BloodMoonParticipantState participant) &&
-                participant.IsTerminal && participant.ExitReason == BloodMoonParticipantExitReason.Defeated &&
-                BloodMoonRound5Runtime.ValidateSenderPlayer(__instance, sender, playerId) && BloodMoonPersistence.Save(state))
-            {
-                // The pending marker will be cleared by the custom terminal ACK path on the next retry.
-                // Do not mutate the legacy Defeated marker here; it remains the local terminal-state source.
-            }
-        }
     }
 
     [HarmonyPatch(typeof(BloodMoonNetwork), nameof(BloodMoonNetwork.SendDefeated))]
     internal static class BloodMoonDefeatedProfileTransactionPatch
     {
         [HarmonyPriority(Priority.First + 200)]
-        private static void Prefix(long eventId, long playerId)
+        private static bool Prefix(long eventId, long playerId)
         {
-            BloodMoonTerminalReliability.StoreDefeatedBeforeSend(eventId, playerId);
+            return BloodMoonTerminalReliability.StoreDefeatedBeforeSend(eventId, playerId);
         }
     }
 
@@ -1096,9 +1118,7 @@ namespace Seasons.BloodMoon
         [HarmonyPriority(Priority.First + 300)]
         private static bool Prefix(long eventId, string action)
         {
-            if (action != "enroll")
-                return true;
-            return !BloodMoonTerminalReliability.ShouldIgnoreEnrollment(eventId);
+            return action != "enroll" || !BloodMoonTerminalReliability.ShouldIgnoreEnrollment(eventId);
         }
     }
 
@@ -1109,9 +1129,7 @@ namespace Seasons.BloodMoon
         private static bool Prefix(BloodMoonController __instance)
         {
             BloodMoonEventState state = __instance?.State;
-            if (state == null || state.ResolutionStep != BloodMoonResolutionStep.AdvancingTime)
-                return true;
-            return !BloodMoonOutcomeDrainGate.ShouldHold(__instance);
+            return state == null || state.ResolutionStep != BloodMoonResolutionStep.AdvancingTime || !BloodMoonOutcomeDrainGate.ShouldHold(__instance);
         }
     }
 
