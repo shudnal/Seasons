@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using System;
+using UnityEngine;
 
 namespace Seasons
 {
@@ -15,8 +16,27 @@ namespace Seasons
         public static bool[] m_modifiedPaint;
         public static Color[] m_paintMask;
 
-        public static bool DecultivateGround(ZDO zdo)
+        public static bool DecultivateGround(ZDO zdo) => TryDecultivateGround(zdo, out bool changed) && changed;
+
+        // Success includes a fully inspected no-op; unavailable or unsupported data remains retryable.
+        internal static bool TryDecultivateGround(ZDO zdo, out bool changed)
         {
+            changed = false;
+            try
+            {
+                return DecultivateGroundCore(zdo, out changed);
+            }
+            catch (Exception error)
+            {
+                changed = false;
+                Seasons.LogWarning($"Seasons could not process terrain decultivation; the processed day was not advanced:\n{error}");
+                return false;
+            }
+        }
+
+        private static bool DecultivateGroundCore(ZDO zdo, out bool changed)
+        {
+            changed = false;
             byte[] byteArray = zdo.GetByteArray(ZDOVars.s_TCData);
             if (byteArray == null)
                 return false;
@@ -35,9 +55,18 @@ namespace Seasons
             m_operations = zPackageRead.ReadInt();
             m_lastOpPoint = zPackageRead.ReadVector3();
             m_lastOpRadius = zPackageRead.ReadSingle();
-            m_modifiedHeight = new bool[zPackageRead.ReadInt()];
-            m_levelDelta = new float[m_modifiedHeight.Length];
-            m_smoothDelta = new float[m_modifiedHeight.Length];
+
+            int heightCount = zPackageRead.ReadInt();
+            Heightmap terrainPrefab = ZoneSystem.instance?.m_zonePrefab?.GetComponentInChildren<Heightmap>(true);
+            if (terrainPrefab == null || heightCount != (terrainPrefab.m_width + 1) * (terrainPrefab.m_width + 1))
+            {
+                Seasons.LogWarning("Seasons cannot decultivate ground: the terrain dimensions could not be resolved safely.");
+                return false;
+            }
+
+            m_modifiedHeight = new bool[heightCount];
+            m_levelDelta = new float[heightCount];
+            m_smoothDelta = new float[heightCount];
 
             for (int i = 0; i < m_modifiedHeight.Length; i++)
             {
@@ -54,28 +83,28 @@ namespace Seasons
                 }
             }
 
-            m_modifiedPaint = new bool[zPackageRead.ReadInt()];
-            m_paintMask = new Color[m_modifiedPaint.Length];
-
-            Heightmap terrainPrefab = ZoneSystem.instance?.m_zonePrefab?.GetComponentInChildren<Heightmap>(true);
-            if (terrainPrefab == null || m_modifiedHeight.Length != (terrainPrefab.m_width + 1) * (terrainPrefab.m_width + 1))
-            {
-                Seasons.LogWarning("Seasons cannot decultivate ground: the terrain dimensions could not be resolved safely.");
-                return false;
-            }
-
             // Version 1 stores either the legacy width-squared paint grid or the new vertex-sized grid.
+            int paintCount = zPackageRead.ReadInt();
             int paintPitch;
-            if (m_modifiedPaint.Length == m_modifiedHeight.Length)
+            float paintOffset;
+            if (paintCount == heightCount)
+            {
                 paintPitch = terrainPrefab.m_width + 1;
-            else if (m_modifiedPaint.Length == terrainPrefab.m_width * terrainPrefab.m_width)
+                paintOffset = -0.5f; // Valheim 1.0.7 Heightmap.VertexMaskToWorld.
+            }
+            else if (paintCount == terrainPrefab.m_width * terrainPrefab.m_width)
+            {
                 paintPitch = terrainPrefab.m_width;
+                paintOffset = 0.5f; // Legacy paint cells are centered inside the terrain grid.
+            }
             else
             {
                 Seasons.LogWarning("Seasons cannot decultivate ground: unsupported terrain paint grid dimensions.");
                 return false;
             }
 
+            m_modifiedPaint = new bool[paintCount];
+            m_paintMask = new Color[paintCount];
             Vector3 terrainCenter = zdo.GetPosition();
             int halfWidth = terrainPrefab.m_width / 2;
             float scale = terrainPrefab.m_scale;
@@ -90,9 +119,9 @@ namespace Seasons
                     color.b = zPackageRead.ReadSingle();
                     color.a = zPackageRead.ReadSingle();
 
-                    // Match Heightmap.VertexMaskToWorld. In the Deep North, green stores snow manipulation.
-                    float wx = terrainCenter.x + (j % paintPitch - halfWidth - 0.5f) * scale;
-                    float wz = terrainCenter.z + (j / paintPitch - halfWidth - 0.5f) * scale;
+                    // Use the serialized grid's coordinates. In the Deep North, green stores snow manipulation.
+                    float wx = terrainCenter.x + (j % paintPitch - halfWidth + paintOffset) * scale;
+                    float wz = terrainCenter.z + (j / paintPitch - halfWidth + paintOffset) * scale;
                     float sharedSnowMask = Mathf.Min(color.r, color.b);
                     if (color.g > sharedSnowMask && !WorldGenerator.IsDeepnorth(wx, wz))
                     {
@@ -111,7 +140,7 @@ namespace Seasons
             }
 
             if (!decultivated)
-                return false;
+                return true;
 
             ZPackage zPackageWrite = new ZPackage();
             zPackageWrite.Write(terrainCompVersion);
@@ -142,6 +171,7 @@ namespace Seasons
             }
             byte[] bytes = Utils.Compress(zPackageWrite.GetArray());
             zdo.Set(ZDOVars.s_TCData, bytes);
+            changed = true;
 
             return true;
         }
