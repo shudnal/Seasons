@@ -17,7 +17,9 @@ Current review sequence:
 4. full Codex project-conformance review of `f55064e5239e7abadfa75287be9afc56d4d85914` -> six supported-runtime findings -> fixed/documented in `29_CODEX_CONFORMANCE_REVIEW_ROUND3_FIXES_2026-09-08.md`;
 5. full Codex project-conformance review of the later round-3 head -> seven supported-runtime findings -> fixed/documented in `30_CODEX_CONFORMANCE_REVIEW_ROUND4_FIXES_2026-09-09.md`;
 6. accepted post-review presentation decision -> `31_LATE_BIOME_PRESENTATION_POLICY.md`;
-7. next gate: another full project-conformance review of the exact PR head identified by the new `@codex review` request and Codex review summary.
+7. full Codex project-conformance review of `d8f540558b28c9d341a47ee735ba12d7a42a6e5a` -> eight supported-runtime findings -> fixed/documented in `32_CODEX_CONFORMANCE_REVIEW_ROUND5_FIXES_2026-09-09.md`;
+8. full Codex project-conformance review of `cd7dffaab1d70647dafb51a9ef49aa84038e2714` -> eight supported-runtime findings -> interrupted correction pass resumed and completed in `33_CODEX_CONFORMANCE_REVIEW_ROUND6_FIXES_2026-09-09.md`;
+9. next gate: another full project-conformance review of the exact PR head identified by the new `@codex review` request and Codex review summary.
 
 Do not encode the final exact review head as a self-referential value in this file: updating the file itself creates a newer head. The PR review request/timeline is authoritative for the exact submitted and reviewed SHA.
 
@@ -37,6 +39,8 @@ For current review work read, at minimum:
 - `docs/tasks/blood-moon/29_CODEX_CONFORMANCE_REVIEW_ROUND3_FIXES_2026-09-08.md`;
 - `docs/tasks/blood-moon/30_CODEX_CONFORMANCE_REVIEW_ROUND4_FIXES_2026-09-09.md`;
 - `docs/tasks/blood-moon/31_LATE_BIOME_PRESENTATION_POLICY.md`;
+- `docs/tasks/blood-moon/32_CODEX_CONFORMANCE_REVIEW_ROUND5_FIXES_2026-09-09.md`;
+- `docs/tasks/blood-moon/33_CODEX_CONFORMANCE_REVIEW_ROUND6_FIXES_2026-09-09.md`;
 - `docs/tasks/blood-moon/08_EDGE_CASES_ACCEPTANCE_AND_REPORT.md`;
 - later accepted decisions `16`, `20`, `22`, `23`, `24`, and `31` in their explicit scope.
 
@@ -123,6 +127,14 @@ The decision deliberately separates gameplay from atmosphere:
 
 Future environmental presentation code must use `BloodMoonPresentationPolicy.AllowsEnvironmentalOverridesForCurrentBiome()` instead of inventing independent biome checks.
 
+### Later corrections: rounds 5 and 6
+
+Checkpoint `32` records eight corrections concerning server-owned death retention, pre-outcome report draining, zone-owner lease retirement, pending-spawn token accounting, world-scoped skill records, duplicate prepare and durable personal terminal facts.
+
+Checkpoint `33` completes the following review's eight findings and the interrupted implementation pass. It requires verified profile storage before retention ACK and replay, preserves pending pre-disconnect death transactions and unacknowledged terminal evidence, uses readiness for normal/catch-up combat starts, preserves the first personal terminal reason, isolates the drain timeout by world/state lifetime, and closes late-biome readiness/orphaned-force-environment paths. Its follow-up commit also fixes pending death-evidence consumption/order and local terminal-evidence lookup after reconnect.
+
+Read both checkpoints rather than treating earlier implementation descriptions as proof that those edge cases were already correct. The bounded network drain does not bypass the event-state persistence gate before immutable outcome capture.
+
 ## 7. Documentation integrity repair
 
 During earlier review preparation, an attempted partial edit accidentally replaced `25_PROJECT_CONFORMANCE_MATRIX.md` with a truncated fragment. It was immediately repaired without manual reconstruction by restoring the exact previously verified matrix blob:
@@ -142,7 +154,7 @@ Required scope:
 - complete effective `master...feat/blood-moon` behavior;
 - all major sections of `25_PROJECT_CONFORMANCE_MATRIX.md`;
 - all internal Harmony adapters that modify apparent production behavior;
-- re-review corrections in `27`, `28`, `29`, and `30` for regressions/interactions;
+- re-review corrections in `27`, `28`, `29`, `30`, `32`, and `33` for regressions/interactions;
 - accepted presentation decision `31` and its implementation;
 - supported-client latency/reordering;
 - ZDO/zone ownership and combat-group topology migration;
@@ -154,7 +166,11 @@ Required scope:
 - temporary summon cleanup under final morning advancement and clock changes;
 - recovered forward time jumps and required phase side effects;
 - diagnostic extra cleanup semantics;
-- late-join staged enrollment/death protection;
+- readiness-gated normal, catch-up and late-join enrollment/death protection;
+- verified profile retention and its alternate periodic-replay routes;
+- first terminal-reason preservation and pending evidence across outcome/restart boundaries;
+- server-owned pre-disconnect kill retention without reopening terminal participation;
+- world/state-scoped bounded drain lifetime and persistence-before-outcome capture;
 - Ashlands/Deep North boundary crossing in Forewarning, Marked, Active, GoalReached and early Resolving, verifying presentation-only suppression without gameplay-state changes;
 - ordinary mod interoperability.
 
