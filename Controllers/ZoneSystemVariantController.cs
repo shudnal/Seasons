@@ -442,17 +442,22 @@ namespace Seasons
             if (s_iceSurface != null)
                 return;
 
+            Transform waterSurface = water.Find("WaterSurface");
+            if (waterSurface == null || !waterSurface.TryGetComponent(out MeshFilter waterMesh) || waterMesh.sharedMesh == null)
+            {
+                LogWarning("Unable to initialize the seasonal ice collider: the zone water surface mesh was not found.");
+                return;
+            }
+
+            // The prefab can survive a world change, but the world-specific cached height cannot.
+            s_colliderHeight = waterSurface.position.y + _colliderOffset;
+
             Transform iceSurfaceTransform = water.Find(_iceSurfaceName);
             if (iceSurfaceTransform != null)
             {
                 s_iceSurface = iceSurfaceTransform.gameObject;
                 return;
             }
-
-            Transform waterSurface = water.Find("WaterSurface");
-
-            if (s_colliderHeight == 0f)
-                s_colliderHeight = waterSurface.transform.position.y + _colliderOffset;
 
             s_iceSurface = new GameObject(_iceSurfaceName);
             s_iceSurface.transform.SetParent(water);
@@ -462,7 +467,7 @@ namespace Seasons
             s_iceSurface.SetActive(false);
 
             MeshCollider iceCollider = s_iceSurface.gameObject.AddComponent<MeshCollider>();
-            iceCollider.sharedMesh = waterSurface.GetComponent<MeshFilter>().sharedMesh;
+            iceCollider.sharedMesh = waterMesh.sharedMesh;
             iceCollider.material.staticFriction = 0.1f;
             iceCollider.material.dynamicFriction = 0.1f;
             iceCollider.material.frictionCombine = PhysicsMaterialCombine.Minimum;
