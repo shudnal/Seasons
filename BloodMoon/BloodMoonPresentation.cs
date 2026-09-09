@@ -13,10 +13,12 @@ namespace Seasons.BloodMoon
             Heightmap.Biome biome = Heightmap.Biome.None;
             if (EnvMan.instance != null)
                 biome = EnvMan.instance.GetCurrentBiome();
-            else if (Player.m_localPlayer != null)
+            if (biome == Heightmap.Biome.None && Player.m_localPlayer != null)
                 biome = Player.m_localPlayer.GetCurrentBiome();
 
-            return biome == Heightmap.Biome.None || (biome & ExcludedEnvironmentalBiomes) == 0;
+            // An existing EnvMan may not have resolved its biome yet. Do not temporarily force weather
+            // over an excluded biome while both local sources are still waiting for world initialization.
+            return biome != Heightmap.Biome.None && (biome & ExcludedEnvironmentalBiomes) == 0;
         }
 
         internal static bool IsExcludedEnvironmentalBiome(Heightmap.Biome biome)
@@ -73,13 +75,18 @@ namespace Seasons.BloodMoon
             BloodMoonStatus.UpdateLocal();
 
             bool allowEnvironmentalOverrides = BloodMoonPresentationPolicy.AllowsEnvironmentalOverridesForCurrentBiome();
-            if (!lastEnvironmentalOverridesAllowed.HasValue || lastEnvironmentalOverridesAllowed.Value != allowEnvironmentalOverrides)
+            bool gateChanged = !lastEnvironmentalOverridesAllowed.HasValue || lastEnvironmentalOverridesAllowed.Value != allowEnvironmentalOverrides;
+            lastEnvironmentalOverridesAllowed = allowEnvironmentalOverrides;
+            if (!allowEnvironmentalOverrides || !ShouldForceEnvironment(BloodMoonNetwork.ClientGlobal))
             {
-                lastEnvironmentalOverridesAllowed = allowEnvironmentalOverrides;
-                if (allowEnvironmentalOverrides && ShouldForceEnvironment(BloodMoonNetwork.ClientGlobal))
-                    BloodMoonEnvironment.AcquireForcedEnvironment();
-                else
-                    BloodMoonEnvironment.ReleaseForcedEnvironment();
+                // Another environment owner may restore its displaced Blood Moon value after our lease
+                // was released. Reconcile disallowed presentation every tick, not only at a biome edge.
+                BloodMoonEnvironment.ReleaseForcedEnvironment();
+            }
+            else if (gateChanged)
+            {
+                // Do not fight another mod's live environment by reacquiring unconditionally every tick.
+                BloodMoonEnvironment.AcquireForcedEnvironment();
             }
 
             if (behaviour != null)

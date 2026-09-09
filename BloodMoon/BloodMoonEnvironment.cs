@@ -74,7 +74,7 @@ namespace Seasons.BloodMoon
 
             string currentForceEnvironment = envMan.m_forceEnv ?? string.Empty;
             if (!ownsForceEnvironment || currentForceEnvironment != EnvironmentName)
-                previousForceEnvironment = currentForceEnvironment;
+                previousForceEnvironment = currentForceEnvironment == EnvironmentName ? string.Empty : currentForceEnvironment;
             envMan.SetForceEnvironment(EnvironmentName);
             ownsForceEnvironment = envMan.m_forceEnv == EnvironmentName;
             SetParticleFactor(1f);
@@ -83,8 +83,16 @@ namespace Seasons.BloodMoon
         internal static void ReleaseForcedEnvironment()
         {
             EnvMan envMan = EnvMan.instance;
-            if (envMan != null && ownsForceEnvironment && envMan.m_forceEnv == EnvironmentName)
-                envMan.SetForceEnvironment(previousForceEnvironment ?? string.Empty);
+            if (envMan != null && envMan.m_forceEnv == EnvironmentName)
+            {
+                // A foreign owner can restore its displaced Blood Moon value after we released the lease.
+                // That orphan has no current restore target: return to native weather instead of reviving
+                // an already-ended foreign override or restoring Blood Moon to itself.
+                string restore = ownsForceEnvironment && previousForceEnvironment != EnvironmentName
+                    ? previousForceEnvironment ?? string.Empty
+                    : string.Empty;
+                envMan.SetForceEnvironment(restore);
+            }
             ownsForceEnvironment = false;
             previousForceEnvironment = string.Empty;
             SetParticleFactor(0f);
@@ -200,8 +208,8 @@ namespace Seasons.BloodMoon
             env.m_fogColorSunDay = Color.Lerp(env.m_fogColorSunDay, target.m_fogColorSunDay, factor);
             env.m_fogColorSunEvening = Color.Lerp(env.m_fogColorSunEvening, target.m_fogColorSunEvening, factor);
             env.m_sunColorNight = Color.Lerp(env.m_sunColorNight, target.m_sunColorNight, factor);
-            env.m_sunColorMorning = Color.Lerp(env.m_sunColorMorning, target.m_sunColorMorning, factor);
             env.m_sunColorDay = Color.Lerp(env.m_sunColorDay, target.m_sunColorDay, factor);
+            env.m_sunColorMorning = Color.Lerp(env.m_sunColorMorning, target.m_sunColorMorning, factor);
             env.m_sunColorEvening = Color.Lerp(env.m_sunColorEvening, target.m_sunColorEvening, factor);
         }
 
