@@ -26,7 +26,7 @@ namespace Seasons
 
             if (terrainCompVersion != ZoneSystemVariantController.s_terrainCompVersion)
             {
-                Seasons.LogWarning($"Season can not decultivate ground due to changes in terrain compiler data");
+                Seasons.LogWarning("Seasons cannot decultivate ground: unsupported terrain compiler data version.");
                 return false;
             }
 
@@ -57,6 +57,28 @@ namespace Seasons
             m_modifiedPaint = new bool[zPackageRead.ReadInt()];
             m_paintMask = new Color[m_modifiedPaint.Length];
 
+            Heightmap terrainPrefab = ZoneSystem.instance?.m_zonePrefab?.GetComponentInChildren<Heightmap>(true);
+            if (terrainPrefab == null || m_modifiedHeight.Length != (terrainPrefab.m_width + 1) * (terrainPrefab.m_width + 1))
+            {
+                Seasons.LogWarning("Seasons cannot decultivate ground: the terrain dimensions could not be resolved safely.");
+                return false;
+            }
+
+            // Version 1 stores either the legacy width-squared paint grid or the new vertex-sized grid.
+            int paintPitch;
+            if (m_modifiedPaint.Length == m_modifiedHeight.Length)
+                paintPitch = terrainPrefab.m_width + 1;
+            else if (m_modifiedPaint.Length == terrainPrefab.m_width * terrainPrefab.m_width)
+                paintPitch = terrainPrefab.m_width;
+            else
+            {
+                Seasons.LogWarning("Seasons cannot decultivate ground: unsupported terrain paint grid dimensions.");
+                return false;
+            }
+
+            Vector3 terrainCenter = zdo.GetPosition();
+            int halfWidth = terrainPrefab.m_width / 2;
+            float scale = terrainPrefab.m_scale;
             for (int j = 0; j < m_modifiedPaint.Length; j++)
             {
                 m_modifiedPaint[j] = zPackageRead.ReadBool();
@@ -68,10 +90,15 @@ namespace Seasons
                     color.b = zPackageRead.ReadSingle();
                     color.a = zPackageRead.ReadSingle();
 
-                    if (color.g > 0)
+                    // Match Heightmap.VertexMaskToWorld. In the Deep North, green stores snow manipulation.
+                    float wx = terrainCenter.x + (j % paintPitch - halfWidth - 0.5f) * scale;
+                    float wz = terrainCenter.z + (j / paintPitch - halfWidth - 0.5f) * scale;
+                    float sharedSnowMask = Mathf.Min(color.r, color.b);
+                    if (color.g > sharedSnowMask && !WorldGenerator.IsDeepnorth(wx, wz))
                     {
+                        // Keep the common RGB contribution used by the DeepSnow paint mask.
                         color.r = Mathf.Max(color.r, color.g);
-                        color.g = 0;
+                        color.g = sharedSnowMask;
                         decultivated = true;
                     }
 
