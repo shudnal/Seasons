@@ -973,12 +973,13 @@ namespace Seasons
             }
         }
 
-        [HarmonyPatch(typeof(Settings), nameof(Settings.ApplyAndClose))]
-        public static class Settings_ApplyAndClose_ForceUpdateState
+        [HarmonyPatch(typeof(CameraEffects), nameof(CameraEffects.SetBloom))]
+        public static class CameraEffects_SetBloom_WinterOverride
         {
-            private static void Postfix()
+            private static void Prefix(ref bool enabled)
             {
-                seasonState?.UpdateWinterBloomEffect();
+                if (SeasonState.IsActive && disableBloomInWinter.Value && seasonState.GetCurrentSeason() == Season.Winter)
+                    enabled = false;
             }
         }
     }

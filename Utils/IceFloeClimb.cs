@@ -10,7 +10,7 @@ namespace Seasons
         public void Start()
         {
             ZNetView m_nview = GetComponent<ZNetView>();
-            if (m_nview != null && m_nview.m_body != null)
+            if (m_nview != null && m_nview.IsValid() && m_nview.m_body != null)
             {
                 float mass = m_nview.GetZDO().GetFloat(SeasonsVars.s_iceFloeMass);
                 if (mass != 0f)
@@ -49,13 +49,13 @@ namespace Seasons
             return "";
         }
 
-        public float GetHoverOffset()
-        {
-            return 0f;
-        }
+        public float GetHoverOffset() => 0f;
 
         public bool InUseDistance(Humanoid human)
         {
+            if (human == null)
+                return false;
+
             if (base.transform.position.y - human.transform.position.y < 0.5f)
                 return false;
 
