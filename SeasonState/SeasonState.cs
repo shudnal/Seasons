@@ -1092,6 +1092,9 @@ namespace Seasons
             if (IsProtectedPosition(pickable.transform.position) || secondsLeft <= 0d)
                 return secondsLeft;
 
+            if (!_seasons.Any(season => GetPlantsGrowthMultiplier(season) > 0f))
+                return double.PositiveInfinity;
+
             double pickedTimeSeconds = TimeSpan.FromTicks(pickable.m_nview.GetZDO().GetLong(ZDOVars.s_pickedTime, 0L)).TotalSeconds;
             int worldDay = GetWorldDay(pickedTimeSeconds);
             Season season = GetSeason(worldDay);
@@ -1173,11 +1176,16 @@ namespace Seasons
 
         private double GetSecondsLeftWithSeasonalMultiplier(double secondsLeft, Func<Season, float> getMultiplier)
         {
+            if (secondsLeft <= 0d)
+                return 0d;
+            if (!_seasons.Any(season => getMultiplier(season) > 0f))
+                return double.PositiveInfinity;
+
             Season season = GetCurrentSeason();
             float multiplier = getMultiplier.Invoke(season);
 
             double seconds = 0d;
-            double secondsToSeasonEnd = GetTimeToCurrentSeasonEnd();
+            double secondsToSeasonEnd = Math.Max(0d, GetTimeToCurrentSeasonEnd());
 
             do
             {

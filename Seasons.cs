@@ -862,6 +862,9 @@ namespace Seasons
             if (seconds <= 0)
                 return "$hud_ready".Localize();
 
+            if (double.IsPositiveInfinity(seconds))
+                return "\u221e";
+
             TimeSpan ts = TimeSpan.FromSeconds(seconds);
             return ts.ToString(ts.Hours > 0 ? @"h\:mm\:ss" : @"m\:ss");
         }
@@ -1073,12 +1076,13 @@ namespace Seasons
 
         public static IEnumerator PickableSetPickedInWinter(Pickable pickable)
         {
+            ZNetScene scene = ZNetScene.instance;
             yield return waitFor1Second;
 
-            if (!pickable.ShouldBePickedInWinter())
+            if (!scene || ZNetScene.instance != scene || !pickable || !pickable.ShouldBePickedInWinter())
                 yield break;
 
-            if (!pickable.m_nview || !pickable.m_nview.IsValid())
+            if (!pickable.m_nview || !pickable.m_nview.IsValid() || !pickable.m_nview.IsOwner())
                 yield break;
 
             if (UnityEngine.Random.Range(0f, 1f) < Mathf.Clamp01(chanceToProduceACropInWinter.Value))
@@ -1089,9 +1093,14 @@ namespace Seasons
 
         public static IEnumerator ReplantTree(GameObject prefab, Vector3 position, Quaternion rotation, float scale)
         {
+            ZNetScene scene = ZNetScene.instance;
+            ZoneSystem zones = ZoneSystem.instance;
             yield return waitFor5Seconds;
 
-            if (ZoneSystem.instance.IsBlocked(position))
+            if (!scene || ZNetScene.instance != scene || !zones || ZoneSystem.instance != zones || !prefab)
+                yield break;
+
+            if (zones.IsBlocked(position))
                 yield break;
 
             if ((bool)EffectArea.IsPointInsideArea(position, EffectArea.Type.PlayerBase))
@@ -1101,7 +1110,10 @@ namespace Seasons
 
             yield return waitForFixedUpdate;
 
-            if (result != null && result.TryGetComponent(out ZNetView m_nview) && m_nview.IsValid())
+            if (!scene || ZNetScene.instance != scene)
+                yield break;
+
+            if (result != null && result.TryGetComponent(out ZNetView m_nview) && m_nview.IsValid() && m_nview.IsOwner())
             {
                 m_nview.GetZDO().Set(SeasonsVars.s_treeRegrowthHaveGrowSpace, true);
 
