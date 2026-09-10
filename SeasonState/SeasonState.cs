@@ -37,6 +37,7 @@ namespace Seasons
         private static readonly Dictionary<Heightmap.Biome, string> biomesDefault = new Dictionary<Heightmap.Biome, string>();
         private static readonly Dictionary<string, EnvSetup> replacedEnvironmentDefaults = new Dictionary<string, EnvSetup>(StringComparer.Ordinal);
         private static readonly Dictionary<string, EnvSetup> appliedSeasonEnvironmentObjects = new Dictionary<string, EnvSetup>(StringComparer.Ordinal);
+        private static readonly HashSet<Texture2D> generatedEnvironmentTextures = new HashSet<Texture2D>();
         private static readonly List<ItemDrop.ItemData> _itemDataList = new List<ItemDrop.ItemData>();
         private static readonly HashSet<string> _coolingFoodNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static int _pendingSeasonChange = 0;
@@ -479,6 +480,7 @@ namespace Seasons
 
                 EnvSetup environment = senv.ToEnvSetup();
                 EnvMan.instance.AppendEnvironment(environment);
+                generatedEnvironmentTextures.Add(environment.m_auroraGradientTexture);
                 appliedSeasonEnvironmentObjects[senv.m_name] = environment;
 
                 SeasonEnvironment.AddCachedObjects(environment);
@@ -550,10 +552,32 @@ namespace Seasons
             foreach (KeyValuePair<string, EnvSetup> defaultEnvironment in replacedEnvironmentDefaults)
             {
                 if (defaultEnvironment.Value != null && EnvMan.instance.GetEnv(defaultEnvironment.Key) == null)
-                    EnvMan.instance.AppendEnvironment(defaultEnvironment.Value);
+                    // The saved native entry was already initialized, including its gradient texture.
+                    EnvMan.instance.m_environments.Add(defaultEnvironment.Value);
             }
 
             ResetEnvironmentStateTracking();
+        }
+
+        internal static void ReleaseUnusedEnvironmentTextures()
+        {
+            if (generatedEnvironmentTextures.Count == 0)
+                return;
+
+            EnvMan environmentManager = EnvMan.instance;
+            foreach (Texture2D texture in generatedEnvironmentTextures.ToArray())
+            {
+                if (texture && environmentManager != null
+                    && (environmentManager.m_currentEnv?.m_auroraGradientTexture == texture
+                        || environmentManager.m_prevEnv?.m_auroraGradientTexture == texture
+                        || environmentManager.m_nextEnv?.m_auroraGradientTexture == texture
+                        || environmentManager.m_environments.Any(environment => environment.m_auroraGradientTexture == texture)))
+                    continue;
+
+                if (texture)
+                    UnityEngine.Object.Destroy(texture);
+                generatedEnvironmentTextures.Remove(texture);
+            }
         }
 
         private static void RefreshBiomeEnvironmentReferences()

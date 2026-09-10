@@ -75,7 +75,11 @@ namespace Seasons
                 yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.OnDestroy));
             }
 
-            private static void Postfix() => totalSecondsCached = 0;
+            private static void Postfix()
+            {
+                totalSecondsCached = 0;
+                SeasonState.ReleaseUnusedEnvironmentTextures();
+            }
         }
 
         [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.UpdateTriggers))]
@@ -202,6 +206,7 @@ namespace Seasons
             }
             private static void Postfix(bool __state)
             {
+                SeasonState.ReleaseUnusedEnvironmentTextures();
                 if (__state != SeasonState.IsCold())
                     seasonState.CheckOverheatStatus(Player.m_localPlayer);
             }
