@@ -20,8 +20,6 @@ namespace Seasons
         private int m_dayInSeasonGlobal = 0;
         private bool m_seasonIsChanging = false;
         private bool m_isUsingIngameDays = true;
-        private int m_dayStartFractionCacheWorldDay = int.MinValue;
-        private float m_dayStartFractionCached = EnvMan.c_MorningL;
 
         public static readonly Dictionary<Season, SeasonSettings> seasonsSettings = new Dictionary<Season, SeasonSettings>();
         public static List<SeasonEnvironment> seasonEnvironments = SeasonEnvironment.GetDefaultCustomEnvironments();
@@ -281,7 +279,7 @@ namespace Seasons
             else if (dayInSeason < firstPeakDay)
             {
                 Season previous = GetPreviousSeason(season);
-                int daysInPreviousSeason = GetDaysInSeason(season);
+                int daysInPreviousSeason = GetDaysInSeason(previous);
 
                 lastPeakDay = Mathf.CeilToInt(daysInPreviousSeason / 2f);
                 int daysInPrevious = daysInPreviousSeason - lastPeakDay;
@@ -840,7 +838,7 @@ namespace Seasons
 
         public void UpdateGlobalKeys()
         {
-            if (!IsActive)
+            if (!IsActive || !ZoneSystem.instance || !ZNet.instance || !ZNet.instance.IsServer())
                 return;
 
             foreach (Season season in _seasons)
@@ -899,12 +897,7 @@ namespace Seasons
         public float DayStartFraction()
         {
             int worldDay = GetCurrentWorldDay();
-            if (m_dayStartFractionCacheWorldDay == worldDay)
-                return m_dayStartFractionCached;
-
-            m_dayStartFractionCacheWorldDay = worldDay;
-            m_dayStartFractionCached = DayStartFraction(GetSeason(worldDay), GetDayInSeason(worldDay));
-            return m_dayStartFractionCached;
+            return DayStartFraction(GetSeason(worldDay), GetDayInSeason(worldDay));
         }
 
         public float DayStartFraction(Season season, int dayInSeason)

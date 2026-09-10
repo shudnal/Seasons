@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 using static Seasons.Seasons;
 
@@ -22,17 +23,44 @@ namespace Seasons
                 yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.Awake));
                 yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.FixedUpdate));
                 yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.GetCurrentDay));
-                yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.GetDay));
+                yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.GetDay), Type.EmptyTypes);
+                yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.GetDay), new[] { typeof(double) });
                 yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.GetMorningStartSec));
                 yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.SkipToMorning));
             }
 
-            [HarmonyPriority(Priority.First)]
-            private static void Prefix(ref long ___m_dayLengthSec)
+            private sealed class DayLengthState
             {
-                if (dayLengthSec.Value != 0L && ___m_dayLengthSec != dayLengthSec.Value)
+                public long original;
+                public long applied;
+            }
+
+            private static readonly ConditionalWeakTable<EnvMan, DayLengthState> dayLengths = new ConditionalWeakTable<EnvMan, DayLengthState>();
+
+            [HarmonyPriority(Priority.First)]
+            private static void Prefix(EnvMan __instance, ref long ___m_dayLengthSec)
+            {
+                long requested = dayLengthSec.Value;
+                if (requested == 0L)
                 {
-                    ___m_dayLengthSec = dayLengthSec.Value;
+                    if (dayLengths.TryGetValue(__instance, out DayLengthState previous))
+                    {
+                        if (___m_dayLengthSec == previous.applied)
+                            ___m_dayLengthSec = previous.original;
+                        dayLengths.Remove(__instance);
+                        SeasonState.CheckSeasonChange();
+                    }
+                    return;
+                }
+
+                requested = Math.Max(5L, requested);
+                DayLengthState state = dayLengths.GetValue(__instance, _ => new DayLengthState());
+                if (state.applied == 0L || ___m_dayLengthSec != state.applied)
+                    state.original = ___m_dayLengthSec;
+                state.applied = requested;
+                if (___m_dayLengthSec != requested)
+                {
+                    ___m_dayLengthSec = requested;
                     SeasonState.CheckSeasonChange();
                 }
             }
