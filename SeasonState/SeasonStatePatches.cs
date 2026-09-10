@@ -1099,7 +1099,7 @@ namespace Seasons
         {
             private static void Prefix(ref bool enabled)
             {
-                if (SeasonState.IsActive && disableBloomInWinter.Value && seasonState.GetCurrentSeason() == Season.Winter)
+                if (SeasonState.IsActive && UseTextureControllers() && disableBloomInWinter.Value && seasonState.GetCurrentSeason() == Season.Winter)
                     enabled = false;
             }
         }

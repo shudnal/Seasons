@@ -1321,7 +1321,7 @@ namespace Seasons
 
         public void UpdateWinterBloomEffect()
         {
-            if (IsActive && UseTextureControllers() && CameraEffects.instance != null && GraphicsSettingsManager.Instance != null)
+            if (CameraEffects.instance != null && GraphicsSettingsManager.Instance != null)
                 CameraEffects.instance.SetBloom(GraphicsSettingsManager.Instance.ActiveSettings.m_bloom);
         }
 
