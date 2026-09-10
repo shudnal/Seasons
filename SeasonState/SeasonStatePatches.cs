@@ -64,16 +64,39 @@ namespace Seasons
                 if (__instance != Player.m_localPlayer)
                     return;
 
-                seasonState.PatchTorchesInInventory(__instance.GetInventory());
+                seasonState.UpdateTorchesFireWarmth();
             }
         }
 
-        [HarmonyPatch(typeof(Inventory), nameof(Inventory.Load))]
+        [HarmonyPatch]
+        public static class VisEquipment_HandEquipped_TorchWarmth
+        {
+            private static IEnumerable<MethodBase> TargetMethods()
+            {
+                yield return AccessTools.Method(typeof(VisEquipment), nameof(VisEquipment.SetRightHandEquipped), new[] { typeof(int), typeof(int) });
+                yield return AccessTools.Method(typeof(VisEquipment), nameof(VisEquipment.SetLeftHandEquipped), new[] { typeof(int), typeof(int), typeof(int) });
+            }
+
+            private static void Postfix(VisEquipment __instance, bool __result)
+            {
+                if (__result && Player.m_localPlayer != null && Player.m_localPlayer.m_visEquipment == __instance)
+                    seasonState.UpdateTorchesFireWarmth();
+            }
+        }
+
+        [HarmonyPatch]
         public class Inventory_Load_TorchPatch
         {
+            private static IEnumerable<MethodBase> TargetMethods()
+            {
+                yield return AccessTools.Method(typeof(Inventory), nameof(Inventory.Load), new[] { typeof(ZPackage) });
+                yield return AccessTools.Method(typeof(Inventory), nameof(Inventory.Load), new[] { typeof(ZPackage), typeof(bool) });
+            }
+
             public static void Postfix(Inventory __instance)
             {
-                seasonState.PatchTorchesInInventory(__instance);
+                if (!__instance.m_temoraryInventory)
+                    seasonState.PatchTorchesInInventory(__instance);
             }
         }
 
@@ -98,9 +121,12 @@ namespace Seasons
                     return;
 
                 Season season = seasonState.GetCurrentSeason();
-                __result = __instance.name == "Halloween" && season == Season.Fall
-                        || __instance.name == "Midsummer" && season == Season.Summer
-                        || __instance.name == "Yule" && season == Season.Winter;
+                switch (__instance.name)
+                {
+                    case "Halloween": __result = season == Season.Fall; break;
+                    case "Midsummer": __result = season == Season.Summer; break;
+                    case "Yule": __result = season == Season.Winter; break;
+                }
             }
         }
 
@@ -926,12 +952,58 @@ namespace Seasons
         public static class Bed_CheckFire_PreventSleepingWithTorchFiresource
         {
             [HarmonyPriority(Priority.First)]
-            private static void Prefix(Humanoid human)
+            private static void Prefix(Player human, ref List<Tuple<EffectArea, EffectArea.Type, bool>> __state)
             {
-                if (human == Player.m_localPlayer && seasonState.GetTorchAsFiresource() &&
-                    (human.GetLeftItem() != null && human.GetLeftItem().m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch
-                     || human.GetRightItem() != null && human.GetRightItem().m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch))
-                    human.HideHandItems();
+                if (human == null || human != Player.m_localPlayer || !seasonState.GetTorchAsFiresource())
+                    return;
+
+                bool leftTorch = human.GetLeftItem()?.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch;
+                bool rightTorch = human.GetRightItem()?.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch;
+                if (!leftTorch && !rightTorch)
+                    return;
+
+                __state = new List<Tuple<EffectArea, EffectArea.Type, bool>>();
+                if (human.m_visEquipment != null)
+                {
+                    if (leftTorch)
+                        SuppressHeat(human.m_visEquipment.m_leftItemInstance, __state);
+                    if (rightTorch)
+                        SuppressHeat(human.m_visEquipment.m_rightItemInstance, __state);
+                }
+
+                // Hiding items updates equipment hashes before the visual heat areas are removed.
+                human.HideHandItems();
+            }
+
+            private static void SuppressHeat(GameObject visual, List<Tuple<EffectArea, EffectArea.Type, bool>> state)
+            {
+                if (visual == null)
+                    return;
+
+                foreach (EffectArea area in visual.GetComponentsInChildren<EffectArea>(true))
+                {
+                    if (state.Any(entry => entry.Item1 == area))
+                        continue;
+
+                    state.Add(Tuple.Create(area, area.m_type, area.m_isHeatType));
+                    area.m_type &= ~EffectArea.Type.Heat;
+                    area.m_isHeatType = false;
+                }
+            }
+
+            private static void Finalizer(List<Tuple<EffectArea, EffectArea.Type, bool>> __state)
+            {
+                if (__state == null)
+                    return;
+
+                foreach (var entry in __state)
+                {
+                    if (entry.Item1 == null)
+                        continue;
+
+                    entry.Item1.m_type = entry.Item2;
+                    entry.Item1.m_isHeatType = entry.Item3;
+                }
             }
         }
 

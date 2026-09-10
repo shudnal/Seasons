@@ -26,7 +26,7 @@ namespace Seasons
         {
             if (m_season != seasonState.GetCurrentSeason())
                 Setup(m_character);
-            else if (seasonalStatsOutdoorsOnly.Value && m_character != null && m_character == Player.m_localPlayer && m_character.InInterior() != m_indoors)
+            else if (m_character != null && m_character == Player.m_localPlayer && m_character.InInterior() != m_indoors)
                 Setup(m_character);
             else
                 base.UpdateStatusEffect(dt);
@@ -37,7 +37,7 @@ namespace Seasons
             StatusEffectHud.EnsureTimeTextRichText();
             
             m_season = seasonState.GetCurrentSeason();
-            if (m_indoors != (m_indoors = m_character != null && m_character == Player.m_localPlayer && m_character.InInterior()))
+            if (m_indoors != (m_indoors = character != null && character == Player.m_localPlayer && character.InInterior()))
                 seasonState.OnInteriorChanged(m_indoors);
 
             UpdateSeasonStatusEffect();

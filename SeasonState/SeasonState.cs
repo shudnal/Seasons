@@ -149,7 +149,7 @@ namespace Seasons
 
         public void OnBiomeChange(Heightmap.Biome previousBiome, Heightmap.Biome currentBiome)
         {
-            if (previousBiome == Heightmap.Biome.None || previousBiome == currentBiome)
+            if (previousBiome == currentBiome)
                 return;
 
             if (GetCurrentSeason() == Season.Winter && (previousBiome == Heightmap.Biome.AshLands || currentBiome == Heightmap.Biome.AshLands))
@@ -1364,7 +1364,7 @@ namespace Seasons
 
         public void UpdateTorchFireWarmth(string prefabName)
         {
-            GameObject prefab = ObjectDB.instance.GetItemPrefab(prefabName);
+            GameObject prefab = ObjectDB.instance?.GetItemPrefab(prefabName);
             if (prefab == null)
                 return;
 
@@ -1389,9 +1389,9 @@ namespace Seasons
             component.m_isHeatType = component.m_type.HasFlag(EffectArea.Type.Heat);
 
             ItemDrop item = prefab.GetComponent<ItemDrop>();
-            PatchTorchItemData(item.m_itemData);
+            PatchTorchItemData(item?.m_itemData);
 
-            if (Player.m_localPlayer != null)
+            if (Player.m_localPlayer != null && Player.m_localPlayer.m_visEquipment != null)
             {
                 if (Player.m_localPlayer.m_visEquipment.m_rightItem == prefabName.GetStableHashCode() && (Player.m_localPlayer.m_visEquipment.m_rightItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea rightEffect))
                 {
