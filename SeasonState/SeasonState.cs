@@ -1327,8 +1327,8 @@ namespace Seasons
 
         public void UpdateWinterBloomEffect()
         {
-            if (IsActive && UseTextureControllers())
-                CameraEffects.instance.SetBloom((!disableBloomInWinter.Value || GetCurrentSeason() != Season.Winter) && PlatformPrefs.GetInt("Bloom", 1) == 1);
+            if (IsActive && UseTextureControllers() && CameraEffects.instance != null && GraphicsSettingsManager.Instance != null)
+                CameraEffects.instance.SetBloom(GraphicsSettingsManager.Instance.ActiveSettings.m_bloom);
         }
 
         public int GetYearLengthInDays()
@@ -1407,13 +1407,13 @@ namespace Seasons
 
             if (Player.m_localPlayer != null)
             {
-                if (Player.m_localPlayer.m_visEquipment.m_rightItem == prefabName && (Player.m_localPlayer.m_visEquipment.m_rightItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea rightEffect))
+                if (Player.m_localPlayer.m_visEquipment.m_rightItem == prefabName.GetStableHashCode() && (Player.m_localPlayer.m_visEquipment.m_rightItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea rightEffect))
                 {
                     rightEffect.m_type = component.m_type;
                     rightEffect.m_isHeatType = component.m_isHeatType;
                 }
 
-                if (Player.m_localPlayer.m_visEquipment.m_leftItem == prefabName && (Player.m_localPlayer.m_visEquipment.m_leftItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea leftEffect))
+                if (Player.m_localPlayer.m_visEquipment.m_leftItem == prefabName.GetStableHashCode() && (Player.m_localPlayer.m_visEquipment.m_leftItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea leftEffect))
                 {
                     leftEffect.m_type = component.m_type;
                     leftEffect.m_isHeatType = component.m_isHeatType;
