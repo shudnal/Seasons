@@ -34,72 +34,153 @@ namespace Seasons
         public static readonly Dictionary<string, AudioClip> audioClips         = new Dictionary<string, AudioClip>();
         public static readonly Dictionary<string, MusicSettings> clipSettings   = new Dictionary<string, MusicSettings>();
 
+        private sealed class MusicRegistration
+        {
+            public MusicMan.NamedMusic original;
+            public MusicMan.NamedMusic applied;
+            public MusicMan.NamedMusic originalHashEntry;
+            public AudioClip clip;
+            public MusicSettings settings;
+        }
+
+        private static MusicMan registeredManager;
+        private static readonly Dictionary<string, MusicRegistration> registrations = new Dictionary<string, MusicRegistration>();
+        private static FileSystemWatcher watcher;
+
         internal static void SetupConfigWatcher()
         {
-            string filter = $"*.*";
-
-            FileSystemWatcher fileSystemWatcher = new FileSystemWatcher(GetSubdirectory(), filter);
-            fileSystemWatcher.Changed += new FileSystemEventHandler(UpdateClipOnChange);
-            fileSystemWatcher.Created += new FileSystemEventHandler(UpdateClipOnChange);
-            fileSystemWatcher.Renamed += new RenamedEventHandler(UpdateClipOnChange);
-            fileSystemWatcher.Deleted += new FileSystemEventHandler(UpdateClipOnChange);
-            fileSystemWatcher.IncludeSubdirectories = true;
-            fileSystemWatcher.SynchronizingObject = ThreadingHelper.SynchronizingObject;
-            fileSystemWatcher.EnableRaisingEvents = true;
-
-            UpdateCustomMusic();
+            if (watcher == null)
+            {
+                watcher = new FileSystemWatcher(GetSubdirectory(), "*.*");
+                watcher.Changed += UpdateClipOnChange;
+                watcher.Created += UpdateClipOnChange;
+                watcher.Renamed += UpdateClipOnChange;
+                watcher.Deleted += UpdateClipOnChange;
+                watcher.IncludeSubdirectories = true;
+                watcher.SynchronizingObject = ThreadingHelper.SynchronizingObject;
+                watcher.EnableRaisingEvents = true;
+                UpdateCustomMusic();
+            }
 
             CheckMusicList();
-
             SeasonEnvironment.ClearCachedObjects();
         }
 
         internal static void CheckMusicList()
         {
-            if (!MusicMan.instance)
+            MusicMan manager = MusicMan.instance;
+            if (!manager)
                 return;
 
-            foreach (KeyValuePair<string, AudioClip> clip in audioClips)
-                (MusicMan.instance.m_music.Find(music => music.m_name == clip.Key) ?? GetNewMusic(clip.Key)).m_clips = new AudioClip[1] { clip.Value };
-
-            MusicMan.instance.m_musicHashes.Clear();
-            foreach (MusicMan.NamedMusic music in MusicMan.instance.m_music)
+            if (registeredManager != manager)
             {
-                if (clipSettings.TryGetValue(music.m_name, out MusicSettings musicSettings))
+                registrations.Clear();
+                registeredManager = manager;
+            }
+
+            HashSet<string> restartMusic = new HashSet<string>();
+            foreach (KeyValuePair<string, MusicRegistration> pair in registrations.ToList())
+            {
+                MusicRegistration registration = pair.Value;
+                audioClips.TryGetValue(pair.Key, out AudioClip currentClip);
+                clipSettings.TryGetValue(pair.Key, out MusicSettings currentSettings);
+                if ((currentClip != null || currentSettings != null) && ReferenceEquals(currentClip, registration.clip)
+                    && ReferenceEquals(currentSettings, registration.settings) && manager.m_music.Contains(registration.applied))
+                    continue;
+
+                if (ReferenceEquals(manager.m_currentMusic, registration.applied) || ReferenceEquals(manager.m_queuedMusic, registration.applied))
                 {
-                    music.m_ambientMusic = musicSettings.m_ambientMusic;
-                    music.m_resume = musicSettings.m_resume;
-                    music.m_alwaysFadeout = musicSettings.m_alwaysFadeout;
-                    music.m_enabled = musicSettings.m_enabled;
-                    music.m_fadeInTime = musicSettings.m_fadeInTime;
-                    music.m_loop = musicSettings.m_loop;
-                    music.m_volume = musicSettings.m_volume;
+                    manager.StopMusic();
+                    restartMusic.Add(pair.Key);
+                }
+                if (MusicMan_GetEnvironmentMusic_FrozenOceanNightMusic.WasReleased(registration.original))
+                    registration.original = null;
+                if (MusicMan_GetEnvironmentMusic_FrozenOceanNightMusic.WasReleased(registration.originalHashEntry))
+                    registration.originalHashEntry = null;
+                int index = manager.m_music.IndexOf(registration.applied);
+                if (index >= 0)
+                {
+                    if (registration.original != null)
+                        manager.m_music[index] = registration.original;
+                    else
+                        manager.m_music.RemoveAt(index);
                 }
 
-                if (music.m_enabled && music.m_clips.Length != 0 && music.m_clips[0] != null)
-                    MusicMan.instance.m_musicHashes[music.m_name.GetStableHashCode()] = music;
+                int hash = pair.Key.GetStableHashCode();
+                if (manager.m_musicHashes.TryGetValue(hash, out MusicMan.NamedMusic indexed) && ReferenceEquals(indexed, registration.applied))
+                {
+                    manager.m_musicHashes.Remove(hash);
+                    if (registration.originalHashEntry != null && index >= 0)
+                        manager.m_musicHashes[hash] = registration.originalHashEntry;
+                }
+                else if (!manager.m_musicHashes.ContainsKey(hash) && registration.originalHashEntry != null && index >= 0)
+                {
+                    manager.m_musicHashes[hash] = registration.originalHashEntry;
+                }
+
+                registrations.Remove(pair.Key);
             }
+
+            foreach (string name in audioClips.Keys.Union(clipSettings.Keys))
+            {
+                if (registrations.TryGetValue(name, out MusicRegistration existing))
+                {
+                    int existingHash = name.GetStableHashCode();
+                    if (!manager.m_musicHashes.ContainsKey(existingHash) && existing.applied.m_enabled
+                        && existing.applied.m_clips != null && existing.applied.m_clips.Length > 0 && existing.applied.m_clips[0] != null)
+                        manager.m_musicHashes[existingHash] = existing.applied;
+                    continue;
+                }
+
+                MusicMan.NamedMusic original = manager.m_music.Find(music => music.m_name == name);
+                if (original == null && !audioClips.ContainsKey(name))
+                    continue;
+
+                MusicMan.NamedMusic music = new MusicMan.NamedMusic { m_name = name };
+                if (original != null)
+                {
+                    // Copy current fields, including native playback metadata, without changing another owner's entry.
+                    foreach (System.Reflection.FieldInfo field in typeof(MusicMan.NamedMusic).GetFields())
+                        field.SetValue(music, field.GetValue(original));
+                }
+                else
+                {
+                    ApplySettings(music, new MusicSettings());
+                }
+
+                if (audioClips.TryGetValue(name, out AudioClip clip))
+                    music.m_clips = new[] { clip };
+                if (clipSettings.TryGetValue(name, out MusicSettings settings))
+                    ApplySettings(music, settings);
+
+                int hash = name.GetStableHashCode();
+                manager.m_musicHashes.TryGetValue(hash, out MusicMan.NamedMusic originalHashEntry);
+                registrations[name] = new MusicRegistration { original = original, applied = music, originalHashEntry = originalHashEntry, clip = clip, settings = settings };
+                if (original == null)
+                    manager.m_music.Add(music);
+                else
+                    manager.m_music[manager.m_music.IndexOf(original)] = music;
+
+                if (music.m_enabled && music.m_clips != null && music.m_clips.Length > 0 && music.m_clips[0] != null)
+                    manager.m_musicHashes[hash] = music;
+                else if (ReferenceEquals(originalHashEntry, original))
+                    manager.m_musicHashes.Remove(hash);
+            }
+
+            foreach (string name in restartMusic)
+                if (manager.FindMusic(name) != null)
+                    manager.StartMusic(name);
         }
 
-        private static MusicMan.NamedMusic GetNewMusic(string name)
+        private static void ApplySettings(MusicMan.NamedMusic music, MusicSettings settings)
         {
-            MusicSettings musicSettings = clipSettings.GetValueSafe(name) ?? new MusicSettings();
-
-            MusicMan.NamedMusic music = new MusicMan.NamedMusic()
-            {
-                m_name = name,
-                m_ambientMusic = musicSettings.m_ambientMusic,
-                m_resume = musicSettings.m_resume,
-                m_alwaysFadeout = musicSettings.m_alwaysFadeout,
-                m_enabled = musicSettings.m_enabled,
-                m_fadeInTime = musicSettings.m_fadeInTime,
-                m_loop = musicSettings.m_loop,
-                m_volume = musicSettings.m_volume,
-            };
-            
-            MusicMan.instance.m_music.Add(music);
-
-            return music;
+            music.m_ambientMusic = settings.m_ambientMusic;
+            music.m_resume = settings.m_resume;
+            music.m_alwaysFadeout = settings.m_alwaysFadeout;
+            music.m_enabled = settings.m_enabled;
+            music.m_fadeInTime = settings.m_fadeInTime;
+            music.m_loop = settings.m_loop;
+            music.m_volume = settings.m_volume;
         }
 
         private static string GetSubdirectory()
@@ -122,11 +203,15 @@ namespace Seasons
 
         private static void UpdateClipOnChange(object sender, FileSystemEventArgs eargs)
         {
-            UpdateFile(eargs.Name, eargs.FullPath);
-            if (eargs is RenamedEventArgs)
+            if (eargs is RenamedEventArgs renamed)
             {
-                audioClips.Remove(Path.GetFileNameWithoutExtension((eargs as RenamedEventArgs).OldName));
+                string oldName = Path.GetFileNameWithoutExtension(renamed.OldName);
+                if (Path.GetExtension(renamed.OldName).Equals(".json", StringComparison.OrdinalIgnoreCase))
+                    clipSettings.Remove(oldName);
+                else
+                    audioClips.Remove(oldName);
             }
+            UpdateFile(eargs.Name, eargs.FullPath);
 
             CheckMusicList();
 
@@ -143,23 +228,31 @@ namespace Seasons
 
         private static void UpdateClip(string clipName, string fileName)
         {
-            bool removed = audioClips.Remove(clipName);
-
+            bool removed = audioClips.ContainsKey(clipName);
+            if (!File.Exists(fileName))
+            {
+                audioClips.Remove(clipName);
+                return;
+            }
             if (!TryGetAudioClip(fileName, out AudioClip audioClip))
                 return;
 
-            audioClips.Add(clipName, audioClip);
+            audioClips[clipName] = audioClip;
             LogInfo($"Custom music {(removed ? "updated" : "added")}: {clipName}");
         }
 
         private static void UpdateSettings(string clipName, string fileName)
         {
-            bool removed = clipSettings.Remove(clipName);
-
-            if (!TryGetMusicSettings(fileName, out MusicSettings musicSettings))
+            bool removed = clipSettings.ContainsKey(clipName);
+            if (!File.Exists(fileName))
+            {
+                clipSettings.Remove(clipName);
+                return;
+            }
+            if (!TryGetMusicSettings(fileName, out MusicSettings musicSettings) || musicSettings == null)
                 return;
 
-            clipSettings.Add(clipName, musicSettings);
+            clipSettings[clipName] = musicSettings;
             LogInfo($"Custom music settings {(removed ? "updated" : "added")}: {clipName}");
         }
 
@@ -168,7 +261,7 @@ namespace Seasons
             audioClip = null;
 
             string uri = "file:///" + path.Replace("\\", "/");
-            UnityWebRequest request = UnityWebRequestMultimedia.GetAudioClip(uri, AudioType.UNKNOWN);
+            using UnityWebRequest request = UnityWebRequestMultimedia.GetAudioClip(uri, AudioType.UNKNOWN);
             if (request == null)
                 return false;
 
