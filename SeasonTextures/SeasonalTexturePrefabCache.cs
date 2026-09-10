@@ -1911,7 +1911,7 @@ namespace Seasons
         }
 
         // Used to force global cache rebuild after mod changes
-        const string globalRevision = "1.6.0-cache-3";
+        const string globalRevision = "1.6.0";
 
         public static uint GetRevision()
         {

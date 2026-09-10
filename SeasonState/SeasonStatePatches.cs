@@ -946,7 +946,9 @@ namespace Seasons
                 if (!controlRandomEvents.Value)
                     return true;
 
-                SeasonRandomEvents.SeasonRandomEvent settings = SeasonState.seasonRandomEvents.GetSeasonEvents(seasonState.GetCurrentSeason()).Find(item => item.m_name == ev.m_name);
+                string ev_name = ev.m_name;
+
+                SeasonRandomEvents.SeasonRandomEvent settings = SeasonState.seasonRandomEvents.GetSeasonEvents(seasonState.GetCurrentSeason()).Find(item => item.m_name == ev_name);
                 if (settings?.m_weight == 0)
                 {
                     __result = new List<Vector3>();
