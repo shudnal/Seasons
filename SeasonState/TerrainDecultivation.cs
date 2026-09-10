@@ -26,6 +26,12 @@ namespace Seasons
 
         public static bool DecultivateGround(ZDO zdo) => TryDecultivateGround(zdo, out bool changed) && changed;
 
+        internal static bool IsDecultivationDue(ZDO zdo, int worldDay, int yearLength)
+        {
+            return !zdo.GetInt(SeasonsVars.s_terrainDecultivated, out int processedDay)
+                || Math.Abs((long)worldDay - processedDay) >= yearLength;
+        }
+
         // Success includes a fully inspected no-op; unavailable or unsupported data remains retryable.
         internal static bool TryDecultivateGround(ZDO zdo, out bool changed)
         {
@@ -261,7 +267,7 @@ namespace Seasons
 
                 ZDO zdo = __instance.m_nview.GetZDO();
                 int worldDay = Seasons.seasonState.GetCurrentWorldDay();
-                if (Math.Abs(worldDay - zdo.GetInt(SeasonsVars.s_terrainDecultivated, 0)) < Seasons.seasonState.GetYearLengthInDays())
+                if (!IsDecultivationDue(zdo, worldDay, Seasons.seasonState.GetYearLengthInDays()))
                     return;
 
                 if (WorldGenerator.instance?.m_world?.m_biomeData?.IsReady != true

@@ -1060,7 +1060,7 @@ namespace Seasons
 
                 if (removeCultivatedGround)
                 {
-                    if (zdo.GetPrefab() == s_terrainCompilerPrefab && Mathf.Abs(worldDay - zdo.GetInt(SeasonsVars.s_terrainDecultivated, 0)) >= yearLength)
+                    if (zdo.GetPrefab() == s_terrainCompilerPrefab && TerrainDecultivation.IsDecultivationDue(zdo, worldDay, yearLength))
                     {
                         if (TerrainDecultivation.TryDecultivateGround(zdo, out bool changed))
                         {
