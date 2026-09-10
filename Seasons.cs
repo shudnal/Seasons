@@ -275,7 +275,7 @@ namespace Seasons
 
         private static int _instanceChangeIDShieldGeneratorCache;
         private static readonly Dictionary<Vector2, bool> _cachedIgnoredPositions = new Dictionary<Vector2, bool>();
-        private static readonly Dictionary<Vector2, bool> _cachedShieldedPositions = new Dictionary<Vector2, bool>();
+        private static readonly Dictionary<Vector3, bool> _cachedShieldedPositions = new Dictionary<Vector3, bool>();
         private static int _cachedShieldedPositionsChangeID;
 
         private static readonly Dictionary<string, GameObject> _treeRegrowthPrefabs = new Dictionary<string, GameObject>();
@@ -1025,7 +1025,7 @@ namespace Seasons
                 _cachedShieldedPositionsChangeID = shieldChangeID;
             }
 
-            Vector2 pos = new(position.x, position.z);
+            Vector3 pos = position;
             if (_cachedShieldedPositions.TryGetValue(pos, out bool shielded))
                 return shielded;
 

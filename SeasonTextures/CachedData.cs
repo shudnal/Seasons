@@ -17,12 +17,15 @@ namespace Seasons
         {
             public string name;
             public byte[] originalPNG;
+            public string sourceFingerprint;
             public TextureProperties properties;
             public Dictionary<Season, Dictionary<int, byte[]>> variants = new Dictionary<Season, Dictionary<int, byte[]>>();
 
             public bool Initialized()
             {
-                return variants.Any(variant => variant.Value.Count > 0);
+                return properties != null && Enum.GetValues(typeof(Season)).Cast<Season>().All(season =>
+                    variants.TryGetValue(season, out Dictionary<int, byte[]> values)
+                    && Enumerable.Range(0, seasonColorVariants).All(variant => values.TryGetValue(variant, out byte[] data) && data?.Length > 0));
             }
 
             public TextureData(TextureVariants textureVariants)
@@ -31,6 +34,7 @@ namespace Seasons
                     return;
 
                 originalPNG = textureVariants.originalPNG;
+                sourceFingerprint = textureVariants.sourceFingerprint;
                 name = textureVariants.originalName;
                 properties = textureVariants.properties;
 
@@ -44,6 +48,15 @@ namespace Seasons
 
             public TextureData(DirectoryInfo texDirectory)
             {
+                string fingerprintFile = Path.Combine(texDirectory.FullName, textureFingerprintFileName);
+                if (File.Exists(fingerprintFile))
+                    sourceFingerprint = File.ReadAllText(fingerprintFile);
+                FileInfo[] originals = texDirectory.GetFiles("*" + originalPostfix);
+                if (originals.Length == 1)
+                {
+                    name = originals[0].Name.Substring(0, originals[0].Name.Length - originalPostfix.Length);
+                    originalPNG = File.ReadAllBytes(originals[0].FullName);
+                }
                 FileInfo[] propertiesFile = texDirectory.GetFiles(texturePropertiesFileName);
                 if (propertiesFile.Length > 0)
                     properties = JsonUtility.FromJson<TextureProperties>(File.ReadAllText(propertiesFile[0].FullName));
@@ -71,6 +84,7 @@ namespace Seasons
         internal const string texturesDirectory = "textures";
         internal const string originalPostfix = ".orig.png";
         internal const string texturePropertiesFileName = "properties.json";
+        internal const string textureFingerprintFileName = "source.sha256";
 
         public Dictionary<string, PrefabController> controllers = new Dictionary<string, PrefabController>();
         public Dictionary<int, TextureData> textures = new Dictionary<int, TextureData>();
@@ -83,7 +97,7 @@ namespace Seasons
 
         public bool Initialized()
         {
-            return controllers.Count > 0 && textures.Count > 0;
+            return controllers?.Count > 0 && textures?.Count > 0 && textures.Values.All(texture => texture != null && texture.Initialized());
         }
 
         public void SaveOnDisk()
@@ -102,10 +116,19 @@ namespace Seasons
 
         public void LoadFromDisk()
         {
-            if (cacheStorageFormat.Value == CacheFormat.Json)
-                LoadFromJSON();
-            else
-                LoadFromBinary();
+            try
+            {
+                if (cacheStorageFormat.Value == CacheFormat.Json)
+                    LoadFromJSON();
+                else
+                    LoadFromBinary();
+            }
+            catch (Exception error)
+            {
+                controllers = new Dictionary<string, PrefabController>();
+                textures = new Dictionary<int, TextureData>();
+                LogWarning($"Unable to load seasonal texture cache:\n{error}");
+            }
         }
 
         private void SaveToJSON()
@@ -135,6 +158,7 @@ namespace Seasons
                 File.WriteAllBytes(Path.Combine(texturePath, $"{tex.Value.name}{originalPostfix}"), tex.Value.originalPNG);
 
                 File.WriteAllText(Path.Combine(texturePath, texturePropertiesFileName), JsonUtility.ToJson(tex.Value.properties, true));
+                File.WriteAllText(Path.Combine(texturePath, textureFingerprintFileName), tex.Value.sourceFingerprint ?? "");
 
                 foreach (KeyValuePair<Season, Dictionary<int, byte[]>> season in tex.Value.variants)
                     foreach (KeyValuePair<int, byte[]> texData in season.Value)
@@ -175,7 +199,8 @@ namespace Seasons
 
             foreach (DirectoryInfo texDirectory in texDir[0].GetDirectories())
             {
-                int hash = Int32.Parse(texDirectory.Name);
+                if (!Int32.TryParse(texDirectory.Name, out int hash))
+                    continue;
                 if (textures.ContainsKey(hash))
                     continue;
 

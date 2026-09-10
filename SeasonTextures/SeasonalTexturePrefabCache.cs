@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using UnityEngine;
 using static Seasons.PrefabController;
@@ -43,10 +44,12 @@ namespace Seasons
     {
         private static void Postfix()
         {
-            if (!UseTextureControllers())
-                return;
-
+            PrefabVariantController.instance?.RevertPrefabsState();
+            ClutterVariantController.Instance?.RevertColors();
+            texturesVariants.Dispose();
             texturesVariants = new SeasonalTextureVariants();
+            SeasonalTexturePrefabCache.SetCurrentTextureVariants(texturesVariants);
+            ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.Clear();
         }
     }
 
@@ -1573,6 +1576,17 @@ namespace Seasons
         private const float clutterWeight = 30f;
 
         private static readonly Stopwatch stopwatchController = new Stopwatch();
+        private static FileSystemWatcher s_configWatcher;
+        private static string s_sourceSettings;
+        private static bool s_updateRequested;
+
+        internal static bool NeedsRefresh(SeasonalTextureVariants variants) => s_updateRequested || variants.sourceSettings != s_sourceSettings;
+
+        internal static void RequestUpdate()
+        {
+            GetRevision();
+            s_updateRequested = true;
+        }
 
         public static void SetCurrentTextureVariants(SeasonalTextureVariants texturesVariants)
         {
@@ -1588,6 +1602,7 @@ namespace Seasons
 
         public static void SetupConfigWatcher()
         {
+            s_configWatcher?.Dispose();
             string filter = $"*.json";
 
             FileSystemWatcher fileSystemWatcher1 = new FileSystemWatcher(CacheSettingsDirectory(), filter);
@@ -1598,6 +1613,7 @@ namespace Seasons
             fileSystemWatcher1.IncludeSubdirectories = false;
             fileSystemWatcher1.SynchronizingObject = ThreadingHelper.SynchronizingObject;
             fileSystemWatcher1.EnableRaisingEvents = true;
+            s_configWatcher = fileSystemWatcher1;
 
             foreach (FileInfo file in new DirectoryInfo(CacheSettingsDirectory()).GetFiles("*.json", SearchOption.TopDirectoryOnly))
                 ReadConfigFile(file.Name, file.FullName);
@@ -1712,11 +1728,33 @@ namespace Seasons
 
         public static bool GetTextureVariants(string prefabName, string rendererName, Material material, string propertyName, Texture texture, out TextureVariants textureVariants, bool isPlant)
         {
+            if (texture is not Texture2D)
+            {
+                textureVariants = null;
+                return false;
+            }
             textureVariants = new TextureVariants(texture);
 
-            Color[] pixels = GetTexturePixels(texture, textureVariants.properties, out textureVariants.originalPNG);
+            int sourceId = texture.GetInstanceID();
+            if (!currentTextureVariants.sourceTextures.TryGetValue(sourceId, out var source))
+            {
+                Color[] sourcePixels = GetTexturePixels(texture, textureVariants.properties, out byte[] originalPNG);
+                source = Tuple.Create(textureVariants.properties, sourcePixels, originalPNG);
+                currentTextureVariants.sourceTextures[sourceId] = source;
+            }
+            textureVariants.properties = source.Item1;
+            textureVariants.originalPNG = source.Item3;
+            Color[] pixels = source.Item2;
             if (pixels.Length < 1)
                 return false;
+
+            string fingerprint = GetSourceFingerprint(prefabName, rendererName, material, propertyName, textureVariants, isPlant);
+            if (currentTextureVariants.TryReuseTexture(fingerprint, texture, textureVariants.originalPNG, out TextureVariants cachedVariants))
+            {
+                textureVariants = cachedVariants;
+                return true;
+            }
+            textureVariants.sourceFingerprint = fingerprint;
 
             bool isGrass = IsGrass(material.shader.name);
             bool isMoss = IsMoss(propertyName);
@@ -1779,6 +1817,42 @@ namespace Seasons
             return textureVariants.Initialized();
         }
 
+        private static bool GetTextureVariantId(string prefabName, string rendererName, Material material,
+            string propertyName, Texture texture, bool isPlant, out int textureId)
+        {
+            string context = JsonConvert.SerializeObject(new object[]
+            {
+                texture.GetInstanceID(), prefabName, rendererName, material.name,
+                material.shader.name, propertyName, isPlant
+            });
+            if (currentTextureVariants.textureContextIds.TryGetValue(context, out textureId))
+                return true;
+            if (!GetTextureVariants(prefabName, rendererName, material, propertyName, texture, out TextureVariants variants, isPlant))
+                return false;
+            textureId = currentTextureVariants.textures.Count;
+            currentTextureVariants.textures.Add(textureId, variants);
+            currentTextureVariants.textureContextIds.Add(context, textureId);
+            return true;
+        }
+
+        private static string GetSourceFingerprint(string prefabName, string rendererName, Material material,
+            string propertyName, TextureVariants texture, bool isPlant)
+        {
+            // Include every input used by classification, color rules and texture creation.
+            // Renderer paths/LOD/material slots are rebuilt from live assets, never loaded.
+            byte[] metadata = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new object[]
+            {
+                currentTextureVariants.sourceSettings, prefabName, rendererName, material.name,
+                material.shader.name, propertyName, isPlant, texture.originalName, texture.properties
+            }));
+            using (SHA256 hash = SHA256.Create())
+            {
+                hash.TransformBlock(metadata, 0, metadata.Length, metadata, 0);
+                hash.TransformFinalBlock(texture.originalPNG, 0, texture.originalPNG.Length);
+                return Convert.ToBase64String(hash.Hash);
+            }
+        }
+
         private static Color[] GetTexturePixels(Texture texture, TextureProperties texProperties, out byte[] originalPNG)
         {
             RenderTexture tmp = RenderTexture.GetTemporary(
@@ -1793,24 +1867,26 @@ namespace Seasons
             tmp.wrapMode = texProperties.wrapMode;
             tmp.filterMode = texProperties.filterMode;
 
-            Graphics.Blit(texture, tmp);
-
             RenderTexture previous = RenderTexture.active;
-            RenderTexture.active = tmp;
-
-            Texture2D textureCopy = texProperties.CreateTexture();
-            textureCopy.ReadPixels(new Rect(0, 0, tmp.width, tmp.height), 0, 0, true);
-            textureCopy.Apply();
-
-            RenderTexture.active = previous;
-            RenderTexture.ReleaseTemporary(tmp);
-
-            Color[] pixels = textureCopy.GetPixels();
-            originalPNG = textureCopy.EncodeToPNG();
-
-            Object.Destroy(textureCopy);
-
-            return pixels;
+            Texture2D textureCopy = null;
+            try
+            {
+                Graphics.Blit(texture, tmp);
+                RenderTexture.active = tmp;
+                textureCopy = texProperties.CreateTexture();
+                textureCopy.ReadPixels(new Rect(0, 0, tmp.width, tmp.height), 0, 0, true);
+                textureCopy.Apply();
+                Color[] pixels = textureCopy.GetPixels();
+                originalPNG = textureCopy.EncodeToPNG();
+                return pixels;
+            }
+            finally
+            {
+                RenderTexture.active = previous;
+                RenderTexture.ReleaseTemporary(tmp);
+                if (textureCopy)
+                    Object.Destroy(textureCopy);
+            }
         }
         
         private static void GenerateTextureVariants(Season season, ColorVariant[] colorVariants, Color[] pixels, int[] pixelsToChange, TextureProperties texProperties, TextureVariants textureVariants)
@@ -1835,7 +1911,7 @@ namespace Seasons
         }
 
         // Used to force global cache rebuild after mod changes
-        const string globalRevision = "1.6.0";
+        const string globalRevision = "1.6.0-cache-3";
 
         public static uint GetRevision()
         {
@@ -1847,6 +1923,13 @@ namespace Seasons
             sb.Append(JsonConvert.SerializeObject(colorReplacement));
             sb.Append(JsonConvert.SerializeObject(colorPositions));
             sb.Append(globalRevision);
+            sb.Append(global::Version.CurrentVersion.ToString());
+
+            s_sourceSettings = JsonConvert.SerializeObject(new object[]
+            {
+                globalRevision, global::Version.CurrentVersion.ToString(), materialSettings,
+                colorSettings, colorReplacement, colorPositions
+            });
 
             return (uint)sb.ToString().GetStableHashCode();
         }
@@ -1954,6 +2037,56 @@ namespace Seasons
 
         public static IEnumerator FillWithGameData()
         {
+            ZoneSystem zone = ZoneSystem.instance;
+            ZNetScene scene = ZNetScene.instance;
+            ClutterSystem clutter = ClutterSystem.instance;
+            SeasonalTextureVariants target = currentTextureVariants;
+            Stack<IEnumerator> work = new Stack<IEnumerator>();
+            work.Push(FillWithGameDataCore());
+            bool completed = false;
+            try
+            {
+                while (work.Count > 0)
+                {
+                    if (!zone || zone != ZoneSystem.instance || !scene || scene != ZNetScene.instance
+                        || !clutter || clutter != ClutterSystem.instance || target != currentTextureVariants)
+                        yield break;
+
+                    if (target.sourceSettings != null && NeedsRefresh(target))
+                    {
+                        while (work.Count > 0)
+                            (work.Pop() as IDisposable)?.Dispose();
+                        target.Dispose();
+                        work.Push(FillWithGameDataCore());
+                        continue;
+                    }
+
+                    IEnumerator step = work.Peek();
+                    if (!step.MoveNext())
+                    {
+                        (work.Pop() as IDisposable)?.Dispose();
+                        continue;
+                    }
+                    if (step.Current is IEnumerator nested)
+                        work.Push(nested);
+                    else
+                        yield return step.Current;
+                }
+                completed = true;
+            }
+            finally
+            {
+                while (work.Count > 0)
+                    (work.Pop() as IDisposable)?.Dispose();
+                if (completed)
+                    target.ReleaseCacheCandidates();
+                else
+                    target.Dispose();
+            }
+        }
+
+        private static IEnumerator FillWithGameDataCore()
+        {
             Stopwatch stopwatch = Stopwatch.StartNew();
 
             Controllers.TextureCachingController.SetupLoadingIndicator(branchWeight +
@@ -1963,6 +2096,8 @@ namespace Seasons
 
             LogInfo("Initializing cache settings");
             currentTextureVariants.revision = GetRevision();
+            currentTextureVariants.sourceSettings = s_sourceSettings;
+            s_updateRequested = false;
             LogInfo($"Cache settings revision {currentTextureVariants.revision}");
 
             LogInfo("Caching yggdrasil branch");
@@ -2006,28 +2141,28 @@ namespace Seasons
         private static List<MeshRenderer> GetMeshRenderers(this GameObject root)
         {
             mrenderers.Clear();
-            root.GetComponentsInChildren(includeInactive: false, mrenderers);
+            root.GetComponentsInChildren(includeInactive: true, mrenderers);
             return mrenderers;
         }
 
         private static List<SkinnedMeshRenderer> GetSkinnedMeshRenderers(this GameObject root)
         {
             srenderers.Clear();
-            root.GetComponentsInChildren(includeInactive: false, srenderers);
+            root.GetComponentsInChildren(includeInactive: true, srenderers);
             return srenderers;
         }
 
         private static List<ParticleSystemRenderer> GetParticleSystemRenderers(this GameObject root)
         {
             psrenderers.Clear();
-            root.GetComponentsInChildren(includeInactive: false, psrenderers);
+            root.GetComponentsInChildren(includeInactive: true, psrenderers);
             return psrenderers;
         }
 
         private static List<ParticleSystem> GetParticleSystems(this GameObject root)
         {
             psystems.Clear();
-            root.GetComponentsInChildren(includeInactive: false, psystems);
+            root.GetComponentsInChildren(includeInactive: true, psystems);
             return psystems;
         }
 
@@ -2211,6 +2346,8 @@ namespace Seasons
                 {
                     foreach (string propertyName in materialColorNames)
                     {
+                        if (!material.HasProperty(propertyName))
+                            continue;
                         Color color = material.GetColor(propertyName);
                         if (color == null || color == Color.clear || color == Color.white || color == Color.black)
                             continue;
@@ -2222,6 +2359,8 @@ namespace Seasons
                 else if (materialSettings.shaderColors.TryGetValue(material.shader.name, out string[] colorNames))
                     foreach (string propertyName in colorNames)
                     {
+                        if (!material.HasProperty(propertyName))
+                            continue;
                         Color color = material.GetColor(propertyName);
                         if (color == null || color == Color.clear || color == Color.white || color == Color.black)
                             continue;
@@ -2238,16 +2377,8 @@ namespace Seasons
                         if (texture == null)
                             continue;
 
-                        int textureID = texture.GetInstanceID();
-                        if (currentTextureVariants.textures.ContainsKey(textureID))
-                        {
+                        if (GetTextureVariantId(prefabName, rendererName, material, propertyName, texture, isPlant, out int textureID))
                             cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
-                        }
-                        else if (GetTextureVariants(prefabName, rendererName, material, propertyName, texture, out TextureVariants textureVariants, isPlant: isPlant))
-                        {
-                            currentTextureVariants.textures.Add(textureID, textureVariants);
-                            cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
-                        }
                     }
                 }
                 else if (materialSettings.shaderTextures.TryGetValue(material.shader.name, out string[] textureNames))
@@ -2258,16 +2389,8 @@ namespace Seasons
                         if (texture == null)
                             continue;
 
-                        int textureID = texture.GetInstanceID();
-                        if (currentTextureVariants.textures.ContainsKey(textureID))
-                        {
+                        if (GetTextureVariantId(prefabName, rendererName, material, propertyName, texture, isPlant, out int textureID))
                             cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
-                        }
-                        else if (GetTextureVariants(prefabName, rendererName, material, propertyName, texture, out TextureVariants textureVariants, isPlant: isPlant))
-                        {
-                            currentTextureVariants.textures.Add(textureID, textureVariants);
-                            cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
-                        }
                     }
                 }
 

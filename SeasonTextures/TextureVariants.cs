@@ -12,6 +12,7 @@ namespace Seasons
         public Texture2D original;
         public string originalName;
         public byte[] originalPNG;
+        public string sourceFingerprint;
         public TextureProperties properties;
         public Dictionary<Season, Dictionary<int, Texture2D>> seasons = new Dictionary<Season, Dictionary<int, Texture2D>>();
 
@@ -21,6 +22,11 @@ namespace Seasons
                 return;
 
             properties = texData.properties;
+            originalName = texData.name;
+            originalPNG = texData.originalPNG;
+            sourceFingerprint = texData.sourceFingerprint;
+            if (properties == null)
+                return;
 
             foreach (Season season in Enum.GetValues(typeof(Season)))
             {
@@ -34,7 +40,7 @@ namespace Seasons
 
                     Texture2D tex = properties.CreateTexture();
 
-                    if (tex.LoadImage(data, true))
+                    if (tex.LoadImage(data, false))
                         AddVariant(season, variant, tex);
                     else
                         Object.Destroy(tex);
@@ -49,14 +55,27 @@ namespace Seasons
 
         public void SetOriginalTexture(Texture texture)
         {
+            if (texture is not Texture2D)
+                return;
             original = texture as Texture2D;
             properties = new TextureProperties(texture as Texture2D);
             originalName = original.name;
         }
 
+        public void Dispose()
+        {
+            foreach (var variants in seasons.Values)
+                foreach (Texture2D texture in variants.Values)
+                    if (texture)
+                        Object.Destroy(texture);
+            seasons.Clear();
+        }
+
         public bool Initialized()
         {
-            return seasons.Any(season => season.Value.Count > 0);
+            return properties != null && Enum.GetValues(typeof(Season)).Cast<Season>().All(season =>
+                seasons.TryGetValue(season, out Dictionary<int, Texture2D> variants)
+                && Enumerable.Range(0, seasonColorVariants).All(variant => variants.TryGetValue(variant, out Texture2D texture) && texture));
         }
 
         public bool HaveOriginalTexture()

@@ -45,7 +45,12 @@ namespace Seasons
 
         private readonly Dictionary<Material, int> m_materialVariantOffset = new Dictionary<Material, int>();
 
-        private readonly Dictionary<Material, Color> m_originalColors = new Dictionary<Material, Color>();
+        private readonly Dictionary<Material, Dictionary<string, Color>> m_originalColors = new Dictionary<Material, Dictionary<string, Color>>();
+        private readonly Dictionary<Tuple<Material, CachedMaterial, string>, Material> m_contextMaterials = new Dictionary<Tuple<Material, CachedMaterial, string>, Material>();
+        private readonly Dictionary<InstanceRenderer, Tuple<Material, Material>> m_instanceMaterials = new Dictionary<InstanceRenderer, Tuple<Material, Material>>();
+        private readonly Dictionary<Renderer, Tuple<Material[], Material[]>> m_rendererMaterials = new Dictionary<Renderer, Tuple<Material[], Material[]>>();
+        private ClutterSystem m_clutterSystem;
+        private bool m_started;
 
         private readonly Dictionary<string, Tuple<bool, float, float>> m_clutterDefaults = new Dictionary<string, Tuple<bool, float, float>>();
 
@@ -53,8 +58,8 @@ namespace Seasons
         
         private static readonly List<Renderer> s_tempRenderers = new List<Renderer>();
 
-        private static float s_grassPatchSize;
-        private static float s_amountScale;
+        private float s_grassPatchSize;
+        private float s_amountScale;
 
         public const string c_meadowsFlowersName = "meadows flowers";
         public const string c_meadowsFlowersPrefabName = "instanced_meadows_flowers";
@@ -78,6 +83,7 @@ namespace Seasons
         private void Awake()
         {
             m_instance = this;
+            m_clutterSystem = GetComponent<ClutterSystem>();
         }
 
         private void Start()
@@ -127,8 +133,8 @@ namespace Seasons
                 }
             }
 
-            base.enabled = m_materialVariants.Any(variant => variant.Value.Count > 0);
-            
+            m_started = true;
+            UpdateShieldActiveState();
             UpdateColors();
         }
 
@@ -144,17 +150,50 @@ namespace Seasons
         
         private void OnDestroy()
         {
-            m_instance = null;
+            ApplyMaterialBindings(originals: true);
+            foreach (Material material in m_contextMaterials.Values)
+                Destroy(material);
+            m_contextMaterials.Clear();
+            if (m_instance == this)
+                m_instance = null;
+        }
+
+        private Material GetContextMaterial(Material original, CachedMaterial context, string prefabName)
+        {
+            var key = Tuple.Create(original, context, prefabName);
+            if (!m_contextMaterials.TryGetValue(key, out Material material))
+                m_contextMaterials[key] = material = new Material(original) { name = original.name };
+            return material;
+        }
+
+        private void ApplyMaterialBindings(bool originals)
+        {
+            foreach (var binding in m_instanceMaterials)
+                if (binding.Key)
+                {
+                    Material current = binding.Key.m_material;
+                    if (current == binding.Value.Item2 || !originals && current == binding.Value.Item1)
+                        binding.Key.m_material = originals ? binding.Value.Item1 : binding.Value.Item2;
+                }
+            foreach (var binding in m_rendererMaterials)
+                if (binding.Key)
+                {
+                    Material[] current = binding.Key.sharedMaterials;
+                    for (int i = 0; i < current.Length && i < binding.Value.Item1.Length; i++)
+                        if (current[i] == binding.Value.Item2[i] || !originals && current[i] == binding.Value.Item1[i])
+                            current[i] = originals ? binding.Value.Item1[i] : binding.Value.Item2[i];
+                    binding.Key.sharedMaterials = current;
+                }
         }
 
         private void AddCachedInstanceRenderer(GameObject prefab, string path, CachedRenderer cachedRenderer)
         {
             InstanceRenderer renderer = prefab.GetComponent<InstanceRenderer>();
 
-            if (renderer.m_material == null)
+            if (!renderer || renderer.m_material == null)
                 return;
 
-            if (m_materialVariants.ContainsKey(renderer.m_material))
+            if (m_instanceMaterials.ContainsKey(renderer))
                 return;
 
             if (path != renderer.transform.GetPath())
@@ -169,15 +208,20 @@ namespace Seasons
             if (cachedMaterial.shaderName != renderer.m_material.shader.name)
                 return;
 
+            Material material = GetContextMaterial(renderer.m_material, cachedMaterial, prefab.name);
+            m_instanceMaterials.Add(renderer, Tuple.Create(renderer.m_material, material));
+            if (m_materialVariantOffset.ContainsKey(material))
+                return;
+
             foreach (KeyValuePair<string, int> textureVariant in cachedMaterial.textureProperties)
             {
                 if (!texturesVariants.textures.ContainsKey(textureVariant.Value))
                     continue;
 
-                if (!m_materialVariants.TryGetValue(renderer.m_material, out Dictionary<string, TextureVariants> tv))
+                if (!m_materialVariants.TryGetValue(material, out Dictionary<string, TextureVariants> tv))
                 {
                     tv = new Dictionary<string, TextureVariants>();
-                    m_materialVariants.Add(renderer.m_material, tv);
+                    m_materialVariants.Add(material, tv);
                 }
 
                 tv.Add(textureVariant.Key, texturesVariants.textures[textureVariant.Value]);
@@ -185,10 +229,10 @@ namespace Seasons
 
             foreach (KeyValuePair<string, string[]> colorVariant in cachedMaterial.colorVariants)
             {
-                if (!m_colorVariants.TryGetValue(renderer.m_material, out Dictionary<string, Color[]> colorIndex))
+                if (!m_colorVariants.TryGetValue(material, out Dictionary<string, Color[]> colorIndex))
                 {
                     colorIndex = new Dictionary<string, Color[]>();
-                    m_colorVariants.Add(renderer.m_material, colorIndex);
+                    m_colorVariants.Add(material, colorIndex);
                 }
 
                 s_tempColors.Clear();
@@ -200,7 +244,7 @@ namespace Seasons
                 colorIndex.Add(colorVariant.Key, s_tempColors.ToArray());
             }
 
-            m_materialVariantOffset.Add(renderer.m_material, prefabOffsets.GetValueSafe(prefab.name));
+            m_materialVariantOffset.Add(material, prefabOffsets.GetValueSafe(prefab.name));
 
         }
 
@@ -244,12 +288,6 @@ namespace Seasons
                 if (material == null)
                     continue;
 
-                if (material == null)
-                    return;
-
-                if (m_materialVariants.ContainsKey(material))
-                    return;
-
                 if (path != renderer.transform.GetPath())
                     return;
 
@@ -257,10 +295,21 @@ namespace Seasons
                     return;
 
                 if (!cachedRenderer.materials.TryGetValue(material.name, out CachedMaterial cachedMaterial))
-                    return;
+                    continue;
 
                 if (cachedMaterial.shaderName != material.shader.name)
-                    return;
+                    continue;
+
+                if (!m_rendererMaterials.TryGetValue(renderer, out var binding))
+                {
+                    Material[] originals = renderer.sharedMaterials;
+                    binding = Tuple.Create(originals, (Material[])originals.Clone());
+                    m_rendererMaterials.Add(renderer, binding);
+                }
+                material = GetContextMaterial(material, cachedMaterial, prefabName);
+                binding.Item2[i] = material;
+                if (m_materialVariantOffset.ContainsKey(material))
+                    continue;
 
                 foreach (KeyValuePair<string, int> textureVariant in cachedMaterial.textureProperties)
                 {
@@ -299,6 +348,7 @@ namespace Seasons
 
         public void RevertColors()
         {
+            ApplyMaterialBindings(originals: true);
             foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
                 foreach (KeyValuePair<string, TextureVariants> texProp in materialVariants.Value)
                 {
@@ -308,19 +358,12 @@ namespace Seasons
                     if (texProp.Value.HaveOriginalTexture())
                         materialVariants.Key.SetTexture(texProp.Key, texProp.Value.original);
 
-                    if (m_originalColors.ContainsKey(materialVariants.Key))
-                        materialVariants.Key.SetColor("_Color", m_originalColors[materialVariants.Key]);
                 }
 
-            foreach (KeyValuePair<Material, Dictionary<string, Color[]>> colorVariants in m_colorVariants)
-                foreach (KeyValuePair<string, Color[]> colorProp in colorVariants.Value)
-                {
-                    if (!colorVariants.Key)
-                        continue;
-
-                    if (m_originalColors.ContainsKey(colorVariants.Key))
-                        colorVariants.Key.SetColor(colorProp.Key, m_originalColors[colorVariants.Key]);
-                }
+            foreach (var material in m_originalColors)
+                if (material.Key)
+                    foreach (var property in material.Value)
+                        material.Key.SetColor(property.Key, property.Value);
 
             RevertGrass();
 
@@ -329,18 +372,28 @@ namespace Seasons
 
         public void UpdateColors()
         {
+            if (!m_started || !m_clutterSystem || m_clutterSystem != ClutterSystem.instance || texturesVariants.IsUpdating)
+                return;
+            if (!enabled || !UseTextureControllers() || !SeasonState.IsActive)
+            {
+                RevertColors();
+                return;
+            }
+
             int variant = GetCurrentMainVariant();
+            ApplyMaterialBindings(originals: false);
             foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
                 foreach (KeyValuePair<string, TextureVariants> texProp in materialVariants.Value)
                 {
+                    if (!materialVariants.Key)
+                        continue;
                     int pos = (variant + m_materialVariantOffset.GetValueSafe(materialVariants.Key)) % seasonColorVariants;
                     if (texProp.Value.seasons.TryGetValue(seasonState.GetCurrentSeason(), out Dictionary<int, Texture2D> variants) && variants.TryGetValue(pos, out Texture2D texture))
                     {
                         if (!texProp.Value.HaveOriginalTexture())
                             texProp.Value.SetOriginalTexture(materialVariants.Key.GetTexture(texProp.Key));
 
-                        if (!m_originalColors.ContainsKey(materialVariants.Key))
-                            m_originalColors.Add(materialVariants.Key, materialVariants.Key.color);
+                        RememberColor(materialVariants.Key, "_Color");
 
                         if (texProp.Key == "_TerrainColorTex" && materialVariants.Value.ContainsKey("_MainTex"))
                             materialVariants.Key.SetTexture(texProp.Key, null);
@@ -353,21 +406,30 @@ namespace Seasons
                         }
 
                         if (materialVariants.Key.color == Color.clear)
-                            materialVariants.Key.color = m_originalColors[materialVariants.Key];
+                            materialVariants.Key.color = m_originalColors[materialVariants.Key]["_Color"];
                     }
                 }
 
             foreach (KeyValuePair<Material, Dictionary<string, Color[]>> colorVariants in m_colorVariants)
                 foreach (KeyValuePair<string, Color[]> colorProp in colorVariants.Value)
                 {
-                    if (!m_originalColors.ContainsKey(colorVariants.Key))
-                        m_originalColors.Add(colorVariants.Key, colorVariants.Key.color);
+                    if (!colorVariants.Key)
+                        continue;
+                    RememberColor(colorVariants.Key, colorProp.Key);
 
                     int pos = (variant + m_materialVariantOffset.GetValueSafe(colorVariants.Key)) % seasonColorVariants;
                     colorVariants.Key.SetColor(colorProp.Key, colorProp.Value[(int)seasonState.GetCurrentSeason() * seasonsCount + pos]);
                 }
 
             UpdateGrass();
+        }
+
+        private void RememberColor(Material material, string property)
+        {
+            if (!m_originalColors.TryGetValue(material, out Dictionary<string, Color> colors))
+                m_originalColors[material] = colors = new Dictionary<string, Color>();
+            if (!colors.ContainsKey(property))
+                colors[property] = material.GetColor(property);
         }
 
         public static void UpdateGrassOnSettingChanged()
@@ -380,7 +442,9 @@ namespace Seasons
 
         public void UpdateGrass()
         {
-            if (!controlGrass.Value)
+            if (!m_started || !m_clutterSystem || m_clutterSystem != ClutterSystem.instance)
+                return;
+            if (!controlGrass.Value || !UseTextureControllers() || !SeasonState.IsActive)
             {
                 RevertGrass();
                 return;
@@ -412,6 +476,8 @@ namespace Seasons
 
         public void RevertGrass()
         {
+            if (!m_started || !m_clutterSystem || m_clutterSystem != ClutterSystem.instance)
+                return;
             ClutterSystem.instance.m_grassPatchSize = s_grassPatchSize;
             ClutterSystem.instance.m_amountScale = s_amountScale;
 
@@ -436,6 +502,13 @@ namespace Seasons
 
         public void UpdateSeasonalClutter()
         {
+            if (!m_started || !m_clutterSystem || m_clutterSystem != ClutterSystem.instance)
+                return;
+            if (!enabled || !UseTextureControllers() || !SeasonState.IsActive)
+            {
+                RevertSeasonalClutter();
+                return;
+            }
             Dictionary<string, bool> seasonalClutter = SeasonState.seasonClutterSettings.GetSeasonalClutterState();
             foreach (Clutter clutter in ClutterSystem.instance.m_clutter)
             {
@@ -451,16 +524,15 @@ namespace Seasons
 
         public void RevertSeasonalClutter()
         {
-            Dictionary<string, bool> seasonalClutter = SeasonState.seasonClutterSettings.GetSeasonalClutterState();
+            if (!m_started || !m_clutterSystem || m_clutterSystem != ClutterSystem.instance)
+                return;
             foreach (Clutter clutter in ClutterSystem.instance.m_clutter)
             {
                 if (clutter == null)
                     continue;
 
-                if (clutter.m_name != null && seasonalClutter.ContainsKey(clutter.m_name))
-                    clutter.m_enabled = false;
-                else if (clutter.m_prefab != null && seasonalClutter.ContainsKey(clutter.m_prefab.name))
-                    clutter.m_enabled = false;
+                if (m_clutterDefaults.TryGetValue(GetClutterName(clutter), out Tuple<bool, float, float> original))
+                    clutter.m_enabled = original.Item1;
             }
         }
 
@@ -492,7 +564,7 @@ namespace Seasons
             if (seed == 0)
                 seed = 1;
 
-            double seedFactor = Math.Log10(Math.Abs(seed));
+            double seedFactor = Math.Log10(Math.Abs((double)seed));
             return (Math.Sin(Math.Sign(seed) * seedFactor * day) + Math.Sin(Math.Sqrt(seedFactor) * Math.E * day) + Math.Sin(Math.PI * day)) / 2;
         }
 
@@ -560,7 +632,7 @@ namespace Seasons
 
                     renderer.m_material = copiedMaterial;
 
-                    s_shieldedPrefabs.Add(prefab.name, prefab);
+                    s_shieldedPrefabs[prefab.name] = prefab;
                 }
 
                 shieldedCopy.m_prefab = prefab;
@@ -673,7 +745,7 @@ namespace Seasons
 
         public static void Initialize()
         {
-            if (!UseTextureControllers())
+            if (!UseTextureControllers() || !ClutterSystem.instance || Instance)
                 return;
 
             ClutterSystem.instance.transform.gameObject.AddComponent<ClutterVariantController>();
@@ -682,7 +754,10 @@ namespace Seasons
         public static void Reinitialize()
         {
             if (Instance != null)
+            {
+                Instance.enabled = false;
                 Destroy(Instance);
+            }
 
             m_instance = null;
 
@@ -707,13 +782,14 @@ namespace Seasons
 
         public static void UpdateShieldActiveState()
         {
-            if (isAnyShieldActive != (isAnyShieldActive = ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.IsThereAnyActiveShieldedArea()))
+            bool active = SeasonState.IsActive && UseTextureControllers() && ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.IsThereAnyActiveShieldedArea();
+            bool changed = isAnyShieldActive != active;
+            isAnyShieldActive = active;
+            if (ClutterSystem.instance)
             {
-                if (!ClutterSystem.instance)
-                    return;
-
                 ClutterSystem.instance.m_clutter.Where(clutter => clutter != null && clutter.m_prefab != null && s_shieldedPrefabs.ContainsKey(clutter.m_prefab.name)).Do(clutter => clutter.m_enabled = isAnyShieldActive);
-                ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.shieldRadius.Where(kvp => !IsIgnoredPosition(kvp.Key.GetShieldPosition())).Do(kvp => ClutterSystem.instance?.ResetGrass(kvp.Key.GetShieldPosition(), kvp.Value + 1));
+                if (changed)
+                    ClutterSystem.instance.ClearAll();
             }
         }
 
