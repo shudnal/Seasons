@@ -37,12 +37,18 @@ namespace Seasons
         {
             InitRootObject();
 
+            bool previousPrefabInit = prefabInit;
             prefabInit = true;
-            GameObject clonedPrefab = UnityEngine.Object.Instantiate(prefabToClone, rootPrefabs.transform, false);
-            prefabInit = false;
-            clonedPrefab.name = prefabName;
-
-            return clonedPrefab;
+            try
+            {
+                GameObject clonedPrefab = UnityEngine.Object.Instantiate(prefabToClone, rootPrefabs.transform, false);
+                clonedPrefab.name = prefabName;
+                return clonedPrefab;
+            }
+            finally
+            {
+                prefabInit = previousPrefabInit;
+            }
         }
 
         [HarmonyPatch(typeof(ZNetView), nameof(ZNetView.Awake))]
