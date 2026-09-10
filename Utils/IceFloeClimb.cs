@@ -49,6 +49,11 @@ namespace Seasons
             return "";
         }
 
+        public float GetHoverOffset()
+        {
+            return 0f;
+        }
+
         public bool InUseDistance(Humanoid human)
         {
             if (base.transform.position.y - human.transform.position.y < 0.5f)
