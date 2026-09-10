@@ -1,5 +1,6 @@
 ﻿using HarmonyLib;
 using UnityEngine;
+using System.Collections.Generic;
 
 namespace Seasons
 {
@@ -12,6 +13,7 @@ namespace Seasons
         private static GameObject rootPrefabs;
 
         public static bool prefabInit = false;
+        private static readonly HashSet<ItemDrop> suppressedItemDrops = new HashSet<ItemDrop>();
 
         private static void InitRootObject()
         {
@@ -76,7 +78,20 @@ namespace Seasons
         public static class ItemDrop_Awake_AddPrefab
         {
             [HarmonyPriority(Priority.First)]
-            private static bool Prefix() => !prefabInit;
+            private static bool Prefix(ItemDrop __instance)
+            {
+                if (!prefabInit)
+                    return true;
+                suppressedItemDrops.Add(__instance);
+                return false;
+            }
+        }
+
+        [HarmonyPatch(typeof(ItemDrop), nameof(ItemDrop.OnDestroy))]
+        public static class ItemDrop_OnDestroy_AddPrefab
+        {
+            [HarmonyPriority(Priority.First)]
+            private static bool Prefix(ItemDrop __instance) => !suppressedItemDrops.Remove(__instance);
         }
 
         [HarmonyPatch(typeof(ItemDrop), nameof(ItemDrop.Start))]
