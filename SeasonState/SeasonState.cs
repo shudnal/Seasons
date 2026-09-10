@@ -306,10 +306,12 @@ namespace Seasons
 
         public static void InitializeTextureControllers()
         {
-            ZoneSystem.instance.gameObject.AddComponent<PrefabVariantController>();
+            if (!ZoneSystem.instance.TryGetComponent<PrefabVariantController>(out _))
+                ZoneSystem.instance.gameObject.AddComponent<PrefabVariantController>();
             PrefabVariantController.AddControllerToPrefabs();
             ClutterVariantController.Initialize();
-            ZoneSystem.instance.gameObject.AddComponent<ZoneSystemVariantController>().Initialize(ZoneSystem.instance);
+            if (!ZoneSystem.instance.TryGetComponent<ZoneSystemVariantController>(out _))
+                ZoneSystem.instance.gameObject.AddComponent<ZoneSystemVariantController>().Initialize(ZoneSystem.instance);
             FillListsToControl();
             InvalidatePositionsCache();
             CustomTextures.SetupConfigWatcher();
@@ -1238,53 +1240,53 @@ namespace Seasons
         public IEnumerator SeasonChangedFadeEffect()
         {
             m_seasonIsChanging = true;
-
             Player player = Player.m_localPlayer;
-            if (player == null || player.IsDead() || player.IsTeleporting() || Game.instance.IsShuttingDown() || player.IsSleeping())
+            Hud hud = Hud.instance;
+            Game game = Game.instance;
+            EnvMan environment = EnvMan.instance;
+
+            bool SameWorld() => game != null && Game.instance == game && environment != null && EnvMan.instance == environment
+                && ReferenceEquals(seasonState, this) && !game.IsShuttingDown();
+            bool CanFade() => SameWorld() && hud != null && Hud.instance == hud && player != null
+                && Player.m_localPlayer == player && !player.IsDead() && !player.IsTeleporting() && !player.IsSleeping();
+
+            try
             {
-                OnSeasonChange();
-                m_seasonIsChanging = false;
-                yield break;
-            }
-
-            float fadeDuration = fadeOnSeasonChangeDuration.Value / 2;
-
-            Hud.instance.m_loadingScreen.gameObject.SetActive(value: true);
-            Hud.instance.m_loadingProgress.SetActive(value: false);
-            Hud.instance.m_sleepingProgress.SetActive(value: false);
-            Hud.instance.m_teleportingProgress.SetActive(value: false);
-
-            while (Hud.instance.m_loadingScreen.alpha <= 0.99f)
-            {
-                if (player == null || player.IsDead() || player.IsTeleporting() || Game.instance.IsShuttingDown() || player.IsSleeping())
+                if (!CanFade())
                 {
+                    if (SameWorld())
+                        OnSeasonChange();
+                    yield break;
+                }
+
+                float fadeDuration = Mathf.Max(0.01f, fadeOnSeasonChangeDuration.Value / 2f);
+                hud.m_loadingScreen.gameObject.SetActive(value: true);
+                hud.m_loadingProgress.SetActive(value: false);
+                hud.m_sleepingProgress.SetActive(value: false);
+                hud.m_teleportingProgress.SetActive(value: false);
+
+                while (CanFade() && hud.m_loadingScreen.alpha <= 0.99f)
+                {
+                    hud.m_loadingScreen.alpha = Mathf.MoveTowards(hud.m_loadingScreen.alpha, 1f, Time.fixedDeltaTime / fadeDuration);
+                    yield return waitForFixedUpdate;
+                }
+
+                if (SameWorld())
                     OnSeasonChange();
-                    m_seasonIsChanging = false;
-                    yield break;
-                }
 
-                Hud.instance.m_loadingScreen.alpha = Mathf.MoveTowards(Hud.instance.m_loadingScreen.alpha, 1f, Time.fixedDeltaTime / fadeDuration);
-
-                yield return waitForFixedUpdate;
-            }
-
-            OnSeasonChange();
-
-            while (Hud.instance.m_loadingScreen.alpha > 0f)
-            {
-                if (player == null || player.IsDead() || player.IsTeleporting() || Game.instance.IsShuttingDown() || player.IsSleeping())
+                while (CanFade() && hud.m_loadingScreen.alpha > 0f)
                 {
-                    m_seasonIsChanging = false;
-                    yield break;
+                    hud.m_loadingScreen.alpha = Mathf.MoveTowards(hud.m_loadingScreen.alpha, 0f, Time.fixedDeltaTime / fadeDuration);
+                    yield return waitForFixedUpdate;
                 }
 
-                Hud.instance.m_loadingScreen.alpha = Mathf.MoveTowards(Hud.instance.m_loadingScreen.alpha, 0f, Time.fixedDeltaTime / fadeDuration);
-
-                yield return waitForFixedUpdate;
+                if (CanFade())
+                    hud.m_loadingScreen.gameObject.SetActive(value: false);
             }
-
-            Hud.instance.m_loadingScreen.gameObject.SetActive(value: false);
-            m_seasonIsChanging = false;
+            finally
+            {
+                m_seasonIsChanging = false;
+            }
         }
 
         private void OnSeasonChange()
