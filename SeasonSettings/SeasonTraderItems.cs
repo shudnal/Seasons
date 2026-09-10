@@ -120,23 +120,30 @@ namespace Seasons
                     if (prefab == null)
                         continue;
 
-                    if (itemList.Exists(x => x.m_prefab == prefab))
+                    int index = itemList.FindIndex(x => x.m_prefab == prefab);
+                    Trader.TradeItem original = index >= 0 ? itemList[index] : trader.m_items.Find(x => x.m_prefab == prefab);
+                    if (!string.IsNullOrEmpty(original?.m_buyKey) && Player.m_localPlayer != null && Player.m_localPlayer.HaveUniqueKey(original.m_buyKey))
+                        continue;
+
+                    Trader.TradeItem itemTrader = new Trader.TradeItem
                     {
-                        Trader.TradeItem itemTrader = itemList.First(x => x.m_prefab == prefab);
-                        itemTrader.m_price = item.price;
-                        itemTrader.m_stack = item.stack;
-                        itemTrader.m_requiredGlobalKey = item.requiredGlobalKey;
-                    }
+                        m_prefab = prefab,
+                        m_price = item.price,
+                        m_stack = item.stack,
+                        m_requiredGlobalKey = item.requiredGlobalKey,
+                        m_levelUpEffect = original?.m_levelUpEffect ?? false,
+                        m_buyPlayerEffects = original?.m_buyPlayerEffects ?? new EffectList(),
+                        m_icon = original?.m_icon,
+                        m_name = original?.m_name,
+                        m_tooltip = original?.m_tooltip,
+                        m_buyKey = original?.m_buyKey,
+                        m_incrementKey = original?.m_incrementKey,
+                        m_incrementAmount = original?.m_incrementAmount ?? 1
+                    };
+                    if (index >= 0)
+                        itemList[index] = itemTrader;
                     else
-                    {
-                        itemList.Add(new Trader.TradeItem
-                        {
-                            m_prefab = prefab,
-                            m_price = item.price,
-                            m_stack = item.stack,
-                            m_requiredGlobalKey = item.requiredGlobalKey
-                        });
-                    }
+                        itemList.Add(itemTrader);
                 }
             }
         }
