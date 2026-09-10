@@ -904,20 +904,15 @@ namespace Seasons
 
                 List<SeasonRandomEvents.SeasonRandomEvent> randEvents = SeasonState.seasonRandomEvents.GetSeasonEvents(seasonState.GetCurrentSeason());
 
-                __state = new List<RandomEvent>();
-                for (int i = 0; i < __instance.m_events.Count; i++)
+                __state = __instance.m_events;
+                List<RandomEvent> events = new List<RandomEvent>();
+                foreach (RandomEvent original in __state)
                 {
-                    RandomEvent randEvent = __instance.m_events[i];
-                    __state.Add(JsonUtility.FromJson<RandomEvent>(JsonUtility.ToJson(randEvent)));
-
+                    RandomEvent randEvent = original.Clone();
                     SeasonRandomEvents.SeasonRandomEvent seasonRandEvent = randEvents.Find(re => re.m_name == randEvent.m_name);
                     if (seasonRandEvent != null)
                     {
-                        if (seasonRandEvent.m_biomes != null)
-                        {
-                            randEvent.m_biome = seasonRandEvent.GetBiome();
-                            randEvent.m_spawn.ForEach(spawn => spawn.m_biome |= randEvent.m_biome);
-                        }
+                        SeasonState.seasonRandomEvents.ApplySeasonalBiomes(randEvent);
 
                         if (seasonRandEvent.m_weight == 0)
                         {
@@ -927,21 +922,54 @@ namespace Seasons
                         {
                             for (int r = 2; r <= seasonRandEvent.m_weight; r++)
                             {
-                                RandEventSystem.instance.m_events.Insert(i, randEvent);
-                                i++;
+                                events.Add(randEvent);
                             }
                         }
                     }
+                    events.Add(randEvent);
                 }
+                __instance.m_events = events;
             }
 
-            private static void Postfix(ref RandEventSystem __instance, List<RandomEvent> __state)
+            private static void Finalizer(RandEventSystem __instance, List<RandomEvent> __state)
+            {
+                if (__state != null)
+                    __instance.m_events = __state;
+            }
+        }
+
+        [HarmonyPatch(typeof(RandEventSystem), nameof(RandEventSystem.GetValidEventPoints))]
+        public static class RandEventSystem_GetValidEventPoints_SeasonalBiomes
+        {
+            private static bool Prefix(ref RandomEvent ev, ref List<Vector3> __result)
             {
                 if (!controlRandomEvents.Value)
+                    return true;
+
+                SeasonRandomEvents.SeasonRandomEvent settings = SeasonState.seasonRandomEvents.GetSeasonEvents(seasonState.GetCurrentSeason()).Find(item => item.m_name == ev.m_name);
+                if (settings?.m_weight == 0)
+                {
+                    __result = new List<Vector3>();
+                    return false;
+                }
+
+                ev = ev.Clone();
+                SeasonState.seasonRandomEvents.ApplySeasonalBiomes(ev);
+                return true;
+            }
+        }
+
+        [HarmonyPatch(typeof(RandEventSystem), nameof(RandEventSystem.SetRandomEvent))]
+        public static class RandEventSystem_SetRandomEvent_SeasonalBiomes
+        {
+            private static void Prefix(ref RandomEvent ev)
+            {
+                if (!controlRandomEvents.Value || ev == null)
                     return;
 
-                __instance.m_events.Clear();
-                __instance.m_events.AddRange(__state.ToList());
+                // Clients reconstruct active events by name instead of receiving spawn data.
+                ev = ev.Clone();
+                SeasonState.seasonRandomEvents.ApplySeasonalBiomes(ev);
             }
         }
 

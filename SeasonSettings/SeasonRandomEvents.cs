@@ -144,5 +144,16 @@ namespace Seasons
                 _ => new List<SeasonRandomEvent>(),
             };
         }
+
+        public void ApplySeasonalBiomes(RandomEvent randomEvent)
+        {
+            SeasonRandomEvent settings = GetSeasonEvents(seasonState.GetCurrentSeason()).Find(item => item.m_name == randomEvent.m_name);
+            if (settings?.m_biomes == null)
+                return;
+
+            randomEvent.m_biome = settings.GetBiome();
+            foreach (SpawnSystem.SpawnData spawn in randomEvent.m_spawn)
+                spawn.m_biome |= randomEvent.m_biome;
+        }
     }
 }
