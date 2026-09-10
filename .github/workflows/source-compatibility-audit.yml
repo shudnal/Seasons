@@ -1,0 +1,106 @@
+name: Source compatibility inventory
+
+on:
+  push:
+    branches: [fix/game-release]
+    paths: [.github/workflows/source-compatibility-audit.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: shudnal/assemblies_combined
+          ref: a2426aa56eded090abaee0d3316c86a25b395ac2
+          path: _source_audit/game
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Compare source declarations without compiling or executing the mod
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import collections
+          import io
+          import pathlib
+          import re
+          import subprocess
+          import tarfile
+
+          root = pathlib.Path('.')
+          game = root / '_source_audit/game'
+          output = root / '_source_audit/output'
+          output.mkdir(parents=True, exist_ok=True)
+          refs = {'old': 'cf2cda3a4c5c05e62cb8052a61753e5dcaecc28e', 'new': 'a2426aa56eded090abaee0d3316c86a25b395ac2'}
+          snapshots = {}
+          for label, ref in refs.items():
+              archive = subprocess.run(['git', '-C', str(game), 'archive', ref], check=True, stdout=subprocess.PIPE).stdout
+              with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+                  snapshots[label] = {m.name: tar.extractfile(m).read().decode('utf-8-sig') for m in tar if m.isfile() and m.name.endswith('.cs')}
+          mod = {str(p): p.read_text(encoding='utf-8-sig') for p in root.rglob('*.cs') if '_source_audit' not in p.parts and '.git' not in p.parts}
+          declarations = re.compile(r'^\s*(?:(?:public|protected|internal|private|static|readonly|virtual|override|abstract|sealed|unsafe|extern|new|partial|async|const)\s+)+([^;{}=]+)', re.M)
+          fields = re.compile(r'^\s*(?:(?:public|protected|internal|private|static|readonly|const|new)\s+)+([\w.<>,?\[\] ]+?)\s+(m_\w+|s_\w+|c_\w+)\s*(?:[;={])', re.M)
+          words = set(re.findall(r'\b\w+\b', '\n'.join(mod.values())))
+          used_members = set(re.findall(r'\b(m_\w+|s_\w+|c_\w+)\b', '\n'.join(mod.values())))
+          used_methods = set(re.findall(r'\b(\w+)\s*\(', '\n'.join(mod.values())))
+          def normalize(value):
+              return ' '.join(value.split())
+          def signatures(source):
+              result = collections.defaultdict(set)
+              for match in declarations.finditer(source):
+                  value = normalize(match.group(1))
+                  method = re.search(r'\b(\w+)\s*\(', value)
+                  if method:
+                      result[method.group(1)].add(value)
+              return result
+          lines = ['SOURCE-ONLY INVENTORY: lexical candidates, not a compiler or runtime verdict.', f'Mod source files: {len(mod)}', f'Game snapshots: {refs}', '']
+          for path, source in sorted(snapshots['new'].items()):
+              class_name = pathlib.PurePosixPath(path).stem
+              if class_name not in words or path not in snapshots['old']:
+                  continue
+              previous = snapshots['old'][path]
+              before = {name: normalize(typ) for typ, name in fields.findall(previous)}
+              after = {name: normalize(typ) for typ, name in fields.findall(source)}
+              for name in sorted(used_members.intersection(before)):
+                  if before[name] != after.get(name):
+                      lines.append(f'FIELD {path}: {name}: {before[name]} -> {after.get(name, "MISSING OR REPLACED")}')
+              old_methods = signatures(previous)
+              new_methods = signatures(source)
+              for name in sorted(used_methods.intersection(old_methods)):
+                  if old_methods[name] != new_methods.get(name):
+                      lines.append(f'METHOD {path}: {name}: {sorted(old_methods[name])} -> {sorted(new_methods.get(name, []))}')
+          lines.extend(['', 'HARMONY TARGET INVENTORY'])
+          target_pattern = re.compile(r'(?:typeof\((\w+)\),\s*nameof\(\w+\.(\w+)\))')
+          for path, source in sorted(mod.items()):
+              for match in target_pattern.finditer(source):
+                  typ, method = match.groups()
+                  candidates = [p for p in snapshots['new'] if pathlib.PurePosixPath(p).stem == typ]
+                  found = set()
+                  for candidate in candidates:
+                      found.update(signatures(snapshots['new'][candidate]).get(method, set()))
+                  line = source.count('\n', 0, match.start()) + 1
+                  lines.append(f'{path}:{line}: {typ}.{method}: {sorted(found) if found else "CHECK INHERITANCE / PROPERTY / MISSING"}')
+          lines.extend(['', 'MOD SOURCE FILE INVENTORY'] + sorted(mod))
+          report = '\n'.join(lines) + '\n'
+          (output / 'source-contract-inventory.txt').write_text(report, encoding='utf-8')
+          print(report)
+          with tarfile.open(output / 'source-snapshots.tar.gz', 'w:gz') as tar:
+              for label, sources in [('mod', mod), ('game-old', snapshots['old']), ('game-1.0.7', snapshots['new'])]:
+                  for path, source in sources.items():
+                      data = source.encode('utf-8')
+                      entry = tarfile.TarInfo(f'{label}/{path}')
+                      entry.size = len(data)
+                      tar.addfile(entry, io.BytesIO(data))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-compatibility-inventory
+          path: _source_audit/output/
+          retention-days: 3
