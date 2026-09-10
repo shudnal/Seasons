@@ -239,14 +239,15 @@ namespace Seasons
     {
         public static bool isActiveEffectsListCall = false;
 
-        private static void Prefix()
+        private static void Prefix(ref bool __state)
         {
+            __state = isActiveEffectsListCall;
             isActiveEffectsListCall = true;
         }
 
-        private static void Postfix()
+        private static void Finalizer(bool __state)
         {
-            isActiveEffectsListCall = false;
+            isActiveEffectsListCall = __state;
         }
     }
 

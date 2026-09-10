@@ -151,7 +151,15 @@ namespace Seasons
                 if (biome == Heightmap.Biome.Mountain || biome == Heightmap.Biome.DeepNorth)
                     return true;
 
-                return __instance.GetHealth() >= 5;
+                float health = __instance.GetHealth();
+                if (health < 5f)
+                    return false;
+
+                float damage = hit.GetTotalDamage() * Game.m_localDamgeTakenRate;
+                if (damage >= health)
+                    hit.ApplyModifier((health - 1f) / damage);
+
+                return true;
             }
         }
 
@@ -467,7 +475,7 @@ namespace Seasons
                 if (__instance.InInterior() || __instance.InShelter())
                     return;
 
-                if (!(dt + __instance.m_foodUpdateTimer >= 1f || forceUpdate))
+                if (!(dt * Game.m_foodRate + __instance.m_foodUpdateTimer >= 1f || forceUpdate))
                     return;
 
                 foreach (Player.Food food in __instance.m_foods)
@@ -722,9 +730,9 @@ namespace Seasons
                 ___m_TTLPerComfortLevel *= seasonState.GetRestedBuffDurationMultiplier();
             }
 
-            private static void Postfix(ref float ___m_baseTTL, ref float ___m_TTLPerComfortLevel, Tuple<float, float> __state)
+            private static void Finalizer(ref float ___m_baseTTL, ref float ___m_TTLPerComfortLevel, Tuple<float, float> __state)
             {
-                if (seasonState.GetRestedBuffDurationMultiplier() == 1.0f)
+                if (__state == null)
                     return;
 
                 ___m_baseTTL = __state.Item1;
@@ -790,15 +798,15 @@ namespace Seasons
                 yield return AccessTools.Method(typeof(Player), nameof(Player.RemoveOneFood));
             }
 
-            private static void Prefix(Player __instance, ref int __state)
+            private static void Prefix(Player __instance, ref bool __state)
             {
                 if (__instance == Player.m_localPlayer)
-                    __state = __instance.GetFoods().Count;
+                    __state = SeasonState.HasCoolingFood(__instance);
             }
 
-            private static void Postfix(Player __instance, int __state)
+            private static void Postfix(Player __instance, bool __state)
             {
-                if (__instance == Player.m_localPlayer && __state != __instance.GetFoods().Count)
+                if (__instance == Player.m_localPlayer && __state != SeasonState.HasCoolingFood(__instance))
                     seasonState.CheckOverheatStatus(__instance);
             }
         }
@@ -806,33 +814,39 @@ namespace Seasons
         [HarmonyPatch(typeof(Player), nameof(Player.UpdateEnvStatusEffects))]
         public static class Player_UpdateEnvStatusEffects_ColdStatus
         {
-            public static bool removeFrostResistanceFromArmor = false;
-
-            private static int warmPieces;
-            private static int GetWarmClothesCountCached(Player player) => warmPieces == -1 ? warmPieces = SeasonState.GetWarmClothesCount(player) : warmPieces;
-            private static void ClearWarmClothesCache() => warmPieces = -1;
+            private static Player coldStatusPlayer;
+            private static bool removeFrostResistanceFromArmor;
             private static readonly int s_wetStatusHash = SEMan.s_statusEffectWet;
 
-            private static void Prefix(Player __instance)
+            public static bool ShouldRemoveFrostResistance(Player player) => coldStatusPlayer == player && removeFrostResistanceFromArmor;
+
+            private static void Prefix(Player __instance, ref Tuple<Player, bool> __state)
             {
-                ClearWarmClothesCache();
+                __state = Tuple.Create(coldStatusPlayer, removeFrostResistanceFromArmor);
+                coldStatusPlayer = __instance;
+                removeFrostResistanceFromArmor = false;
+                int warmPieces = SeasonState.GetWarmClothesCount(__instance);
 
                 if (__instance.GetCurrentBiome() == Heightmap.Biome.Mountain ? gettingWetInMountainsCausesCold.Value : gettingWetInWinterCausesCold.Value && seasonState.GetCurrentSeason() == Season.Winter)
                 {
-                    bool isWetInColdEnv = EnvMan.IsCold() && __instance.GetSEMan().HaveStatusEffect(s_wetStatusHash);
+                    bool isWetInColdEnv = (EnvMan.IsCold() || EnvMan.IsFreezing()) && __instance.GetSEMan().HaveStatusEffect(s_wetStatusHash);
 
-                    bool isProtectedFromCold = wearing2WarmPiecesPreventsWetCold.Value && GetWarmClothesCountCached(__instance) > 1;
+                    bool isProtectedFromCold = wearing2WarmPiecesPreventsWetCold.Value && warmPieces > 1;
 
                     removeFrostResistanceFromArmor = isWetInColdEnv && (!isProtectedFromCold || __instance.IsSwimming());
                 }
 
-                if (mountainInWinterRequires2WarmPieces.Value && __instance.GetCurrentBiome() == Heightmap.Biome.Mountain && seasonState.GetCurrentSeason() == Season.Winter && GetWarmClothesCountCached(__instance) < 2)
+                if (mountainInWinterRequires2WarmPieces.Value && __instance.GetCurrentBiome() == Heightmap.Biome.Mountain && seasonState.GetCurrentSeason() == Season.Winter && warmPieces < 2)
                     removeFrostResistanceFromArmor = true;
             }
 
-            private static void Postfix()
+            private static void Finalizer(Tuple<Player, bool> __state)
             {
-                removeFrostResistanceFromArmor = false;
+                if (__state == null)
+                    return;
+
+                coldStatusPlayer = __state.Item1;
+                removeFrostResistanceFromArmor = __state.Item2;
             }
         }
 
@@ -848,9 +862,9 @@ namespace Seasons
             private static void Prefix(HitData.DamageModifiers mods, ref bool __state) => __state = IsFrostResistant(mods); // Check for innate frost resistance
 
             [HarmonyPriority(Priority.Last)]
-            private static void Postfix(ref HitData.DamageModifiers mods, bool __state)
+            private static void Postfix(Player __instance, ref HitData.DamageModifiers mods, bool __state)
             {
-                if (!__state && Player_UpdateEnvStatusEffects_ColdStatus.removeFrostResistanceFromArmor && IsFrostResistant(mods))
+                if (!__state && Player_UpdateEnvStatusEffects_ColdStatus.ShouldRemoveFrostResistance(__instance) && IsFrostResistant(mods))
                     mods.m_frost = HitData.DamageModifier.Normal;
 
                 // This is called if player is not innately frost resistant and:
