@@ -356,10 +356,6 @@ namespace Seasons
                 return;
             }
 
-            SeasonBiomeEnvironments.SeasonBiomeEnvironment biomeEnv = controlEnvironments.Value
-                ? seasonBiomeEnvironments.GetSeasonBiomeEnvironment(seasonState.GetCurrentSeason())
-                : null;
-
             EnvMan.instance.m_biomes.Clear();
 
             biomesDefault.Do(kvp => ChangeBiomeEnvironment(kvp.Value));
@@ -375,9 +371,6 @@ namespace Seasons
                 {
                     BiomeEnvSetup biomeEnvironment =
                         JsonUtility.FromJson<BiomeEnvSetup>(biomeEnvironmentDefault);
-
-                    if (biomeEnv != null)
-                        biomeEnvironment.m_environments = ApplySeasonBiomeEnvironmentRules(biomeEnv, biomeEnvironment, biomeEnvironment.m_environments);
 
                     EnvMan.instance.AppendBiomeSetup(biomeEnvironment);
                 }
@@ -1663,7 +1656,7 @@ namespace Seasons
                 ? new List<EnvEntry>()
                 : environments
                     .Where(environment => environment != null)
-                    .Select(environment => preserveSourceEntries ? environment : CloneEnvEntry(environment))
+                    .Select(CloneEnvEntry)
                     .ToList();
 
             RefreshEnvironmentReferences(result);

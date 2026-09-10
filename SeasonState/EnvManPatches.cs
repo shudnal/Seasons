@@ -210,7 +210,7 @@ namespace Seasons
         [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.SetEnv))]
         public static class EnvMan_SetEnv_LuminancePatch
         {
-            private class LightState
+            public class LightState
             {
                 public Color m_ambColorNight;
                 public Color m_fogColorNight;
@@ -237,8 +237,6 @@ namespace Seasons
                 public float m_fogDensityEvening;
             }
 
-            private static readonly LightState _lightState = new LightState();
-
             private static Color ChangeColorLuminance(Color color, float luminanceMultiplier)
             {
                 HSLColor newColor = new HSLColor(color);
@@ -246,33 +244,33 @@ namespace Seasons
                 return newColor.ToRGBA();
             }
 
-            private static void SaveLightState(EnvSetup env)
+            private static void SaveLightState(EnvSetup env, LightState state)
             {
-                _lightState.m_ambColorNight = env.m_ambColorNight;
-                _lightState.m_sunColorNight = env.m_sunColorNight;
-                _lightState.m_fogColorNight = env.m_fogColorNight;
-                _lightState.m_fogColorSunNight = env.m_fogColorSunNight;
+                state.m_ambColorNight = env.m_ambColorNight;
+                state.m_sunColorNight = env.m_sunColorNight;
+                state.m_fogColorNight = env.m_fogColorNight;
+                state.m_fogColorSunNight = env.m_fogColorSunNight;
 
-                _lightState.m_ambColorDay = env.m_ambColorDay;
-                _lightState.m_sunColorDay = env.m_sunColorDay;
-                _lightState.m_fogColorDay = env.m_fogColorDay;
-                _lightState.m_fogColorSunDay = env.m_fogColorSunDay;
+                state.m_ambColorDay = env.m_ambColorDay;
+                state.m_sunColorDay = env.m_sunColorDay;
+                state.m_fogColorDay = env.m_fogColorDay;
+                state.m_fogColorSunDay = env.m_fogColorSunDay;
 
-                _lightState.m_sunColorMorning = env.m_sunColorMorning;
-                _lightState.m_fogColorMorning = env.m_fogColorMorning;
-                _lightState.m_fogColorSunMorning = env.m_fogColorSunMorning;
+                state.m_sunColorMorning = env.m_sunColorMorning;
+                state.m_fogColorMorning = env.m_fogColorMorning;
+                state.m_fogColorSunMorning = env.m_fogColorSunMorning;
 
-                _lightState.m_sunColorEvening = env.m_sunColorEvening;
-                _lightState.m_fogColorEvening = env.m_fogColorEvening;
-                _lightState.m_fogColorSunEvening = env.m_fogColorSunEvening;
+                state.m_sunColorEvening = env.m_sunColorEvening;
+                state.m_fogColorEvening = env.m_fogColorEvening;
+                state.m_fogColorSunEvening = env.m_fogColorSunEvening;
 
-                _lightState.m_lightIntensityDay = env.m_lightIntensityDay;
-                _lightState.m_lightIntensityNight = env.m_lightIntensityNight;
+                state.m_lightIntensityDay = env.m_lightIntensityDay;
+                state.m_lightIntensityNight = env.m_lightIntensityNight;
 
-                _lightState.m_fogDensityNight = env.m_fogDensityNight;
-                _lightState.m_fogDensityMorning = env.m_fogDensityMorning;
-                _lightState.m_fogDensityDay = env.m_fogDensityDay;
-                _lightState.m_fogDensityEvening = env.m_fogDensityEvening;
+                state.m_fogDensityNight = env.m_fogDensityNight;
+                state.m_fogDensityMorning = env.m_fogDensityMorning;
+                state.m_fogDensityDay = env.m_fogDensityDay;
+                state.m_fogDensityEvening = env.m_fogDensityEvening;
             }
 
             private static void ChangeEnvColor(EnvSetup env, SeasonLightings.SeasonLightingSettings lightingSettings, bool indoors = false)
@@ -304,62 +302,71 @@ namespace Seasons
                 env.m_lightIntensityNight *= lightingSettings.lightIntensityNightMultiplier;
             }
 
-            public static void ChangeLightState(EnvSetup env)
+            private static void ChangeLightState(EnvSetup env)
             {
-                SaveLightState(env);
 
                 SeasonLightings.SeasonLightingSettings lightingSettings = SeasonState.seasonLightings.GetSeasonLighting(seasonState.GetCurrentSeason());
 
                 ChangeEnvColor(env, lightingSettings, indoors: Player.m_localPlayer != null && Player.m_localPlayer.InInterior());
             }
 
-            public static void ResetLightState(EnvSetup env)
+            private static void ResetLightState(EnvSetup env, LightState state)
             {
-                env.m_ambColorNight = _lightState.m_ambColorNight;
-                env.m_sunColorNight = _lightState.m_sunColorNight;
-                env.m_fogColorNight = _lightState.m_fogColorNight;
-                env.m_fogColorSunNight = _lightState.m_fogColorSunNight;
+                env.m_ambColorNight = state.m_ambColorNight;
+                env.m_sunColorNight = state.m_sunColorNight;
+                env.m_fogColorNight = state.m_fogColorNight;
+                env.m_fogColorSunNight = state.m_fogColorSunNight;
 
-                env.m_ambColorDay = _lightState.m_ambColorDay;
-                env.m_sunColorDay = _lightState.m_sunColorDay;
-                env.m_fogColorDay = _lightState.m_fogColorDay;
-                env.m_fogColorSunDay = _lightState.m_fogColorSunDay;
+                env.m_ambColorDay = state.m_ambColorDay;
+                env.m_sunColorDay = state.m_sunColorDay;
+                env.m_fogColorDay = state.m_fogColorDay;
+                env.m_fogColorSunDay = state.m_fogColorSunDay;
 
-                env.m_sunColorMorning = _lightState.m_sunColorMorning;
-                env.m_fogColorMorning = _lightState.m_fogColorMorning;
-                env.m_fogColorSunMorning = _lightState.m_fogColorSunMorning;
+                env.m_sunColorMorning = state.m_sunColorMorning;
+                env.m_fogColorMorning = state.m_fogColorMorning;
+                env.m_fogColorSunMorning = state.m_fogColorSunMorning;
 
-                env.m_sunColorEvening = _lightState.m_sunColorEvening;
-                env.m_fogColorEvening = _lightState.m_fogColorEvening;
-                env.m_fogColorSunEvening = _lightState.m_fogColorSunEvening;
+                env.m_sunColorEvening = state.m_sunColorEvening;
+                env.m_fogColorEvening = state.m_fogColorEvening;
+                env.m_fogColorSunEvening = state.m_fogColorSunEvening;
 
-                env.m_fogDensityNight = _lightState.m_fogDensityNight;
-                env.m_fogDensityMorning = _lightState.m_fogDensityMorning;
-                env.m_fogDensityDay = _lightState.m_fogDensityDay;
-                env.m_fogDensityEvening = _lightState.m_fogDensityEvening;
+                env.m_fogDensityNight = state.m_fogDensityNight;
+                env.m_fogDensityMorning = state.m_fogDensityMorning;
+                env.m_fogDensityDay = state.m_fogDensityDay;
+                env.m_fogDensityEvening = state.m_fogDensityEvening;
 
-                env.m_lightIntensityDay = _lightState.m_lightIntensityDay;
-                env.m_lightIntensityNight = _lightState.m_lightIntensityNight;
+                env.m_lightIntensityDay = state.m_lightIntensityDay;
+                env.m_lightIntensityNight = state.m_lightIntensityNight;
             }
 
             [HarmonyPriority(Priority.Last)]
             [HarmonyBefore(new string[1] { "shudnal.GammaOfNightLights" })]
-            public static void Prefix(EnvSetup env)
+            public static void Prefix(EnvSetup env, out LightState __state)
             {
-                if (!controlLightings.Value || !UseTextureControllers())
+                __state = null;
+                if (env == null || !controlLightings.Value || !UseTextureControllers())
                     return;
 
+                __state = new LightState();
+                SaveLightState(env, __state);
                 ChangeLightState(env);
             }
 
             [HarmonyPriority(Priority.First)]
             [HarmonyAfter(new string[1] { "shudnal.GammaOfNightLights" })]
-            public static void Postfix(EnvSetup env)
+            public static void Postfix(EnvSetup env, ref LightState __state)
             {
-                if (!controlLightings.Value || !UseTextureControllers())
+                if (__state == null)
                     return;
 
-                ResetLightState(env);
+                ResetLightState(env, __state);
+                __state = null;
+            }
+
+            public static void Finalizer(EnvSetup env, LightState __state)
+            {
+                if (__state != null)
+                    ResetLightState(env, __state);
             }
         }
 
@@ -407,24 +414,9 @@ namespace Seasons
         [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.GetWindForce))]
         public static class EnvMan_GetWindForce_WindIntensityMultiplier
         {
-            private static float s_multiplier;
-
-            private static void Prefix(ref Vector4 ___m_wind, ref float __state)
+            private static void Postfix(ref Vector3 __result)
             {
-                s_multiplier = seasonState.GetWindIntensityMultiplier();
-                if (s_multiplier == 1.0f)
-                    return;
-
-                __state = ___m_wind.w;
-                ___m_wind.w *= s_multiplier;
-            }
-
-            private static void Postfix(ref Vector4 ___m_wind, float __state)
-            {
-                if (s_multiplier == 1.0f)
-                    return;
-
-                ___m_wind.w = __state;
+                __result *= seasonState.GetWindIntensityMultiplier();
             }
         }
 

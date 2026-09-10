@@ -220,10 +220,14 @@ namespace Seasons.Compatibility
             [HarmonyAfter(new string[1] { GUID })]
             public static void Postfix(BiomeSector biome, ref List<EnvEntry> __result)
             {
-                if (biome == null || __result == null || !ShouldApplySeasonalRulesToAvailableEnvironments())
+                if (biome == null || __result == null || !SeasonState.IsActive || !Seasons.controlEnvironments.Value)
                     return;
 
+                // Apply once after native alternate-biome and optional EWD selection.
                 __result = SeasonState.ApplySeasonBiomeEnvironmentRules(biome.Biome, __result);
+                foreach (AltBiome alternateBiome in biome.AltBiomes)
+                    foreach (string blockedEnvironment in alternateBiome.m_blockEnvironments)
+                        __result.RemoveAll(environment => environment.m_environment.Contains(blockedEnvironment));
             }
         }
     }
