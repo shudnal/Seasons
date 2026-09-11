@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using static Seasons.Seasons;
@@ -12,7 +12,6 @@ namespace Seasons
         public Texture2D original;
         public string originalName;
         public byte[] originalPNG;
-        public string sourceFingerprint;
         public TextureProperties properties;
         public Dictionary<Season, Dictionary<int, Texture2D>> seasons = new Dictionary<Season, Dictionary<int, Texture2D>>();
 
@@ -22,9 +21,6 @@ namespace Seasons
                 return;
 
             properties = texData.properties;
-            originalName = texData.name;
-            originalPNG = texData.originalPNG;
-            sourceFingerprint = texData.sourceFingerprint;
             if (properties == null)
                 return;
 
@@ -40,7 +36,7 @@ namespace Seasons
 
                     Texture2D tex = properties.CreateTexture();
 
-                    if (tex.LoadImage(data, false))
+                    if (tex.LoadImage(data, true))
                         AddVariant(season, variant, tex);
                     else
                         Object.Destroy(tex);

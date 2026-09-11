@@ -1,11 +1,11 @@
-using System.Collections.Generic;
-using static Seasons.Seasons;
-using System.IO;
-using System.Diagnostics;
-using System.Collections;
-using System.Threading;
 using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Threading;
 using UnityEngine;
+using static Seasons.Seasons;
 
 namespace Seasons
 {
@@ -14,48 +14,12 @@ namespace Seasons
         public Dictionary<string, PrefabController> controllers = new Dictionary<string, PrefabController>();
         public Dictionary<int, TextureVariants> textures = new Dictionary<int, TextureVariants>();
         public uint revision = 0;
-        internal string sourceSettings;
-        internal readonly Dictionary<string, int> textureContextIds = new Dictionary<string, int>();
-        internal readonly Dictionary<int, Tuple<TextureProperties, Color[], byte[]>> sourceTextures = new Dictionary<int, Tuple<TextureProperties, Color[], byte[]>>();
+
         private bool m_reloading;
         private bool m_rebuildSucceeded;
         private static readonly object s_diskLock = new object();
-        private readonly Dictionary<string, CachedData.TextureData> m_cachedTextures = new Dictionary<string, CachedData.TextureData>();
+
         public bool IsUpdating => m_reloading || Controllers.TextureCachingController.InProcess;
-
-        private void SetCacheCandidates(CachedData cachedData)
-        {
-            m_cachedTextures.Clear();
-            if (!cachedData.Initialized())
-                return;
-            foreach (CachedData.TextureData texture in cachedData.textures.Values)
-                if (!string.IsNullOrEmpty(texture.sourceFingerprint))
-                    m_cachedTextures[texture.sourceFingerprint] = texture;
-        }
-
-        internal bool TryReuseTexture(string fingerprint, Texture source, byte[] originalPNG, out TextureVariants variants)
-        {
-            variants = null;
-            if (!m_cachedTextures.TryGetValue(fingerprint, out CachedData.TextureData cached))
-                return false;
-            TextureVariants candidate = new TextureVariants(cached);
-            if (!candidate.Initialized())
-            {
-                candidate.Dispose();
-                m_cachedTextures.Remove(fingerprint);
-                return false;
-            }
-            candidate.SetOriginalTexture(source);
-            candidate.originalPNG = originalPNG;
-            variants = candidate;
-            return true;
-        }
-
-        internal void ReleaseCacheCandidates()
-        {
-            m_cachedTextures.Clear();
-            sourceTextures.Clear();
-        }
 
         public void Dispose()
         {
@@ -63,9 +27,6 @@ namespace Seasons
                 variants.Dispose();
             textures.Clear();
             controllers.Clear();
-            textureContextIds.Clear();
-            sourceSettings = null;
-            ReleaseCacheCandidates();
         }
 
         public bool Initialize(bool force = false)
@@ -81,16 +42,39 @@ namespace Seasons
             Dispose();
 
             revision = SeasonalTexturePrefabCache.GetRevision();
-            if (!force)
+            CachedData cachedData = new CachedData(revision);
+
+            if (force)
             {
-                CachedData cachedData = new CachedData(revision);
+                lock (s_diskLock)
+                    if (Directory.Exists(cachedData.CacheDirectory()))
+                        Directory.Delete(cachedData.CacheDirectory(), recursive: true);
+            }
+            else
+            {
                 lock (s_diskLock)
                     cachedData.LoadFromDisk();
-                SetCacheCandidates(cachedData);
             }
 
-            // Rebuild the graph from live assets: persisted Unity instance IDs are not durable.
-            // Generated texture data is reused only after matching its source fingerprint.
+            if (cachedData.Initialized())
+            {
+                controllers.Copy(cachedData.controllers);
+
+                foreach (KeyValuePair<int, CachedData.TextureData> texData in cachedData.textures)
+                {
+                    TextureVariants texVariants = new TextureVariants(texData.Value);
+                    if (!texVariants.Initialized())
+                    {
+                        texVariants.Dispose();
+                        continue;
+                    }
+                    textures.Add(texData.Key, texVariants);
+                }
+
+                LogInfo($"Loaded from cache revision:{revision} controllers:{controllers.Count} textures:{textures.Count}");
+                return Initialized();
+            }
+
             if (!runTextureCachingSync.Value)
             {
                 Controllers.TextureCachingController.StartCaching(this);
@@ -98,15 +82,8 @@ namespace Seasons
             else
             {
                 SeasonalTexturePrefabCache.SetCurrentTextureVariants(this);
-
-                do
-                {
-                    if (Initialized())
-                        Dispose();
-                    StartCoroutineSync(SeasonalTexturePrefabCache.FillWithGameData());
-                    StartCoroutineSync(SaveCacheOnDisk());
-                }
-                while (sourceSettings != null && SeasonalTexturePrefabCache.NeedsRefresh(this));
+                StartCoroutineSync(SeasonalTexturePrefabCache.FillWithGameData());
+                StartCoroutineSync(SaveCacheOnDisk());
             }
 
             return Initialized();
@@ -118,7 +95,6 @@ namespace Seasons
             {
                 CachedData cachedData = new CachedData(revision);
 
-                cachedData.textures.Clear();
                 foreach (KeyValuePair<int, TextureVariants> texVariants in textures)
                 {
                     CachedData.TextureData texData = new CachedData.TextureData(texVariants.Value);
@@ -146,13 +122,12 @@ namespace Seasons
                 }) { IsBackground = true };
 
                 internalThread.Start();
-                while (internalThread.IsAlive == true)
-                {
+                while (internalThread.IsAlive)
                     yield return waitForFixedUpdate;
-                }
 
                 if (saveError != null)
                     LogWarning($"Unable to save seasonal texture cache:\n{saveError}");
+
                 ApplyTexturesToGPU();
             }
         }
@@ -168,64 +143,100 @@ namespace Seasons
                 texture.Value.ApplyTextures();
         }
 
-        public IEnumerator ReloadCache() => RebuildCache(reuseDiskCache: true);
-
-        public IEnumerator RebuildCache() => RebuildCache(reuseDiskCache: false);
-
-        private IEnumerator RebuildCache(bool reuseDiskCache)
+        public IEnumerator ReloadCache()
         {
-            SeasonalTexturePrefabCache.RequestUpdate();
             if (m_reloading || Controllers.TextureCachingController.InProcess)
                 yield break;
+
             m_reloading = true;
             ZoneSystem sourceZone = ZoneSystem.instance;
             try
             {
-                do
+                CachedData cachedData = new CachedData(SeasonalTexturePrefabCache.GetRevision());
+                var reader = new Thread(() =>
                 {
-                    m_rebuildSucceeded = false;
-                    yield return RebuildCacheInternal(reuseDiskCache);
+                    lock (s_diskLock)
+                        cachedData.LoadFromDisk();
+                }) { IsBackground = true };
+
+                reader.Start();
+                while (reader.IsAlive)
+                    yield return waitForFixedUpdate;
+
+                if (!sourceZone || sourceZone != ZoneSystem.instance)
+                    yield break;
+
+                if (!cachedData.Initialized())
+                {
+                    m_reloading = false;
+                    yield return RebuildCache();
+                    yield break;
                 }
-                while (m_rebuildSucceeded && sourceZone && sourceZone == ZoneSystem.instance
-                    && SeasonalTexturePrefabCache.NeedsRefresh(this));
+
+                Stopwatch stopwatch = Stopwatch.StartNew();
+                List<TextureVariants> oldTextures = new List<TextureVariants>(textures.Values);
+                var loadedTextures = new Dictionary<int, TextureVariants>();
+
+                foreach (KeyValuePair<int, CachedData.TextureData> texData in cachedData.textures)
+                {
+                    TextureVariants variants = new TextureVariants(texData.Value);
+                    if (variants.Initialized())
+                        loadedTextures.Add(texData.Key, variants);
+                    else
+                        variants.Dispose();
+                }
+
+                if (loadedTextures.Count == 0)
+                {
+                    m_reloading = false;
+                    yield return RebuildCache();
+                    yield break;
+                }
+
+                PrefabVariantController.instance?.RevertPrefabsState();
+                ClutterVariantController.Instance?.RevertColors();
+
+                controllers.Clear();
+                textures.Clear();
+                revision = cachedData.revision;
+                controllers.Copy(cachedData.controllers);
+                textures.Copy(loadedTextures);
+
+                try
+                {
+                    ClutterVariantController.Reinitialize();
+                    PrefabVariantController.ReinitializePrefabVariants();
+                }
+                finally
+                {
+                    foreach (TextureVariants oldTexture in oldTextures)
+                        oldTexture.Dispose();
+                }
+
+                yield return waitForFixedUpdate;
+                PrefabVariantController.UpdatePrefabColors();
+                ClutterVariantController.Instance?.UpdateColors();
+                LogInfo($"Loaded from cache revision:{revision} controllers:{controllers.Count} textures:{textures.Count} in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
             }
             finally
             {
                 m_reloading = false;
                 if (sourceZone && sourceZone == ZoneSystem.instance)
-                {
                     SeasonalTexturePrefabCache.SetCurrentTextureVariants(this);
-                    if (m_rebuildSucceeded)
-                    {
-                        PrefabVariantController.UpdatePrefabColors();
-                        ClutterVariantController.Instance?.UpdateColors();
-                    }
-                }
             }
         }
 
-        private IEnumerator RebuildCacheInternal(bool reuseDiskCache)
+        public IEnumerator RebuildCache()
         {
+            if (m_reloading || Controllers.TextureCachingController.InProcess)
+                yield break;
+
+            m_reloading = true;
+            m_rebuildSucceeded = false;
             ZoneSystem sourceZone = ZoneSystem.instance;
             SeasonalTextureVariants newTexturesVariants = new SeasonalTextureVariants();
             try
             {
-                if (reuseDiskCache)
-                {
-                    CachedData cachedData = new CachedData(SeasonalTexturePrefabCache.GetRevision());
-                    var reader = new Thread(() =>
-                    {
-                        lock (s_diskLock)
-                            cachedData.LoadFromDisk();
-                    }) { IsBackground = true };
-                    reader.Start();
-                    while (reader.IsAlive)
-                        yield return waitForFixedUpdate;
-                    if (!sourceZone || sourceZone != ZoneSystem.instance)
-                        yield break;
-                    newTexturesVariants.SetCacheCandidates(cachedData);
-                }
-
                 SeasonalTexturePrefabCache.SetCurrentTextureVariants(newTexturesVariants);
 
                 PrefabVariantController.instance?.RevertPrefabsState();
@@ -238,20 +249,16 @@ namespace Seasons
 
                 yield return SeasonalTexturePrefabCache.FillWithGameData();
 
-                if (!sourceZone || sourceZone != ZoneSystem.instance || newTexturesVariants.sourceSettings == null)
+                if (!sourceZone || sourceZone != ZoneSystem.instance || !newTexturesVariants.Initialized())
                     yield break;
 
                 Stopwatch stopwatch = Stopwatch.StartNew();
-
                 List<TextureVariants> oldTextures = new List<TextureVariants>(textures.Values);
                 controllers.Clear();
                 textures.Clear();
                 revision = newTexturesVariants.revision;
-                sourceSettings = newTexturesVariants.sourceSettings;
-
                 controllers.Copy(newTexturesVariants.controllers);
                 textures.Copy(newTexturesVariants.textures);
-                // Ownership moves to this cache; finally only disposes untransferred results.
                 newTexturesVariants.controllers.Clear();
                 newTexturesVariants.textures.Clear();
 
@@ -269,22 +276,24 @@ namespace Seasons
                 }
 
                 yield return SaveCacheOnDisk();
-
                 yield return waitForFixedUpdate;
 
                 if (!sourceZone || sourceZone != ZoneSystem.instance)
                     yield break;
+
                 m_rebuildSucceeded = true;
+                PrefabVariantController.UpdatePrefabColors();
+                ClutterVariantController.Instance?.UpdateColors();
                 LogInfo($"Colors reinitialized in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
                 LogInfo("Cache rebuild ended");
             }
             finally
             {
                 newTexturesVariants.Dispose();
+                m_reloading = false;
                 if (sourceZone && sourceZone == ZoneSystem.instance)
                     SeasonalTexturePrefabCache.SetCurrentTextureVariants(this);
             }
         }
     }
-
 }

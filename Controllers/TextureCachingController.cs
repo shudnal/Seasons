@@ -97,35 +97,29 @@ namespace Seasons.Controllers
 
                 yield return new WaitForSeconds(0.5f);
 
-                do
+                if (_texturesVariants.controllers.Count > 0 || _texturesVariants.textures.Count > 0)
+                    _texturesVariants.Dispose();
+
+                yield return StartCoroutine(SeasonalTexturePrefabCache.FillWithGameData());
+
+                yield return wait;
+
+                if (!sourceZone || sourceZone != ZoneSystem.instance)
+                    yield break;
+                if (LoadingIndicator?.IsVisible == true)
                 {
-                    if (_texturesVariants.controllers.Count > 0 || _texturesVariants.textures.Count > 0)
-                        _texturesVariants.Dispose();
-                    yield return StartCoroutine(SeasonalTexturePrefabCache.FillWithGameData());
-
-                    yield return wait;
-
-                    if (!sourceZone || sourceZone != ZoneSystem.instance)
-                        yield break;
-                    if (LoadingIndicator?.IsVisible == true)
-                    {
-                        LoadingIndicator.SetProgress(1f);
-                        LoadingIndicator.SetText("$seasons_loadscreen_saving");
-                    }
-
-                    yield return wait;
-
-                    yield return StartCoroutine(_texturesVariants.SaveCacheOnDisk());
-
-                    yield return wait;
-
-                    if (LoadingIndicator?.IsVisible == true)
-                        LoadingIndicator.SetShowProgress(false);
-
-                    yield return wait;
+                    LoadingIndicator.SetProgress(1f);
+                    LoadingIndicator.SetText("$seasons_loadscreen_saving");
                 }
-                while (sourceZone && sourceZone == ZoneSystem.instance && _texturesVariants.sourceSettings != null
-                    && SeasonalTexturePrefabCache.NeedsRefresh(_texturesVariants));
+
+                yield return wait;
+                yield return StartCoroutine(_texturesVariants.SaveCacheOnDisk());
+                yield return wait;
+
+                if (LoadingIndicator?.IsVisible == true)
+                    LoadingIndicator.SetShowProgress(false);
+
+                yield return wait;
 
                 if (!sourceZone || sourceZone != ZoneSystem.instance)
                     yield break;

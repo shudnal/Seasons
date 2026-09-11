@@ -1,4 +1,4 @@
-﻿using BepInEx;
+using BepInEx;
 using HarmonyLib;
 using Newtonsoft.Json;
 using ConditionalConfigSync;
@@ -8,7 +8,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
 using UnityEngine;
 using static Seasons.PrefabController;
@@ -306,7 +305,8 @@ namespace Seasons
                     ClutterVariantController.c_forestBloomPrefabName,
                     ClutterVariantController.c_swampGrassBloomPrefabName,
                     "DevMageRoom",
-                    "DevBedchamber"
+                    "DevBedchamber",
+                    "ShipSetting02"
                 };
 
                 ignorePrefabPartialName = new List<string>()
@@ -1579,17 +1579,6 @@ namespace Seasons
 
         private static readonly Stopwatch stopwatchController = new Stopwatch();
         private static FileSystemWatcher s_configWatcher;
-        private static string s_sourceSettings;
-        private static bool s_updateRequested;
-
-        internal static bool NeedsRefresh(SeasonalTextureVariants variants) => s_updateRequested || variants.sourceSettings != s_sourceSettings;
-
-        internal static void RequestUpdate()
-        {
-            GetRevision();
-            s_updateRequested = true;
-        }
-
         public static void SetCurrentTextureVariants(SeasonalTextureVariants texturesVariants)
         {
             currentTextureVariants = texturesVariants;
@@ -1737,26 +1726,9 @@ namespace Seasons
             }
             textureVariants = new TextureVariants(texture);
 
-            int sourceId = texture.GetInstanceID();
-            if (!currentTextureVariants.sourceTextures.TryGetValue(sourceId, out var source))
-            {
-                Color[] sourcePixels = GetTexturePixels(texture, textureVariants.properties, out byte[] originalPNG);
-                source = Tuple.Create(textureVariants.properties, sourcePixels, originalPNG);
-                currentTextureVariants.sourceTextures[sourceId] = source;
-            }
-            textureVariants.properties = source.Item1;
-            textureVariants.originalPNG = source.Item3;
-            Color[] pixels = source.Item2;
+            Color[] pixels = GetTexturePixels(texture, textureVariants.properties, out textureVariants.originalPNG);
             if (pixels.Length < 1)
                 return false;
-
-            string fingerprint = GetSourceFingerprint(prefabName, rendererName, material, propertyName, textureVariants, isPlant);
-            if (currentTextureVariants.TryReuseTexture(fingerprint, texture, textureVariants.originalPNG, out TextureVariants cachedVariants))
-            {
-                textureVariants = cachedVariants;
-                return true;
-            }
-            textureVariants.sourceFingerprint = fingerprint;
 
             bool isGrass = IsGrass(material.shader.name);
             bool isMoss = IsMoss(propertyName);
@@ -1819,41 +1791,7 @@ namespace Seasons
             return textureVariants.Initialized();
         }
 
-        private static bool GetTextureVariantId(string prefabName, string rendererName, Material material,
-            string propertyName, Texture texture, bool isPlant, out int textureId)
-        {
-            string context = JsonConvert.SerializeObject(new object[]
-            {
-                texture.GetInstanceID(), prefabName, rendererName, material.name,
-                material.shader.name, propertyName, isPlant
-            });
-            if (currentTextureVariants.textureContextIds.TryGetValue(context, out textureId))
-                return true;
-            if (!GetTextureVariants(prefabName, rendererName, material, propertyName, texture, out TextureVariants variants, isPlant))
-                return false;
-            textureId = currentTextureVariants.textures.Count;
-            currentTextureVariants.textures.Add(textureId, variants);
-            currentTextureVariants.textureContextIds.Add(context, textureId);
-            return true;
-        }
 
-        private static string GetSourceFingerprint(string prefabName, string rendererName, Material material,
-            string propertyName, TextureVariants texture, bool isPlant)
-        {
-            // Include every input used by classification, color rules and texture creation.
-            // Renderer paths/LOD/material slots are rebuilt from live assets, never loaded.
-            byte[] metadata = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new object[]
-            {
-                currentTextureVariants.sourceSettings, prefabName, rendererName, material.name,
-                material.shader.name, propertyName, isPlant, texture.originalName, texture.properties
-            }));
-            using (SHA256 hash = SHA256.Create())
-            {
-                hash.TransformBlock(metadata, 0, metadata.Length, metadata, 0);
-                hash.TransformFinalBlock(texture.originalPNG, 0, texture.originalPNG.Length);
-                return Convert.ToBase64String(hash.Hash);
-            }
-        }
 
         private static Color[] GetTexturePixels(Texture texture, TextureProperties texProperties, out byte[] originalPNG)
         {
@@ -1925,13 +1863,6 @@ namespace Seasons
             sb.Append(JsonConvert.SerializeObject(colorReplacement));
             sb.Append(JsonConvert.SerializeObject(colorPositions));
             sb.Append(globalRevision);
-            sb.Append(global::Version.CurrentVersion.ToString());
-
-            s_sourceSettings = JsonConvert.SerializeObject(new object[]
-            {
-                globalRevision, global::Version.CurrentVersion.ToString(), materialSettings,
-                colorSettings, colorReplacement, colorPositions
-            });
 
             return (uint)sb.ToString().GetStableHashCode();
         }
@@ -2054,14 +1985,6 @@ namespace Seasons
                         || !clutter || clutter != ClutterSystem.instance || target != currentTextureVariants)
                         yield break;
 
-                    if (target.sourceSettings != null && NeedsRefresh(target))
-                    {
-                        while (work.Count > 0)
-                            (work.Pop() as IDisposable)?.Dispose();
-                        target.Dispose();
-                        work.Push(FillWithGameDataCore());
-                        continue;
-                    }
 
                     IEnumerator step = work.Peek();
                     if (!step.MoveNext())
@@ -2080,9 +2003,7 @@ namespace Seasons
             {
                 while (work.Count > 0)
                     (work.Pop() as IDisposable)?.Dispose();
-                if (completed)
-                    target.ReleaseCacheCandidates();
-                else
+                if (!completed)
                     target.Dispose();
             }
         }
@@ -2098,8 +2019,6 @@ namespace Seasons
 
             LogInfo("Initializing cache settings");
             currentTextureVariants.revision = GetRevision();
-            currentTextureVariants.sourceSettings = s_sourceSettings;
-            s_updateRequested = false;
             LogInfo($"Cache settings revision {currentTextureVariants.revision}");
 
             LogInfo("Caching yggdrasil branch");
@@ -2143,28 +2062,28 @@ namespace Seasons
         private static List<MeshRenderer> GetMeshRenderers(this GameObject root)
         {
             mrenderers.Clear();
-            root.GetComponentsInChildren(includeInactive: true, mrenderers);
+            root.GetComponentsInChildren(includeInactive: false, mrenderers);
             return mrenderers;
         }
 
         private static List<SkinnedMeshRenderer> GetSkinnedMeshRenderers(this GameObject root)
         {
             srenderers.Clear();
-            root.GetComponentsInChildren(includeInactive: true, srenderers);
+            root.GetComponentsInChildren(includeInactive: false, srenderers);
             return srenderers;
         }
 
         private static List<ParticleSystemRenderer> GetParticleSystemRenderers(this GameObject root)
         {
             psrenderers.Clear();
-            root.GetComponentsInChildren(includeInactive: true, psrenderers);
+            root.GetComponentsInChildren(includeInactive: false, psrenderers);
             return psrenderers;
         }
 
         private static List<ParticleSystem> GetParticleSystems(this GameObject root)
         {
             psystems.Clear();
-            root.GetComponentsInChildren(includeInactive: true, psystems);
+            root.GetComponentsInChildren(includeInactive: false, psystems);
             return psystems;
         }
 
@@ -2379,8 +2298,16 @@ namespace Seasons
                         if (texture == null)
                             continue;
 
-                        if (GetTextureVariantId(prefabName, rendererName, material, propertyName, texture, isPlant, out int textureID))
+                        int textureID = texture.GetInstanceID();
+                        if (currentTextureVariants.textures.ContainsKey(textureID))
+                        {
                             cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
+                        }
+                        else if (GetTextureVariants(prefabName, rendererName, material, propertyName, texture, out TextureVariants textureVariants, isPlant: isPlant))
+                        {
+                            currentTextureVariants.textures.Add(textureID, textureVariants);
+                            cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
+                        }
                     }
                 }
                 else if (materialSettings.shaderTextures.TryGetValue(material.shader.name, out string[] textureNames))
@@ -2391,8 +2318,16 @@ namespace Seasons
                         if (texture == null)
                             continue;
 
-                        if (GetTextureVariantId(prefabName, rendererName, material, propertyName, texture, isPlant, out int textureID))
+                        int textureID = texture.GetInstanceID();
+                        if (currentTextureVariants.textures.ContainsKey(textureID))
+                        {
                             cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
+                        }
+                        else if (GetTextureVariants(prefabName, rendererName, material, propertyName, texture, out TextureVariants textureVariants, isPlant: isPlant))
+                        {
+                            currentTextureVariants.textures.Add(textureID, textureVariants);
+                            cachedRenderer.AddMaterialTexture(material, propertyName, textureID);
+                        }
                     }
                 }
 
