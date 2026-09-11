@@ -36,6 +36,8 @@ namespace Seasons
         [JsonProperty(DefaultValueHandling = DefaultValueHandling.Include)]
         public bool m_alwaysDark;
 
+        public float? m_snowBuildup;
+
         public string m_ambColorNight;
 
         public string m_ambColorDay;
@@ -82,6 +84,24 @@ namespace Seasons
 
         public float m_windMax;
 
+        public SeasonGradient m_auroraColors;
+
+        public float? m_auroraIntensityNight;
+
+        public float? m_auroraIntensityMorning;
+
+        public float? m_auroraIntensityDay;
+
+        public float? m_auroraIntensityEvening;
+
+        public float? m_cloudOpacityNight;
+
+        public float? m_cloudOpacityMorning;
+
+        public float? m_cloudOpacityDay;
+
+        public float? m_cloudOpacityEvening;
+
         public string m_envObject;
 
         public string m_psystems;
@@ -89,6 +109,16 @@ namespace Seasons
         public bool m_psystemsOutsideOnly;
 
         public float m_rainCloudAlpha;
+
+        public string m_ambientOcclusionColor;
+
+        public float? m_aoIntensityNight;
+
+        public float? m_aoIntensityMorning;
+
+        public float? m_aoIntensityDay;
+
+        public float? m_aoIntensityEvening;
 
         public string m_ambientLoop;
 
@@ -103,6 +133,147 @@ namespace Seasons
         public string m_musicDay;
 
         public string m_musicNight;
+
+        [Serializable]
+        public class SeasonGradient
+        {
+            public SeasonGradientColorKey[] colorKeys;
+
+            public SeasonGradientAlphaKey[] alphaKeys;
+
+            public string mode;
+
+            public SeasonGradient()
+            {
+
+            }
+
+            public SeasonGradient(Gradient gradient)
+            {
+                if (gradient == null)
+                    return;
+
+                colorKeys = gradient.colorKeys.Select(key => new SeasonGradientColorKey(key)).ToArray();
+                alphaKeys = gradient.alphaKeys.Select(key => new SeasonGradientAlphaKey(key)).ToArray();
+                mode = gradient.mode.ToString();
+            }
+
+            public bool TryCreateGradient(Gradient original, out Gradient gradient, out string error)
+            {
+                gradient = new Gradient();
+                error = "";
+
+                GradientColorKey[] sourceColorKeys = original?.colorKeys;
+                GradientAlphaKey[] sourceAlphaKeys = original?.alphaKeys;
+
+                GradientColorKey[] resolvedColorKeys = sourceColorKeys;
+                if (colorKeys != null)
+                {
+                    if (colorKeys.Length < 2)
+                    {
+                        error = "Aurora gradient must contain at least two color keys.";
+                        return false;
+                    }
+
+                    resolvedColorKeys = new GradientColorKey[colorKeys.Length];
+                    for (int i = 0; i < colorKeys.Length; i++)
+                    {
+                        if (colorKeys[i] == null || !ColorUtility.TryParseHtmlString(colorKeys[i].color, out Color color))
+                        {
+                            error = $"Aurora gradient color key {i} has invalid color \"{colorKeys[i]?.color}\".";
+                            return false;
+                        }
+
+                        resolvedColorKeys[i] = new GradientColorKey(color, colorKeys[i].time);
+                    }
+                }
+
+                GradientAlphaKey[] resolvedAlphaKeys = sourceAlphaKeys;
+                if (alphaKeys != null)
+                {
+                    if (alphaKeys.Length < 2)
+                    {
+                        error = "Aurora gradient must contain at least two alpha keys.";
+                        return false;
+                    }
+
+                    resolvedAlphaKeys = new GradientAlphaKey[alphaKeys.Length];
+                    for (int i = 0; i < alphaKeys.Length; i++)
+                    {
+                        if (alphaKeys[i] == null)
+                        {
+                            error = $"Aurora gradient alpha key {i} is null.";
+                            return false;
+                        }
+
+                        resolvedAlphaKeys[i] = new GradientAlphaKey(alphaKeys[i].alpha, alphaKeys[i].time);
+                    }
+                }
+
+                if (resolvedColorKeys == null || resolvedColorKeys.Length < 2 || resolvedAlphaKeys == null || resolvedAlphaKeys.Length < 2)
+                {
+                    error = "Aurora gradient needs at least two color keys and two alpha keys.";
+                    return false;
+                }
+
+                gradient.SetKeys(resolvedColorKeys, resolvedAlphaKeys);
+
+                if (!String.IsNullOrWhiteSpace(mode))
+                {
+                    if (!Enum.TryParse(mode, true, out GradientMode gradientMode))
+                    {
+                        error = $"Aurora gradient mode \"{mode}\" is invalid.";
+                        return false;
+                    }
+
+                    gradient.mode = gradientMode;
+                }
+                else if (original != null)
+                {
+                    gradient.mode = original.mode;
+                }
+
+                return true;
+            }
+        }
+
+        [Serializable]
+        public class SeasonGradientColorKey
+        {
+            public string color;
+
+            public float time;
+
+            public SeasonGradientColorKey()
+            {
+
+            }
+
+            public SeasonGradientColorKey(GradientColorKey key)
+            {
+                color = $"#{ColorUtility.ToHtmlStringRGBA(key.color)}";
+                time = key.time;
+            }
+        }
+
+        [Serializable]
+        public class SeasonGradientAlphaKey
+        {
+            public float alpha;
+
+            public float time;
+
+            public SeasonGradientAlphaKey()
+            {
+
+            }
+
+            public SeasonGradientAlphaKey(GradientAlphaKey key)
+            {
+                alpha = key.alpha;
+                time = key.time;
+            }
+        }
 
         public SeasonEnvironment()
         {
@@ -137,8 +308,58 @@ namespace Seasons
                                 m_ambientLoop = env.m_ambientLoop.name;
                             continue;
                         }
+                    case "m_auroraColors":
+                        {
+                            if (env.m_auroraColors != null)
+                                m_auroraColors = new SeasonGradient(env.m_auroraColors);
+                            continue;
+                        }
+                    case "m_snowBuildup":
+                        m_snowBuildup = env.m_snowBuildup;
+                        continue;
+                    case "m_auroraIntensityNight":
+                        m_auroraIntensityNight = env.m_auroraIntensityNight;
+                        continue;
+                    case "m_auroraIntensityMorning":
+                        m_auroraIntensityMorning = env.m_auroraIntensityMorning;
+                        continue;
+                    case "m_auroraIntensityDay":
+                        m_auroraIntensityDay = env.m_auroraIntensityDay;
+                        continue;
+                    case "m_auroraIntensityEvening":
+                        m_auroraIntensityEvening = env.m_auroraIntensityEvening;
+                        continue;
+                    case "m_cloudOpacityNight":
+                        m_cloudOpacityNight = env.m_cloudOpacityNight;
+                        continue;
+                    case "m_cloudOpacityMorning":
+                        m_cloudOpacityMorning = env.m_cloudOpacityMorning;
+                        continue;
+                    case "m_cloudOpacityDay":
+                        m_cloudOpacityDay = env.m_cloudOpacityDay;
+                        continue;
+                    case "m_cloudOpacityEvening":
+                        m_cloudOpacityEvening = env.m_cloudOpacityEvening;
+                        continue;
+                    case "m_aoIntensityNight":
+                        m_aoIntensityNight = env.m_aoIntensityNight;
+                        continue;
+                    case "m_aoIntensityMorning":
+                        m_aoIntensityMorning = env.m_aoIntensityMorning;
+                        continue;
+                    case "m_aoIntensityDay":
+                        m_aoIntensityDay = env.m_aoIntensityDay;
+                        continue;
+                    case "m_aoIntensityEvening":
+                        m_aoIntensityEvening = env.m_aoIntensityEvening;
+                        continue;
                 }
-                field.SetValue(this, property.FieldType == typeof(Color) ? $"#{ColorUtility.ToHtmlStringRGBA((Color)property.GetValue(env))}" : property.GetValue(env));
+
+                object value = property.GetValue(env);
+                if (property.FieldType == typeof(Color))
+                    value = $"#{ColorUtility.ToHtmlStringRGBA((Color)value)}";
+
+                field.SetValue(this, value);
             }
         }
 
@@ -166,7 +387,12 @@ namespace Seasons
                 if (field == null)
                     continue;
 
-                if ((field.GetValue(this) == null) || (field.FieldType != typeof(bool) && field.GetValue(this).Equals(field.GetValue(defaultSettings))))
+                object fieldValue = field.GetValue(this);
+                if (fieldValue == null)
+                    continue;
+
+                bool isNullable = Nullable.GetUnderlyingType(field.FieldType) != null;
+                if (!isNullable && field.FieldType != typeof(bool) && fieldValue.Equals(field.GetValue(defaultSettings)))
                     continue;
 
                 switch (property.Name)
@@ -213,9 +439,27 @@ namespace Seasons
 
                             continue;
                         }
+                    case "m_auroraColors":
+                        {
+                            if (m_auroraColors.TryCreateGradient(env.m_auroraColors, out Gradient gradient, out string error))
+                                env.m_auroraColors = gradient;
+                            else
+                                Seasons.LogWarning($"Invalid aurora gradient for environment \"{m_name}\": {error}");
+
+                            continue;
+                        }
                 }
 
-                property.SetValue(env, property.FieldType == typeof(Color) && ColorUtility.TryParseHtmlString(field.GetValue(this).ToString(), out Color color) ? color : field.GetValue(this));
+                if (property.FieldType == typeof(Color))
+                {
+                    if (ColorUtility.TryParseHtmlString(fieldValue.ToString(), out Color color))
+                        property.SetValue(env, color);
+                    else
+                        Seasons.LogWarning($"Invalid color \"{fieldValue}\" for property \"{property.Name}\" in environment \"{m_name}\".");
+                    continue;
+                }
+
+                property.SetValue(env, fieldValue);
             }
 
             return env;
@@ -278,6 +522,7 @@ namespace Seasons
                     m_alwaysDark = true,
                     m_psystems = "SnowStorm",
                     m_ambientLoop = "Wind_BlowingLoop3",
+                    m_snowBuildup = 0.2f
                 },
                 new SeasonEnvironment
                 {
@@ -289,6 +534,7 @@ namespace Seasons
                     m_alwaysDark = true,
                     m_psystems = "GroundMist,Snow,FogClouds",
                     m_ambientLoop = "Amb_DeepNorth_Loop_01",
+                    m_snowBuildup = 0.1f
                 },
                 new SeasonEnvironment
                 {
@@ -302,6 +548,7 @@ namespace Seasons
                     m_alwaysDark = true,
                     m_psystems = "SnowStorm",
                     m_ambientLoop = "Wind_BlowingLoop3",
+                    m_snowBuildup = 0.2f
                 },
                 new SeasonEnvironment
                 {
@@ -322,6 +569,7 @@ namespace Seasons
                     m_alwaysDark = true,
                     m_psystems = "Snow,GroundMist",
                     m_ambientLoop = "Amb_DeepNorth_Loop_01",
+                    m_snowBuildup = 0.1f
                 },
                 new SeasonEnvironment
                 {
@@ -357,6 +605,7 @@ namespace Seasons
                     m_alwaysDark = true,
                     m_psystems = "Snow,GroundMist",
                     m_ambientLoop = "Amb_DeepNorth_Loop_01",
+                    m_snowBuildup = 0.1f
                 },
                 new SeasonEnvironment
                 {
@@ -370,6 +619,7 @@ namespace Seasons
                     m_alwaysDark = true,
                     m_psystems = "SnowStorm,MistlandsThunder",
                     m_ambientLoop = "Wind_BlowingLoop3",
+                    m_snowBuildup = 0.2f
                 },
                 new SeasonEnvironment
                 {
@@ -381,7 +631,8 @@ namespace Seasons
                     m_alwaysDark = false,
                     m_psystems = "Snow,Darklands,GroundMist",
                     m_ambientLoop = "Amb_DeepNorth_Loop_01",
-                },
+                    m_snowBuildup = 0.1f
+               },
                 new SeasonEnvironment
                 {
                     m_name = "Heath clear Winter",

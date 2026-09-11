@@ -4,8 +4,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using static Seasons.Seasons;
+using System.Reflection.Emit;
 using UnityEngine;
+using static Seasons.Seasons;
 
 namespace Seasons
 {
@@ -552,6 +553,121 @@ namespace Seasons
         [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateWear))]
         public static class WearNTear_UpdateWear_RainProtection
         {
+            private static readonly MethodInfo UpdateBiomeMethod =
+                AccessTools.Method(typeof(WearNTear), nameof(WearNTear.UpdateBiome));
+
+            private static readonly FieldInfo BiomeField =
+                AccessTools.Field(typeof(WearNTear), nameof(WearNTear.m_biome));
+
+            private static readonly MethodInfo IsSeasonalSnowPositionMethod =
+                AccessTools.Method(typeof(WearNTear_UpdateWear_RainProtection), nameof(IsSeasonalSnowPosition));
+
+            private static bool IsSeasonalSnowPosition(WearNTear instance)
+            {
+                return SeasonState.IsActive
+                    && seasonState.GetCurrentSeason() == Season.Winter
+                    && !IsIgnoredPosition(instance.transform.position);
+            }
+
+            private static bool TryAddSeasonalSnowCondition(
+                List<CodeInstruction> codes,
+                int startIndex,
+                ILGenerator generator)
+            {
+                for (int i = startIndex; i < codes.Count - 2; ++i)
+                {
+                    if (codes[i].opcode != OpCodes.Ldfld || !Equals(codes[i].operand, BiomeField))
+                        continue;
+
+                    if (!codes[i + 1].LoadsConstant((long)(int)Heightmap.Biome.DeepNorth))
+                        continue;
+
+                    int branchIndex = i + 2;
+                    CodeInstruction branch = codes[branchIndex];
+
+                    if (!(branch.operand is Label target))
+                        continue;
+
+                    if (branch.opcode == OpCodes.Beq || branch.opcode == OpCodes.Beq_S)
+                    {
+                        codes.InsertRange(branchIndex + 1, new[]
+                        {
+                            new CodeInstruction(OpCodes.Ldarg_0),
+                            new CodeInstruction(OpCodes.Call, IsSeasonalSnowPositionMethod),
+                            new CodeInstruction(OpCodes.Brtrue, target)
+                        });
+
+                        return true;
+                    }
+
+                    if (branch.opcode == OpCodes.Bne_Un || branch.opcode == OpCodes.Bne_Un_S)
+                    {
+                        if (branchIndex + 1 >= codes.Count)
+                            continue;
+
+                        Label bodyLabel = generator.DefineLabel();
+
+                        codes[branchIndex + 1].labels.Add(bodyLabel);
+
+                        branch.opcode = OpCodes.Beq;
+                        branch.operand = bodyLabel;
+
+                        codes.InsertRange(branchIndex + 1, new[]
+                        {
+                            new CodeInstruction(OpCodes.Ldarg_0),
+                            new CodeInstruction(OpCodes.Call, IsSeasonalSnowPositionMethod),
+                            new CodeInstruction(OpCodes.Brfalse, target)
+                        });
+
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            [HarmonyTranspiler]
+            private static IEnumerable<CodeInstruction> Transpiler(
+                IEnumerable<CodeInstruction> instructions,
+                ILGenerator generator)
+            {
+                List<CodeInstruction> codes = instructions.ToList();
+
+                for (int i = 0; i < codes.Count; ++i)
+                {
+                    CodeInstruction instruction = codes[i];
+
+                    if ((instruction.opcode != OpCodes.Call && instruction.opcode != OpCodes.Callvirt)
+                        || !Equals(instruction.operand, UpdateBiomeMethod))
+                        continue;
+
+                    if (TryAddSeasonalSnowCondition(codes, i + 1, generator))
+                        return codes;
+
+                    break;
+                }
+
+                LogWarning("Failed to patch WearNTear.UpdateWear seasonal snow condition.");
+                return codes;
+            }
+
+            [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateCover))]
+            private static class WearNTear_UpdateCover_SeasonalSnow
+            {
+                [HarmonyTranspiler]
+                private static IEnumerable<CodeInstruction> Transpiler(
+                    IEnumerable<CodeInstruction> instructions,
+                    ILGenerator generator)
+                {
+                    List<CodeInstruction> codes = instructions.ToList();
+
+                    if (!TryAddSeasonalSnowCondition(codes, 0, generator))
+                        LogWarning("Failed to patch WearNTear.UpdateCover seasonal snow condition.");
+
+                    return codes;
+                }
+            }
+
             private static void Prefix(WearNTear __instance, ZNetView ___m_nview, ref bool ___m_noRoofWear, ref bool? __state)
             {
                 if (!seasonState.GetRainProtection())
@@ -564,7 +680,6 @@ namespace Seasons
                     return;
 
                 __state = ___m_noRoofWear;
-
                 ___m_noRoofWear = false;
             }
 

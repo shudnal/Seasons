@@ -574,14 +574,17 @@ namespace Seasons
                 return "";
 
             string name = clutter.m_name;
-            string prefab = clutter.m_prefab?.name;
+
+            GameObject prefabObject = clutter.m_prefab;
+            string prefab = prefabObject ? prefabObject.name : "";
 
             if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(prefab))
                 return $"{name}_{prefab}";
-            else if (!string.IsNullOrWhiteSpace(prefab))
+
+            if (!string.IsNullOrWhiteSpace(prefab))
                 return prefab;
 
-            return name;
+            return name ?? "";
         }
 
         internal static void AddSeasonalClutter()
