@@ -180,7 +180,25 @@ namespace Seasons
 
                 shaderIgnoreMaterial = new Dictionary<string, string[]>
                 {
-                    { "Custom/Vegetation", new string[] { "bark", "trunk", "_wood", "HildirFlowerGirland_", "HildirTentCloth_", "TraderTent_", "VinesBranch_mat", "VinesBranch_Ashlands_mat", "BogWitchHutCurtains2_mat", "BogWitchHutCurtains_mat" } },
+                    { "Custom/Vegetation", new string[] { 
+                        "bark",
+                        "trunk",
+                        "_wood",
+                        "HildirFlowerGirland_",
+                        "HildirTentCloth_",
+                        "TraderTent_",
+                        "VinesBranch_mat",
+                        "VinesBranch_Ashlands_mat",
+                        "BogWitchHutCurtains2_mat",
+                        "BogWitchHutCurtains_mat",
+                        "StumpHut_mat",
+                        "Stump_tip_snow",
+                        "Pinetree_log",
+                        "Pinetree_snow_log",
+                        "Firetree_snow_log",
+                        "Firetree_Morkhalla_log",
+                        "PineTree_01_dead"
+                    } },
                 };
 
                 shaderOnlyMaterial = new Dictionary<string, string[]>
@@ -306,7 +324,11 @@ namespace Seasons
                     ClutterVariantController.c_swampGrassBloomPrefabName,
                     "DevMageRoom",
                     "DevBedchamber",
-                    "ShipSetting02"
+                    "ShipSetting02",
+                    "ShipSetting03",
+                    "MorkBorg",
+                    "Greydwarf_Frozen",
+                    "Greydwarf_Shaman_Frozen"
                 };
 
                 ignorePrefabPartialName = new List<string>()
@@ -347,7 +369,8 @@ namespace Seasons
                     "Ashlands_rock",
                     "instanced_ashlands_grass",
                     "MWL_AshlandsFort",
-                    ClutterVariantController.c_shieldedGrassSuffix
+                    ClutterVariantController.c_shieldedGrassSuffix,
+                    "Morkhalla_"
                 };
 
                 itemsPrefab = new List<string>()

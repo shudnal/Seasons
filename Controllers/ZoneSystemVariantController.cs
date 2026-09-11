@@ -682,8 +682,8 @@ namespace Seasons
 
             if (IsWaterSurfaceFrozen())
             {
-                waterState.SetFloat(WaterVolume.s_shaderWaterTime, 0f);
-                waterState.SetFloat(WaterVolume.s_shaderUseGlobalWind, 0f);
+                waterSurface.material.SetFloat(WaterVolume.s_shaderWaterTime, 0f);
+                waterSurface.material.SetFloat(WaterVolume.s_shaderUseGlobalWind, 0f);
 
                 waterState.SetFloat("_DepthFade", _DepthFade);
                 waterState.SetFloat("_Glossiness", _Glossiness);
@@ -1926,7 +1926,7 @@ namespace Seasons
                 return;
 
             Dictionary<string, AudioClip> audioClips = UsedAudioClips;
-            if (!audioClips.TryGetValue("Wind_ColdLoop3", out AudioClip coldLoop))
+            if (!audioClips.TryGetValue("Amb_DeepNorth_Loop_01", out AudioClip coldLoop))
                 return;
             if (audioClips.TryGetValue("Wind_BlowingLoop3", out AudioClip blowingLoop) && env.m_ambientLoop == blowingLoop)
                 return;
@@ -2403,7 +2403,13 @@ namespace Seasons
                 return;
 
             if (s_waterEdgeLocalPlayerState != (s_waterEdgeLocalPlayerState = IsBeyondWorldEdge(__instance.transform.position)))
-                UpdateWaterState();
+                UpdateWaterState(); 
         }
+    }
+
+    [HarmonyPatch(typeof(DropOnDestroyed), nameof(DropOnDestroyed.OnDestroyed))]
+    public static class DropOnDestroyed_OnDestroyed_PreventDropFromFloes
+    {
+        private static bool Prefix(DropOnDestroyed __instance) => Utils.GetPrefabName(__instance.transform.root.gameObject) != _iceFloeName || __instance.IsIgnoredPosition();
     }
 }
