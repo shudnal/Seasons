@@ -220,7 +220,6 @@ namespace Seasons
 
         private const float _FoamDepthFrozen = 10f;
         private const float _WaveVel = 0f;
-        private const float _WaveFoam = 0f;
         private const float _Glossiness = 0.95f;
         private const float _Metallic = 0.1f;
         private const float _DepthFade = 20f;
@@ -691,7 +690,6 @@ namespace Seasons
                 waterState.SetFloat("_Metallic", _Metallic);
                 waterState.SetFloat("_ShoreFade", _ShoreFade);
                 waterState.SetFloat("_WaveVel", _WaveVel);
-                waterState.SetFloat("_WaveFoam", _WaveFoam);
             }
 
             waterState.ApplyProperties(waterSurface);

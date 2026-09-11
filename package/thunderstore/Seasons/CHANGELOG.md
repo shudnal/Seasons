@@ -1,3 +1,22 @@
+# 1.8.3
+* updated for Valheim 1.0.7 and Deep North changes
+* fixed seasonal day/night timing and restoring vanilla day length when custom day length control is disabled
+* fixed torch warmth after equipping, respawning and changing biome or entering/leaving interiors; held torches no longer count as a fire for sleeping
+* fixed seasonal growth and production calculations, including vine growth and production completely paused by seasonal settings
+* fixed seasonal breeding chances and resource drop amounts behaving incorrectly or accumulating between calls
+* fixed seasonal trader items affecting original trader entries and one-time purchase/unlock behavior
+* fixed seasonal random and standalone events using incorrect biomes or spawn settings, including event reconstruction on clients
+* fixed several freezing and Summer Heat edge cases, including jump, fire/frost and heat distortion behavior
+* fixed frozen ocean waves, thaw transitions and ship state restoration
+* improved seasonal ice floe spawning, cleanup and ownership; natural Deep North ice is no longer treated as seasonal ice
+* fixed custom music and frozen ocean music registration, reload, removal and stale track lookups
+* fixed seasonal minimap colors with cached maps, world changes, control toggling and runtime color changes
+* improved seasonal texture cache reliability and fixed stale or incorrect materials, particle colors and seasonal visuals after game/content changes
+* fixed seasonal rendering and grass updates inside protected areas, including changing shield radius
+* fixed winter cultivated-ground processing for old and current terrain data while preserving Deep North snow, roads and unrelated terrain changes; also fixed processing being skipped on the first winter
+* further improved seasonal weather handling for alternate biomes and Expand World Data
+* many compatibility and stability fixes for world transitions, seasonal visuals and gameplay mechanics
+
 # 1.8.2
 * updated Expand World Data compatibility for the current environment and biome reload lifecycle
 * preserved EWD biome environment key conditions and custom biome names when seasonal weather rules are applied

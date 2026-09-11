@@ -304,7 +304,9 @@ namespace Seasons
                     "Runestone_Ashlands",
                     ClutterVariantController.c_meadowsFlowersPrefabName,
                     ClutterVariantController.c_forestBloomPrefabName,
-                    ClutterVariantController.c_swampGrassBloomPrefabName
+                    ClutterVariantController.c_swampGrassBloomPrefabName,
+                    "DevMageRoom",
+                    "DevBedchamber"
                 };
 
                 ignorePrefabPartialName = new List<string>()
