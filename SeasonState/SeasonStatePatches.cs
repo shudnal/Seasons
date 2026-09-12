@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 using static Seasons.Seasons;
 
@@ -556,6 +557,9 @@ namespace Seasons
             private const float SeasonalSnowMaxBuildup = 0.9f;
             private const float PassiveSeasonalSnowMaxBuildup = 0.8f;
 
+            private static readonly ConditionalWeakTable<WearNTear, object> SeasonalSnowInitialized =
+                new ConditionalWeakTable<WearNTear, object>();
+
             private static readonly MethodInfo UpdateBiomeMethod =
                 AccessTools.Method(typeof(WearNTear), nameof(WearNTear.UpdateBiome));
 
@@ -577,8 +581,8 @@ namespace Seasons
                 if (instance.m_biome == Heightmap.Biome.None)
                     instance.UpdateBiome();
 
-                if (instance.m_biome == Heightmap.Biome.DeepNorth)
-                    return true;
+                if (instance.m_biome != Heightmap.Biome.None)
+                    return instance.m_biome == Heightmap.Biome.DeepNorth;
 
                 return WorldGenerator.instance != null
                     && WorldGenerator.instance.GetBiome(instance.transform.position) == Heightmap.Biome.DeepNorth;
@@ -615,11 +619,52 @@ namespace Seasons
                 return PassiveSeasonalSnowMaxBuildup * winterProgress;
             }
 
+            private static bool IsSeasonalSnowInitialized(WearNTear instance)
+            {
+                return SeasonalSnowInitialized.TryGetValue(instance, out _);
+            }
+
+            private static void MarkSeasonalSnowInitialized(WearNTear instance)
+            {
+                SeasonalSnowInitialized.GetValue(instance, _ => new object());
+            }
+
+            private static void TryApplyPassiveSeasonalSnow(WearNTear instance)
+            {
+                if (!SeasonState.IsActive || !CanOwnSnowState(instance) || IsSeasonalSnowInitialized(instance))
+                    return;
+
+                if (ZNetScene.instance == null || !ZNetScene.instance.IsAreaReady(instance.transform.position))
+                    return;
+
+                // The passive catch-up is evaluated only once for each loaded WearNTear
+                // after its surrounding area has finished loading. Roof/shield changes after
+                // this point are handled by vanilla accumulation instead.
+                MarkSeasonalSnowInitialized(instance);
+
+                instance.UpdateBiome();
+
+                if (IsDeepNorth(instance) || !IsSeasonalSnowPosition(instance))
+                    return;
+
+                if (!instance.CanHaveSnow(forceCover: true))
+                    return;
+
+                float target = Mathf.Min(GetPassiveSeasonalSnowTarget(), SeasonalSnowMaxBuildup);
+                if (instance.m_snowBuildup < target)
+                    SetSnowBuildup(instance, target);
+            }
+
             public static void UpdateSeasonalSnowState()
             {
                 foreach (WearNTear wearNTear in WearNTear.GetAllInstances())
                 {
-                    if (wearNTear == null || IsDeepNorth(wearNTear) || IsSeasonalSnowPosition(wearNTear))
+                    if (wearNTear == null)
+                        continue;
+
+                    SeasonalSnowInitialized.Remove(wearNTear);
+
+                    if (IsDeepNorth(wearNTear) || IsSeasonalSnowPosition(wearNTear))
                         continue;
 
                     if (wearNTear.m_snowBuildup > 0f)
@@ -732,7 +777,7 @@ namespace Seasons
                 [HarmonyPostfix]
                 private static void Postfix(WearNTear __instance)
                 {
-                    if (!CanOwnSnowState(__instance))
+                    if (!SeasonState.IsActive || !CanOwnSnowState(__instance))
                         return;
 
                     __instance.UpdateBiome();
@@ -748,13 +793,19 @@ namespace Seasons
                         return;
                     }
 
-                    float snowBuildup = Mathf.Min(__instance.m_snowBuildup, SeasonalSnowMaxBuildup);
-                    float target = GetPassiveSeasonalSnowTarget();
+                    if (__instance.m_snowBuildup > SeasonalSnowMaxBuildup)
+                        SetSnowBuildup(__instance, SeasonalSnowMaxBuildup);
+                }
+            }
 
-                    if (snowBuildup < target)
-                        snowBuildup = target;
-
-                    SetSnowBuildup(__instance, snowBuildup);
+            [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.OnDestroy))]
+            private static class WearNTear_OnDestroy_SeasonalSnow
+            {
+                [HarmonyPrefix]
+                private static void Prefix(WearNTear __instance)
+                {
+                    if (__instance != null)
+                        SeasonalSnowInitialized.Remove(__instance);
                 }
             }
 
@@ -775,10 +826,12 @@ namespace Seasons
 
             private static void Postfix(WearNTear __instance)
             {
-                if (!CanOwnSnowState(__instance) || IsDeepNorth(__instance))
+                if (!CanOwnSnowState(__instance))
                     return;
 
-                if (__instance.m_snowBuildup > SeasonalSnowMaxBuildup)
+                TryApplyPassiveSeasonalSnow(__instance);
+
+                if (!IsDeepNorth(__instance) && __instance.m_snowBuildup > SeasonalSnowMaxBuildup)
                     SetSnowBuildup(__instance, SeasonalSnowMaxBuildup);
             }
 

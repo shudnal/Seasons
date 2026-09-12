@@ -2410,6 +2410,17 @@ namespace Seasons
     [HarmonyPatch(typeof(DropOnDestroyed), nameof(DropOnDestroyed.OnDestroyed))]
     public static class DropOnDestroyed_OnDestroyed_PreventDropFromFloes
     {
-        private static bool Prefix(DropOnDestroyed __instance) => Utils.GetPrefabName(__instance.transform.root.gameObject) != _iceFloeName || __instance.IsIgnoredPosition();
+        private static bool Prefix(DropOnDestroyed __instance)
+        {
+            if (Utils.GetPrefabName(__instance.gameObject) != _iceFloeName)
+                return true;
+
+            ZNetView nview = __instance.GetComponent<ZNetView>();
+            if (nview == null || !nview.IsValid())
+                return true;
+
+            bool isSeasonalIceFloe = nview.GetZDO().GetBool(SeasonsVars.s_iceFloeWatermark, false);
+            return !isSeasonalIceFloe;
+        }
     }
 }
