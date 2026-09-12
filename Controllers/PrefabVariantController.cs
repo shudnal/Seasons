@@ -22,11 +22,11 @@ namespace Seasons
             public Season season;
             public bool updateSeasonalMaterials = true;
 
-            public readonly static Dictionary<Material, MaterialVariants> s_materialVariants = new Dictionary<Material, MaterialVariants>();
+            public readonly static Dictionary<Tuple<Material, CachedMaterial>, MaterialVariants> s_materialVariants = new Dictionary<Tuple<Material, CachedMaterial>, MaterialVariants>();
 
             private readonly static List<Material> s_tempMaterials = new List<Material>();
 
-            private MaterialVariants(Material originalMaterial)
+            private MaterialVariants(Material originalMaterial, CachedMaterial context)
             {
                 m_originalMaterial = originalMaterial;
 
@@ -36,13 +36,15 @@ namespace Seasons
 
                 updateSeasonalMaterials = true;
 
-                s_materialVariants[m_originalMaterial] = this;
+                s_materialVariants[Tuple.Create(m_originalMaterial, context)] = this;
             }
 
             public void InitializeTextureVariants(Dictionary<string, int> cachedTextures)
             {
                 foreach (KeyValuePair<string, int> tex in cachedTextures)
-                    m_textureVariants[tex.Key] = texturesVariants.textures[tex.Value];
+                    if (texturesVariants.textures.TryGetValue(tex.Value, out TextureVariants variants)
+                        && m_originalMaterial.GetTexture(tex.Key) is Texture2D)
+                        m_textureVariants[tex.Key] = variants;
 
                 foreach (KeyValuePair<string, TextureVariants> textureVariants in m_textureVariants)
                     if (!textureVariants.Value.HaveOriginalTexture())
@@ -77,14 +79,21 @@ namespace Seasons
                             seasonalMaterials[i].SetTexture(textureVariants.Key, textureVariants.Value.GetSeasonalVariant(season, i));
 
                         foreach (KeyValuePair<string, Color[]> colorVariants in m_colorVariants)
-                            seasonalMaterials[i].SetColor(colorVariants.Key, colorVariants.Value[(int)season * seasonsCount + variant]);
+                            seasonalMaterials[i].SetColor(colorVariants.Key, colorVariants.Value[(int)season * seasonColorVariants + i]);
                     }
                 }
 
                 ApplySharedMaterial(renderer, materialIndex, seasonalMaterials[variant]);
             }
 
-            public void RevertSharedMaterial(Renderer renderer, int materialIndex) => ApplySharedMaterial(renderer, materialIndex, m_originalMaterial);
+            public void RevertSharedMaterial(Renderer renderer, int materialIndex)
+            {
+                if (!renderer)
+                    return;
+                Material[] current = renderer.sharedMaterials;
+                if (materialIndex < current.Length && seasonalMaterials.Contains(current[materialIndex]))
+                    ApplySharedMaterial(renderer, materialIndex, m_originalMaterial);
+            }
 
             public static void ApplySharedMaterial(Renderer renderer, int materialIndex, Material material)
             {
@@ -101,12 +110,12 @@ namespace Seasons
                 renderer.SetSharedMaterials(s_tempMaterials);
             }
 
-            public static MaterialVariants GetMaterialVariants(Material material)
+            public static MaterialVariants GetMaterialVariants(Material material, CachedMaterial context)
             {
-                if (s_materialVariants.TryGetValue(material, out MaterialVariants materialVariants))
+                if (s_materialVariants.TryGetValue(Tuple.Create(material, context), out MaterialVariants materialVariants))
                     return materialVariants;
 
-                return new MaterialVariants(material);
+                return new MaterialVariants(material, context);
             }
 
             public static void UpdateSeasonalMaterials()
@@ -142,6 +151,8 @@ namespace Seasons
 
             private readonly Dictionary<Renderer, Dictionary<int, MaterialVariants>> m_materialVariants = new Dictionary<Renderer, Dictionary<int, MaterialVariants>>();
             private readonly Dictionary<ParticleSystem, Color[]> m_startColors = new Dictionary<ParticleSystem, Color[]>();
+            private readonly Dictionary<ParticleSystem, ParticleSystem.MinMaxGradient> m_originalStartColors = new Dictionary<ParticleSystem, ParticleSystem.MinMaxGradient>();
+            private readonly Dictionary<ParticleSystem, Color> m_appliedStartColors = new Dictionary<ParticleSystem, Color>();
 
             public bool Initialize(PrefabController controller, GameObject gameObject, string prefabName = null, ZNetView netView = null, WearNTear wnt = null, MeshRenderer meshRenderer = null)
             {
@@ -234,8 +245,10 @@ namespace Seasons
                 if (m_gameObject == null)
                     return false;
 
+                RevertState();
                 m_materialVariants.Clear();
                 m_startColors.Clear();
+                m_originalStartColors.Clear();
 
                 return Initialize(controller, m_gameObject, m_prefabName, m_nview, m_wnt, m_renderer);
             }
@@ -245,6 +258,16 @@ namespace Seasons
                 foreach (KeyValuePair<Renderer, Dictionary<int, MaterialVariants>> materialVariants in m_materialVariants)
                     foreach (KeyValuePair<int, MaterialVariants> materialIndex in materialVariants.Value)
                         materialIndex.Value.RevertSharedMaterial(materialVariants.Key, materialIndex.Key);
+
+                foreach (var original in m_originalStartColors)
+                    if (original.Key)
+                    {
+                        ParticleSystem.MainModule main = original.Key.main;
+                        if (m_appliedStartColors.TryGetValue(original.Key, out Color applied)
+                            && main.startColor.mode == ParticleSystemGradientMode.Color && main.startColor.color == applied)
+                            main.startColor = original.Value;
+                    }
+                m_appliedStartColors.Clear();
             }
 
             public void CheckCoveredStatus()
@@ -269,6 +292,15 @@ namespace Seasons
 
             public void UpdateColors()
             {
+                if (!m_gameObject || texturesVariants.IsUpdating)
+                    return;
+
+                if (!UseTextureControllers() || !SeasonState.IsActive)
+                {
+                    RevertState();
+                    return;
+                }
+
                 if (m_nview != null && !m_nview.IsValid())
                     return;
 
@@ -285,8 +317,15 @@ namespace Seasons
 
                 foreach (KeyValuePair<ParticleSystem, Color[]> startColor in m_startColors)
                 {
+                    if (!startColor.Key)
+                        continue;
                     ParticleSystem.MainModule mainModule = startColor.Key.main;
-                    mainModule.startColor = startColor.Value[(int)seasonState.GetCurrentSeason() * seasonsCount + variant];
+                    if (!m_appliedStartColors.TryGetValue(startColor.Key, out Color applied)
+                        || mainModule.startColor.mode != ParticleSystemGradientMode.Color || mainModule.startColor.color != applied)
+                        m_originalStartColors[startColor.Key] = mainModule.startColor;
+                    Color color = startColor.Value[(int)seasonState.GetCurrentSeason() * seasonsCount + variant];
+                    mainModule.startColor = color;
+                    m_appliedStartColors[startColor.Key] = color;
                 }
             }
 
@@ -317,10 +356,7 @@ namespace Seasons
                 if (!m_materialVariants.TryGetValue(renderer, out var materialVariants))
                     return null;
 
-                if (materialVariants.Count <= index)
-                    return null;
-
-                return materialVariants[index].m_originalMaterial;
+                return materialVariants.TryGetValue(index, out MaterialVariants variants) ? variants.m_originalMaterial : null;
             }
 
             private void UpdateFactors(float m_mx, float m_my)
@@ -388,7 +424,7 @@ namespace Seasons
 
                                 if (!materialIndex.TryGetValue(i, out MaterialVariants materialVariants))
                                 {
-                                    materialVariants = MaterialVariants.GetMaterialVariants(material);
+                                    materialVariants = MaterialVariants.GetMaterialVariants(material, cachedRendererMaterial.Value);
                                     materialIndex.Add(i, materialVariants);
                                 }
 
@@ -414,6 +450,7 @@ namespace Seasons
                         s_tempColors.Add(color);
                     }
                     m_startColors.Add(ps, s_tempColors.ToArray());
+                    m_originalStartColors[ps] = ps.main.startColor;
                 }
             }
 
@@ -519,7 +556,7 @@ namespace Seasons
             m_rayMask = LayerMask.GetMask("piece", "static_solid", "Default_small", "terrain");
 
             int seed = ZNet.m_world != null ? ZNet.m_world.m_seed : WorldGenerator.instance != null ? WorldGenerator.instance.GetSeed() : 0;
-            m_seed = seed == 0 ? 0 : Mathf.Log10(Math.Abs(seed));
+            m_seed = seed == 0 ? 0 : (float)Math.Log10(Math.Abs((double)seed));
         }
 
         private void OnDestroy()
@@ -529,9 +566,11 @@ namespace Seasons
             RevertPrefabsState();
             m_prefabVariants.Clear();
 
-            MaterialVariants.Clear();
-
-            m_instance = null;
+            if (m_instance == this)
+            {
+                MaterialVariants.Clear();
+                m_instance = null;
+            }
         }
 
         public void RevertPrefabsState()
@@ -674,9 +713,11 @@ namespace Seasons
 
         public static IEnumerator UpdatePrefabColorsAroundPositionDelayed(Vector3 position, float radius, float delay = 0f)
         {
+            PrefabVariantController controller = instance;
             yield return new WaitForSeconds(delay);
 
-            UpdatePrefabColorsFromList(instance.m_prefabVariants.Where(kvp => kvp.Key == null || Vector3.Distance(kvp.Key.transform.position, position) < radius));
+            if (controller && controller == instance)
+                UpdatePrefabColorsFromList(controller.m_prefabVariants.Where(kvp => kvp.Key == null || Vector3.Distance(kvp.Key.transform.position, position) < radius));
         }
 
         public static int GetVariant(double factor)
@@ -711,7 +752,13 @@ namespace Seasons
 
         public static void ReinitializePrefabVariants()
         {
+            if (!instance || !ZNetScene.instance)
+                return;
+
             LogInfo("Reinitializing prefabs colors");
+
+            instance.RevertPrefabsState();
+            MaterialVariants.Clear();
 
             List<PrefabVariant> listToRemove = new List<PrefabVariant>();
             foreach (PrefabVariant prefabVariant in instance.m_prefabVariants.Values)
@@ -865,7 +912,7 @@ namespace Seasons
             MaterialVariants.ApplySharedMaterial(__instance.m_meshRenderer, materialIndex, originalMat);
         }
 
-        private static void Postfix(MineRock5 __instance, Material __state)
+        private static void Finalizer(MineRock5 __instance, Material __state)
         {
             if (__state == null)
                 return;
@@ -919,17 +966,18 @@ namespace Seasons
     [HarmonyPatch(typeof(ShieldDomeImageEffect), nameof(ShieldDomeImageEffect.SetShieldData))]
     public static class ShieldDomeImageEffect_SetShieldData_ProtectedStateChange
     {
-        public static readonly Dictionary<ShieldGenerator, int> shieldRadius = new Dictionary<ShieldGenerator, int>();
-        private static readonly Dictionary<Vector2, bool> _cachedShieldCoverPositions = new Dictionary<Vector2, bool>();
+        public static readonly Dictionary<ShieldGenerator, float> shieldRadius = new Dictionary<ShieldGenerator, float>();
+        private static readonly Dictionary<ShieldGenerator, float> s_visualRadius = new Dictionary<ShieldGenerator, float>();
+        private static readonly Dictionary<Vector3, bool> _cachedShieldCoverPositions = new Dictionary<Vector3, bool>();
 
         public static bool IsThereAnyActiveShieldedArea()
         {
             if (shieldRadius.Count == 0 || !IsShieldProtectionActive())
                 return false;
 
-            foreach (KeyValuePair<ShieldGenerator, int> shield in shieldRadius)
+            foreach (KeyValuePair<ShieldGenerator, float> shield in shieldRadius)
             {
-                if (shield.Value <= 0)
+                if (!shield.Key || shield.Value <= 0)
                     continue;
 
                 if (!IsIgnoredPosition(shield.Key.GetShieldPosition()))
@@ -941,7 +989,7 @@ namespace Seasons
 
         public static bool IsCoveredByShield(Vector3 position)
         {
-            Vector2 pos = new(position.x, position.z);
+            Vector3 pos = position;
             if (_cachedShieldCoverPositions.TryGetValue(pos, out bool covered))
                 return covered;
 
@@ -949,9 +997,9 @@ namespace Seasons
                 _cachedShieldCoverPositions.Clear();
 
             covered = false;
-            foreach (KeyValuePair<ShieldGenerator, int> shield in shieldRadius)
+            foreach (KeyValuePair<ShieldGenerator, float> shield in shieldRadius)
             {
-                if (Vector3.Distance(shield.Key.GetShieldPosition(), position) < shield.Value - 2)
+                if (shield.Key && Vector3.Distance(shield.Key.GetShieldPosition(), position) < shield.Value - 2)
                 {
                     covered = true;
                     break;
@@ -964,19 +1012,38 @@ namespace Seasons
 
         public static void InvalidateShieldCoverCache() => _cachedShieldCoverPositions.Clear();
 
+        public static void Clear()
+        {
+            shieldRadius.Clear();
+            s_visualRadius.Clear();
+            InvalidateShieldCoverCache();
+        }
+
+        public static void ForgetVisualRadius(ShieldGenerator shield) => s_visualRadius.Remove(shield);
+
         [HarmonyPriority(Priority.First)]
         private static void Prefix(ShieldGenerator shield, Vector3 position, float radius)
         {
-            if (!shieldRadius.TryGetValue(shield, out int currentRadius) || ((currentRadius / 3) != ((int)radius / 3)) || (currentRadius != radius && (radius == 0f || currentRadius == 0f)))
+            if (!shield || !shieldRadius.TryGetValue(shield, out float currentRadius))
+                currentRadius = 0f;
+            if (!shield)
+                return;
+
+            if (!shieldRadius.ContainsKey(shield) || currentRadius != radius)
             {
-                shieldRadius[shield] = (int)radius;
+                shieldRadius[shield] = radius;
                 InvalidateShieldCoverCache();
-                if (IsShieldProtectionActive())
+                ShieldGenerator.m_instanceChangeID++;
+                bool firstVisual = !s_visualRadius.TryGetValue(shield, out float previousVisualRadius);
+                if (IsShieldProtectionActive() && (firstVisual || Mathf.Abs(previousVisualRadius - radius) >= 3f || radius == shield.m_radiusTarget))
                 {
-                    ShieldGenerator.m_instanceChangeID++;
+                    s_visualRadius[shield] = radius;
+                    float affectedRadius = Mathf.Max(previousVisualRadius, Mathf.Max(currentRadius, radius));
                     UpdatePrefabColorsAroundPosition(position, shield.m_maxShieldRadius);
-                    ZoneSystemVariantController.UpdateTerrainColorsAroundPosition(position, radius);
+                    ZoneSystemVariantController.UpdateTerrainColorsAroundPosition(position, affectedRadius);
+                    ClutterSystem.instance?.ResetGrass(position, affectedRadius + 1f);
                 }
+                ClutterVariantController.UpdateShieldActiveState();
             }
         }
     }
@@ -994,7 +1061,9 @@ namespace Seasons
         {
             if (ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.shieldRadius.Remove(shield))
             {
+                ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.ForgetVisualRadius(shield);
                 ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.InvalidateShieldCoverCache();
+                ClutterVariantController.UpdateShieldActiveState();
                 if (IsShieldProtectionActive())
                 {
                     Vector3 position = shield.GetShieldPosition();

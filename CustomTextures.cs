@@ -18,9 +18,11 @@ namespace Seasons
 
         public static readonly Dictionary<string, Dictionary<Season, Dictionary<int, Texture2D>>> textures = new Dictionary<string, Dictionary<Season, Dictionary<int, Texture2D>>>();
         public static Dictionary<string, Tuple<Season, int>> seasonVariantsFileNames;
+        private static FileSystemWatcher s_watcher;
 
         public static void SetupConfigWatcher()
         {
+            s_watcher?.Dispose();
             string filter = $"*.png";
 
             FileSystemWatcher fileSystemWatcher = new FileSystemWatcher(GetSubdirectory(), filter);
@@ -31,6 +33,7 @@ namespace Seasons
             fileSystemWatcher.IncludeSubdirectories = true;
             fileSystemWatcher.SynchronizingObject = ThreadingHelper.SynchronizingObject;
             fileSystemWatcher.EnableRaisingEvents = true;
+            s_watcher = fileSystemWatcher;
 
             UpdateTexturesOnChange();
         }
@@ -79,17 +82,16 @@ namespace Seasons
             if (result && texture.isReadable)
             {
                 Color32[] pixels = texture.GetPixels32();
-
-                if (pixels.Length != properties.width * properties.height)
-                {
-                    properties.width = texture.width;
-                    properties.height = texture.height;
-                    properties.mipmapCount = Math.Min(Mathf.FloorToInt(Mathf.Log(Math.Min(properties.width, properties.height), 2)), properties.mipmapCount);
-                }
+                // Custom dimensions must not alter the metadata used by cached game textures.
+                TextureProperties customProperties = JsonUtility.FromJson<TextureProperties>(JsonUtility.ToJson(properties));
+                customProperties.width = texture.width;
+                customProperties.height = texture.height;
+                customProperties.mipmapCount = Math.Min(1 + Mathf.FloorToInt(Mathf.Log(Math.Max(customProperties.width, customProperties.height), 2)), properties.mipmapCount);
 
                 UnityEngine.Object.Destroy(texture);
 
-                texture = properties.CreateTexture();
+                texture = customProperties.CreateTexture();
+                texture.name = textureName;
                 texture.SetPixels32(pixels);
                 texture.Apply(true, true);
 
@@ -110,6 +112,10 @@ namespace Seasons
                     continue;
 
                 string textureName = directory.Name;
+                if (textures.TryGetValue(textureName, out var replacedSeasons))
+                    foreach (var replacedVariants in replacedSeasons.Values)
+                        foreach (Texture2D replacedTexture in replacedVariants.Values)
+                            UnityEngine.Object.Destroy(replacedTexture);
                 textures.Remove(textureName);
 
                 foreach (FileInfo file in directory.GetFiles())
@@ -171,7 +177,7 @@ namespace Seasons
                 if (!TryGetSeasonVariant(filename, out Season season, out int variant))
                     continue;
 
-                Stream resourceStream = executingAssembly.GetManifestResourceStream(textureFileName);
+                using Stream resourceStream = executingAssembly.GetManifestResourceStream(textureFileName);
 
                 byte[] data = new byte[resourceStream.Length];
                 resourceStream.Read(data, 0, data.Length);

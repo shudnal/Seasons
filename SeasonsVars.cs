@@ -23,6 +23,8 @@
         public static int s_iceFloeMass = "Seasons_IceFloeMass".GetStableHashCode();
         public static int s_iceFloesSpawned = "Seasons_IceFloesSpawned".GetStableHashCode();
 
+        public static int s_seasonalSnowWatermark = "Seasons_SeasonalSnow".GetStableHashCode();
+
         public static int s_terrainDecultivated = "Seasons_Terrain_Decultivated".GetStableHashCode();
     }
 }

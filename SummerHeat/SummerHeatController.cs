@@ -884,7 +884,7 @@ namespace Seasons
 
         internal static bool IsSecondaryAttack(Humanoid humanoid) => humanoid.m_currentAttackIsSecondary;
 
-        internal static bool WasPerfectBlock(Humanoid humanoid) => humanoid.m_blockTimer > 0f && humanoid.m_blockTimer <= Humanoid.m_perfectBlockInterval;
+        internal static bool WasPerfectBlock(Humanoid humanoid) => humanoid.GetCurrentBlocker()?.m_shared.m_timedBlockBonus > 1f && humanoid.m_blockTimer != -1f && humanoid.m_blockTimer < Humanoid.m_perfectBlockInterval;
     }
 
     [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.StartAttack))]
@@ -915,12 +915,12 @@ namespace Seasons
         }
     }
 
-    [HarmonyPatch(typeof(Character), nameof(Character.Jump))]
-    internal static class Character_Jump_SummerHeat
+    [HarmonyPatch(typeof(Character), nameof(Character.ForceJump), typeof(Vector3), typeof(bool))]
+    internal static class Character_ForceJump_SummerHeat
     {
-        private static void Postfix(Character __instance)
+        private static void Postfix(Character __instance, bool effects)
         {
-            if (__instance == Player.m_localPlayer)
+            if (effects && __instance == Player.m_localPlayer)
                 SummerHeatController.Instance?.AddInstantHeat(SummerHeatController.JumpHeat, useConfigGate: true);
         }
     }
@@ -937,17 +937,22 @@ namespace Seasons
         }
     }
 
-    [HarmonyPatch(typeof(Character), nameof(Character.ApplyDamage))]
-    internal static class Character_ApplyDamage_SummerHeat
+    [HarmonyPatch(typeof(Character), nameof(Character.AddFireDamage), typeof(float), typeof(short))]
+    internal static class Character_AddFireDamage_SummerHeat
     {
-        private static void Postfix(Character __instance, ref HitData hit)
+        private static void Postfix(Character __instance, float damage)
         {
-            if (__instance != Player.m_localPlayer || hit == null)
-                return;
-
-            if (hit.m_damage.m_fire > 0f)
+            if (__instance == Player.m_localPlayer && damage > 0f && !__instance.IsDead())
                 SummerHeatController.Instance?.AddInstantHeat(SummerHeatController.FireDamageHeat);
-            else if (hit.m_damage.m_frost > 0f)
+        }
+    }
+
+    [HarmonyPatch(typeof(Character), nameof(Character.AddFrostDamage), typeof(float), typeof(short))]
+    internal static class Character_AddFrostDamage_SummerHeat
+    {
+        private static void Postfix(Character __instance, float damage)
+        {
+            if (__instance == Player.m_localPlayer && damage > 0f && !__instance.IsDead())
                 SummerHeatController.Instance?.AddInstantHeat(SummerHeatController.FrostDamageHeat);
         }
     }

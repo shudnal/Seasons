@@ -1,8 +1,8 @@
-﻿using HarmonyLib;
+using HarmonyLib;
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Diagnostics;
-using System.Threading;
 using UnityEngine;
 using static Seasons.Seasons;
 
@@ -10,129 +10,302 @@ namespace Seasons
 {
     public class MinimapVariantController : MonoBehaviour
     {
+        private sealed class MapGeneration
+        {
+            public bool Cancelled;
+            public Color32[] Pixels;
+        }
+
         private Minimap m_minimap;
         private static MinimapVariantController m_instance;
-
-        private bool m_initialized = false;
+        private bool m_started;
+        private bool m_mapDataReady;
+        private bool m_initialized;
+        private bool m_isWinter;
         private Color32[] m_mapTexture;
         private Color32[] m_mapWinterTexture;
-        private Texture2D m_forestTex;
-        
-        private bool m_isWinter = false;
+        private Texture2D m_sourceTexture;
+        private Texture m_largeForestTex;
+        private Texture m_smallForestTex;
+        private MapGeneration m_generation;
+        private Coroutine m_generationCoroutine;
+        private Dictionary<Heightmap.Biome, Color32> m_winterColors;
 
         public static MinimapVariantController instance => m_instance;
 
         private void Awake()
         {
             m_instance = this;
-            m_minimap = Minimap.instance;
+            m_minimap = GetComponent<Minimap>();
         }
 
         private void Start()
         {
-            Texture forest = m_minimap.m_mapLargeShader.GetTexture("_ForestTex");
-            m_forestTex = new Texture2D(forest.width, forest.height, forest.graphicsFormat, UnityEngine.Experimental.Rendering.TextureCreationFlags.None);
-            Graphics.CopyTexture(forest, m_forestTex);
+            m_largeForestTex = m_minimap.m_mapLargeShader.GetTexture("_ForestTex");
+            m_smallForestTex = m_minimap.m_mapSmallShader.GetTexture("_ForestTex");
+            m_started = true;
 
-            StartCoroutine(GenerateWinterWorldMap());
+            if (m_mapDataReady || m_minimap.m_hasGenerated)
+                OnMapDataReady();
         }
 
         private void OnDestroy()
         {
+            CancelGeneration();
             RevertTextures();
-            m_instance = null;
+            if (m_instance == this)
+                m_instance = null;
+        }
+
+        private void Update()
+        {
+            if (m_started && m_mapDataReady && m_minimap && m_minimap.m_mapTexture
+                && (m_sourceTexture != m_minimap.m_mapTexture || m_mapTexture == null
+                    || m_mapTexture.Length != m_minimap.m_mapTexture.width * m_minimap.m_mapTexture.height))
+                OnMapDataReady();
+        }
+
+        public void OnMapDataReady(bool nativePixelsChanged = false)
+        {
+            m_mapDataReady = true;
+            if (!m_started || !m_minimap || !m_minimap.m_mapTexture)
+                return;
+
+            // Duplicate readiness notifications must not capture our winter output as the original.
+            if (!nativePixelsChanged && m_sourceTexture == m_minimap.m_mapTexture && m_mapTexture != null
+                && m_mapTexture.Length == m_sourceTexture.width * m_sourceTexture.height)
+                return;
+
+            CancelGeneration();
+            m_initialized = false;
+            m_isWinter = false;
+            m_sourceTexture = m_minimap.m_mapTexture;
+
+            try
+            {
+                // Capture the actual vanilla map after generation or cache loading, not a reconstruction.
+                m_mapTexture = m_sourceTexture.GetPixels32();
+                m_generationCoroutine = StartCoroutine(GenerateWinterWorldMap());
+            }
+            catch (Exception error)
+            {
+                m_mapTexture = null;
+                LogWarning($"Unable to prepare seasonal minimap textures:\n{error}");
+            }
+        }
+
+        private void CancelGeneration()
+        {
+            if (m_generation != null)
+                m_generation.Cancelled = true;
+            m_generation = null;
+
+            if (m_generationCoroutine != null)
+                StopCoroutine(m_generationCoroutine);
+            m_generationCoroutine = null;
         }
 
         public void RevertTextures()
         {
-            if (!m_initialized)
+            if (!m_minimap)
                 return;
 
-            SetMapTextures(winterChanged: m_isWinter, m_forestTex);
+            if (m_isWinter && ApplyMapTexture(m_mapTexture))
+                m_isWinter = false;
+
+            RestoreForestTextures();
         }
 
-        public void UpdateColors()
+        public void UpdateColors() => UpdateColors(forceMapUpdate: false);
+
+        private void UpdateColors(bool forceMapUpdate)
         {
-            if (!m_initialized)
+            if (m_mapDataReady && m_minimap && m_minimap.m_mapTexture
+                && (m_sourceTexture != m_minimap.m_mapTexture || m_mapTexture == null
+                    || m_mapTexture.Length != m_minimap.m_mapTexture.width * m_minimap.m_mapTexture.height))
+                OnMapDataReady();
+
+            if (!m_minimap)
                 return;
 
-            if (!controlMinimap.Value)
+            if (!controlMinimap.Value || !UseTextureControllers() || !SeasonState.IsActive)
             {
                 RevertTextures();
                 return;
             }
 
+            if (!m_initialized)
+                return;
+
+            Dictionary<Heightmap.Biome, Color> configuredColors = SeasonState.seasonBiomeSettings.SeasonalWinterMapColors;
+            bool colorsChanged = m_winterColors == null || m_winterColors.Count != configuredColors.Count;
+            if (!colorsChanged)
+                foreach (var color in configuredColors)
+                    if (!m_winterColors.TryGetValue(color.Key, out Color32 previous) || !previous.Equals((Color32)color.Value))
+                    {
+                        colorsChanged = true;
+                        break;
+                    }
+            if (colorsChanged)
+            {
+                CancelGeneration();
+                m_initialized = false;
+                m_generationCoroutine = StartCoroutine(GenerateWinterWorldMap());
+                return;
+            }
+
             Season season = seasonState.GetCurrentSeason();
-            bool winterChanged = m_isWinter != (m_isWinter = season == Season.Winter);
-            SetMapTextures(winterChanged, GetSeasonalForestTex(season));
+            bool isWinter = season == Season.Winter;
+            if ((forceMapUpdate || m_isWinter != isWinter) && ApplyMapTexture(isWinter ? m_mapWinterTexture : m_mapTexture))
+                m_isWinter = isWinter;
+
+            if (season == Season.Spring)
+            {
+                RestoreForestTextures();
+                return;
+            }
+
+            Texture2D forestTex = GetSeasonalForestTex(season);
+            if (forestTex == null)
+                return;
+
+            m_minimap.m_mapLargeShader.SetTexture("_ForestTex", forestTex);
+            m_minimap.m_mapSmallShader.SetTexture("_ForestTex", forestTex);
+        }
+
+        private void RestoreForestTextures()
+        {
+            if (!m_started)
+                return;
+
+            if (m_minimap.m_mapLargeShader)
+                m_minimap.m_mapLargeShader.SetTexture("_ForestTex", m_largeForestTex);
+            if (m_minimap.m_mapSmallShader)
+                m_minimap.m_mapSmallShader.SetTexture("_ForestTex", m_smallForestTex);
         }
 
         public Texture2D GetSeasonalForestTex(Season season)
         {
             return season switch
             {
-                Season.Spring => m_forestTex,
                 Season.Summer => Minimap_Summer_ForestTex,
                 Season.Fall => Minimap_Fall_ForestTex,
                 Season.Winter => Minimap_Winter_ForestTex,
-                _ => m_forestTex,
+                _ => m_largeForestTex as Texture2D,
             };
         }
 
-        private void SetMapTextures(bool winterChanged, Texture2D forestTex)
+        private bool ApplyMapTexture(Color32[] pixels)
         {
+            if (!m_minimap || !m_sourceTexture || m_sourceTexture != m_minimap.m_mapTexture || pixels == null)
+                return false;
+
+            if (pixels.Length != m_sourceTexture.width * m_sourceTexture.height)
+                return false;
+
             try
             {
-                if (winterChanged)
-                {
-                    m_minimap.m_mapTexture.SetPixels32(m_isWinter ? m_mapWinterTexture : m_mapTexture);
-                    m_minimap.m_mapTexture.Apply();
-
-                    Compatibility.MarketplaceCompat.UpdateMap();
-                }
+                m_sourceTexture.SetPixels32(pixels);
+                m_sourceTexture.Apply();
+                Compatibility.MarketplaceCompat.UpdateMap();
+                return true;
             }
-            catch (Exception e)
+            catch (Exception error)
             {
-                LogWarning($"Error applying {(m_isWinter ? "winter ": "")}map texture length {(m_isWinter ? m_mapWinterTexture : m_mapTexture).Length} to minimap texture length {m_minimap.m_mapTexture.height * m_minimap.m_mapTexture.width}:\n{e}");
+                LogWarning($"Error applying seasonal minimap texture ({pixels.Length} pixels):\n{error}");
+                return false;
             }
-
-            m_minimap.m_mapLargeShader.SetTexture("_ForestTex", forestTex);
-            m_minimap.m_mapSmallShader.SetTexture("_ForestTex", forestTex);
         }
 
         public IEnumerator GenerateWinterWorldMap()
         {
-            int num = m_minimap.m_textureSize / 2;
-            float num2 = m_minimap.m_pixelSize / 2f;
-            m_mapWinterTexture = new Color32[m_minimap.m_textureSize * m_minimap.m_textureSize];
-            m_mapTexture = new Color32[m_minimap.m_textureSize * m_minimap.m_textureSize];
+            if (m_mapTexture == null || !m_sourceTexture || !m_minimap)
+                yield break;
 
-            yield return new WaitUntil(() => WorldGenerator.instance != null);
+            if (m_generation != null)
+                m_generation.Cancelled = true;
 
-            Stopwatch stopwatch = Stopwatch.StartNew();
+            Texture2D sourceTexture = m_sourceTexture;
+            Color32[] sourcePixels = m_mapTexture;
+            ZNet sourceNetwork = ZNet.instance;
+            World sourceWorld = ZNet.m_world;
+            int textureSize = m_minimap.m_textureSize;
+            float pixelSize = m_minimap.m_pixelSize;
+            if (sourcePixels.Length != textureSize * textureSize)
+                yield break;
 
-            var internalThread = new Thread(() =>
+            // Register the request before waiting so a reload or world exit can cancel it.
+            MapGeneration generation = new MapGeneration();
+            m_generation = generation;
+
+            bool IsCurrentRequest()
             {
-                for (int i = 0; i < m_minimap.m_textureSize; i++)
-                    for (int j = 0; j < m_minimap.m_textureSize; j++)
+                return !generation.Cancelled && m_generation == generation && this && m_minimap && sourceTexture
+                    && sourceTexture == m_minimap.m_mapTexture && ReferenceEquals(sourcePixels, m_mapTexture)
+                    && ReferenceEquals(sourceNetwork, ZNet.instance) && ReferenceEquals(sourceWorld, ZNet.m_world)
+                    && textureSize == m_minimap.m_textureSize && pixelSize == m_minimap.m_pixelSize;
+            }
+
+            try
+            {
+                WorldGenerator world = null;
+                while (IsCurrentRequest())
+                {
+                    world = WorldGenerator.instance;
+                    if (world != null && (sourceWorld == null || ReferenceEquals(world.m_world, sourceWorld)))
+                        break;
+
+                    yield return null;
+                }
+
+                if (!IsCurrentRequest())
+                    yield break;
+
+                int center = textureSize / 2;
+                float halfPixel = pixelSize / 2f;
+                Dictionary<Heightmap.Biome, Color32> winterColors = new Dictionary<Heightmap.Biome, Color32>();
+                foreach (KeyValuePair<Heightmap.Biome, Color> entry in SeasonState.seasonBiomeSettings.SeasonalWinterMapColors)
+                    winterColors[entry.Key] = entry.Value;
+                m_winterColors = winterColors;
+
+                generation.Pixels = (Color32[])sourcePixels.Clone();
+                Stopwatch stopwatch = Stopwatch.StartNew();
+
+                // Game and compatibility biome lookups may use mutable world globals. Keep them
+                // on the main thread, yielding in bounded batches and checking the world each time.
+                for (int y = 0; y < textureSize; y++)
+                {
+                    if (!IsCurrentRequest() || world != WorldGenerator.instance)
+                        yield break;
+
+                    float wy = (y - center) * pixelSize + halfPixel;
+                    for (int x = 0; x < textureSize; x++)
                     {
-                        float wx = (j - num) * m_minimap.m_pixelSize + num2;
-                        float wy = (i - num) * m_minimap.m_pixelSize + num2;
-                        Heightmap.Biome biome = WorldGenerator.instance.GetBiome(wx, wy);
-                        m_mapWinterTexture[i * m_minimap.m_textureSize + j] = GetWinterPixelColor(biome);
-                        m_mapTexture[i * m_minimap.m_textureSize + j] = Minimap.instance.GetPixelColor(biome);
+                        float wx = (x - center) * pixelSize + halfPixel;
+                        if (winterColors.TryGetValue(world.GetBiome(wx, wy), out Color32 color))
+                            generation.Pixels[y * textureSize + x] = color;
                     }
-            });
+                    if (y % 8 == 7)
+                        yield return null;
+                }
 
-            internalThread.Start();
+                if (!IsCurrentRequest() || world != WorldGenerator.instance)
+                    yield break;
 
-            yield return new WaitWhile(() => internalThread.IsAlive == true);
-
-            m_initialized = true;
-
-            LogInfo($"Minimap variant controller initialized in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
-
-            UpdateColors();
+                m_mapWinterTexture = generation.Pixels;
+                m_initialized = true;
+                LogInfo($"Minimap variant controller initialized in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
+                UpdateColors(forceMapUpdate: true);
+            }
+            finally
+            {
+                generation.Cancelled = true;
+                if (m_generation == generation)
+                {
+                    m_generation = null;
+                    m_generationCoroutine = null;
+                }
+            }
         }
 
         public static Color GetWinterPixelColor(Heightmap.Biome biome)
@@ -150,22 +323,29 @@ namespace Seasons
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(Minimap __instance)
         {
-            if (!UseTextureControllers())
-                return;
-
-            __instance.transform.gameObject.AddComponent<MinimapVariantController>();
+            if (UseTextureControllers() && !__instance.GetComponent<MinimapVariantController>())
+                __instance.gameObject.AddComponent<MinimapVariantController>();
         }
     }
 
     [HarmonyPatch(typeof(Minimap), nameof(Minimap.GenerateWorldMap))]
     public static class Minimap_GenerateWorldMap_MinimapContollerInit
     {
-        private static void Postfix()
+        [HarmonyPriority(Priority.Last)]
+        private static void Postfix(Minimap __instance)
         {
-            if (!UseTextureControllers())
-                return;
+            __instance.GetComponent<MinimapVariantController>()?.OnMapDataReady(nativePixelsChanged: true);
+        }
+    }
 
-            MinimapVariantController.instance.UpdateColors();
+    [HarmonyPatch(typeof(Minimap), nameof(Minimap.TryLoadMinimapTextureData))]
+    public static class Minimap_TryLoadMinimapTextureData_RefreshSeasonalMap
+    {
+        [HarmonyPriority(Priority.Last)]
+        private static void Postfix(Minimap __instance, bool __result)
+        {
+            if (__result)
+                __instance.GetComponent<MinimapVariantController>()?.OnMapDataReady(nativePixelsChanged: true);
         }
     }
 }

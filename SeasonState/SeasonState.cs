@@ -1,4 +1,4 @@
-using BepInEx;
+﻿using BepInEx;
 using HarmonyLib;
 using Newtonsoft.Json;
 using System;
@@ -20,8 +20,6 @@ namespace Seasons
         private int m_dayInSeasonGlobal = 0;
         private bool m_seasonIsChanging = false;
         private bool m_isUsingIngameDays = true;
-        private int m_dayStartFractionCacheWorldDay = int.MinValue;
-        private float m_dayStartFractionCached = EnvMan.c_MorningL;
 
         public static readonly Dictionary<Season, SeasonSettings> seasonsSettings = new Dictionary<Season, SeasonSettings>();
         public static List<SeasonEnvironment> seasonEnvironments = SeasonEnvironment.GetDefaultCustomEnvironments();
@@ -39,6 +37,7 @@ namespace Seasons
         private static readonly Dictionary<Heightmap.Biome, string> biomesDefault = new Dictionary<Heightmap.Biome, string>();
         private static readonly Dictionary<string, EnvSetup> replacedEnvironmentDefaults = new Dictionary<string, EnvSetup>(StringComparer.Ordinal);
         private static readonly Dictionary<string, EnvSetup> appliedSeasonEnvironmentObjects = new Dictionary<string, EnvSetup>(StringComparer.Ordinal);
+        private static readonly HashSet<Texture2D> generatedEnvironmentTextures = new HashSet<Texture2D>();
         private static readonly List<ItemDrop.ItemData> _itemDataList = new List<ItemDrop.ItemData>();
         private static readonly HashSet<string> _coolingFoodNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static int _pendingSeasonChange = 0;
@@ -151,7 +150,7 @@ namespace Seasons
 
         public void OnBiomeChange(Heightmap.Biome previousBiome, Heightmap.Biome currentBiome)
         {
-            if (previousBiome == Heightmap.Biome.None || previousBiome == currentBiome)
+            if (previousBiome == currentBiome)
                 return;
 
             if (GetCurrentSeason() == Season.Winter && (previousBiome == Heightmap.Biome.AshLands || currentBiome == Heightmap.Biome.AshLands))
@@ -281,7 +280,7 @@ namespace Seasons
             else if (dayInSeason < firstPeakDay)
             {
                 Season previous = GetPreviousSeason(season);
-                int daysInPreviousSeason = GetDaysInSeason(season);
+                int daysInPreviousSeason = GetDaysInSeason(previous);
 
                 lastPeakDay = Mathf.CeilToInt(daysInPreviousSeason / 2f);
                 int daysInPrevious = daysInPreviousSeason - lastPeakDay;
@@ -308,10 +307,12 @@ namespace Seasons
 
         public static void InitializeTextureControllers()
         {
-            ZoneSystem.instance.gameObject.AddComponent<PrefabVariantController>();
+            if (!ZoneSystem.instance.TryGetComponent<PrefabVariantController>(out _))
+                ZoneSystem.instance.gameObject.AddComponent<PrefabVariantController>();
             PrefabVariantController.AddControllerToPrefabs();
             ClutterVariantController.Initialize();
-            ZoneSystem.instance.gameObject.AddComponent<ZoneSystemVariantController>().Initialize(ZoneSystem.instance);
+            if (!ZoneSystem.instance.TryGetComponent<ZoneSystemVariantController>(out _))
+                ZoneSystem.instance.gameObject.AddComponent<ZoneSystemVariantController>().Initialize(ZoneSystem.instance);
             FillListsToControl();
             InvalidatePositionsCache();
             CustomTextures.SetupConfigWatcher();
@@ -351,25 +352,49 @@ namespace Seasons
         {
             RefreshBiomesDefault(forceUpdate: false);
 
-            if (Compatibility.EWDCompat.ShouldApplySeasonalRulesToAvailableEnvironments())
+            SeasonalSnow.BeginBiomeEnvironmentUpdate();
+            try
             {
+                foreach (string biomeEnvironmentDefault in biomesDefault.Values)
+                    RegisterSeasonalSnowBiomeEnvironment(biomeEnvironmentDefault);
+
+                if (Compatibility.EWDCompat.ShouldApplySeasonalRulesToAvailableEnvironments())
+                {
+                    RefreshBiomeEnvironmentReferences();
+                    UpdateCurrentEnvironment();
+                    return;
+                }
+
+                EnvMan.instance.m_biomes.Clear();
+
+                biomesDefault.Do(kvp => ChangeBiomeEnvironment(kvp.Value));
+
                 RefreshBiomeEnvironmentReferences();
                 UpdateCurrentEnvironment();
-                return;
+
+                Compatibility.EWDCompat.OnSeasonsBiomeSetupApplied();
+            }
+            finally
+            {
+                SeasonalSnow.EndBiomeEnvironmentUpdate();
             }
 
-            SeasonBiomeEnvironments.SeasonBiomeEnvironment biomeEnv = controlEnvironments.Value
-                ? seasonBiomeEnvironments.GetSeasonBiomeEnvironment(seasonState.GetCurrentSeason())
-                : null;
+            void RegisterSeasonalSnowBiomeEnvironment(string biomeEnvironmentDefault)
+            {
+                try
+                {
+                    BiomeEnvSetup biomeEnvironment =
+                        JsonUtility.FromJson<BiomeEnvSetup>(biomeEnvironmentDefault);
 
-            EnvMan.instance.m_biomes.Clear();
-
-            biomesDefault.Do(kvp => ChangeBiomeEnvironment(kvp.Value));
-
-            RefreshBiomeEnvironmentReferences();
-            UpdateCurrentEnvironment();
-
-            Compatibility.EWDCompat.OnSeasonsBiomeSetupApplied();
+                    List<EnvEntry> environments =
+                        ApplySeasonBiomeEnvironmentRules(biomeEnvironment.m_biome, biomeEnvironment.m_environments);
+                    SeasonalSnow.RegisterBiomeEnvironments(biomeEnvironment.m_biome, environments);
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error preparing seasonal snow biome setup:\n{biomeEnvironmentDefault}\n{e}");
+                }
+            }
 
             void ChangeBiomeEnvironment(string biomeEnvironmentDefault)
             {
@@ -377,9 +402,6 @@ namespace Seasons
                 {
                     BiomeEnvSetup biomeEnvironment =
                         JsonUtility.FromJson<BiomeEnvSetup>(biomeEnvironmentDefault);
-
-                    if (biomeEnv != null)
-                        biomeEnvironment.m_environments = ApplySeasonBiomeEnvironmentRules(biomeEnv, biomeEnvironment, biomeEnvironment.m_environments);
 
                     EnvMan.instance.AppendBiomeSetup(biomeEnvironment);
                 }
@@ -418,6 +440,7 @@ namespace Seasons
             }
 
             seasonState.UpdateUsingOfIngameDays();
+            SeasonalSnow.RefreshWeatherTimeline();
 
             seasonState.UpdateTorchesFireWarmth();
 
@@ -486,6 +509,7 @@ namespace Seasons
 
                 EnvSetup environment = senv.ToEnvSetup();
                 EnvMan.instance.AppendEnvironment(environment);
+                generatedEnvironmentTextures.Add(environment.m_auroraGradientTexture);
                 appliedSeasonEnvironmentObjects[senv.m_name] = environment;
 
                 SeasonEnvironment.AddCachedObjects(environment);
@@ -557,10 +581,32 @@ namespace Seasons
             foreach (KeyValuePair<string, EnvSetup> defaultEnvironment in replacedEnvironmentDefaults)
             {
                 if (defaultEnvironment.Value != null && EnvMan.instance.GetEnv(defaultEnvironment.Key) == null)
-                    EnvMan.instance.AppendEnvironment(defaultEnvironment.Value);
+                    // The saved native entry was already initialized, including its gradient texture.
+                    EnvMan.instance.m_environments.Add(defaultEnvironment.Value);
             }
 
             ResetEnvironmentStateTracking();
+        }
+
+        internal static void ReleaseUnusedEnvironmentTextures()
+        {
+            if (generatedEnvironmentTextures.Count == 0)
+                return;
+
+            EnvMan environmentManager = EnvMan.instance;
+            foreach (Texture2D texture in generatedEnvironmentTextures.ToArray())
+            {
+                if (texture && environmentManager != null
+                    && (environmentManager.m_currentEnv?.m_auroraGradientTexture == texture
+                        || environmentManager.m_prevEnv?.m_auroraGradientTexture == texture
+                        || environmentManager.m_nextEnv?.m_auroraGradientTexture == texture
+                        || environmentManager.m_environments.Any(environment => environment.m_auroraGradientTexture == texture)))
+                    continue;
+
+                if (texture)
+                    UnityEngine.Object.Destroy(texture);
+                generatedEnvironmentTextures.Remove(texture);
+            }
         }
 
         private static void RefreshBiomeEnvironmentReferences()
@@ -840,7 +886,7 @@ namespace Seasons
 
         public void UpdateGlobalKeys()
         {
-            if (!IsActive)
+            if (!IsActive || !ZoneSystem.instance || !ZNet.instance || !ZNet.instance.IsServer())
                 return;
 
             foreach (Season season in _seasons)
@@ -899,12 +945,7 @@ namespace Seasons
         public float DayStartFraction()
         {
             int worldDay = GetCurrentWorldDay();
-            if (m_dayStartFractionCacheWorldDay == worldDay)
-                return m_dayStartFractionCached;
-
-            m_dayStartFractionCacheWorldDay = worldDay;
-            m_dayStartFractionCached = DayStartFraction(GetSeason(worldDay), GetDayInSeason(worldDay));
-            return m_dayStartFractionCached;
+            return DayStartFraction(GetSeason(worldDay), GetDayInSeason(worldDay));
         }
 
         public float DayStartFraction(Season season, int dayInSeason)
@@ -1106,6 +1147,9 @@ namespace Seasons
             if (IsProtectedPosition(pickable.transform.position) || secondsLeft <= 0d)
                 return secondsLeft;
 
+            if (!_seasons.Any(season => GetPlantsGrowthMultiplier(season) > 0f))
+                return double.PositiveInfinity;
+
             double pickedTimeSeconds = TimeSpan.FromTicks(pickable.m_nview.GetZDO().GetLong(ZDOVars.s_pickedTime, 0L)).TotalSeconds;
             int worldDay = GetWorldDay(pickedTimeSeconds);
             Season season = GetSeason(worldDay);
@@ -1187,11 +1231,16 @@ namespace Seasons
 
         private double GetSecondsLeftWithSeasonalMultiplier(double secondsLeft, Func<Season, float> getMultiplier)
         {
+            if (secondsLeft <= 0d)
+                return 0d;
+            if (!_seasons.Any(season => getMultiplier(season) > 0f))
+                return double.PositiveInfinity;
+
             Season season = GetCurrentSeason();
             float multiplier = getMultiplier.Invoke(season);
 
             double seconds = 0d;
-            double secondsToSeasonEnd = GetTimeToCurrentSeasonEnd();
+            double secondsToSeasonEnd = Math.Max(0d, GetTimeToCurrentSeasonEnd());
 
             do
             {
@@ -1244,53 +1293,53 @@ namespace Seasons
         public IEnumerator SeasonChangedFadeEffect()
         {
             m_seasonIsChanging = true;
-
             Player player = Player.m_localPlayer;
-            if (player == null || player.IsDead() || player.IsTeleporting() || Game.instance.IsShuttingDown() || player.IsSleeping())
+            Hud hud = Hud.instance;
+            Game game = Game.instance;
+            EnvMan environment = EnvMan.instance;
+
+            bool SameWorld() => game != null && Game.instance == game && environment != null && EnvMan.instance == environment
+                && ReferenceEquals(seasonState, this) && !game.IsShuttingDown();
+            bool CanFade() => SameWorld() && hud != null && Hud.instance == hud && player != null
+                && Player.m_localPlayer == player && !player.IsDead() && !player.IsTeleporting() && !player.IsSleeping();
+
+            try
             {
-                OnSeasonChange();
-                m_seasonIsChanging = false;
-                yield break;
-            }
-
-            float fadeDuration = fadeOnSeasonChangeDuration.Value / 2;
-
-            Hud.instance.m_loadingScreen.gameObject.SetActive(value: true);
-            Hud.instance.m_loadingProgress.SetActive(value: false);
-            Hud.instance.m_sleepingProgress.SetActive(value: false);
-            Hud.instance.m_teleportingProgress.SetActive(value: false);
-
-            while (Hud.instance.m_loadingScreen.alpha <= 0.99f)
-            {
-                if (player == null || player.IsDead() || player.IsTeleporting() || Game.instance.IsShuttingDown() || player.IsSleeping())
+                if (!CanFade())
                 {
+                    if (SameWorld())
+                        OnSeasonChange();
+                    yield break;
+                }
+
+                float fadeDuration = Mathf.Max(0.01f, fadeOnSeasonChangeDuration.Value / 2f);
+                hud.m_loadingScreen.gameObject.SetActive(value: true);
+                hud.m_loadingProgress.SetActive(value: false);
+                hud.m_sleepingProgress.SetActive(value: false);
+                hud.m_teleportingProgress.SetActive(value: false);
+
+                while (CanFade() && hud.m_loadingScreen.alpha <= 0.99f)
+                {
+                    hud.m_loadingScreen.alpha = Mathf.MoveTowards(hud.m_loadingScreen.alpha, 1f, Time.fixedDeltaTime / fadeDuration);
+                    yield return waitForFixedUpdate;
+                }
+
+                if (SameWorld())
                     OnSeasonChange();
-                    m_seasonIsChanging = false;
-                    yield break;
-                }
 
-                Hud.instance.m_loadingScreen.alpha = Mathf.MoveTowards(Hud.instance.m_loadingScreen.alpha, 1f, Time.fixedDeltaTime / fadeDuration);
-
-                yield return waitForFixedUpdate;
-            }
-
-            OnSeasonChange();
-
-            while (Hud.instance.m_loadingScreen.alpha > 0f)
-            {
-                if (player == null || player.IsDead() || player.IsTeleporting() || Game.instance.IsShuttingDown() || player.IsSleeping())
+                while (CanFade() && hud.m_loadingScreen.alpha > 0f)
                 {
-                    m_seasonIsChanging = false;
-                    yield break;
+                    hud.m_loadingScreen.alpha = Mathf.MoveTowards(hud.m_loadingScreen.alpha, 0f, Time.fixedDeltaTime / fadeDuration);
+                    yield return waitForFixedUpdate;
                 }
 
-                Hud.instance.m_loadingScreen.alpha = Mathf.MoveTowards(Hud.instance.m_loadingScreen.alpha, 0f, Time.fixedDeltaTime / fadeDuration);
-
-                yield return waitForFixedUpdate;
+                if (CanFade())
+                    hud.m_loadingScreen.gameObject.SetActive(value: false);
             }
-
-            Hud.instance.m_loadingScreen.gameObject.SetActive(value: false);
-            m_seasonIsChanging = false;
+            finally
+            {
+                m_seasonIsChanging = false;
+            }
         }
 
         private void OnSeasonChange()
@@ -1300,6 +1349,8 @@ namespace Seasons
             UpdateWinterBloomEffect();
             ZoneSystemVariantController.UpdateWaterState();
             UpdateCurrentEnvironment();
+            SeasonalSnow.UpdateSeasonState();
+            SeasonalSnow.UpdateLoadedSnowCover();
 
             if (UseTextureControllers())
             {
@@ -1327,8 +1378,8 @@ namespace Seasons
 
         public void UpdateWinterBloomEffect()
         {
-            if (IsActive && UseTextureControllers())
-                CameraEffects.instance.SetBloom((!disableBloomInWinter.Value || GetCurrentSeason() != Season.Winter) && PlatformPrefs.GetInt("Bloom", 1) == 1);
+            if (CameraEffects.instance != null && GraphicsSettingsManager.Instance != null)
+                CameraEffects.instance.SetBloom(GraphicsSettingsManager.Instance.ActiveSettings.m_bloom);
         }
 
         public int GetYearLengthInDays()
@@ -1378,7 +1429,7 @@ namespace Seasons
 
         public void UpdateTorchFireWarmth(string prefabName)
         {
-            GameObject prefab = ObjectDB.instance.GetItemPrefab(prefabName);
+            GameObject prefab = ObjectDB.instance?.GetItemPrefab(prefabName);
             if (prefab == null)
                 return;
 
@@ -1403,17 +1454,17 @@ namespace Seasons
             component.m_isHeatType = component.m_type.HasFlag(EffectArea.Type.Heat);
 
             ItemDrop item = prefab.GetComponent<ItemDrop>();
-            PatchTorchItemData(item.m_itemData);
+            PatchTorchItemData(item?.m_itemData);
 
-            if (Player.m_localPlayer != null)
+            if (Player.m_localPlayer != null && Player.m_localPlayer.m_visEquipment != null)
             {
-                if (Player.m_localPlayer.m_visEquipment.m_rightItem == prefabName && (Player.m_localPlayer.m_visEquipment.m_rightItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea rightEffect))
+                if (Player.m_localPlayer.m_visEquipment.m_rightItem == prefabName.GetStableHashCode() && (Player.m_localPlayer.m_visEquipment.m_rightItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea rightEffect))
                 {
                     rightEffect.m_type = component.m_type;
                     rightEffect.m_isHeatType = component.m_isHeatType;
                 }
 
-                if (Player.m_localPlayer.m_visEquipment.m_leftItem == prefabName && (Player.m_localPlayer.m_visEquipment.m_leftItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea leftEffect))
+                if (Player.m_localPlayer.m_visEquipment.m_leftItem == prefabName.GetStableHashCode() && (Player.m_localPlayer.m_visEquipment.m_leftItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea leftEffect))
                 {
                     leftEffect.m_type = component.m_type;
                     leftEffect.m_isHeatType = component.m_isHeatType;
@@ -1613,6 +1664,7 @@ namespace Seasons
             seasonState.UpdateGlobalKeys();
             seasonState.UpdateWinterBloomEffect();
             UpdateCurrentEnvironment();
+            SeasonalSnow.UpdateLoadedSnowCover();
         }
 
         internal static bool TorchHeatInBiome(Heightmap.Biome biome) => biome != Heightmap.Biome.Mountain && biome != Heightmap.Biome.DeepNorth && biome != Heightmap.Biome.AshLands;
@@ -1670,7 +1722,7 @@ namespace Seasons
                 ? new List<EnvEntry>()
                 : environments
                     .Where(environment => environment != null)
-                    .Select(environment => preserveSourceEntries ? environment : CloneEnvEntry(environment))
+                    .Select(CloneEnvEntry)
                     .ToList();
 
             RefreshEnvironmentReferences(result);

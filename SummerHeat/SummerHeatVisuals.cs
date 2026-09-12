@@ -11,8 +11,12 @@ namespace Seasons
 
         private static GameObject _hazeObject;
         private static bool _summerHeatColorApplied;
-        private static bool _hasDefaultHeatDistortionColor;
+        private static HeatDistortImageEffect _heatDistortion;
         private static Color _defaultHeatDistortionColor;
+        private static Color _appliedHeatDistortionColor;
+        private static bool _defaultHeatDistortionEnabled;
+        private static float _defaultHeatDistortionIntensity;
+        private static float _appliedHeatDistortionIntensity;
 
         internal static void Initialize()
         {
@@ -79,8 +83,8 @@ namespace Seasons
         internal static void Reset()
         {
             DestroyHazeObject();
-            _summerHeatColorApplied = false;
-            _hasDefaultHeatDistortionColor = false;
+            RestoreCameraDistortion();
+            _heatDistortion = null;
         }
 
         internal static void UpdateHazeState()
@@ -134,20 +138,24 @@ namespace Seasons
             if (heatDistortImageEffect == null)
                 return;
 
-            if (!_hasDefaultHeatDistortionColor)
+            if (_heatDistortion != heatDistortImageEffect)
             {
+                RestoreCameraDistortion();
+                _heatDistortion = heatDistortImageEffect;
                 _defaultHeatDistortionColor = heatDistortImageEffect.m_color;
-                _hasDefaultHeatDistortionColor = true;
             }
+
+            if (!_summerHeatColorApplied || heatDistortImageEffect.m_color != _appliedHeatDistortionColor)
+                _defaultHeatDistortionColor = heatDistortImageEffect.m_color;
+
+            // Character.UpdateHeatEffects has just refreshed these native lava values.
+            _defaultHeatDistortionEnabled = heatDistortImageEffect.enabled;
+            _defaultHeatDistortionIntensity = heatDistortImageEffect.m_intensity;
 
             float summerHeatIntensity = GetVisualIntensity();
             if (summerHeatIntensity <= 0f)
             {
-                if (_summerHeatColorApplied)
-                {
-                    heatDistortImageEffect.m_color = _defaultHeatDistortionColor;
-                    _summerHeatColorApplied = false;
-                }
+                RestoreCameraDistortion();
                 return;
             }
 
@@ -159,7 +167,24 @@ namespace Seasons
             Color color = _defaultHeatDistortionColor;
             color.a = Mathf.Lerp(_defaultHeatDistortionColor.a, 0.85f, overflowFactor);
             heatDistortImageEffect.m_color = color;
+            _appliedHeatDistortionColor = color;
+            _appliedHeatDistortionIntensity = heatDistortImageEffect.m_intensity;
             _summerHeatColorApplied = true;
+        }
+
+        private static void RestoreCameraDistortion()
+        {
+            if (_heatDistortion != null && _summerHeatColorApplied)
+            {
+                if (_heatDistortion.m_color == _appliedHeatDistortionColor)
+                    _heatDistortion.m_color = _defaultHeatDistortionColor;
+                if (_heatDistortion.m_intensity == _appliedHeatDistortionIntensity)
+                {
+                    _heatDistortion.m_intensity = _defaultHeatDistortionIntensity;
+                    _heatDistortion.enabled = _defaultHeatDistortionEnabled;
+                }
+            }
+            _summerHeatColorApplied = false;
         }
 
         private static bool IsPersonalVisualStateActive() => Seasons.summerHeatEnabled.Value && Seasons.summerHeatPersonalDistortionEnabled.Value && SummerHeat.IsReady && SummerHeat.IsMechanicActive && SummerHeat.HeatFactor > 0f;

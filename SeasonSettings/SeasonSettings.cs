@@ -234,14 +234,14 @@ namespace Seasons
         private static void ReadConfigs(object sender, FileSystemEventArgs eargs)
         {
             ReadConfigFile(eargs.Name, eargs.FullPath);
-            if (eargs is RenamedEventArgs)
+            if (eargs is RenamedEventArgs renamed)
             {
-                if (GetSyncedValueToAssign((eargs as RenamedEventArgs).OldName, out CustomSyncedValue<string> syncedValue, out string logMessage))
+                if (GetSyncedValueToAssign(renamed.OldName, out CustomSyncedValue<string> syncedValue, out string logMessage))
                 {
                     syncedValue.AssignValueSafeIfChanged("");
                     LogInfo(logMessage + " defaults");
                 }
-                else if (TryGetSeasonByFilename(eargs.Name, out _))
+                else if (TryGetSeasonByFilename(renamed.OldName, out _))
                 {
                     ReadSeasonsSettings();
                 }
@@ -444,6 +444,7 @@ namespace Seasons
         private static void Postfix()
         {
             seasonState = new SeasonState(initialize: true);
+            SeasonalSnow.InitializePrefabs();
             Compatibility.EWDCompat.MarkWorldInitialized();
             SeasonSettings.SetupConfigWatcher(enabled: true);
             SeasonState.ReapplyEnvironmentStateAfterWorldInitialization();
@@ -458,6 +459,7 @@ namespace Seasons
             SeasonSettings.SetupConfigWatcher(enabled: false);
             SeasonState.ResetCurrentSeasonDay();
             SeasonState.ResetEnvironmentStateTracking();
+            SeasonalSnow.Reset();
             Compatibility.EWDCompat.ResetWorldState();
         }
     }
