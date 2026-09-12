@@ -522,7 +522,7 @@ namespace Seasons
                     m_alwaysDark = true,
                     m_psystems = "SnowStorm",
                     m_ambientLoop = "Wind_BlowingLoop3",
-                    m_snowBuildup = 0.4f
+                    m_snowBuildup = 0.2f
                 },
                 new SeasonEnvironment
                 {
@@ -534,7 +534,7 @@ namespace Seasons
                     m_alwaysDark = true,
                     m_psystems = "GroundMist,Snow,FogClouds",
                     m_ambientLoop = "Amb_DeepNorth_Loop_01",
-                    m_snowBuildup = 0.2f
+                    m_snowBuildup = 0.1f
                 },
                 new SeasonEnvironment
                 {
@@ -548,7 +548,7 @@ namespace Seasons
                     m_alwaysDark = true,
                     m_psystems = "SnowStorm",
                     m_ambientLoop = "Wind_BlowingLoop3",
-                    m_snowBuildup = 0.4f
+                    m_snowBuildup = 0.3f
                 },
                 new SeasonEnvironment
                 {
@@ -569,7 +569,7 @@ namespace Seasons
                     m_alwaysDark = true,
                     m_psystems = "Snow,GroundMist",
                     m_ambientLoop = "Amb_DeepNorth_Loop_01",
-                    m_snowBuildup = 0.2f
+                    m_snowBuildup = 0.1f
                 },
                 new SeasonEnvironment
                 {
@@ -605,7 +605,7 @@ namespace Seasons
                     m_alwaysDark = true,
                     m_psystems = "Snow,GroundMist",
                     m_ambientLoop = "Amb_DeepNorth_Loop_01",
-                    m_snowBuildup = 0.2f
+                    m_snowBuildup = 0.1f
                 },
                 new SeasonEnvironment
                 {
@@ -619,7 +619,7 @@ namespace Seasons
                     m_alwaysDark = true,
                     m_psystems = "SnowStorm,MistlandsThunder",
                     m_ambientLoop = "Wind_BlowingLoop3",
-                    m_snowBuildup = 0.4f
+                    m_snowBuildup = 0.2f
                 },
                 new SeasonEnvironment
                 {
@@ -631,7 +631,7 @@ namespace Seasons
                     m_alwaysDark = false,
                     m_psystems = "Snow,Darklands,GroundMist",
                     m_ambientLoop = "Amb_DeepNorth_Loop_01",
-                    m_snowBuildup = 0.2f
+                    m_snowBuildup = 0.1f
                },
                 new SeasonEnvironment
                 {

@@ -96,8 +96,12 @@ namespace Seasons
         public static ConfigEntry<float> secondsToFreezeForCropInWinter;
         public static ConfigEntry<bool> cultivatedGroundTurnsIntoDirtInWinter;
 
-        public static ConfigEntry<float> seasonalSnowMinBuildup;
-        public static ConfigEntry<float> seasonalSnowMaxBuildup;
+        public static ConfigEntry<bool> enableSeasonalSnow;
+        public static ConfigEntry<Vector2> seasonalSnowBuildup;
+        public static ConfigEntry<Vector2> reducedSeasonalSnowBuildup;
+        public static ConfigEntry<string> reducedSeasonalSnowPrefabs;
+        public static ConfigEntry<float> seasonalSnowAccumulationSpeed;
+        public static ConfigEntry<string> seasonalSnowClippingFixes;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -546,18 +550,26 @@ namespace Seasons
             overrideSeasonDay.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
             seasonDayOverrided.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
 
-            seasonalSnowMinBuildup = serverConfig("Season - Winter snow", "Minimum snow buildup", defaultValue: 0.3f,
-                new ConfigDescription("Minimum visible seasonal snow buildup outside Deep North. Any positive snow added by Seasons is clamped to at least this value.",
-                    new AcceptableValueRange<float>(0f, 1f),
-                    new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            seasonalSnowMaxBuildup = serverConfig("Season - Winter snow", "Maximum snow buildup", defaultValue: 0.95f,
-                new ConfigDescription("Maximum seasonal snow buildup outside Deep North.",
-                    new AcceptableValueRange<float>(0f, 1f),
-                    new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            enableSeasonalSnow = serverConfig("Season - Winter snow", "Enable seasonal snow", defaultValue: true,
+                "Enable seasonal snow buildup on supported pieces outside Deep North.");
+            seasonalSnowBuildup = serverConfig("Season - Winter snow", "Snow buildup", defaultValue: new Vector2(0.4f, 0.99f),
+                "Minimum and maximum seasonal snow buildup for supported pieces outside Deep North. Values are clamped to 0..1 and the smaller value is used as minimum. The applied maximum is limited to 0.99 to prevent vanilla heavy snow damage.");
+            reducedSeasonalSnowBuildup = serverConfig("Season - Winter snow", "Reduced snow buildup", defaultValue: new Vector2(0.3f, 0.6f),
+                "Alternative minimum and maximum seasonal snow buildup intended for flat pieces where a thick snow mesh looks unnatural.");
+            reducedSeasonalSnowPrefabs = serverConfig("Season - Winter snow", "Reduced snow buildup prefabs", defaultValue: "wood_floor_1x1,wood_floor,wood_stair,wood_stepladder,stone_floor_2x2,stone_stair,blackmarble_2x2x2,blackmarble_floor,blackmarble_floor_triangle,blackmarble_stair,piece_dvergr_spiralstair,piece_dvergr_spiralstair_right,ashwood_floor_1x1,ashwood_floor_2x2,ashwood_deco_floor,ashwood_stair,Piece_grausten_floor_1x1,Piece_grausten_floor_2x2,Piece_grausten_floor_4x4,Piece_grausten_stone_ladder",
+                "Comma-separated prefab names that use Reduced snow buildup instead of Snow buildup.");
+            seasonalSnowAccumulationSpeed = serverConfig("Season - Winter snow", "Snow accumulation speed", defaultValue: 1f,
+                "Multiplier for seasonal snow accumulation from weather. 1 is the default rate, 0 disables accumulation above the configured minimum.");
+            seasonalSnowClippingFixes = clientConfig("Season - Winter snow", "Fix snow clipping through some pieces", defaultValue: "wood_floor:-0.19;stone_arch:0.46;Piece_grausten_floor_4x4:-0.02;ashwood_stair:0.90;stone_floor_2x2:0.23;blackmarble_2x2x2:0.73;blackmarble_floor:0.23",
+                "Semicolon-separated prefab:localY entries that set the local Y position of snow meshes for pieces where the vanilla snow mesh clips through the model.");
 
-            EventHandler seasonalSnowBuildupChanged = (sender, args) => SeasonalSnow.OnBuildupConfigChanged();
-            seasonalSnowMinBuildup.SettingChanged += seasonalSnowBuildupChanged;
-            seasonalSnowMaxBuildup.SettingChanged += seasonalSnowBuildupChanged;
+            enableSeasonalSnow.SettingChanged += (sender, args) => SeasonalSnow.OnEnabledConfigChanged();
+            seasonalSnowBuildup.SettingChanged += (sender, args) => SeasonalSnow.OnSnowRangeConfigChanged();
+            reducedSeasonalSnowBuildup.SettingChanged += (sender, args) => SeasonalSnow.OnSnowRangeConfigChanged();
+            reducedSeasonalSnowPrefabs.SettingChanged += (sender, args) => SeasonalSnow.OnReducedSnowPrefabsConfigChanged();
+            seasonalSnowAccumulationSpeed.SettingChanged += (sender, args) => SeasonalSnow.OnAccumulationSpeedConfigChanged();
+            seasonalSnowClippingFixes.SettingChanged += (sender, args) => SeasonalSnow.OnSnowClippingFixConfigChanged();
+            SeasonalSnow.RebuildReducedSnowBuildupPrefabs();
 
             enableFrozenWater = serverConfig("Season - Winter ocean", "Enable frozen water", defaultValue: true, "Enable frozen water in winter");
             waterFreezesInWinterDays = serverConfig("Season - Winter ocean", "Freeze the water at given days from to", defaultValue: new Vector2(6f, 9f), "Water will freeze in the first set day of winter and will be unfrozen after second set day");

@@ -382,6 +382,9 @@ namespace Seasons
             if (!SeasonState.IsActive)
                 return;
 
+            // Feature disabled until 1.0 extensive tests
+            return;
+
             if (reduceSnowStormInWinter.Value == Vector2.zero || Player.m_localPlayer == null)
             {
                 RestoreSnowStorm();

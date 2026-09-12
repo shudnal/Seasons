@@ -1,6 +1,7 @@
 ﻿using HarmonyLib;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
@@ -10,24 +11,24 @@ using static Seasons.Seasons;
 
 namespace Seasons
 {
-    [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateWear))]
     public static class SeasonalSnow
     {
 
-        public const float DefaultMinimumSnowBuildup = 0.3f;
-        public const float DefaultMaximumSnowBuildup = 0.95f;
-        public const float PredictedWearUpdateDelta = 0.02f;
+        public static readonly Vector2 DefaultSnowBuildup = new Vector2(0.4f, 0.99f);
+        public static readonly Vector2 DefaultReducedSnowBuildup = new Vector2(0.3f, 0.6f);
+        public const float PredictedWearUpdateDelta = 0.01f;
+        public const float SeasonalSnowHardMaximum = 0.99f;
         private const float SnowChangeEpsilon = 0.0001f;
 
         public sealed class BiomeSnowTimeline
         {
             public readonly float[] snowBuildup;
-            public readonly float[] cumulativeSnow;
+            public readonly float[] cumulativeSnowGain;
 
             public BiomeSnowTimeline(int periods)
             {
                 snowBuildup = new float[periods];
-                cumulativeSnow = new float[periods];
+                cumulativeSnowGain = new float[periods];
             }
         }
 
@@ -37,10 +38,44 @@ namespace Seasons
             public float snowBefore;
         }
 
+        private sealed class SnowCoverageState
+        {
+            public float nextCheckTime;
+        }
+
+        private sealed class SnowMeshLocalYState
+        {
+            public readonly bool hasSnow;
+            public readonly float snow;
+            public readonly bool hasSnowWorn;
+            public readonly float snowWorn;
+            public readonly bool hasSnowBroken;
+            public readonly float snowBroken;
+
+            public SnowMeshLocalYState(WearNTear instance)
+            {
+                hasSnow = instance != null && instance.m_snow;
+                snow = hasSnow ? instance.m_snow.transform.localPosition.y : 0f;
+                hasSnowWorn = instance != null && instance.m_snowWorn;
+                snowWorn = hasSnowWorn ? instance.m_snowWorn.transform.localPosition.y : 0f;
+                hasSnowBroken = instance != null && instance.m_snowBroken;
+                snowBroken = hasSnowBroken ? instance.m_snowBroken.transform.localPosition.y : 0f;
+            }
+        }
+
         private static ConditionalWeakTable<WearNTear, object> SeasonalSnowInitialized =
             new ConditionalWeakTable<WearNTear, object>();
+        private static ConditionalWeakTable<WearNTear, SnowCoverageState> SeasonalSnowCoverageChecks =
+            new ConditionalWeakTable<WearNTear, SnowCoverageState>();
 
         public static readonly HashSet<int> SeasonalSnowPrefabs = new HashSet<int>();
+        public static readonly HashSet<int> ReducedSnowBuildupPrefabs = new HashSet<int>();
+        public static readonly HashSet<string> ReducedSnowBuildupPrefabNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public static readonly Dictionary<string, float> SnowMeshLocalYByPrefabName =
+            new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<int, float> SnowMeshLocalYByPrefab = new Dictionary<int, float>();
+        private static readonly Dictionary<int, SnowMeshLocalYState> OriginalSnowMeshLocalYByPrefab =
+            new Dictionary<int, SnowMeshLocalYState>();
         public static readonly Dictionary<Heightmap.Biome, BiomeSnowTimeline> SeasonalSnowTimelines =
             new Dictionary<Heightmap.Biome, BiomeSnowTimeline>();
         public static readonly Dictionary<Heightmap.Biome, List<EnvEntry>> SeasonalSnowEnvironments =
@@ -57,8 +92,12 @@ namespace Seasons
         public static double TimelineEndSeconds => seasonalSnowTimelineEndSeconds;
         public static long FirstEnvironmentPeriod => seasonalSnowFirstEnvironmentPeriod;
         public static long EnvironmentDuration => seasonalSnowEnvironmentDuration;
-        public static float MinimumSnowBuildup => Mathf.Min(GetConfiguredMinimumSnowBuildup(), GetConfiguredMaximumSnowBuildup());
-        public static float MaximumSnowBuildup => Mathf.Max(GetConfiguredMinimumSnowBuildup(), GetConfiguredMaximumSnowBuildup());
+        public static bool Enabled => enableSeasonalSnow?.Value ?? true;
+        public static float SnowAccumulationSpeed => Mathf.Max(0f, seasonalSnowAccumulationSpeed?.Value ?? 1f);
+        public static float MinimumSnowBuildup => GetSnowBuildupRange().x;
+        public static float MaximumSnowBuildup => GetSnowBuildupRange().y;
+        public static float ReducedMinimumSnowBuildup => GetReducedSnowBuildupRange().x;
+        public static float ReducedMaximumSnowBuildup => GetReducedSnowBuildupRange().y;
 
         private static readonly MethodInfo UpdateBiomeMethod =
             AccessTools.Method(typeof(WearNTear), nameof(WearNTear.UpdateBiome));
@@ -78,7 +117,10 @@ namespace Seasons
         public static void InitializePrefabs()
         {
             SeasonalSnowPrefabs.Clear();
+            SnowMeshLocalYByPrefab.Clear();
+            OriginalSnowMeshLocalYByPrefab.Clear();
             seasonalSnowPrefabsInitialized = false;
+            ParseSnowMeshLocalYConfig();
 
             if (ZNetScene.instance?.m_prefabs == null)
                 return;
@@ -92,17 +134,31 @@ namespace Seasons
                 if (!wearNTear || !wearNTear.m_snow)
                     continue;
 
-                SeasonalSnowPrefabs.Add(ZNetScene.instance.GetPrefabHash(prefab));
+                int prefabHash = ZNetScene.instance.GetPrefabHash(prefab);
+                SeasonalSnowPrefabs.Add(prefabHash);
+                OriginalSnowMeshLocalYByPrefab[prefabHash] = new SnowMeshLocalYState(wearNTear);
+
+                if (SnowMeshLocalYByPrefabName.TryGetValue(prefab.name, out float localY))
+                    SnowMeshLocalYByPrefab[prefabHash] = localY;
+
+                ApplySnowMeshLocalY(wearNTear, prefabHash, prefab.name);
             }
 
             seasonalSnowPrefabsInitialized = true;
+            RebuildReducedSnowBuildupPrefabs();
             LogInfo($"Seasonal snow support initialized for {SeasonalSnowPrefabs.Count} prefab(s)");
         }
 
         public static void Reset()
         {
             SeasonalSnowInitialized = new ConditionalWeakTable<WearNTear, object>();
+            SeasonalSnowCoverageChecks = new ConditionalWeakTable<WearNTear, SnowCoverageState>();
             SeasonalSnowPrefabs.Clear();
+            ReducedSnowBuildupPrefabs.Clear();
+            ReducedSnowBuildupPrefabNames.Clear();
+            SnowMeshLocalYByPrefabName.Clear();
+            SnowMeshLocalYByPrefab.Clear();
+            OriginalSnowMeshLocalYByPrefab.Clear();
             SeasonalSnowTimelines.Clear();
             SeasonalSnowEnvironments.Clear();
             seasonalSnowPrefabsInitialized = false;
@@ -204,6 +260,152 @@ namespace Seasons
             return setup?.m_snowBuildup ?? 0f;
         }
 
+        public static void RebuildReducedSnowBuildupPrefabs()
+        {
+            ReducedSnowBuildupPrefabs.Clear();
+            ReducedSnowBuildupPrefabNames.Clear();
+
+            string value = reducedSeasonalSnowPrefabs?.Value ?? String.Empty;
+            foreach (string rawName in value.Split(','))
+            {
+                string prefabName = rawName.Trim();
+                if (String.IsNullOrWhiteSpace(prefabName))
+                    continue;
+
+                ReducedSnowBuildupPrefabNames.Add(prefabName);
+                ReducedSnowBuildupPrefabs.Add(prefabName.GetStableHashCode());
+            }
+
+            if (ZNetScene.instance?.m_prefabs == null || ReducedSnowBuildupPrefabNames.Count == 0)
+                return;
+
+            foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
+            {
+                if (!prefab || !ReducedSnowBuildupPrefabNames.Contains(prefab.name))
+                    continue;
+
+                ReducedSnowBuildupPrefabs.Add(ZNetScene.instance.GetPrefabHash(prefab));
+            }
+        }
+
+        private static void ParseSnowMeshLocalYConfig()
+        {
+            SnowMeshLocalYByPrefabName.Clear();
+
+            string value = seasonalSnowClippingFixes?.Value ?? String.Empty;
+            foreach (string rawEntry in value.Split(';'))
+            {
+                string entry = rawEntry.Trim();
+                if (String.IsNullOrWhiteSpace(entry))
+                    continue;
+
+                int separator = entry.LastIndexOf(':');
+                if (separator <= 0 || separator >= entry.Length - 1)
+                {
+                    LogWarning($"Invalid seasonal snow clipping fix entry '{entry}'. Expected prefab:localY.");
+                    continue;
+                }
+
+                string prefabName = entry.Substring(0, separator).Trim();
+                string localYText = entry.Substring(separator + 1).Trim();
+                if (String.IsNullOrWhiteSpace(prefabName) ||
+                    !Single.TryParse(localYText, NumberStyles.Float, CultureInfo.InvariantCulture, out float localY))
+                {
+                    LogWarning($"Invalid seasonal snow clipping fix entry '{entry}'. Expected prefab:localY.");
+                    continue;
+                }
+
+                SnowMeshLocalYByPrefabName[prefabName] = localY;
+            }
+        }
+
+        private static void SetSnowRendererLocalY(MeshRenderer renderer, float localY)
+        {
+            if (!renderer)
+                return;
+
+            Vector3 localPosition = renderer.transform.localPosition;
+            if (Mathf.Approximately(localPosition.y, localY))
+                return;
+
+            localPosition.y = localY;
+            renderer.transform.localPosition = localPosition;
+        }
+
+        private static void ApplySnowMeshLocalY(WearNTear instance, int prefabHash, string prefabName)
+        {
+            if (!instance || !OriginalSnowMeshLocalYByPrefab.TryGetValue(prefabHash, out SnowMeshLocalYState original))
+                return;
+
+            bool hasOverride = SnowMeshLocalYByPrefab.TryGetValue(prefabHash, out float configuredY) ||
+                (!String.IsNullOrWhiteSpace(prefabName) && SnowMeshLocalYByPrefabName.TryGetValue(prefabName, out configuredY));
+
+            if (original.hasSnow)
+                SetSnowRendererLocalY(instance.m_snow, hasOverride ? configuredY : original.snow);
+            if (original.hasSnowWorn)
+                SetSnowRendererLocalY(instance.m_snowWorn, hasOverride ? configuredY : original.snowWorn);
+            if (original.hasSnowBroken)
+                SetSnowRendererLocalY(instance.m_snowBroken, hasOverride ? configuredY : original.snowBroken);
+        }
+
+        private static void ApplySnowMeshLocalY(WearNTear instance)
+        {
+            if (!instance || instance.m_nview == null || !instance.m_nview.IsValid())
+                return;
+
+            ZDO zdo = instance.m_nview.GetZDO();
+            if (zdo == null)
+                return;
+
+            ApplySnowMeshLocalY(instance, zdo.GetPrefab(), Utils.GetPrefabName(instance.gameObject));
+        }
+
+        public static void RebuildSnowMeshLocalYFixes()
+        {
+            ParseSnowMeshLocalYConfig();
+            SnowMeshLocalYByPrefab.Clear();
+
+            if (ZNetScene.instance?.m_prefabs != null)
+            {
+                foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
+                {
+                    if (!prefab)
+                        continue;
+
+                    WearNTear wearNTear = prefab.GetComponent<WearNTear>();
+                    if (!wearNTear || !wearNTear.m_snow)
+                        continue;
+
+                    int prefabHash = ZNetScene.instance.GetPrefabHash(prefab);
+                    if (!OriginalSnowMeshLocalYByPrefab.ContainsKey(prefabHash))
+                        OriginalSnowMeshLocalYByPrefab[prefabHash] = new SnowMeshLocalYState(wearNTear);
+
+                    if (SnowMeshLocalYByPrefabName.TryGetValue(prefab.name, out float localY))
+                        SnowMeshLocalYByPrefab[prefabHash] = localY;
+
+                    ApplySnowMeshLocalY(wearNTear, prefabHash, prefab.name);
+                }
+            }
+
+            foreach (WearNTear wearNTear in WearNTear.GetAllInstances().ToArray())
+                ApplySnowMeshLocalY(wearNTear);
+        }
+
+        public static bool UsesReducedSnowBuildup(WearNTear instance)
+        {
+            if (!instance)
+                return false;
+
+            if (instance.m_nview != null && instance.m_nview.IsValid())
+            {
+                ZDO zdo = instance.m_nview.GetZDO();
+                if (zdo != null && ReducedSnowBuildupPrefabs.Contains(zdo.GetPrefab()))
+                    return true;
+            }
+
+            return ReducedSnowBuildupPrefabNames.Contains(Utils.GetPrefabName(instance.gameObject));
+        }
+
         public static bool SupportsSeasonalSnow(WearNTear instance)
         {
             if (!instance || !instance.m_snow || instance.m_nview == null || !instance.m_nview.IsValid())
@@ -222,6 +424,7 @@ namespace Seasons
         public static bool IsSeasonalSnowPosition(WearNTear instance)
         {
             return SeasonState.IsActive
+                && Enabled
                 && controlEnvironments.Value
                 && seasonState.GetCurrentSeason() == Season.Winter
                 && SupportsSeasonalSnow(instance)
@@ -277,22 +480,47 @@ namespace Seasons
             instance.m_nview.GetZDO().Set(SeasonsVars.s_seasonalSnowWatermark, true);
         }
 
-        private static float GetConfiguredMinimumSnowBuildup()
+        private static Vector2 NormalizeSnowBuildupRange(Vector2 configured)
         {
-            return Mathf.Clamp01(seasonalSnowMinBuildup?.Value ?? DefaultMinimumSnowBuildup);
+            float first = Mathf.Clamp01(configured.x);
+            float second = Mathf.Clamp01(configured.y);
+            float minimum = Mathf.Min(first, second);
+            float maximum = Mathf.Min(Mathf.Max(first, second), SeasonalSnowHardMaximum);
+
+            if (minimum > maximum)
+                minimum = maximum;
+
+            return new Vector2(minimum, maximum);
         }
 
-        private static float GetConfiguredMaximumSnowBuildup()
+        public static Vector2 GetSnowBuildupRange()
         {
-            return Mathf.Clamp01(seasonalSnowMaxBuildup?.Value ?? DefaultMaximumSnowBuildup);
+            return NormalizeSnowBuildupRange(seasonalSnowBuildup?.Value ?? DefaultSnowBuildup);
+        }
+
+        public static Vector2 GetReducedSnowBuildupRange()
+        {
+            return NormalizeSnowBuildupRange(reducedSeasonalSnowBuildup?.Value ?? DefaultReducedSnowBuildup);
+        }
+
+        public static Vector2 GetSnowBuildupRange(WearNTear instance)
+        {
+            return UsesReducedSnowBuildup(instance) ? GetReducedSnowBuildupRange() : GetSnowBuildupRange();
+        }
+
+        private static float ClampSnowBuildup(float value, Vector2 range)
+        {
+            return Mathf.Clamp(value, range.x, range.y);
         }
 
         public static float ClampSnowBuildup(float value)
         {
-            if (value <= 0f)
-                return 0f;
+            return ClampSnowBuildup(value, GetSnowBuildupRange());
+        }
 
-            return Mathf.Clamp(value, MinimumSnowBuildup, MaximumSnowBuildup);
+        public static float ClampSnowBuildup(WearNTear instance, float value)
+        {
+            return ClampSnowBuildup(value, GetSnowBuildupRange(instance));
         }
 
         private static void SetSnowBuildup(WearNTear instance, float value, bool markSeasonalSnow)
@@ -300,7 +528,7 @@ namespace Seasons
             if (!instance)
                 return;
 
-            value = markSeasonalSnow ? ClampSnowBuildup(value) : Mathf.Clamp01(value);
+            value = markSeasonalSnow ? ClampSnowBuildup(instance, value) : Mathf.Clamp01(value);
             instance.m_snowBuildup = value;
 
             if (CanOwnSnowState(instance))
@@ -346,7 +574,7 @@ namespace Seasons
             // deterministic frame-delta approximation so the predicted history is the
             // same on every peer. Keep it isolated for in-game REPL calibration.
             float wearUpdates = (float)(seconds / WearNTearUpdater.c_WearNTearTime);
-            return snowBuildup * wearUpdates * PredictedWearUpdateDelta * Game.instance.m_snowBuildupSpeed;
+            return snowBuildup * wearUpdates * PredictedWearUpdateDelta * Game.instance.m_snowBuildupSpeed * SnowAccumulationSpeed;
         }
 
         public static void RefreshWeatherTimeline()
@@ -357,7 +585,7 @@ namespace Seasons
             seasonalSnowFirstEnvironmentPeriod = 0L;
             seasonalSnowEnvironmentDuration = 1L;
 
-            if (!SeasonState.IsActive || seasonState.GetCurrentSeason() != Season.Winter ||
+            if (!SeasonState.IsActive || !Enabled || seasonState.GetCurrentSeason() != Season.Winter ||
                 EnvMan.instance == null || ZNet.instance == null || Game.instance == null ||
                 SeasonalSnowEnvironments.Count == 0)
                 return;
@@ -398,7 +626,7 @@ namespace Seasons
                     continue;
 
                 BiomeSnowTimeline timeline = new BiomeSnowTimeline(periodCount);
-                float cumulative = 0f;
+                float cumulativeGain = 0f;
 
                 UnityEngine.Random.State randomState = UnityEngine.Random.state;
                 try
@@ -416,10 +644,10 @@ namespace Seasons
                         double overlapStart = Math.Max(periodStart, seasonalSnowTimelineStartSeconds);
                         double overlapEnd = Math.Min(periodEnd, seasonalSnowTimelineEndSeconds);
 
-                        cumulative = ClampSnowBuildup(
-                            cumulative + GetPredictedSnowGain(snowBuildup, Math.Max(0d, overlapEnd - overlapStart)));
+                        cumulativeGain += GetPredictedSnowGain(
+                            snowBuildup, Math.Max(0d, overlapEnd - overlapStart));
 
-                        timeline.cumulativeSnow[i] = cumulative;
+                        timeline.cumulativeSnowGain[i] = Mathf.Max(0f, cumulativeGain);
                     }
                 }
                 finally
@@ -459,11 +687,13 @@ namespace Seasons
             return PredictSnowBuildup(biome, environmentPeriod);
         }
 
-        public static float GetPassiveSeasonalSnowTarget(Heightmap.Biome biome)
+        private static float GetPassiveSeasonalSnowGain(Heightmap.Biome biome)
         {
-            if (ZNet.instance == null ||
-                !SeasonalSnowTimelines.TryGetValue(biome, out BiomeSnowTimeline timeline) ||
-                timeline.cumulativeSnow.Length == 0)
+            if (ZNet.instance == null)
+                return 0f;
+
+            if (!SeasonalSnowTimelines.TryGetValue(biome, out BiomeSnowTimeline timeline) ||
+                timeline.cumulativeSnowGain.Length == 0)
                 return 0f;
 
             double seconds = ZNet.instance.GetTimeSeconds();
@@ -471,18 +701,18 @@ namespace Seasons
                 return 0f;
 
             if (seconds >= seasonalSnowTimelineEndSeconds)
-                return timeline.cumulativeSnow[timeline.cumulativeSnow.Length - 1];
+                return timeline.cumulativeSnowGain[timeline.cumulativeSnowGain.Length - 1];
 
             long environmentPeriod = (long)seconds / seasonalSnowEnvironmentDuration;
             long indexLong = environmentPeriod - seasonalSnowFirstEnvironmentPeriod;
             if (indexLong < 0L)
                 return 0f;
 
-            if (indexLong >= timeline.cumulativeSnow.Length)
-                return timeline.cumulativeSnow[timeline.cumulativeSnow.Length - 1];
+            if (indexLong >= timeline.cumulativeSnowGain.Length)
+                return timeline.cumulativeSnowGain[timeline.cumulativeSnowGain.Length - 1];
 
             int index = (int)indexLong;
-            float previous = index > 0 ? timeline.cumulativeSnow[index - 1] : 0f;
+            float previousGain = index > 0 ? timeline.cumulativeSnowGain[index - 1] : 0f;
             double periodStart = environmentPeriod * (double)seasonalSnowEnvironmentDuration;
             double overlapStart = Math.Max(periodStart, seasonalSnowTimelineStartSeconds);
             double overlapEnd = Math.Min(seconds, seasonalSnowTimelineEndSeconds);
@@ -490,7 +720,23 @@ namespace Seasons
                 timeline.snowBuildup[index],
                 Math.Max(0d, overlapEnd - overlapStart));
 
-            return ClampSnowBuildup(previous + partial);
+            return Mathf.Max(0f, previousGain + partial);
+        }
+
+        public static float GetPassiveSeasonalSnowTarget(Heightmap.Biome biome)
+        {
+            Vector2 range = GetSnowBuildupRange();
+            return ClampSnowBuildup(range.x + GetPassiveSeasonalSnowGain(biome), range);
+        }
+
+        public static float GetPassiveSeasonalSnowTarget(WearNTear instance)
+        {
+            if (!instance)
+                return 0f;
+
+            Heightmap.Biome biome = GetBiome(instance);
+            Vector2 range = GetSnowBuildupRange(instance);
+            return ClampSnowBuildup(range.x + GetPassiveSeasonalSnowGain(biome), range);
         }
 
         private static float GetSeasonalSnowBuildup(EnvMan environmentManager, WearNTear instance)
@@ -507,7 +753,7 @@ namespace Seasons
 
             return GetPredictedSnowBuildup(
                 biome,
-                ZNet.instance != null ? ZNet.instance.GetTimeSeconds() : environmentManager.m_totalSeconds);
+                ZNet.instance != null ? ZNet.instance.GetTimeSeconds() : environmentManager.m_totalSeconds) * SnowAccumulationSpeed;
         }
 
         private static bool IsSeasonalSnowInitialized(WearNTear instance)
@@ -520,10 +766,10 @@ namespace Seasons
             SeasonalSnowInitialized.GetValue(instance, _ => new object());
         }
 
-        private static void TryApplyPassiveSeasonalSnow(WearNTear instance)
+        private static void TryApplyPassiveSeasonalSnow(WearNTear instance, bool forceTarget = false)
         {
             if (!SeasonState.IsActive || !CanOwnSnowState(instance) || !SupportsSeasonalSnow(instance) ||
-                IsSeasonalSnowInitialized(instance))
+                (!forceTarget && IsSeasonalSnowInitialized(instance)))
                 return;
 
             if (ZNetScene.instance == null || !ZNetScene.instance.IsAreaReady(instance.transform.position))
@@ -541,8 +787,8 @@ namespace Seasons
             if (!instance.CanHaveSnow(forceCover: true))
                 return;
 
-            float target = GetPassiveSeasonalSnowTarget(biome);
-            if (instance.m_snowBuildup < target)
+            float target = GetPassiveSeasonalSnowTarget(instance);
+            if (forceTarget ? !Mathf.Approximately(instance.m_snowBuildup, target) : instance.m_snowBuildup < target)
                 SetSnowBuildup(instance, target, markSeasonalSnow: true);
         }
 
@@ -558,13 +804,109 @@ namespace Seasons
             return true;
         }
 
-        public static void OnBuildupConfigChanged()
+        private static bool IsSnowBlocked(WearNTear instance)
         {
-            RefreshWeatherTimeline();
-            UpdateLoadedSnowCover();
+            if (!instance)
+                return true;
+
+            SnowCoverageState state = SeasonalSnowCoverageChecks.GetValue(instance, _ => new SnowCoverageState());
+            if (Time.time < state.nextCheckTime)
+                return false;
+
+            state.nextCheckTime = Time.time + 5f;
+
+            // This mirrors the old seasonal recolor coverage check: refresh roof state on
+            // our own cadence instead of waiting for WearNTear's much slower cover timer.
+            bool haveRoof = instance.HaveRoof();
+            instance.m_haveRoof = haveRoof;
+            if (haveRoof)
+                return true;
+
+            return ShieldGenerator.IsInsideShieldCached(instance.transform.position, ref instance.m_shieldChangeID);
         }
 
-        public static void UpdateLoadedSnowCover()
+        private static void TryInitializeSeasonalSnowOnStart(WearNTear instance)
+        {
+            if (instance)
+                SeasonalSnowCoverageChecks.Remove(instance);
+
+            if (!CanOwnSnowState(instance) || !SupportsSeasonalSnow(instance) || IsDeepNorth(instance) ||
+                !IsSeasonalSnowPosition(instance) || instance.m_snowBuildup > SnowChangeEpsilon)
+                return;
+
+            // Start is early enough to avoid visibly popping snow in when approaching a structure.
+            // Deliberately ignore roof state here because surrounding pieces may not be loaded yet.
+            // Shields do not depend on roof geometry, so respect an already active shield when available.
+            if (ShieldGenerator.IsInsideShieldCached(instance.transform.position, ref instance.m_shieldChangeID))
+                return;
+
+            float target = GetPassiveSeasonalSnowTarget(instance);
+            if (target <= SnowChangeEpsilon)
+                return;
+
+            SetSnowBuildup(instance, target, markSeasonalSnow: true);
+            MarkSeasonalSnowInitialized(instance);
+        }
+
+        private static bool TryClearCoveredSeasonalSnow(WearNTear instance)
+        {
+            if (!CanOwnSnowState(instance) || !HasSeasonalSnowMarker(instance) || IsDeepNorth(instance) ||
+                instance.m_snowBuildup <= SnowChangeEpsilon)
+                return false;
+
+            if (!IsSeasonalSnowPosition(instance))
+                return TryClearInvalidSeasonalSnow(instance);
+
+            if (!IsSnowBlocked(instance))
+                return false;
+
+            // Once a piece becomes covered, do not restore historical snowfall if it is
+            // uncovered later during the same load. From that point it accumulates only live snow.
+            MarkSeasonalSnowInitialized(instance);
+            SetSnowBuildup(instance, 0f, markSeasonalSnow: false);
+            return true;
+        }
+
+        public static void OnEnabledConfigChanged()
+        {
+            SeasonalSnowInitialized = new ConditionalWeakTable<WearNTear, object>();
+            SeasonalSnowCoverageChecks = new ConditionalWeakTable<WearNTear, SnowCoverageState>();
+
+            if (!Enabled)
+            {
+                SeasonalSnowTimelines.Clear();
+                ClearServerSeasonalSnowZDOs();
+                ClearLoadedSeasonalSnow();
+                return;
+            }
+
+            RefreshWeatherTimeline();
+            UpdateLoadedSnowCover(forceTarget: true);
+        }
+
+        public static void OnSnowRangeConfigChanged()
+        {
+            UpdateLoadedSnowCover(forceTarget: true);
+        }
+
+        public static void OnReducedSnowPrefabsConfigChanged()
+        {
+            RebuildReducedSnowBuildupPrefabs();
+            UpdateLoadedSnowCover(forceTarget: true);
+        }
+
+        public static void OnAccumulationSpeedConfigChanged()
+        {
+            RefreshWeatherTimeline();
+            UpdateLoadedSnowCover(forceTarget: true);
+        }
+
+        public static void OnSnowClippingFixConfigChanged()
+        {
+            RebuildSnowMeshLocalYFixes();
+        }
+
+        public static void UpdateLoadedSnowCover(bool forceTarget = false)
         {
             if (!SeasonState.IsActive)
                 return;
@@ -575,6 +917,7 @@ namespace Seasons
                     continue;
 
                 SeasonalSnowInitialized.Remove(wearNTear);
+                SeasonalSnowCoverageChecks.Remove(wearNTear);
 
                 if (!CanOwnSnowState(wearNTear))
                 {
@@ -591,13 +934,16 @@ namespace Seasons
                 if (TryClearInvalidSeasonalSnow(wearNTear))
                     continue;
 
+                if (TryClearCoveredSeasonalSnow(wearNTear))
+                    continue;
+
                 if (IsSeasonalSnowPosition(wearNTear))
                 {
-                    TryApplyPassiveSeasonalSnow(wearNTear);
+                    TryApplyPassiveSeasonalSnow(wearNTear, forceTarget);
 
                     if (HasSeasonalSnowMarker(wearNTear) && wearNTear.m_snowBuildup > 0f)
                     {
-                        float clamped = ClampSnowBuildup(wearNTear.m_snowBuildup);
+                        float clamped = ClampSnowBuildup(wearNTear, wearNTear.m_snowBuildup);
                         if (!Mathf.Approximately(wearNTear.m_snowBuildup, clamped))
                         {
                             SetSnowBuildup(wearNTear, clamped, markSeasonalSnow: true);
@@ -618,6 +964,7 @@ namespace Seasons
                     continue;
 
                 SeasonalSnowInitialized.Remove(wearNTear);
+                SeasonalSnowCoverageChecks.Remove(wearNTear);
 
                 if (!CanOwnSnowState(wearNTear) || !HasSeasonalSnowMarker(wearNTear) || IsDeepNorth(wearNTear))
                     continue;
@@ -660,6 +1007,7 @@ namespace Seasons
             ClearLoadedSeasonalSnow();
 
             SeasonalSnowInitialized = new ConditionalWeakTable<WearNTear, object>();
+            SeasonalSnowCoverageChecks = new ConditionalWeakTable<WearNTear, SnowCoverageState>();
         }
 
         private static bool TryAddSeasonalSnowCondition(
@@ -744,33 +1092,73 @@ namespace Seasons
             return false;
         }
 
-        [HarmonyTranspiler]
-        private static IEnumerable<CodeInstruction> Transpiler(
-            IEnumerable<CodeInstruction> instructions,
-            ILGenerator generator)
+        [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateWear))]
+        private static class WearNTear_UpdateWear_SeasonalSnow
         {
-            List<CodeInstruction> codes = instructions.ToList();
-            bool snowConditionPatched = false;
-
-            for (int i = 0; i < codes.Count; ++i)
+            [HarmonyTranspiler]
+            private static IEnumerable<CodeInstruction> Transpiler(
+                IEnumerable<CodeInstruction> instructions,
+                ILGenerator generator)
             {
-                CodeInstruction instruction = codes[i];
+                List<CodeInstruction> codes = instructions.ToList();
+                bool snowConditionPatched = false;
 
-                if ((instruction.opcode != OpCodes.Call && instruction.opcode != OpCodes.Callvirt)
-                    || !Equals(instruction.operand, UpdateBiomeMethod))
-                    continue;
+                for (int i = 0; i < codes.Count; ++i)
+                {
+                    CodeInstruction instruction = codes[i];
 
-                snowConditionPatched = TryAddSeasonalSnowCondition(codes, i + 1, generator);
-                break;
+                    if ((instruction.opcode != OpCodes.Call && instruction.opcode != OpCodes.Callvirt)
+                        || !Equals(instruction.operand, UpdateBiomeMethod))
+                        continue;
+
+                    snowConditionPatched = TryAddSeasonalSnowCondition(codes, i + 1, generator);
+                    break;
+                }
+
+                if (!snowConditionPatched)
+                    LogWarning("Failed to patch WearNTear.UpdateWear seasonal snow condition.");
+
+                if (!TryReplaceSnowBuildupLookup(codes))
+                    LogWarning("Failed to patch WearNTear.UpdateWear seasonal snow buildup lookup.");
+
+                return codes;
             }
 
-            if (!snowConditionPatched)
-                LogWarning("Failed to patch WearNTear.UpdateWear seasonal snow condition.");
+            [HarmonyPrefix]
+            private static void Prefix(WearNTear __instance, ref UpdateWearState __state)
+            {
+                __state.snowBefore = __instance.m_snowBuildup;
+                __state.trackSeasonalSnow = CanOwnSnowState(__instance) && IsSeasonalSnowPosition(__instance);
+            }
 
-            if (!TryReplaceSnowBuildupLookup(codes))
-                LogWarning("Failed to patch WearNTear.UpdateWear seasonal snow buildup lookup.");
+            [HarmonyPostfix]
+            private static void Postfix(WearNTear __instance, UpdateWearState __state)
+            {
+                if (!CanOwnSnowState(__instance))
+                    return;
 
-            return codes;
+                if (TryClearInvalidSeasonalSnow(__instance))
+                    return;
+
+                bool seasonalSnowPosition = IsSeasonalSnowPosition(__instance) && !IsDeepNorth(__instance);
+                if (!seasonalSnowPosition)
+                    return;
+
+                if (__state.trackSeasonalSnow && __instance.m_snowBuildup > __state.snowBefore + SnowChangeEpsilon)
+                    MarkSeasonalSnow(__instance);
+
+                if (TryClearCoveredSeasonalSnow(__instance))
+                    return;
+
+                TryApplyPassiveSeasonalSnow(__instance);
+
+                if (HasSeasonalSnowMarker(__instance) && __instance.m_snowBuildup > 0f)
+                {
+                    float clamped = ClampSnowBuildup(__instance, __instance.m_snowBuildup);
+                    if (!Mathf.Approximately(__instance.m_snowBuildup, clamped))
+                        SetSnowBuildup(__instance, clamped, markSeasonalSnow: true);
+                }
+            }
         }
 
         [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateCover))]
@@ -787,6 +1175,12 @@ namespace Seasons
                     LogWarning("Failed to patch WearNTear.UpdateCover seasonal snow condition.");
 
                 return codes;
+            }
+
+            [HarmonyPostfix]
+            private static void Postfix(WearNTear __instance)
+            {
+                TryClearCoveredSeasonalSnow(__instance);
             }
         }
 
@@ -808,9 +1202,20 @@ namespace Seasons
                     return;
                 }
 
-                float clamped = ClampSnowBuildup(__instance.m_snowBuildup);
+                float clamped = ClampSnowBuildup(__instance, __instance.m_snowBuildup);
                 if (!Mathf.Approximately(__instance.m_snowBuildup, clamped))
                     SetSnowBuildup(__instance, clamped, markSeasonalSnow: true);
+            }
+        }
+
+        [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.Start))]
+        private static class WearNTear_Start_SeasonalSnow
+        {
+            [HarmonyPostfix]
+            private static void Postfix(WearNTear __instance)
+            {
+                ApplySnowMeshLocalY(__instance);
+                TryInitializeSeasonalSnowOnStart(__instance);
             }
         }
 
@@ -821,42 +1226,12 @@ namespace Seasons
             private static void Prefix(WearNTear __instance)
             {
                 if (__instance)
+                {
                     SeasonalSnowInitialized.Remove(__instance);
+                    SeasonalSnowCoverageChecks.Remove(__instance);
+                }
             }
         }
 
-        private static void Prefix(WearNTear __instance, ref UpdateWearState __state)
-        {
-            __state.snowBefore = __instance.m_snowBuildup;
-            __state.trackSeasonalSnow = CanOwnSnowState(__instance) && IsSeasonalSnowPosition(__instance);
-        }
-
-        private static void Postfix(WearNTear __instance, UpdateWearState __state)
-        {
-            if (!CanOwnSnowState(__instance))
-                return;
-
-            if (TryClearInvalidSeasonalSnow(__instance))
-                return;
-
-            bool seasonalSnowPosition = IsSeasonalSnowPosition(__instance) && !IsDeepNorth(__instance);
-            if (!seasonalSnowPosition)
-                return;
-
-            if (__state.trackSeasonalSnow && __instance.m_snowBuildup > __state.snowBefore + SnowChangeEpsilon)
-                MarkSeasonalSnow(__instance);
-
-            TryApplyPassiveSeasonalSnow(__instance);
-
-            if (HasSeasonalSnowMarker(__instance) && __instance.m_snowBuildup > 0f)
-            {
-                float clamped = ClampSnowBuildup(__instance.m_snowBuildup);
-                if (!Mathf.Approximately(__instance.m_snowBuildup, clamped))
-                    SetSnowBuildup(__instance, clamped, markSeasonalSnow: true);
-            }
-        }
-
-
-        
     }
 }
