@@ -228,6 +228,8 @@ namespace Seasons.Compatibility
                 foreach (AltBiome alternateBiome in biome.AltBiomes)
                     foreach (string blockedEnvironment in alternateBiome.m_blockEnvironments)
                         __result.RemoveAll(environment => environment.m_environment.Contains(blockedEnvironment));
+
+                SeasonalSnow.RegisterBiomeEnvironments(biome.Biome, __result);
             }
         }
     }

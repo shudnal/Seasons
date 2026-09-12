@@ -444,6 +444,7 @@ namespace Seasons
         private static void Postfix()
         {
             seasonState = new SeasonState(initialize: true);
+            SeasonalSnow.InitializePrefabs();
             Compatibility.EWDCompat.MarkWorldInitialized();
             SeasonSettings.SetupConfigWatcher(enabled: true);
             SeasonState.ReapplyEnvironmentStateAfterWorldInitialization();
@@ -458,6 +459,7 @@ namespace Seasons
             SeasonSettings.SetupConfigWatcher(enabled: false);
             SeasonState.ResetCurrentSeasonDay();
             SeasonState.ResetEnvironmentStateTracking();
+            SeasonalSnow.Reset();
             Compatibility.EWDCompat.ResetWorldState();
         }
     }

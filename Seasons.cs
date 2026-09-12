@@ -96,6 +96,9 @@ namespace Seasons
         public static ConfigEntry<float> secondsToFreezeForCropInWinter;
         public static ConfigEntry<bool> cultivatedGroundTurnsIntoDirtInWinter;
 
+        public static ConfigEntry<float> seasonalSnowMinBuildup;
+        public static ConfigEntry<float> seasonalSnowMaxBuildup;
+
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
         public static ConfigEntry<bool> enableIceFloes;
@@ -542,6 +545,19 @@ namespace Seasons
             seasonOverrided.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
             overrideSeasonDay.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
             seasonDayOverrided.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
+
+            seasonalSnowMinBuildup = serverConfig("Season - Winter snow", "Minimum snow buildup", defaultValue: 0.3f,
+                new ConfigDescription("Minimum visible seasonal snow buildup outside Deep North. Any positive snow added by Seasons is clamped to at least this value.",
+                    new AcceptableValueRange<float>(0f, 1f),
+                    new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+            seasonalSnowMaxBuildup = serverConfig("Season - Winter snow", "Maximum snow buildup", defaultValue: 0.95f,
+                new ConfigDescription("Maximum seasonal snow buildup outside Deep North.",
+                    new AcceptableValueRange<float>(0f, 1f),
+                    new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
+
+            EventHandler seasonalSnowBuildupChanged = (sender, args) => SeasonalSnow.OnBuildupConfigChanged();
+            seasonalSnowMinBuildup.SettingChanged += seasonalSnowBuildupChanged;
+            seasonalSnowMaxBuildup.SettingChanged += seasonalSnowBuildupChanged;
 
             enableFrozenWater = serverConfig("Season - Winter ocean", "Enable frozen water", defaultValue: true, "Enable frozen water in winter");
             waterFreezesInWinterDays = serverConfig("Season - Winter ocean", "Freeze the water at given days from to", defaultValue: new Vector2(6f, 9f), "Water will freeze in the first set day of winter and will be unfrozen after second set day");

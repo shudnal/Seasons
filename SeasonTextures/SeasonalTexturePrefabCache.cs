@@ -203,7 +203,7 @@ namespace Seasons
 
                 shaderOnlyMaterial = new Dictionary<string, string[]>
                 {
-                    { "Custom/Piece", new string[] { "straw", "RoofShingles", "beehive", "Midsummerpole_mat", "Pine_tree_xmas", "ReworkedValheim", "shipyardNewCloth", "M_Cloth_01", "bcp_clay", "Grausten_RoofSlab_mat" } },
+                    { "Custom/Piece", new string[] { "beehive", "Midsummerpole_mat", "Pine_tree_xmas", "ReworkedValheim", "shipyardNewCloth", "M_Cloth_01", "bcp_clay" } },
                     { "Custom/Creature", new string[] { "HildirsLox", "lox", "lox_calf",
                                                         "Draugr_Archer_mat", "Draugr_mat", "Draugr_elite_mat", "Abomination_mat",
                                                         "greyling", "greydwarf", "greydwarf_elite", "greydwarf_shaman", "neck" } },

@@ -352,21 +352,49 @@ namespace Seasons
         {
             RefreshBiomesDefault(forceUpdate: false);
 
-            if (Compatibility.EWDCompat.ShouldApplySeasonalRulesToAvailableEnvironments())
+            SeasonalSnow.BeginBiomeEnvironmentUpdate();
+            try
             {
+                foreach (string biomeEnvironmentDefault in biomesDefault.Values)
+                    RegisterSeasonalSnowBiomeEnvironment(biomeEnvironmentDefault);
+
+                if (Compatibility.EWDCompat.ShouldApplySeasonalRulesToAvailableEnvironments())
+                {
+                    RefreshBiomeEnvironmentReferences();
+                    UpdateCurrentEnvironment();
+                    return;
+                }
+
+                EnvMan.instance.m_biomes.Clear();
+
+                biomesDefault.Do(kvp => ChangeBiomeEnvironment(kvp.Value));
+
                 RefreshBiomeEnvironmentReferences();
                 UpdateCurrentEnvironment();
-                return;
+
+                Compatibility.EWDCompat.OnSeasonsBiomeSetupApplied();
+            }
+            finally
+            {
+                SeasonalSnow.EndBiomeEnvironmentUpdate();
             }
 
-            EnvMan.instance.m_biomes.Clear();
+            void RegisterSeasonalSnowBiomeEnvironment(string biomeEnvironmentDefault)
+            {
+                try
+                {
+                    BiomeEnvSetup biomeEnvironment =
+                        JsonUtility.FromJson<BiomeEnvSetup>(biomeEnvironmentDefault);
 
-            biomesDefault.Do(kvp => ChangeBiomeEnvironment(kvp.Value));
-
-            RefreshBiomeEnvironmentReferences();
-            UpdateCurrentEnvironment();
-
-            Compatibility.EWDCompat.OnSeasonsBiomeSetupApplied();
+                    List<EnvEntry> environments =
+                        ApplySeasonBiomeEnvironmentRules(biomeEnvironment.m_biome, biomeEnvironment.m_environments);
+                    SeasonalSnow.RegisterBiomeEnvironments(biomeEnvironment.m_biome, environments);
+                }
+                catch (Exception e)
+                {
+                    LogWarning($"Error preparing seasonal snow biome setup:\n{biomeEnvironmentDefault}\n{e}");
+                }
+            }
 
             void ChangeBiomeEnvironment(string biomeEnvironmentDefault)
             {
@@ -412,6 +440,7 @@ namespace Seasons
             }
 
             seasonState.UpdateUsingOfIngameDays();
+            SeasonalSnow.RefreshWeatherTimeline();
 
             seasonState.UpdateTorchesFireWarmth();
 
@@ -1320,7 +1349,8 @@ namespace Seasons
             UpdateWinterBloomEffect();
             ZoneSystemVariantController.UpdateWaterState();
             UpdateCurrentEnvironment();
-            SeasonStatePatches.WearNTear_UpdateWear_RainProtection.UpdateSeasonalSnowState();
+            SeasonalSnow.UpdateSeasonState();
+            SeasonalSnow.UpdateLoadedSnowCover();
 
             if (UseTextureControllers())
             {
@@ -1634,6 +1664,7 @@ namespace Seasons
             seasonState.UpdateGlobalKeys();
             seasonState.UpdateWinterBloomEffect();
             UpdateCurrentEnvironment();
+            SeasonalSnow.UpdateLoadedSnowCover();
         }
 
         internal static bool TorchHeatInBiome(Heightmap.Biome biome) => biome != Heightmap.Biome.Mountain && biome != Heightmap.Biome.DeepNorth && biome != Heightmap.Biome.AshLands;
