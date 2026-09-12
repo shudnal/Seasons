@@ -1,4 +1,4 @@
-using BepInEx;
+﻿using BepInEx;
 using HarmonyLib;
 using Newtonsoft.Json;
 using System;
@@ -1320,6 +1320,7 @@ namespace Seasons
             UpdateWinterBloomEffect();
             ZoneSystemVariantController.UpdateWaterState();
             UpdateCurrentEnvironment();
+            SeasonStatePatches.WearNTear_UpdateWear_RainProtection.UpdateSeasonalSnowState();
 
             if (UseTextureControllers())
             {

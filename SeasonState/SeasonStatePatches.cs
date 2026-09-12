@@ -553,6 +553,9 @@ namespace Seasons
         [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateWear))]
         public static class WearNTear_UpdateWear_RainProtection
         {
+            private const float SeasonalSnowMaxBuildup = 0.9f;
+            private const float PassiveSeasonalSnowMaxBuildup = 0.8f;
+
             private static readonly MethodInfo UpdateBiomeMethod =
                 AccessTools.Method(typeof(WearNTear), nameof(WearNTear.UpdateBiome));
 
@@ -567,6 +570,61 @@ namespace Seasons
                 return SeasonState.IsActive
                     && seasonState.GetCurrentSeason() == Season.Winter
                     && !IsIgnoredPosition(instance.transform.position);
+            }
+
+            private static bool IsDeepNorth(WearNTear instance)
+            {
+                if (instance.m_biome == Heightmap.Biome.None)
+                    instance.UpdateBiome();
+
+                if (instance.m_biome == Heightmap.Biome.DeepNorth)
+                    return true;
+
+                return WorldGenerator.instance != null
+                    && WorldGenerator.instance.GetBiome(instance.transform.position) == Heightmap.Biome.DeepNorth;
+            }
+
+            private static bool CanOwnSnowState(WearNTear instance)
+            {
+                return instance != null
+                    && instance.m_nview != null
+                    && instance.m_nview.IsValid()
+                    && instance.m_nview.IsOwner();
+            }
+
+            private static void SetSnowBuildup(WearNTear instance, float value)
+            {
+                value = Mathf.Clamp01(value);
+
+                if (Mathf.Approximately(instance.m_snowBuildup, value))
+                    return;
+
+                instance.m_snowBuildup = value;
+
+                if (CanOwnSnowState(instance))
+                    instance.m_nview.GetZDO().Set(ZDOVars.s_snow, value);
+
+                instance.UpdateSnowVisual();
+            }
+
+            private static float GetPassiveSeasonalSnowTarget()
+            {
+                int daysInWinter = Math.Max(1, seasonState.GetDaysInSeason(Season.Winter));
+                float winterProgress = Mathf.Clamp01((float)seasonState.GetCurrentDay() / daysInWinter);
+
+                return PassiveSeasonalSnowMaxBuildup * winterProgress;
+            }
+
+            public static void UpdateSeasonalSnowState()
+            {
+                foreach (WearNTear wearNTear in WearNTear.GetAllInstances())
+                {
+                    if (wearNTear == null || IsDeepNorth(wearNTear) || IsSeasonalSnowPosition(wearNTear))
+                        continue;
+
+                    if (wearNTear.m_snowBuildup > 0f)
+                        SetSnowBuildup(wearNTear, 0f);
+                }
             }
 
             private static bool TryAddSeasonalSnowCondition(
@@ -668,6 +726,38 @@ namespace Seasons
                 }
             }
 
+            [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.Awake))]
+            private static class WearNTear_Awake_SeasonalSnow
+            {
+                [HarmonyPostfix]
+                private static void Postfix(WearNTear __instance)
+                {
+                    if (!CanOwnSnowState(__instance))
+                        return;
+
+                    __instance.UpdateBiome();
+
+                    if (IsDeepNorth(__instance))
+                        return;
+
+                    if (!IsSeasonalSnowPosition(__instance))
+                    {
+                        if (__instance.m_snowBuildup > 0f)
+                            SetSnowBuildup(__instance, 0f);
+
+                        return;
+                    }
+
+                    float snowBuildup = Mathf.Min(__instance.m_snowBuildup, SeasonalSnowMaxBuildup);
+                    float target = GetPassiveSeasonalSnowTarget();
+
+                    if (snowBuildup < target)
+                        snowBuildup = target;
+
+                    SetSnowBuildup(__instance, snowBuildup);
+                }
+            }
+
             private static void Prefix(WearNTear __instance, ZNetView ___m_nview, ref bool ___m_noRoofWear, ref bool? __state)
             {
                 if (!seasonState.GetRainProtection())
@@ -681,6 +771,15 @@ namespace Seasons
 
                 __state = ___m_noRoofWear;
                 ___m_noRoofWear = false;
+            }
+
+            private static void Postfix(WearNTear __instance)
+            {
+                if (!CanOwnSnowState(__instance) || IsDeepNorth(__instance))
+                    return;
+
+                if (__instance.m_snowBuildup > SeasonalSnowMaxBuildup)
+                    SetSnowBuildup(__instance, SeasonalSnowMaxBuildup);
             }
 
             private static void Finalizer(ref bool ___m_noRoofWear, bool? __state)
