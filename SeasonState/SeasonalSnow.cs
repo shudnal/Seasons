@@ -19,9 +19,10 @@ namespace Seasons
         public const float PredictedWearUpdateDelta = 0.01f;
         public const float SeasonalSnowHardMaximum = 0.99f;
         private const float SnowChangeEpsilon = 0.0001f;
-        private const float SnowRpcStep = 0.01f;
+        private const float SnowRpcStep = 0.005f;
         private const float NearbyHeatDistance = 4f;
-        private const float DefaultCraftingStationMeltMultiplier = 5f;
+        private const float DefaultCraftingStationMeltMultiplier = 0.25f;
+        private const string CraftingStationMeltRpc = "RPC_Seasons_CraftingStationSnowMelt";
         private const double SnowTimeStampScale = 1000d;
 
         public sealed class BiomeSnowTimeline
@@ -137,10 +138,6 @@ namespace Seasons
             AccessTools.Method(typeof(EnvMan), nameof(EnvMan.GetSnowBuildup));
         private static readonly MethodInfo GetSeasonalSnowBuildupMethod =
             AccessTools.Method(typeof(SeasonalSnow), nameof(GetSeasonalSnowBuildup));
-        private static readonly MethodInfo FindBiomeMethod =
-            AccessTools.Method(typeof(Heightmap), nameof(Heightmap.FindBiome), new[] { typeof(Vector3) });
-        private static readonly MethodInfo FireplaceSnowMeltScheduleMethod =
-            AccessTools.Method(typeof(SeasonalSnow), nameof(IsFireplaceSnowMeltSupportedPosition));
 
         private static void EnsureCraftingStationMeltConfig()
         {
@@ -299,7 +296,7 @@ namespace Seasons
 
             EnvSetup setup = environment.m_env;
             if (setup == null && EnvMan.instance != null && !String.IsNullOrWhiteSpace(environment.m_environment))
-                setup = EnvMan.instance.GetEnv(environment.m_environment);
+                setup = EnvMan.instance.GetEnv(environment.m_environment) ?? setup;
 
             return setup?.m_snowBuildup ?? 0f;
         }
@@ -1002,16 +999,8 @@ namespace Seasons
 
         private static bool IsNearHeatArea(Vector3 position)
         {
-            foreach (EffectArea area in EffectArea.GetAllAreas())
-            {
-                if (!IsActiveHeatArea(area))
-                    continue;
-
-                if ((position - area.transform.position).sqrMagnitude < NearbyHeatDistance * NearbyHeatDistance)
-                    return true;
-            }
-
-            return false;
+            return IsActiveHeatArea(
+                EffectArea.IsPointInsideArea(position, EffectArea.Type.Heat, NearbyHeatDistance));
         }
 
         private static bool IsSnowBlocked(WearNTear instance, bool forceRefresh = false)
@@ -1163,7 +1152,7 @@ namespace Seasons
                 return;
 
             Vector2 range = GetSnowBuildupRange(instance);
-            float melt = Time.deltaTime
+            float melt = WearNTearUpdater.c_WearNTearTime
                 * Game.instance.m_snowBuildupSpeed
                 * SnowAccumulationSpeed
                 * meltMultiplier;
@@ -1238,6 +1227,45 @@ namespace Seasons
             return wearNTear;
         }
 
+        private static void ApplyCraftingStationMelt(WearNTear instance, float change)
+        {
+            if (change <= SnowChangeEpsilon || !CanOwnSnowState(instance) ||
+                instance.m_snowBuildup <= SnowChangeEpsilon || !SeasonState.IsActive ||
+                seasonState.GetCurrentSeason() != Season.Winter || !IsSeasonalSnowPosition(instance) ||
+                IsDeepNorth(instance))
+                return;
+
+            if (EnsureCurrentWinterState(instance) == 0L)
+                return;
+
+            Vector2 range = GetSnowBuildupRange(instance);
+            float value = Mathf.Max(0f, instance.m_snowBuildup - change);
+            bool belowMinimum = value + SnowChangeEpsilon < range.x;
+
+            SetSnowBuildup(
+                instance,
+                value,
+                markSeasonalSnow: value > SnowChangeEpsilon,
+                allowBelowMinimum: true);
+            SetAccumulationBaselineNow(instance, belowMinimum);
+        }
+
+        private static void RegisterCraftingStationMeltRpc(CraftingStation station)
+        {
+            WearNTear wearNTear = GetStationWearNTear(station);
+            if (!wearNTear || wearNTear.m_nview == null || !wearNTear.m_nview.IsValid() ||
+                wearNTear.m_nview.GetZDO() == null)
+                return;
+
+            int rpcHash = CraftingStationMeltRpc.GetStableHashCode();
+            if (wearNTear.m_nview.m_functions.ContainsKey(rpcHash))
+                return;
+
+            wearNTear.m_nview.Register<float>(
+                CraftingStationMeltRpc,
+                (_, change) => ApplyCraftingStationMelt(wearNTear, change));
+        }
+
         private static void ResetStationMeltState(CraftingStation station)
         {
             if (!station || !CraftingStationMeltStates.TryGetValue(station, out StationMeltState state))
@@ -1304,7 +1332,8 @@ namespace Seasons
                 return;
 
             state.pendingMelt = meltToZero ? 0f : Mathf.Max(0f, state.pendingMelt - change);
-            wearNTear.ChangeSnow(-change);
+            RegisterCraftingStationMeltRpc(station);
+            wearNTear.m_nview.InvokeRPC(CraftingStationMeltRpc, change);
         }
 
         private static void ClearTrackedInstance(WearNTear instance)
@@ -1578,42 +1607,18 @@ namespace Seasons
                 && !IsIgnoredPosition(position);
         }
 
-        private static bool TryPatchFireplaceSnowMeltCondition(List<CodeInstruction> codes)
+        private static void EnsureFireplaceSnowMeltSchedule(Fireplace fireplace)
         {
-            if (FindBiomeMethod == null || FireplaceSnowMeltScheduleMethod == null)
-                return false;
+            if (!fireplace || !fireplace.m_snowMelter || fireplace.m_snowMelterInterval <= 0f ||
+                !IsFireplaceSnowMeltSupportedPosition(fireplace.transform.position) ||
+                fireplace.IsInvoking(nameof(Fireplace.UpdateSnowMelt)))
+                return;
 
-            for (int i = 0; i < codes.Count - 2; ++i)
-            {
-                CodeInstruction findBiome = codes[i];
-                if ((findBiome.opcode != OpCodes.Call && findBiome.opcode != OpCodes.Callvirt) ||
-                    !Equals(findBiome.operand, FindBiomeMethod))
-                    continue;
-
-                if (!codes[i + 1].LoadsConstant((long)(int)Heightmap.Biome.DeepNorth))
-                    continue;
-
-                CodeInstruction branch = codes[i + 2];
-                findBiome.opcode = OpCodes.Call;
-                findBiome.operand = FireplaceSnowMeltScheduleMethod;
-                codes[i + 1].opcode = OpCodes.Nop;
-                codes[i + 1].operand = null;
-
-                if (branch.opcode == OpCodes.Bne_Un)
-                    branch.opcode = OpCodes.Brfalse;
-                else if (branch.opcode == OpCodes.Bne_Un_S)
-                    branch.opcode = OpCodes.Brfalse_S;
-                else if (branch.opcode == OpCodes.Beq)
-                    branch.opcode = OpCodes.Brtrue;
-                else if (branch.opcode == OpCodes.Beq_S)
-                    branch.opcode = OpCodes.Brtrue_S;
-                else
-                    continue;
-
-                return true;
-            }
-
-            return false;
+            fireplace.UpdateSnowMelt();
+            fireplace.InvokeRepeating(
+                nameof(Fireplace.UpdateSnowMelt),
+                UnityEngine.Random.Range(fireplace.m_snowMelterInterval, fireplace.m_snowMelterInterval * 2f),
+                fireplace.m_snowMelterInterval);
         }
 
         [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateWear))]
@@ -1776,6 +1781,16 @@ namespace Seasons
             }
         }
 
+        [HarmonyPatch(typeof(CraftingStation), nameof(CraftingStation.Start))]
+        private static class CraftingStation_Start_SeasonalSnow
+        {
+            [HarmonyPostfix]
+            private static void Postfix(CraftingStation __instance)
+            {
+                RegisterCraftingStationMeltRpc(__instance);
+            }
+        }
+
         [HarmonyPatch(typeof(CraftingStation), nameof(CraftingStation.PokeInUse))]
         private static class CraftingStation_PokeInUse_SeasonalSnow
         {
@@ -1796,14 +1811,10 @@ namespace Seasons
         [HarmonyPatch(typeof(Fireplace), nameof(Fireplace.Awake))]
         private static class Fireplace_Awake_SeasonalSnowMelt
         {
-            [HarmonyTranspiler]
-            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+            [HarmonyPostfix]
+            private static void Postfix(Fireplace __instance)
             {
-                List<CodeInstruction> codes = instructions.ToList();
-                if (!TryPatchFireplaceSnowMeltCondition(codes))
-                    LogWarning("Failed to patch Fireplace.Awake seasonal snow melter biome condition.");
-
-                return codes;
+                EnsureFireplaceSnowMeltSchedule(__instance);
             }
         }
 
