@@ -1001,10 +1001,11 @@ namespace Seasons
 
         public static void UpdateSeasonState()
         {
-            // Every season starts with a clean Seasons-owned snow state. Deep North is
-            // deliberately untouched because its snow is native game state.
-            ClearServerSeasonalSnowZDOs();
-            ClearLoadedSeasonalSnow();
+            if (seasonState.GetCurrentSeason() != Season.Winter)
+            {
+                ClearServerSeasonalSnowZDOs();
+                ClearLoadedSeasonalSnow();
+            }
 
             SeasonalSnowInitialized = new ConditionalWeakTable<WearNTear, object>();
             SeasonalSnowCoverageChecks = new ConditionalWeakTable<WearNTear, SnowCoverageState>();
