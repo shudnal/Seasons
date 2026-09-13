@@ -234,17 +234,6 @@ namespace Seasons
             instance.UpdateSnowVisual();
         }
 
-        [HarmonyPatch(typeof(SeasonalSnowRuntimeState), "IsCraftingStationInUse")]
-        private static class SeasonalSnowRuntimeState_IsCraftingStationInUse_DisableOwnerTracking
-        {
-            [HarmonyPrefix]
-            private static bool Prefix(ref bool __result)
-            {
-                __result = false;
-                return false;
-            }
-        }
-
         [HarmonyPatch(typeof(CraftingStation), nameof(CraftingStation.PokeInUse))]
         private static class CraftingStation_PokeInUse_SeasonalSnowMelt
         {
@@ -285,8 +274,6 @@ namespace Seasons
                 float deltaTime = now - state.lastPokeTime;
                 state.lastPokeTime = now;
 
-                // PokeInUse normally runs every frame while the station GUI is open. Do not
-                // count an inactive gap when the player returns to the station later.
                 if (deltaTime > 0.25f)
                     deltaTime = Time.deltaTime;
 
@@ -311,8 +298,6 @@ namespace Seasons
 
                 state.pendingMelt = meltToZero ? 0f : Mathf.Max(0f, state.pendingMelt - change);
 
-                // ChangeSnow updates the local visual immediately and routes RPC_SetSnow to
-                // the current ZDO owner, which persists the value and replicates it normally.
                 wearNTear.ChangeSnow(-change);
             }
         }
