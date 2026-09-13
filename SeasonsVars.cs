@@ -50,7 +50,6 @@ namespace Seasons
         private const float DefaultCraftingStationMeltMultiplier = 5f;
         private const double TimeStampScale = 1000d;
 
-        private static readonly int CraftingAnimationHash = ZSyncAnimation.GetHash("crafting");
         private static readonly MethodInfo FindBiomeMethod =
             AccessTools.Method(typeof(Heightmap), nameof(Heightmap.FindBiome), new[] { typeof(Vector3) });
         private static readonly MethodInfo FireplaceSnowMeltScheduleMethod =
@@ -61,19 +60,12 @@ namespace Seasons
         private sealed class PieceMeltSourceState
         {
             public readonly EffectArea[] heatAreas;
-            public readonly CraftingStation craftingStation;
             public float nextSnowCoverCheckTime;
             public bool haveSnowRoof;
 
             public PieceMeltSourceState(WearNTear instance)
             {
                 heatAreas = instance ? instance.GetComponentsInChildren<EffectArea>(true) : Array.Empty<EffectArea>();
-                if (instance)
-                {
-                    craftingStation = instance.GetComponent<CraftingStation>();
-                    if (!craftingStation)
-                        craftingStation = instance.GetComponentInChildren<CraftingStation>(true);
-                }
             }
         }
 
@@ -274,42 +266,6 @@ namespace Seasons
             return false;
         }
 
-        private static CraftingStation GetCraftingStation(WearNTear instance)
-        {
-            return GetMeltSourceState(instance)?.craftingStation;
-        }
-
-        private static bool IsCraftingStationInUse(CraftingStation station)
-        {
-            if (!station)
-                return false;
-
-            if (station.m_useTimer < 1f)
-                return true;
-
-            foreach (Player player in Player.s_players)
-            {
-                if (!player)
-                    continue;
-
-                if (player.GetCurrentCraftingStation() == station)
-                    return true;
-
-                if (!station.InUseDistance(player))
-                    continue;
-
-                if (player.m_inCraftingStation)
-                    return true;
-
-                Animator animator = player.m_zanim?.m_animator;
-                if (animator != null && station.m_useAnimation != 0
-                    && animator.GetInteger(CraftingAnimationHash) == station.m_useAnimation)
-                    return true;
-            }
-
-            return false;
-        }
-
         private static bool IsBlockedFromSnow(WearNTear instance)
         {
             if (!instance)
@@ -336,8 +292,6 @@ namespace Seasons
             if (!instance || !SeasonState.IsActive || seasonState.GetCurrentSeason() != Season.Winter)
                 return 0f;
 
-            EnsureConfig();
-
             Vector3 position = instance.transform.position;
             float multiplier = 0f;
 
@@ -349,10 +303,6 @@ namespace Seasons
 
             if (IsNearHeatArea(position))
                 multiplier = Mathf.Max(multiplier, 1f);
-
-            CraftingStation station = GetCraftingStation(instance);
-            if (station && IsCraftingStationInUse(station))
-                multiplier = Mathf.Max(multiplier, CraftingStationMeltMultiplier);
 
             return multiplier;
         }
