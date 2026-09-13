@@ -301,7 +301,7 @@ namespace Seasons
 
             EnvSetup setup = environment.m_env;
             if (setup == null && EnvMan.instance != null && !String.IsNullOrWhiteSpace(environment.m_environment))
-                setup = EnvMan.instance.GetEnv(clone.m_environment) ?? setup;
+                setup = EnvMan.instance.GetEnv(environment.m_environment) ?? setup;
 
             return setup?.m_snowBuildup ?? 0f;
         }
@@ -1160,7 +1160,8 @@ namespace Seasons
         {
             if (!CanOwnSnowState(instance) || instance.m_snowBuildup <= SnowChangeEpsilon ||
                 !SeasonState.IsActive || seasonState.GetCurrentSeason() != Season.Winter ||
-                !IsSeasonalSnowPosition(instance) || IsDeepNorth(instance) || Game.instance == null)
+                !IsSeasonalSnowPosition(instance) || IsDeepNorth(instance) || Game.instance == null ||
+                ZNetScene.instance == null || ZNetScene.instance.OutsideActiveArea(instance.transform.position))
                 return;
 
             if (!EnsureCurrentWinterState(instance))
@@ -1398,6 +1399,24 @@ namespace Seasons
             }
         }
 
+        private static void RebaseLoadedSnowAccumulation()
+        {
+            if (!IsWinterStateReady())
+                return;
+
+            foreach (WearNTear wearNTear in WearNTear.GetAllInstances().ToArray())
+            {
+                if (!CanOwnSnowState(wearNTear) || !HasCurrentWinterState(wearNTear) ||
+                    IsDeepNorth(wearNTear) || !IsSeasonalSnowPosition(wearNTear))
+                    continue;
+
+                ZDO zdo = wearNTear.m_nview.GetZDO();
+                SetAccumulationBaselineNow(
+                    wearNTear,
+                    zdo.GetBool(SeasonsVars.s_seasonalSnowMeltedBelowMinimum));
+            }
+        }
+
         public static void OnEnabledConfigChanged()
         {
             SeasonalSnowCoverageChecks = new ConditionalWeakTable<WearNTear, SnowCoverageState>();
@@ -1427,6 +1446,7 @@ namespace Seasons
 
         public static void OnAccumulationSpeedConfigChanged()
         {
+            RebaseLoadedSnowAccumulation();
             RefreshWeatherTimeline();
         }
 
