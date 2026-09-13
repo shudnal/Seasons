@@ -301,7 +301,7 @@ namespace Seasons
 
             EnvSetup setup = environment.m_env;
             if (setup == null && EnvMan.instance != null && !String.IsNullOrWhiteSpace(environment.m_environment))
-                setup = EnvMan.instance.GetEnv(environment.m_environment) ?? setup;
+                setup = EnvMan.instance.GetEnv(clone.m_environment) ?? setup;
 
             return setup?.m_snowBuildup ?? 0f;
         }
@@ -1270,20 +1270,31 @@ namespace Seasons
             }
 
             WearNTear wearNTear = GetStationWearNTear(station);
-            if (!CanTrackSeasonalSnow(wearNTear) || wearNTear.m_snowBuildup <= SnowChangeEpsilon)
-            {
-                ResetStationMeltState(station);
-                return;
-            }
-
-            float multiplier = CraftingStationMeltMultiplier;
-            if (multiplier <= 0f)
+            if (!CanTrackSeasonalSnow(wearNTear))
             {
                 ResetStationMeltState(station);
                 return;
             }
 
             ZDO zdo = wearNTear.m_nview.GetZDO();
+            float maximum = GetSnowBuildupRange(wearNTear).y;
+            float currentSnow = Mathf.Clamp(zdo.GetFloat(ZDOVars.s_snow, wearNTear.m_snowBuildup), 0f, maximum);
+            if (currentSnow <= SnowChangeEpsilon)
+            {
+                wearNTear.m_snowBuildup = 0f;
+                wearNTear.UpdateSnowVisual();
+                ResetStationMeltState(station);
+                return;
+            }
+
+            float heatMeltMultiplier = GetMeltMultiplier(wearNTear);
+            float multiplier = Mathf.Max(0f, CraftingStationMeltMultiplier - heatMeltMultiplier);
+            if (multiplier <= 0f)
+            {
+                ResetStationMeltState(station);
+                return;
+            }
+
             long owner = zdo.GetOwner();
             StationMeltState state = CraftingStationMeltStates.GetValue(station, _ => new StationMeltState());
             float now = Time.time;
@@ -1296,25 +1307,23 @@ namespace Seasons
 
             if (restart)
             {
-                float snow = Mathf.Max(0f, wearNTear.m_snowBuildup);
                 state.initialized = true;
                 state.owner = owner;
                 state.lastPokeTime = now;
-                state.targetSnow = snow;
-                state.lastSentSnow = snow;
+                state.targetSnow = currentSnow;
+                state.lastSentSnow = currentSnow;
+                wearNTear.m_snowBuildup = currentSnow;
+                wearNTear.UpdateSnowVisual();
                 return;
             }
 
             float deltaTime = now - state.lastPokeTime;
             state.lastPokeTime = now;
 
-            state.targetSnow = Mathf.Min(state.targetSnow, Mathf.Max(0f, wearNTear.m_snowBuildup));
+            state.targetSnow = Mathf.Min(state.targetSnow, currentSnow);
             state.targetSnow = Mathf.Max(
                 0f,
-                state.targetSnow - deltaTime
-                    * Game.instance.m_snowBuildupSpeed
-                    * SnowAccumulationSpeed
-                    * multiplier);
+                state.targetSnow - GetPredictedSnowGain(1f, deltaTime) * multiplier);
 
             wearNTear.m_snowBuildup = state.targetSnow;
             wearNTear.UpdateSnowVisual();
