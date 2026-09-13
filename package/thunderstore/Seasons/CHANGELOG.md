@@ -16,6 +16,7 @@
 * fixed winter cultivated-ground processing for old and current terrain data while preserving Deep North snow, roads and unrelated terrain changes; also fixed processing being skipped on the first winter
 * further improved seasonal weather handling for alternate biomes and Expand World Data
 * many compatibility and stability fixes for world transitions, seasonal visuals and gameplay mechanics
+* added seasonal snow buildup for build pieces
 
 # 1.8.2
 * updated Expand World Data compatibility for the current environment and biome reload lifecycle
