@@ -26,6 +26,7 @@ namespace Seasons
         private const float DefaultSnowMeltSpeedMultiplier = 1f;
         private const float DefaultCraftingStationMeltMultiplier = 5f;
         private const float DefaultLeakyPieceMeltMultiplier = 2f;
+        private const float DefaultRoofPieceMeltMultiplier = 0f;
         private const double SnowTimeStampScale = 1000d;
 
         public sealed class BiomeSnowTimeline
@@ -81,6 +82,7 @@ namespace Seasons
         {
             public readonly EffectArea[] heatAreas;
             public readonly bool leaky;
+            public readonly bool roof;
             public readonly bool craftingStation;
 
             public PieceMeltSourceState(WearNTear instance)
@@ -94,6 +96,8 @@ namespace Seasons
                 List<Collider> colliders = piece?.GetAllColliders();
                 leaky = colliders != null
                     && colliders.Any(collider => collider && collider.CompareTag("leaky"));
+                roof = colliders != null
+                    && colliders.Any(collider => collider && collider.CompareTag("roof"));
 
                 craftingStation = instance
                     && (instance.GetComponent<CraftingStation>()
@@ -140,6 +144,7 @@ namespace Seasons
         private static ConfigEntry<float> snowMeltSpeedMultiplier;
         private static ConfigEntry<float> craftingStationMeltMultiplier;
         private static ConfigEntry<float> leakyPieceMeltMultiplier;
+        private static ConfigEntry<float> roofPieceMeltMultiplier;
 
         public static double TimelineStartSeconds => seasonalSnowTimelineStartSeconds;
         public static double TimelineEndSeconds => seasonalSnowTimelineEndSeconds;
@@ -157,6 +162,8 @@ namespace Seasons
             Mathf.Max(0f, craftingStationMeltMultiplier?.Value ?? DefaultCraftingStationMeltMultiplier);
         private static float LeakyPieceMeltMultiplier =>
             Mathf.Max(0f, leakyPieceMeltMultiplier?.Value ?? DefaultLeakyPieceMeltMultiplier);
+        private static float RoofPieceMeltMultiplier =>
+            Mathf.Max(0f, roofPieceMeltMultiplier?.Value ?? DefaultRoofPieceMeltMultiplier);
 
         private static readonly MethodInfo UpdateBiomeMethod =
             AccessTools.Method(typeof(WearNTear), nameof(WearNTear.UpdateBiome));
@@ -206,6 +213,18 @@ namespace Seasons
                     "Snow melt speed multiplier - leaky pieces",
                     DefaultLeakyPieceMeltMultiplier,
                     new ConfigDescription("Additional multiplier for seasonal snow melting on pieces with at least one active non-trigger collider tagged 'leaky'. Crafting stations ignore this multiplier."),
+                    syncMode: ConditionalConfigSync.ConfigSyncMode.AlwaysServerControlled,
+                    serverControlledByDefault: true).SourceConfig;
+            }
+
+            if (roofPieceMeltMultiplier == null)
+            {
+                roofPieceMeltMultiplier = Seasons.configSync.AddConfigEntry(
+                    Seasons.instance.Config,
+                    "Season - Winter snow",
+                    "Snow melt speed multiplier - roof pieces",
+                    DefaultRoofPieceMeltMultiplier,
+                    new ConfigDescription("Additional multiplier for gradual Heat melting on pieces with at least one active non-trigger collider tagged 'roof'. This multiplier takes precedence over the leaky-piece multiplier. Crafting stations ignore it."),
                     syncMode: ConditionalConfigSync.ConfigSyncMode.AlwaysServerControlled,
                     serverControlledByDefault: true).SourceConfig;
             }
@@ -1067,9 +1086,13 @@ namespace Seasons
         private static float GetPieceSnowMeltMultiplier(WearNTear instance)
         {
             PieceMeltSourceState state = GetMeltSourceState(instance);
-            return state != null && state.leaky && !state.craftingStation
-                ? LeakyPieceMeltMultiplier
-                : 1f;
+            if (state == null || state.craftingStation)
+                return 1f;
+
+            if (state.roof)
+                return RoofPieceMeltMultiplier;
+
+            return state.leaky ? LeakyPieceMeltMultiplier : 1f;
         }
 
         private static bool IsNearHeatArea(Vector3 position)
