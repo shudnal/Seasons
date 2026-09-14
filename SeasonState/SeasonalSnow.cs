@@ -22,8 +22,9 @@ namespace Seasons
         private const float SnowRpcStep = 0.005f;
         private const float NearbyHeatDistance = 3f;
         private const float HeatMeltMultiplier = 3f;
+        private const float SnowMeltSpeedMultiplier = 2f;
         private const float DefaultCraftingStationMeltMultiplier = 5f;
-        private const float DefaultWeatherResistantPieceMeltMultiplier = 0.5f;
+        private const float DefaultLeakyPieceMeltMultiplier = 2f;
         private const double SnowTimeStampScale = 1000d;
 
         public sealed class BiomeSnowTimeline
@@ -78,7 +79,8 @@ namespace Seasons
         private sealed class PieceMeltSourceState
         {
             public readonly EffectArea[] heatAreas;
-            public readonly bool weatherResistant;
+            public readonly bool leaky;
+            public readonly bool craftingStation;
 
             public PieceMeltSourceState(WearNTear instance)
             {
@@ -88,8 +90,15 @@ namespace Seasons
                 if (!piece && instance)
                     piece = instance.GetComponent<Piece>();
 
-                weatherResistant = piece != null
-                    && piece.GetAllColliders().Any(collider => collider && !collider.CompareTag("leaky"));
+                List<Collider> colliders = piece?.GetAllColliders();
+                leaky = colliders != null
+                    && colliders.Count > 0
+                    && colliders.All(collider => collider && collider.CompareTag("leaky"));
+
+                craftingStation = instance
+                    && (instance.GetComponent<CraftingStation>()
+                        || instance.GetComponentInParent<CraftingStation>()
+                        || instance.GetComponentInChildren<CraftingStation>(true));
             }
         }
 
@@ -129,7 +138,7 @@ namespace Seasons
         private static long seasonalSnowEnvironmentDuration = 1L;
         private static bool collectingBiomeEnvironments;
         private static ConfigEntry<float> craftingStationMeltMultiplier;
-        private static ConfigEntry<float> weatherResistantPieceMeltMultiplier;
+        private static ConfigEntry<float> leakyPieceMeltMultiplier;
 
         public static double TimelineStartSeconds => seasonalSnowTimelineStartSeconds;
         public static double TimelineEndSeconds => seasonalSnowTimelineEndSeconds;
@@ -143,8 +152,8 @@ namespace Seasons
         public static float ReducedMaximumSnowBuildup => GetReducedSnowBuildupRange().y;
         private static float CraftingStationMeltMultiplier =>
             Mathf.Max(0f, craftingStationMeltMultiplier?.Value ?? DefaultCraftingStationMeltMultiplier);
-        private static float WeatherResistantPieceMeltMultiplier =>
-            Mathf.Max(0f, weatherResistantPieceMeltMultiplier?.Value ?? DefaultWeatherResistantPieceMeltMultiplier);
+        private static float LeakyPieceMeltMultiplier =>
+            Mathf.Max(0f, leakyPieceMeltMultiplier?.Value ?? DefaultLeakyPieceMeltMultiplier);
 
         private static readonly MethodInfo UpdateBiomeMethod =
             AccessTools.Method(typeof(WearNTear), nameof(WearNTear.UpdateBiome));
@@ -174,14 +183,14 @@ namespace Seasons
                     serverControlledByDefault: true).SourceConfig;
             }
 
-            if (weatherResistantPieceMeltMultiplier == null)
+            if (leakyPieceMeltMultiplier == null)
             {
-                weatherResistantPieceMeltMultiplier = Seasons.configSync.AddConfigEntry(
+                leakyPieceMeltMultiplier = Seasons.configSync.AddConfigEntry(
                     Seasons.instance.Config,
                     "Season - Winter snow",
-                    "Snow melt multiplier for weather-resistant pieces",
-                    DefaultWeatherResistantPieceMeltMultiplier,
-                    new ConfigDescription("Multiplier for seasonal snow melting on pieces with at least one active non-trigger collider that is not tagged 'leaky'. 1 uses the normal rate; 0 disables gradual melting on those pieces."),
+                    "Snow melt multiplier for leaky pieces",
+                    DefaultLeakyPieceMeltMultiplier,
+                    new ConfigDescription("Multiplier for seasonal snow melting on pieces whose active non-trigger colliders are all tagged 'leaky'. 1 uses the normal rate; 2 doubles it."),
                     syncMode: ConditionalConfigSync.ConfigSyncMode.AlwaysServerControlled,
                     serverControlledByDefault: true).SourceConfig;
             }
@@ -1043,8 +1052,8 @@ namespace Seasons
         private static float GetPieceSnowMeltMultiplier(WearNTear instance)
         {
             PieceMeltSourceState state = GetMeltSourceState(instance);
-            return state != null && state.weatherResistant
-                ? WeatherResistantPieceMeltMultiplier
+            return state != null && state.leaky && !state.craftingStation
+                ? LeakyPieceMeltMultiplier
                 : 1f;
         }
 
@@ -1219,6 +1228,7 @@ namespace Seasons
             float melt = Time.deltaTime
                 * Game.instance.m_snowBuildupSpeed
                 * SnowAccumulationSpeed
+                * SnowMeltSpeedMultiplier
                 * meltMultiplier;
             float value = Mathf.Max(0f, instance.m_snowBuildup - melt);
             bool belowMinimum = value + SnowChangeEpsilon < range.x;
@@ -1332,10 +1342,8 @@ namespace Seasons
                 return;
             }
 
-            float pieceMeltMultiplier = GetPieceSnowMeltMultiplier(wearNTear);
             float heatMeltMultiplier = GetMeltMultiplier(wearNTear);
-            float stationMeltMultiplier = CraftingStationMeltMultiplier * pieceMeltMultiplier;
-            float multiplier = Mathf.Max(0f, stationMeltMultiplier - heatMeltMultiplier);
+            float multiplier = Mathf.Max(0f, CraftingStationMeltMultiplier - heatMeltMultiplier);
             if (multiplier <= 0f)
             {
                 ResetStationMeltState(station);
@@ -1370,7 +1378,9 @@ namespace Seasons
             state.targetSnow = Mathf.Min(state.targetSnow, currentSnow);
             state.targetSnow = Mathf.Max(
                 0f,
-                state.targetSnow - GetPredictedSnowGain(1f, deltaTime) * multiplier);
+                state.targetSnow - GetPredictedSnowGain(1f, deltaTime)
+                    * SnowMeltSpeedMultiplier
+                    * multiplier);
 
             wearNTear.m_snowBuildup = state.targetSnow;
             wearNTear.UpdateSnowVisual();
