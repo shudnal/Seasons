@@ -1106,7 +1106,8 @@ namespace Seasons
 
         private static float GetMeltMultiplier(WearNTear instance, bool? blocked = null)
         {
-            if (!instance || !SeasonState.IsActive || seasonState.GetCurrentSeason() != Season.Winter)
+            if (!instance || !SeasonState.IsActive || seasonState.GetCurrentSeason() != Season.Winter ||
+                SnowMeltSpeedMultiplier <= 0f)
                 return 0f;
 
             Vector3 position = instance.transform.position;
