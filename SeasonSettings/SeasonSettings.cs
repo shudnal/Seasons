@@ -459,6 +459,11 @@ namespace Seasons
             SeasonSettings.SetupConfigWatcher(enabled: false);
             SeasonState.ResetCurrentSeasonDay();
             SeasonState.ResetEnvironmentStateTracking();
+            SeasonState.ClearBiomesDefault();
+            SeasonEnvironment.ClearCachedObjects();
+            CustomMusic.ResetWorldState();
+            ResetWorldRuntimeState();
+            TerrainDecultivation.ResetRuntimeState();
             SeasonalSnow.Reset();
             Compatibility.EWDCompat.ResetWorldState();
         }

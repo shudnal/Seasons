@@ -1,4 +1,4 @@
-using BepInEx;
+﻿using BepInEx;
 using BepInEx.Bootstrap;
 using BepInEx.Configuration;
 using HarmonyLib;
@@ -1002,6 +1002,15 @@ namespace Seasons
         public static bool ControlGrassSize(GameObject gameObject)
         {
             return _GrassToControlSize.Contains(PrefabVariantController.GetPrefabName(gameObject).ToLower());
+        }
+
+        public static void ResetWorldRuntimeState()
+        {
+            _treeRegrowthPrefabs.Clear();
+            _cachedIgnoredPositions.Clear();
+            _cachedShieldedPositions.Clear();
+            _instanceChangeIDShieldGeneratorCache = 0;
+            _cachedShieldedPositionsChangeID = 0;
         }
 
         public static void InvalidatePositionsCache()

@@ -12,7 +12,7 @@ namespace Seasons
             public int WorldDay;
         }
 
-        private static readonly ConditionalWeakTable<TerrainComp, FailedAttempt> failedAttempts = new ConditionalWeakTable<TerrainComp, FailedAttempt>();
+        private static ConditionalWeakTable<TerrainComp, FailedAttempt> failedAttempts = new ConditionalWeakTable<TerrainComp, FailedAttempt>();
         public static int terrainCompVersion;
         public static int m_operations;
         public static Vector3 m_lastOpPoint;
@@ -23,6 +23,20 @@ namespace Seasons
         public static float[] m_smoothDelta;
         public static bool[] m_modifiedPaint;
         public static Color[] m_paintMask;
+
+        public static void ResetRuntimeState()
+        {
+            failedAttempts = new ConditionalWeakTable<TerrainComp, FailedAttempt>();
+            terrainCompVersion = 0;
+            m_operations = 0;
+            m_lastOpPoint = Vector3.zero;
+            m_lastOpRadius = 0f;
+            m_modifiedHeight = null;
+            m_levelDelta = null;
+            m_smoothDelta = null;
+            m_modifiedPaint = null;
+            m_paintMask = null;
+        }
 
         public static bool DecultivateGround(ZDO zdo) => TryDecultivateGround(zdo, out bool changed) && changed;
 

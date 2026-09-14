@@ -1421,10 +1421,17 @@ namespace Seasons
         public void PatchTorchesInInventory(Inventory inventory)
         {
             _itemDataList.Clear();
-            inventory.GetAllItems(SeasonSettings.itemDropNameTorch, _itemDataList);
+            try
+            {
+                inventory.GetAllItems(SeasonSettings.itemDropNameTorch, _itemDataList);
 
-            foreach (ItemDrop.ItemData item in _itemDataList)
-                PatchTorchItemData(item);
+                foreach (ItemDrop.ItemData item in _itemDataList)
+                    PatchTorchItemData(item);
+            }
+            finally
+            {
+                _itemDataList.Clear();
+            }
         }
 
         public void UpdateTorchFireWarmth(string prefabName)

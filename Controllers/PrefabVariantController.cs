@@ -565,6 +565,10 @@ namespace Seasons
 
             RevertPrefabsState();
             m_prefabVariants.Clear();
+            s_tempRenderers.Clear();
+            s_tempColors.Clear();
+            s_tempPrefabNames.Clear();
+            s_tempObjects.Clear();
 
             if (m_instance == this)
             {

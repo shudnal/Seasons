@@ -322,10 +322,20 @@ namespace Seasons
             s_freezeStatus = 0f;
             s_colliderHeight = 0f;
             waterStates.Clear();
+            waterVolumesCheckFloes.Clear();
+            tempWaterVolumesList.Clear();
             m_tempZDOList.Clear();
+            m_tempHits.Clear();
+            m_tempClearAreas.Clear();
+            m_tempSpawnedObjects.Clear();
+            s_tempColors.Clear();
+            s_smoothColors.Clear();
             s_visitedSectorIndices.Clear();
             s_protectedHeightmaps.Clear();
             s_tempHeightmaps.Clear();
+            CharacterExtentions_FrozenOceanSliding.ResetWorldState();
+            MusicMan_GetEnvironmentMusic_FrozenOceanNightMusic.ResetWorldState();
+            EnvMan_SetEnv_FrozenOceanWindLoop.ResetWorldState();
             ZoneSystem_GetGroundHeight_CheckForIceSurface.checkForIceSurface = false;
             m_instance = null;
             waterStateInitialized = false;
@@ -1325,6 +1335,13 @@ namespace Seasons
 
         private static readonly Dictionary<Character, SlideStatus> charactersSlides = new Dictionary<Character, SlideStatus>();
 
+        internal static void ResetWorldState()
+        {
+            charactersSlides.Clear();
+            Character_UpdateGroundContact_FrozenOceanSlippery.ResetWorldState();
+            Player_UpdateDodge_FrozenOceanSlippery.ResetWorldState();
+        }
+
         public static bool IsOnIce(this Character character)
         {
             if (!IsWaterSurfaceFrozen())
@@ -1428,6 +1445,8 @@ namespace Seasons
 
             private static readonly Dictionary<Character, Vector3> m_characterSlideVelocity = new Dictionary<Character, Vector3>(64);
 
+            internal static void ResetWorldState() => m_characterSlideVelocity.Clear();
+
             public static void RemoveCharacter(Character character) => m_characterSlideVelocity.Remove(character);
 
             public static void CheckForSlide(Character characterSyncVelocity)
@@ -1493,6 +1512,13 @@ namespace Seasons
             private static bool m_initiateSlide;
             private static Vector3 m_bodyVelocity = Vector3.zero;
             private static Player m_slidePlayer;
+
+            internal static void ResetWorldState()
+            {
+                m_initiateSlide = false;
+                m_bodyVelocity = Vector3.zero;
+                m_slidePlayer = null;
+            }
 
             [HarmonyPriority(Priority.First)]
             private static void Prefix(Player __instance, bool ___m_inDodge, ref bool __state)
@@ -1840,6 +1866,23 @@ namespace Seasons
 
         internal static bool WasReleased(MusicMan.NamedMusic music) => music != null && releasedMusic.TryGetValue(music, out _);
 
+        internal static void ResetWorldState()
+        {
+            if (musicOwner != null && registeredMusic != null)
+            {
+                releasedMusic.GetValue(registeredMusic, _ => new object());
+                musicOwner.m_music?.Remove(registeredMusic);
+                int musicHash = frozenOceanMusic.GetStableHashCode();
+                if (musicOwner.m_musicHashes != null
+                    && musicOwner.m_musicHashes.TryGetValue(musicHash, out MusicMan.NamedMusic indexedMusic)
+                    && ReferenceEquals(indexedMusic, registeredMusic))
+                    musicOwner.m_musicHashes.Remove(musicHash);
+            }
+
+            registeredMusic = null;
+            musicOwner = null;
+        }
+
         private static void Postfix(MusicMan __instance, ref MusicMan.NamedMusic __result)
         {
             if (musicOwner != __instance)
@@ -1921,6 +1964,8 @@ namespace Seasons
         }
 
         private static readonly Dictionary<string, AudioClip> _usedAudioClips = new Dictionary<string, AudioClip>();
+
+        internal static void ResetWorldState() => _usedAudioClips.Clear();
 
         private static void Prefix(EnvSetup env, ref AmbientLoopState __state)
         {

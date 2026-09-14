@@ -66,6 +66,52 @@ namespace Seasons
             SeasonEnvironment.ClearCachedObjects();
         }
 
+        internal static void ResetWorldState()
+        {
+            MusicMan manager = registeredManager;
+            if (manager)
+            {
+                foreach (KeyValuePair<string, MusicRegistration> pair in registrations.ToList())
+                {
+                    MusicRegistration registration = pair.Value;
+                    if (ReferenceEquals(manager.m_currentMusic, registration.applied)
+                        || ReferenceEquals(manager.m_queuedMusic, registration.applied))
+                        manager.StopMusic();
+
+                    if (MusicMan_GetEnvironmentMusic_FrozenOceanNightMusic.WasReleased(registration.original))
+                        registration.original = null;
+                    if (MusicMan_GetEnvironmentMusic_FrozenOceanNightMusic.WasReleased(registration.originalHashEntry))
+                        registration.originalHashEntry = null;
+
+                    int index = manager.m_music.IndexOf(registration.applied);
+                    if (index >= 0)
+                    {
+                        if (registration.original != null)
+                            manager.m_music[index] = registration.original;
+                        else
+                            manager.m_music.RemoveAt(index);
+                    }
+
+                    int hash = pair.Key.GetStableHashCode();
+                    if (manager.m_musicHashes.TryGetValue(hash, out MusicMan.NamedMusic indexed)
+                        && ReferenceEquals(indexed, registration.applied))
+                    {
+                        manager.m_musicHashes.Remove(hash);
+                        if (registration.originalHashEntry != null && index >= 0)
+                            manager.m_musicHashes[hash] = registration.originalHashEntry;
+                    }
+                    else if (!manager.m_musicHashes.ContainsKey(hash)
+                        && registration.originalHashEntry != null && index >= 0)
+                    {
+                        manager.m_musicHashes[hash] = registration.originalHashEntry;
+                    }
+                }
+            }
+
+            registrations.Clear();
+            registeredManager = null;
+        }
+
         internal static void CheckMusicList()
         {
             MusicMan manager = MusicMan.instance;

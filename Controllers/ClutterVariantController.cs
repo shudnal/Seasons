@@ -154,6 +154,10 @@ namespace Seasons
             foreach (Material material in m_contextMaterials.Values)
                 Destroy(material);
             m_contextMaterials.Clear();
+            s_tempRenderers.Clear();
+            s_tempColors.Clear();
+            isAnyShieldActive = false;
+            InstanceRenderer_AddInstance_PreventInProtectedArea.ResetWorldState();
             if (m_instance == this)
                 m_instance = null;
         }
@@ -800,6 +804,8 @@ namespace Seasons
         public static class InstanceRenderer_AddInstance_PreventInProtectedArea
         {
             private static readonly Dictionary<string, bool> s_isShieldedGrassByRendererName = new Dictionary<string, bool>(StringComparer.Ordinal);
+
+            internal static void ResetWorldState() => s_isShieldedGrassByRendererName.Clear();
 
             private static bool IsShieldedGrass(InstanceRenderer instance)
             {
