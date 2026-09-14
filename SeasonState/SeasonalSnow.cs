@@ -92,8 +92,7 @@ namespace Seasons
 
                 List<Collider> colliders = piece?.GetAllColliders();
                 leaky = colliders != null
-                    && colliders.Count > 0
-                    && colliders.All(collider => collider && collider.CompareTag("leaky"));
+                    && colliders.Any(collider => collider && collider.CompareTag("leaky"));
 
                 craftingStation = instance
                     && (instance.GetComponent<CraftingStation>()
@@ -190,7 +189,7 @@ namespace Seasons
                     "Season - Winter snow",
                     "Snow melt multiplier for leaky pieces",
                     DefaultLeakyPieceMeltMultiplier,
-                    new ConfigDescription("Multiplier for seasonal snow melting on pieces whose active non-trigger colliders are all tagged 'leaky'. 1 uses the normal rate; 2 doubles it."),
+                    new ConfigDescription("Multiplier for seasonal snow melting on pieces with at least one active non-trigger collider tagged 'leaky'. 1 uses the normal rate; 2 doubles it."),
                     syncMode: ConditionalConfigSync.ConfigSyncMode.AlwaysServerControlled,
                     serverControlledByDefault: true).SourceConfig;
             }
