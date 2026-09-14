@@ -22,7 +22,8 @@ namespace Seasons
         private const float SnowRpcStep = 0.005f;
         private const float NearbyHeatDistance = 3f;
         private const float HeatMeltMultiplier = 3f;
-        private const float SnowMeltSpeedMultiplier = 2f;
+        private const float BaseSnowMeltSpeedMultiplier = 2f;
+        private const float DefaultSnowMeltSpeedMultiplier = 1f;
         private const float DefaultCraftingStationMeltMultiplier = 5f;
         private const float DefaultLeakyPieceMeltMultiplier = 2f;
         private const double SnowTimeStampScale = 1000d;
@@ -136,6 +137,7 @@ namespace Seasons
         private static long seasonalSnowFirstEnvironmentPeriod;
         private static long seasonalSnowEnvironmentDuration = 1L;
         private static bool collectingBiomeEnvironments;
+        private static ConfigEntry<float> snowMeltSpeedMultiplier;
         private static ConfigEntry<float> craftingStationMeltMultiplier;
         private static ConfigEntry<float> leakyPieceMeltMultiplier;
 
@@ -149,6 +151,8 @@ namespace Seasons
         public static float MaximumSnowBuildup => GetSnowBuildupRange().y;
         public static float ReducedMinimumSnowBuildup => GetReducedSnowBuildupRange().x;
         public static float ReducedMaximumSnowBuildup => GetReducedSnowBuildupRange().y;
+        private static float SnowMeltSpeedMultiplier =>
+            BaseSnowMeltSpeedMultiplier * Mathf.Max(0f, snowMeltSpeedMultiplier?.Value ?? DefaultSnowMeltSpeedMultiplier);
         private static float CraftingStationMeltMultiplier =>
             Mathf.Max(0f, craftingStationMeltMultiplier?.Value ?? DefaultCraftingStationMeltMultiplier);
         private static float LeakyPieceMeltMultiplier =>
@@ -170,14 +174,26 @@ namespace Seasons
             if (Seasons.instance == null)
                 return;
 
+            if (snowMeltSpeedMultiplier == null)
+            {
+                snowMeltSpeedMultiplier = Seasons.configSync.AddConfigEntry(
+                    Seasons.instance.Config,
+                    "Season - Winter snow",
+                    "Snow melt speed multiplier - all sources",
+                    DefaultSnowMeltSpeedMultiplier,
+                    new ConfigDescription("Multiplier for the current seasonal snow melting speed from all sources. 1 uses the current default rate; 0 disables gradual melting."),
+                    syncMode: ConditionalConfigSync.ConfigSyncMode.AlwaysServerControlled,
+                    serverControlledByDefault: true).SourceConfig;
+            }
+
             if (craftingStationMeltMultiplier == null)
             {
                 craftingStationMeltMultiplier = Seasons.configSync.AddConfigEntry(
                     Seasons.instance.Config,
                     "Season - Winter snow",
-                    "Crafting station snow melt multiplier",
+                    "Snow melt speed multiplier - crafting stations",
                     DefaultCraftingStationMeltMultiplier,
-                    new ConfigDescription("Multiplier for real-time seasonal snow melting on a crafting station while the local player is using it."),
+                    new ConfigDescription("Source multiplier for real-time seasonal snow melting while the local player is using a crafting station. Crafting stations ignore the leaky-piece multiplier."),
                     syncMode: ConditionalConfigSync.ConfigSyncMode.AlwaysServerControlled,
                     serverControlledByDefault: true).SourceConfig;
             }
@@ -187,9 +203,9 @@ namespace Seasons
                 leakyPieceMeltMultiplier = Seasons.configSync.AddConfigEntry(
                     Seasons.instance.Config,
                     "Season - Winter snow",
-                    "Snow melt multiplier for leaky pieces",
+                    "Snow melt speed multiplier - leaky pieces",
                     DefaultLeakyPieceMeltMultiplier,
-                    new ConfigDescription("Multiplier for seasonal snow melting on pieces with at least one active non-trigger collider tagged 'leaky'. 1 uses the normal rate; 2 doubles it."),
+                    new ConfigDescription("Additional multiplier for seasonal snow melting on pieces with at least one active non-trigger collider tagged 'leaky'. Crafting stations ignore this multiplier."),
                     syncMode: ConditionalConfigSync.ConfigSyncMode.AlwaysServerControlled,
                     serverControlledByDefault: true).SourceConfig;
             }

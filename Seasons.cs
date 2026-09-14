@@ -552,9 +552,9 @@ namespace Seasons
 
             enableSeasonalSnow = serverConfig("Season - Winter snow", "Enable seasonal snow", defaultValue: true,
                 "Enable seasonal snow buildup on supported pieces outside Deep North.");
-            seasonalSnowBuildup = serverConfig("Season - Winter snow", "Snow buildup", defaultValue: new Vector2(0.4f, 0.99f),
+            seasonalSnowBuildup = serverConfig("Season - Winter snow", "Snow buildup limits", defaultValue: new Vector2(0.4f, 0.99f),
                 "Minimum and maximum seasonal snow buildup for supported pieces outside Deep North. Values are clamped to 0..1 and the smaller value is used as minimum. The applied maximum is limited to 0.99 to prevent vanilla heavy snow damage.");
-            reducedSeasonalSnowBuildup = serverConfig("Season - Winter snow", "Reduced snow buildup", defaultValue: new Vector2(0.3f, 0.6f),
+            reducedSeasonalSnowBuildup = serverConfig("Season - Winter snow", "Reduced snow buildup limits", defaultValue: new Vector2(0.3f, 0.6f),
                 "Alternative minimum and maximum seasonal snow buildup intended for flat pieces where a thick snow mesh looks unnatural.");
             reducedSeasonalSnowPrefabs = serverConfig("Season - Winter snow", "Reduced snow buildup prefabs", defaultValue: "wood_floor_1x1,wood_floor,wood_stair,wood_stepladder,stone_floor_2x2,stone_stair,blackmarble_2x2x2,blackmarble_floor,blackmarble_floor_triangle,blackmarble_stair,piece_dvergr_spiralstair,piece_dvergr_spiralstair_right,ashwood_floor_1x1,ashwood_floor_2x2,ashwood_deco_floor,ashwood_stair,Piece_grausten_floor_1x1,Piece_grausten_floor_2x2,Piece_grausten_floor_4x4,Piece_grausten_stone_ladder,charcoal_kiln,piece_beehive",
                 "Comma-separated prefab names that use Reduced snow buildup instead of Snow buildup.");
