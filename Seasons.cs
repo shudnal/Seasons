@@ -27,7 +27,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.8.2";
+        public const string pluginVersion = "1.8.3";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -95,6 +95,19 @@ namespace Seasons
         public static ConfigEntry<float> chanceToProduceACropInWinter;
         public static ConfigEntry<float> secondsToFreezeForCropInWinter;
         public static ConfigEntry<bool> cultivatedGroundTurnsIntoDirtInWinter;
+
+        public static ConfigEntry<bool> enableSeasonalSnow;
+        public static ConfigEntry<Vector2> seasonalSnowBuildup;
+        public static ConfigEntry<Vector2> reducedSeasonalSnowBuildup;
+        public static ConfigEntry<string> reducedSeasonalSnowPrefabs;
+        public static ConfigEntry<float> seasonalSnowAccumulationSpeed;
+        public static ConfigEntry<float> seasonalSnowHeatSourceMeltMultiplier;
+        public static ConfigEntry<float> seasonalSnowSelfHeatMultiplier;
+        public static ConfigEntry<float> seasonalSnowInteractiveObjectMeltMultiplier;
+        public static ConfigEntry<float> seasonalSnowLeakyPieceMeltMultiplier;
+        public static ConfigEntry<float> seasonalSnowRoofPieceMeltMultiplier;
+        public static ConfigEntry<string> seasonalSnowClippingFixes;
+        public static ConfigEntry<string> seasonalEnemySnowLevels;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -275,7 +288,7 @@ namespace Seasons
 
         private static int _instanceChangeIDShieldGeneratorCache;
         private static readonly Dictionary<Vector2, bool> _cachedIgnoredPositions = new Dictionary<Vector2, bool>();
-        private static readonly Dictionary<Vector2, bool> _cachedShieldedPositions = new Dictionary<Vector2, bool>();
+        private static readonly Dictionary<Vector3, bool> _cachedShieldedPositions = new Dictionary<Vector3, bool>();
         private static int _cachedShieldedPositionsChangeID;
 
         private static readonly Dictionary<string, GameObject> _treeRegrowthPrefabs = new Dictionary<string, GameObject>();
@@ -542,6 +555,39 @@ namespace Seasons
             seasonOverrided.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
             overrideSeasonDay.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
             seasonDayOverrided.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
+
+            enableSeasonalSnow = serverConfig("Season - Winter snow", "Enable seasonal snow", defaultValue: true,
+                "Enable seasonal snow buildup on supported pieces outside Deep North.");
+            seasonalSnowBuildup = serverConfig("Season - Winter snow", "Snow buildup limits", defaultValue: new Vector2(0.4f, 0.99f),
+                "Minimum and maximum seasonal snow buildup for supported pieces outside Deep North. Values are clamped to 0..1 and the smaller value is used as minimum. The applied maximum is limited to 0.99 to prevent vanilla heavy snow damage.");
+            reducedSeasonalSnowBuildup = serverConfig("Season - Winter snow", "Reduced snow buildup limits", defaultValue: new Vector2(0.3f, 0.6f),
+                "Alternative minimum and maximum seasonal snow buildup intended for flat pieces where a thick snow mesh looks unnatural.");
+            reducedSeasonalSnowPrefabs = serverConfig("Season - Winter snow", "Reduced snow buildup prefabs", defaultValue: "wood_floor_1x1,wood_floor,wood_stair,wood_stepladder,stone_floor_2x2,stone_stair,blackmarble_2x2x2,blackmarble_floor,blackmarble_floor_triangle,blackmarble_stair,piece_dvergr_spiralstair,piece_dvergr_spiralstair_right,ashwood_floor_1x1,ashwood_floor_2x2,ashwood_deco_floor,ashwood_stair,Piece_grausten_floor_1x1,Piece_grausten_floor_2x2,Piece_grausten_floor_4x4,Piece_grausten_stone_ladder,charcoal_kiln,piece_beehive,stone_pile,flint_pile,blackmarble_pile,grausten_pile,coal_pile,piece_chest_barrel,skull_pile",
+                "Comma-separated prefab names that use Reduced snow buildup limits instead of Snow buildup limits.");
+            seasonalSnowAccumulationSpeed = serverConfig("Season - Winter snow", "Snow accumulation speed", defaultValue: 1f,
+                "Multiplier for seasonal snow accumulation from weather. 1 is the default rate, 0 disables accumulation above the configured minimum.");
+            seasonalSnowHeatSourceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - heat sources", defaultValue: 0.2f,
+                "Controls how quickly seasonal snow melts near active heat sources such as fires. 0 disables heat-based melting.");
+            seasonalSnowSelfHeatMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - self-heating pieces", defaultValue: 5f,
+                "Additional heat-melting speed for pieces that produce their own heat while active, such as kilns and smelters.");
+            seasonalSnowInteractiveObjectMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - interactive objects", defaultValue: 5f,
+                "Controls how quickly snow melts while an object is actively used, including crafting stations, chairs, beds and similar objects.");
+            seasonalSnowLeakyPieceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - leaky pieces", defaultValue: 2f,
+                "Additional heat-melting speed for pieces that let rain through, such as open floors and similar building parts.");
+            seasonalSnowRoofPieceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - roof pieces", defaultValue: 0f,
+                "Controls heat-based melting on roof pieces. 0 keeps snow on roofs even when a fire is nearby.");
+            seasonalSnowClippingFixes = config("Season - Winter snow", "Fix snow clipping through some pieces", defaultValue: "wood_floor:-0.19;stone_arch:0.46;Piece_grausten_floor_4x4:-0.02;ashwood_stair:0.90;stone_floor_2x2:0.23;blackmarble_2x2x2:0.73;blackmarble_floor:0.23;smelter:3.8",
+                "Semicolon-separated prefab:localY entries that set the local Y position of snow meshes for pieces where the vanilla snow mesh clips through the model.");
+            seasonalEnemySnowLevels = serverConfig("Season - Winter snow", "Enemy snow cover levels", defaultValue: SeasonalEnemySnow.DefaultSnowLevelRanges,
+                "Semicolon-separated prefab:min-max entries that apply a random VisEquipment snow-cover level while the current environment has snow buildup. Values are clamped to 0..1. An empty value disables the feature.");
+
+            enableSeasonalSnow.SettingChanged += (sender, args) => SeasonalSnow.OnEnabledConfigChanged();
+            seasonalSnowBuildup.SettingChanged += (sender, args) => SeasonalSnow.OnSnowRangeConfigChanged();
+            reducedSeasonalSnowBuildup.SettingChanged += (sender, args) => SeasonalSnow.OnSnowRangeConfigChanged();
+            reducedSeasonalSnowPrefabs.SettingChanged += (sender, args) => SeasonalSnow.OnReducedSnowPrefabsConfigChanged();
+            seasonalSnowAccumulationSpeed.SettingChanged += (sender, args) => SeasonalSnow.OnAccumulationSpeedConfigChanged();
+            seasonalSnowClippingFixes.SettingChanged += (sender, args) => SeasonalSnow.OnSnowClippingFixConfigChanged();
+            SeasonalSnow.RebuildReducedSnowBuildupPrefabs();
 
             enableFrozenWater = serverConfig("Season - Winter ocean", "Enable frozen water", defaultValue: true, "Enable frozen water in winter");
             waterFreezesInWinterDays = serverConfig("Season - Winter ocean", "Freeze the water at given days from to", defaultValue: new Vector2(6f, 9f), "Water will freeze in the first set day of winter and will be unfrozen after second set day");
@@ -862,6 +908,9 @@ namespace Seasons
             if (seconds <= 0)
                 return "$hud_ready".Localize();
 
+            if (double.IsPositiveInfinity(seconds))
+                return "\u221e";
+
             TimeSpan ts = TimeSpan.FromSeconds(seconds);
             return ts.ToString(ts.Hours > 0 ? @"h\:mm\:ss" : @"m\:ss");
         }
@@ -973,6 +1022,15 @@ namespace Seasons
             return _GrassToControlSize.Contains(PrefabVariantController.GetPrefabName(gameObject).ToLower());
         }
 
+        public static void ResetWorldRuntimeState()
+        {
+            _treeRegrowthPrefabs.Clear();
+            _cachedIgnoredPositions.Clear();
+            _cachedShieldedPositions.Clear();
+            _instanceChangeIDShieldGeneratorCache = 0;
+            _cachedShieldedPositionsChangeID = 0;
+        }
+
         public static void InvalidatePositionsCache()
         {
             _cachedIgnoredPositions.Clear();
@@ -1022,7 +1080,7 @@ namespace Seasons
                 _cachedShieldedPositionsChangeID = shieldChangeID;
             }
 
-            Vector2 pos = new(position.x, position.z);
+            Vector3 pos = position;
             if (_cachedShieldedPositions.TryGetValue(pos, out bool shielded))
                 return shielded;
 
@@ -1073,12 +1131,13 @@ namespace Seasons
 
         public static IEnumerator PickableSetPickedInWinter(Pickable pickable)
         {
+            ZNetScene scene = ZNetScene.instance;
             yield return waitFor1Second;
 
-            if (!pickable.ShouldBePickedInWinter())
+            if (!scene || ZNetScene.instance != scene || !pickable || !pickable.ShouldBePickedInWinter())
                 yield break;
 
-            if (!pickable.m_nview || !pickable.m_nview.IsValid())
+            if (!pickable.m_nview || !pickable.m_nview.IsValid() || !pickable.m_nview.IsOwner())
                 yield break;
 
             if (UnityEngine.Random.Range(0f, 1f) < Mathf.Clamp01(chanceToProduceACropInWinter.Value))
@@ -1089,9 +1148,14 @@ namespace Seasons
 
         public static IEnumerator ReplantTree(GameObject prefab, Vector3 position, Quaternion rotation, float scale)
         {
+            ZNetScene scene = ZNetScene.instance;
+            ZoneSystem zones = ZoneSystem.instance;
             yield return waitFor5Seconds;
 
-            if (ZoneSystem.instance.IsBlocked(position))
+            if (!scene || ZNetScene.instance != scene || !zones || ZoneSystem.instance != zones || !prefab)
+                yield break;
+
+            if (zones.IsBlocked(position))
                 yield break;
 
             if ((bool)EffectArea.IsPointInsideArea(position, EffectArea.Type.PlayerBase))
@@ -1101,7 +1165,10 @@ namespace Seasons
 
             yield return waitForFixedUpdate;
 
-            if (result != null && result.TryGetComponent(out ZNetView m_nview) && m_nview.IsValid())
+            if (!scene || ZNetScene.instance != scene)
+                yield break;
+
+            if (result != null && result.TryGetComponent(out ZNetView m_nview) && m_nview.IsValid() && m_nview.IsOwner())
             {
                 m_nview.GetZDO().Set(SeasonsVars.s_treeRegrowthHaveGrowSpace, true);
 

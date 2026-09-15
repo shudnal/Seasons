@@ -1,4 +1,4 @@
-﻿using BepInEx;
+using BepInEx;
 using HarmonyLib;
 using Newtonsoft.Json;
 using ConditionalConfigSync;
@@ -43,10 +43,12 @@ namespace Seasons
     {
         private static void Postfix()
         {
-            if (!UseTextureControllers())
-                return;
-
+            PrefabVariantController.instance?.RevertPrefabsState();
+            ClutterVariantController.Instance?.RevertColors();
+            texturesVariants.Dispose();
             texturesVariants = new SeasonalTextureVariants();
+            SeasonalTexturePrefabCache.SetCurrentTextureVariants(texturesVariants);
+            ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.Clear();
         }
     }
 
@@ -178,12 +180,30 @@ namespace Seasons
 
                 shaderIgnoreMaterial = new Dictionary<string, string[]>
                 {
-                    { "Custom/Vegetation", new string[] { "bark", "trunk", "_wood", "HildirFlowerGirland_", "HildirTentCloth_", "TraderTent_", "VinesBranch_mat", "VinesBranch_Ashlands_mat", "BogWitchHutCurtains2_mat", "BogWitchHutCurtains_mat" } },
+                    { "Custom/Vegetation", new string[] { 
+                        "bark",
+                        "trunk",
+                        "_wood",
+                        "HildirFlowerGirland_",
+                        "HildirTentCloth_",
+                        "TraderTent_",
+                        "VinesBranch_mat",
+                        "VinesBranch_Ashlands_mat",
+                        "BogWitchHutCurtains2_mat",
+                        "BogWitchHutCurtains_mat",
+                        "StumpHut_mat",
+                        "Stump_tip_snow",
+                        "Pinetree_log",
+                        "Pinetree_snow_log",
+                        "Firetree_snow_log",
+                        "Firetree_Morkhalla_log",
+                        "PineTree_01_dead"
+                    } },
                 };
 
                 shaderOnlyMaterial = new Dictionary<string, string[]>
                 {
-                    { "Custom/Piece", new string[] { "straw", "RoofShingles", "beehive", "Midsummerpole_mat", "Pine_tree_xmas", "ReworkedValheim", "shipyardNewCloth", "M_Cloth_01", "bcp_clay", "Grausten_RoofSlab_mat" } },
+                    { "Custom/Piece", new string[] { "beehive", "Midsummerpole_mat", "Pine_tree_xmas", "ReworkedValheim", "shipyardNewCloth", "M_Cloth_01", "bcp_clay" } },
                     { "Custom/Creature", new string[] { "HildirsLox", "lox", "lox_calf",
                                                         "Draugr_Archer_mat", "Draugr_mat", "Draugr_elite_mat", "Abomination_mat",
                                                         "greyling", "greydwarf", "greydwarf_elite", "greydwarf_shaman", "neck" } },
@@ -301,7 +321,14 @@ namespace Seasons
                     "Runestone_Ashlands",
                     ClutterVariantController.c_meadowsFlowersPrefabName,
                     ClutterVariantController.c_forestBloomPrefabName,
-                    ClutterVariantController.c_swampGrassBloomPrefabName
+                    ClutterVariantController.c_swampGrassBloomPrefabName,
+                    "DevMageRoom",
+                    "DevBedchamber",
+                    "ShipSetting02",
+                    "ShipSetting03",
+                    "MorkBorg",
+                    "Greydwarf_Frozen",
+                    "Greydwarf_Shaman_Frozen"
                 };
 
                 ignorePrefabPartialName = new List<string>()
@@ -342,7 +369,8 @@ namespace Seasons
                     "Ashlands_rock",
                     "instanced_ashlands_grass",
                     "MWL_AshlandsFort",
-                    ClutterVariantController.c_shieldedGrassSuffix
+                    ClutterVariantController.c_shieldedGrassSuffix,
+                    "Morkhalla_"
                 };
 
                 itemsPrefab = new List<string>()
@@ -1573,7 +1601,7 @@ namespace Seasons
         private const float clutterWeight = 30f;
 
         private static readonly Stopwatch stopwatchController = new Stopwatch();
-
+        private static FileSystemWatcher s_configWatcher;
         public static void SetCurrentTextureVariants(SeasonalTextureVariants texturesVariants)
         {
             currentTextureVariants = texturesVariants;
@@ -1588,6 +1616,7 @@ namespace Seasons
 
         public static void SetupConfigWatcher()
         {
+            s_configWatcher?.Dispose();
             string filter = $"*.json";
 
             FileSystemWatcher fileSystemWatcher1 = new FileSystemWatcher(CacheSettingsDirectory(), filter);
@@ -1598,6 +1627,7 @@ namespace Seasons
             fileSystemWatcher1.IncludeSubdirectories = false;
             fileSystemWatcher1.SynchronizingObject = ThreadingHelper.SynchronizingObject;
             fileSystemWatcher1.EnableRaisingEvents = true;
+            s_configWatcher = fileSystemWatcher1;
 
             foreach (FileInfo file in new DirectoryInfo(CacheSettingsDirectory()).GetFiles("*.json", SearchOption.TopDirectoryOnly))
                 ReadConfigFile(file.Name, file.FullName);
@@ -1712,6 +1742,11 @@ namespace Seasons
 
         public static bool GetTextureVariants(string prefabName, string rendererName, Material material, string propertyName, Texture texture, out TextureVariants textureVariants, bool isPlant)
         {
+            if (texture is not Texture2D)
+            {
+                textureVariants = null;
+                return false;
+            }
             textureVariants = new TextureVariants(texture);
 
             Color[] pixels = GetTexturePixels(texture, textureVariants.properties, out textureVariants.originalPNG);
@@ -1779,6 +1814,8 @@ namespace Seasons
             return textureVariants.Initialized();
         }
 
+
+
         private static Color[] GetTexturePixels(Texture texture, TextureProperties texProperties, out byte[] originalPNG)
         {
             RenderTexture tmp = RenderTexture.GetTemporary(
@@ -1793,24 +1830,26 @@ namespace Seasons
             tmp.wrapMode = texProperties.wrapMode;
             tmp.filterMode = texProperties.filterMode;
 
-            Graphics.Blit(texture, tmp);
-
             RenderTexture previous = RenderTexture.active;
-            RenderTexture.active = tmp;
-
-            Texture2D textureCopy = texProperties.CreateTexture();
-            textureCopy.ReadPixels(new Rect(0, 0, tmp.width, tmp.height), 0, 0, true);
-            textureCopy.Apply();
-
-            RenderTexture.active = previous;
-            RenderTexture.ReleaseTemporary(tmp);
-
-            Color[] pixels = textureCopy.GetPixels();
-            originalPNG = textureCopy.EncodeToPNG();
-
-            Object.Destroy(textureCopy);
-
-            return pixels;
+            Texture2D textureCopy = null;
+            try
+            {
+                Graphics.Blit(texture, tmp);
+                RenderTexture.active = tmp;
+                textureCopy = texProperties.CreateTexture();
+                textureCopy.ReadPixels(new Rect(0, 0, tmp.width, tmp.height), 0, 0, true);
+                textureCopy.Apply();
+                Color[] pixels = textureCopy.GetPixels();
+                originalPNG = textureCopy.EncodeToPNG();
+                return pixels;
+            }
+            finally
+            {
+                RenderTexture.active = previous;
+                RenderTexture.ReleaseTemporary(tmp);
+                if (textureCopy)
+                    Object.Destroy(textureCopy);
+            }
         }
         
         private static void GenerateTextureVariants(Season season, ColorVariant[] colorVariants, Color[] pixels, int[] pixelsToChange, TextureProperties texProperties, TextureVariants textureVariants)
@@ -1835,7 +1874,7 @@ namespace Seasons
         }
 
         // Used to force global cache rebuild after mod changes
-        const string globalRevision = "1.5.0";
+        const string globalRevision = "1.6.0";
 
         public static uint GetRevision()
         {
@@ -1953,6 +1992,46 @@ namespace Seasons
         }
 
         public static IEnumerator FillWithGameData()
+        {
+            ZoneSystem zone = ZoneSystem.instance;
+            ZNetScene scene = ZNetScene.instance;
+            ClutterSystem clutter = ClutterSystem.instance;
+            SeasonalTextureVariants target = currentTextureVariants;
+            Stack<IEnumerator> work = new Stack<IEnumerator>();
+            work.Push(FillWithGameDataCore());
+            bool completed = false;
+            try
+            {
+                while (work.Count > 0)
+                {
+                    if (!zone || zone != ZoneSystem.instance || !scene || scene != ZNetScene.instance
+                        || !clutter || clutter != ClutterSystem.instance || target != currentTextureVariants)
+                        yield break;
+
+
+                    IEnumerator step = work.Peek();
+                    if (!step.MoveNext())
+                    {
+                        (work.Pop() as IDisposable)?.Dispose();
+                        continue;
+                    }
+                    if (step.Current is IEnumerator nested)
+                        work.Push(nested);
+                    else
+                        yield return step.Current;
+                }
+                completed = true;
+            }
+            finally
+            {
+                while (work.Count > 0)
+                    (work.Pop() as IDisposable)?.Dispose();
+                if (!completed)
+                    target.Dispose();
+            }
+        }
+
+        private static IEnumerator FillWithGameDataCore()
         {
             Stopwatch stopwatch = Stopwatch.StartNew();
 
@@ -2211,6 +2290,8 @@ namespace Seasons
                 {
                     foreach (string propertyName in materialColorNames)
                     {
+                        if (!material.HasProperty(propertyName))
+                            continue;
                         Color color = material.GetColor(propertyName);
                         if (color == null || color == Color.clear || color == Color.white || color == Color.black)
                             continue;
@@ -2222,6 +2303,8 @@ namespace Seasons
                 else if (materialSettings.shaderColors.TryGetValue(material.shader.name, out string[] colorNames))
                     foreach (string propertyName in colorNames)
                     {
+                        if (!material.HasProperty(propertyName))
+                            continue;
                         Color color = material.GetColor(propertyName);
                         if (color == null || color == Color.clear || color == Color.white || color == Color.black)
                             continue;

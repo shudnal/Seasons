@@ -79,7 +79,8 @@ namespace Seasons
                     field.SetValue(statusEffect, property.GetValue(this));
                 }
 
-                statusEffect.m_mods.Clear();
+                // StatusEffect.Clone uses MemberwiseClone; replace collections before writing.
+                statusEffect.m_mods = new List<HitData.DamageModPair>();
                 foreach (KeyValuePair<string, string> damageMod in m_damageModifiers)
                     if (Enum.TryParse(damageMod.Key, out HitData.DamageType m_type) && Enum.TryParse(damageMod.Value, out HitData.DamageModifier m_modifier))
                         statusEffect.m_mods.Add(new HitData.DamageModPair() { m_type = m_type, m_modifier = m_modifier });
@@ -88,20 +89,20 @@ namespace Seasons
                 if (Enum.TryParse(m_healthHitType, out HitData.HitType hitType))
                     statusEffect.m_hitType = hitType;
 
-                statusEffect.m_customRaiseSkills.Clear();
+                statusEffect.m_customRaiseSkills = new Dictionary<Skills.SkillType, float>();
                 foreach (KeyValuePair<string, float> skillPair in m_raiseSkills)
                     if (ParseSkill(skillPair.Key, out Skills.SkillType skill))
-                        statusEffect.m_customRaiseSkills.Add(skill, skillPair.Value);
+                        statusEffect.m_customRaiseSkills[skill] = skillPair.Value;
 
-                statusEffect.m_customSkillLevels.Clear();
+                statusEffect.m_customSkillLevels = new Dictionary<Skills.SkillType, float>();
                 foreach (KeyValuePair<string, float> skillPair in m_skillLevels)
                     if (ParseSkill(skillPair.Key, out Skills.SkillType skill))
-                        statusEffect.m_customSkillLevels.Add(skill, skillPair.Value);
+                        statusEffect.m_customSkillLevels[skill] = skillPair.Value;
 
-                statusEffect.m_customModifyAttackSkills.Clear();
+                statusEffect.m_customModifyAttackSkills = new Dictionary<Skills.SkillType, float>();
                 foreach (KeyValuePair<string, float> skillPair in m_modifyAttackSkills)
                     if (ParseSkill(skillPair.Key, out Skills.SkillType skill))
-                        statusEffect.m_customModifyAttackSkills.Add(skill, skillPair.Value);
+                        statusEffect.m_customModifyAttackSkills[skill] = skillPair.Value;
             }
 
             public bool ParseSkill(string skillName, out Skills.SkillType skill)
@@ -110,7 +111,7 @@ namespace Seasons
                     return true;
 
                 Skills.SkillType fromSkillManager = (Skills.SkillType)Math.Abs(skillName.GetStableHashCode());
-                if (Player.m_localPlayer.m_skills.m_skills.Any(skl => skl.m_skill == fromSkillManager))
+                if (Player.m_localPlayer != null && Player.m_localPlayer.m_skills.m_skills.Any(skl => skl.m_skill == fromSkillManager))
                 {
                     skill = fromSkillManager;
                     return true;

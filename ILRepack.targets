@@ -18,16 +18,14 @@
 	</Target>
 
 	<!--
-    Run all post-build operations in an explicit order:
-    1. Package the original plugin DLL for Thunderstore.
-    2. Copy the original plugin DLL to the r2modman profile.
-    3. Repack Newtonsoft.Json into the plugin DLL for Nexus.
-    4. Build the Nexus package from the repacked DLL.
+    Run post-build operations in an explicit order:
+    1. Package the plugin DLL for Thunderstore.
+    2. Copy the plugin DLL to the r2modman profile.
   -->
 	<Target
 	  Name="BuildSeasonsArtifacts"
 	  AfterTargets="Build"
-	  DependsOnTargets="BuildSeasonsThunderstorePackage;CopySeasonsToR2ModMan;RepackNexus;CopyDLLNexus;ZipNexus"
+	  DependsOnTargets="BuildSeasonsThunderstorePackage;CopySeasonsToR2ModMan"
 	  Condition="'$(DesignTimeBuild)' != 'true'" />
 
 	<Target
@@ -108,36 +106,5 @@
 		<Message Text="Copied $(ThunderstorePackageName).dll to r2modman profile: $(R2ModManPluginDirectory)" Importance="High" />
 	</Target>
 
-	<Target Name="RepackNexus">
-		<ItemGroup>
-			<InputAssemblies Include="$(TargetPath)" />
-			<InputAssemblies Include="$(OutputPath)Newtonsoft.Json.dll" />
-		</ItemGroup>
-
-		<ILRepack
-		  Parallel="true"
-		  DebugInfo="true"
-		  Internalize="true"
-		  InputAssemblies="@(InputAssemblies)"
-		  OutputFile="$(TargetPath)"
-		  TargetKind="SameAsPrimaryAssembly"
-		  LibraryPath="$(OutputPath)" />
-	</Target>
-
-	<Target Name="CopyDLLNexus">
-		<MakeDir Directories="$(MSBuildProjectDirectory)\package\nexus\$(MSBuildProjectName)\" />
-		<Copy
-		  SourceFiles="$(TargetPath)"
-		  DestinationFiles="$(MSBuildProjectDirectory)\package\nexus\$(MSBuildProjectName)\$(TargetFileName)" />
-		<Message Text="Copied repacked DLL to Nexus package folder." Importance="High" />
-	</Target>
-
-	<Target Name="ZipNexus">
-		<ZipDirectory
-		  SourceDirectory="$(MSBuildProjectDirectory)\package\nexus\$(MSBuildProjectName)\"
-		  DestinationFile="$(MSBuildProjectDirectory)\package\nexus\$(MSBuildProjectName).zip"
-		  Overwrite="true" />
-		<Message Text="Nexus archive created: $(MSBuildProjectDirectory)\package\nexus\$(MSBuildProjectName).zip" Importance="High" />
-	</Target>
 
 </Project>

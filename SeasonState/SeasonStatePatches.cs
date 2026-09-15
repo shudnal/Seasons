@@ -4,12 +4,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using static Seasons.Seasons;
 using UnityEngine;
+using static Seasons.Seasons;
 
 namespace Seasons
 {
-    internal class SeasonStatePatches
+    public class SeasonStatePatches
     {
         [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.UpdateEquipment))]
         public static class Humanoid_UpdateEquipment_ToggleTorchesWarmth
@@ -64,16 +64,39 @@ namespace Seasons
                 if (__instance != Player.m_localPlayer)
                     return;
 
-                seasonState.PatchTorchesInInventory(__instance.GetInventory());
+                seasonState.UpdateTorchesFireWarmth();
             }
         }
 
-        [HarmonyPatch(typeof(Inventory), nameof(Inventory.Load))]
+        [HarmonyPatch]
+        public static class VisEquipment_HandEquipped_TorchWarmth
+        {
+            private static IEnumerable<MethodBase> TargetMethods()
+            {
+                yield return AccessTools.Method(typeof(VisEquipment), nameof(VisEquipment.SetRightHandEquipped), new[] { typeof(int), typeof(int) });
+                yield return AccessTools.Method(typeof(VisEquipment), nameof(VisEquipment.SetLeftHandEquipped), new[] { typeof(int), typeof(int), typeof(int) });
+            }
+
+            private static void Postfix(VisEquipment __instance, bool __result)
+            {
+                if (__result && Player.m_localPlayer != null && Player.m_localPlayer.m_visEquipment == __instance)
+                    seasonState.UpdateTorchesFireWarmth();
+            }
+        }
+
+        [HarmonyPatch]
         public class Inventory_Load_TorchPatch
         {
+            private static IEnumerable<MethodBase> TargetMethods()
+            {
+                yield return AccessTools.Method(typeof(Inventory), nameof(Inventory.Load), new[] { typeof(ZPackage) });
+                yield return AccessTools.Method(typeof(Inventory), nameof(Inventory.Load), new[] { typeof(ZPackage), typeof(bool) });
+            }
+
             public static void Postfix(Inventory __instance)
             {
-                seasonState.PatchTorchesInInventory(__instance);
+                if (!__instance.m_temoraryInventory)
+                    seasonState.PatchTorchesInInventory(__instance);
             }
         }
 
@@ -98,9 +121,12 @@ namespace Seasons
                     return;
 
                 Season season = seasonState.GetCurrentSeason();
-                __result = __instance.name == "Halloween" && season == Season.Fall
-                        || __instance.name == "Midsummer" && season == Season.Summer
-                        || __instance.name == "Yule" && season == Season.Winter;
+                switch (__instance.name)
+                {
+                    case "Halloween": __result = season == Season.Fall; break;
+                    case "Midsummer": __result = season == Season.Summer; break;
+                    case "Yule": __result = season == Season.Winter; break;
+                }
             }
         }
 
@@ -125,7 +151,15 @@ namespace Seasons
                 if (biome == Heightmap.Biome.Mountain || biome == Heightmap.Biome.DeepNorth)
                     return true;
 
-                return __instance.GetHealth() >= 5;
+                float health = __instance.GetHealth();
+                if (health < 5f)
+                    return false;
+
+                float damage = hit.GetTotalDamage() * Game.m_localDamgeTakenRate;
+                if (damage >= health)
+                    hit.ApplyModifier((health - 1f) / damage);
+
+                return true;
             }
         }
 
@@ -171,7 +205,7 @@ namespace Seasons
                 return true;
             }
 
-            private static void Postfix(ref float ___m_respawnTimeMinutes, ref float __state)
+            private static void Finalizer(ref float ___m_respawnTimeMinutes, float __state)
             {
                 if (__state == 0f)
                     return;
@@ -231,56 +265,47 @@ namespace Seasons
         [HarmonyPatch(typeof(Vine), nameof(Vine.UpdateGrow))]
         public static class Vine_UpdateGrow_VinesGrowthWinterStop
         {
-            private static float m_growTime;
-            private static float m_growTimePerBranch;
-
-            private static bool Prefix(Vine __instance, ref bool __state)
+            private static bool Prefix(Vine __instance, ref Tuple<float, float> __state)
             {
                 if (IsProtectedPosition(__instance.transform.position) || __instance.m_initialGrowItterations > 0 || __instance.IsDoneGrowing)
                     return true;
 
                 float multiplier = seasonState.GetPlantsGrowthMultiplier();
-                if (multiplier == 0f)
+                if (multiplier <= 0f)
                     return false;
 
-                m_growTime = __instance.m_growTime;
-                m_growTimePerBranch = __instance.m_growTimePerBranch;
-
-                __state = true;
-
-                __instance.m_growTime *= multiplier;
-                __instance.m_growTimePerBranch *= multiplier;
+                __state = Tuple.Create(__instance.m_growTime, __instance.m_growTimePerBranch);
+                __instance.m_growTime /= multiplier;
+                __instance.m_growTimePerBranch /= multiplier;
 
                 return true;
             }
 
-            private static void Postfix(Vine __instance, bool __state)
+            private static void Finalizer(Vine __instance, Tuple<float, float> __state)
             {
-                if (!__state)
+                if (__state == null)
                     return;
 
-                __instance.m_growTime = m_growTime;
-                __instance.m_growTimePerBranch = m_growTimePerBranch;
+                __instance.m_growTime = __state.Item1;
+                __instance.m_growTimePerBranch = __state.Item2;
             }
         }
 
         [HarmonyPatch(typeof(Plant), nameof(Plant.UpdateHealth))]
         public static class Pickable_UpdateHealth_PlantsPerishInWinter
         {
-            private static bool isProtected;
-
-            private static void Prefix(Plant __instance, ref double timeSincePlanted)
+            private static void Prefix(Plant __instance, ref double timeSincePlanted, ref bool __state)
             {
-                if (isProtected = IsProtectedPosition(__instance.transform.position))
+                if (__state = IsProtectedPosition(__instance.transform.position))
                     return;
 
                 if (timeSincePlanted == 0d && seasonState.GetPlantsGrowthMultiplier() == 0f && seasonState.GetCurrentSeason() == Season.Winter)
                     timeSincePlanted = 11d;
             }
 
-            private static void Postfix(Plant __instance, ref Plant.Status ___m_status)
+            private static void Postfix(Plant __instance, ref Plant.Status ___m_status, bool __state)
             {
-                if (isProtected)
+                if (__state)
                     return;
 
                 if (___m_status == Plant.Status.Healthy && seasonState.GetPlantsGrowthMultiplier() == 0f && seasonState.GetCurrentSeason() == Season.Winter
@@ -355,22 +380,22 @@ namespace Seasons
         [HarmonyPatch(typeof(Beehive), nameof(Beehive.Interact))]
         public static class Beehive_Interact_BeesInteractionMessage
         {
-            private static void Prefix(Beehive __instance, ref string __state)
+            private static void Prefix(Beehive __instance, ref Tuple<string> __state)
             {
                 if (IsProtectedPosition(__instance.transform.position))
                     return;
 
-                __state = __instance.m_happyText;
+                __state = Tuple.Create(__instance.m_happyText);
                 if (seasonState.GetBeehiveProductionMultiplier() == 0f)
                     __instance.m_happyText = __instance.m_sleepText;
             }
 
-            private static void Postfix(Beehive __instance, ref string __state)
+            private static void Finalizer(Beehive __instance, Tuple<string> __state)
             {
-                if (IsProtectedPosition(__instance.transform.position))
+                if (__state == null)
                     return;
 
-                __instance.m_happyText = __state;
+                __instance.m_happyText = __state.Item1;
             }
         }
 
@@ -429,7 +454,7 @@ namespace Seasons
                 if (IsProtectedPosition(__instance.transform.position))
                     return;
 
-                if (seasonState.GetBeehiveProductionMultiplier() == 0f)
+                if (seasonState.GetBeehiveProductionMultiplier() == 0f && ___m_beeEffect != null)
                 {
                     ___m_beeEffect.SetActive(false);
                 }
@@ -450,7 +475,7 @@ namespace Seasons
                 if (__instance.InInterior() || __instance.InShelter())
                     return;
 
-                if (!(dt + __instance.m_foodUpdateTimer >= 1f || forceUpdate))
+                if (!(dt * Game.m_foodRate + __instance.m_foodUpdateTimer >= 1f || forceUpdate))
                     return;
 
                 foreach (Player.Food food in __instance.m_foods)
@@ -503,21 +528,12 @@ namespace Seasons
         [HarmonyPatch(typeof(CookingStation), nameof(CookingStation.UpdateFuel))]
         static class CookingStation_UpdateFuel_FireplaceDrainMultiplier
         {
-            private static void Prefix(CookingStation __instance, ref float dt, ref float __state)
+            private static void Prefix(CookingStation __instance, ref float dt)
             {
                 if (IsProtectedPosition(__instance.transform.position))
                     return;
 
-                __state = dt;
                 dt *= Math.Max(0f, seasonState.GetFireplaceDrainMultiplier());
-            }
-
-            private static void Postfix(CookingStation __instance, ref float dt, float __state)
-            {
-                if (IsProtectedPosition(__instance.transform.position))
-                    return;
-
-                dt = __state;
             }
         }
 
@@ -536,7 +552,7 @@ namespace Seasons
         [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateWear))]
         public static class WearNTear_UpdateWear_RainProtection
         {
-            private static void Prefix(WearNTear __instance, ZNetView ___m_nview, ref bool ___m_noRoofWear, ref bool __state)
+            private static void Prefix(WearNTear __instance, ZNetView ___m_nview, ref bool ___m_noRoofWear, ref bool? __state)
             {
                 if (!seasonState.GetRainProtection())
                     return;
@@ -548,35 +564,32 @@ namespace Seasons
                     return;
 
                 __state = ___m_noRoofWear;
-
                 ___m_noRoofWear = false;
             }
 
-            private static void Postfix(ref bool ___m_noRoofWear, bool __state)
+            private static void Finalizer(ref bool ___m_noRoofWear, bool? __state)
             {
-                if (!seasonState.GetRainProtection())
-                    return;
-
-                if (__state != true) return;
-
-                ___m_noRoofWear = __state;
+                if (__state.HasValue)
+                    ___m_noRoofWear = __state.Value;
             }
         }
 
         [HarmonyPatch(typeof(TreeLog), nameof(TreeLog.Destroy))]
         public static class TreeLog_Destroy_TreeWoodDrop
         {
-            public static void ApplyWoodMultiplier(DropTable m_dropWhenDestroyed)
+            public static void ApplyWoodMultiplier(ref DropTable table, ref DropTable original)
             {
-                if (!m_dropWhenDestroyed.m_drops.Any(dd => ControlWoodDrop(dd.m_item)))
+                if (table == null || !table.m_drops.Any(dd => dd.m_item != null && ControlWoodDrop(dd.m_item)))
                     return;
 
-                m_dropWhenDestroyed.m_dropMax = Mathf.CeilToInt(m_dropWhenDestroyed.m_dropMax * seasonState.GetWoodFromTreesMultiplier());
-                if (m_dropWhenDestroyed.m_dropMin < m_dropWhenDestroyed.m_dropMax)
-                    m_dropWhenDestroyed.m_dropMin = m_dropWhenDestroyed.m_dropMax;
+                original = table;
+                table = table.Clone();
+                float multiplier = Mathf.Max(0f, seasonState.GetWoodFromTreesMultiplier());
+                table.m_dropMin = Mathf.CeilToInt(table.m_dropMin * multiplier);
+                table.m_dropMax = Mathf.Max(table.m_dropMin, Mathf.CeilToInt(table.m_dropMax * multiplier));
             }
 
-            private static void Prefix(TreeLog __instance, ZNetView ___m_nview, ref DropTable ___m_dropWhenDestroyed)
+            private static void Prefix(TreeLog __instance, ZNetView ___m_nview, ref DropTable ___m_dropWhenDestroyed, ref DropTable __state)
             {
                 if (seasonState.GetWoodFromTreesMultiplier() == 1.0f)
                     return;
@@ -587,7 +600,13 @@ namespace Seasons
                 if (IsProtectedPosition(__instance.transform.position))
                     return;
 
-                ApplyWoodMultiplier(___m_dropWhenDestroyed);
+                ApplyWoodMultiplier(ref ___m_dropWhenDestroyed, ref __state);
+            }
+
+            private static void Finalizer(ref DropTable ___m_dropWhenDestroyed, DropTable __state)
+            {
+                if (__state != null)
+                    ___m_dropWhenDestroyed = __state;
             }
         }
 
@@ -636,7 +655,7 @@ namespace Seasons
         [HarmonyPatch(typeof(DropOnDestroyed), nameof(DropOnDestroyed.OnDestroyed))]
         public static class DropOnDestroyed_OnDestroyed_TreeWoodDrop
         {
-            private static void Prefix(DropOnDestroyed __instance, ref DropTable ___m_dropWhenDestroyed)
+            private static void Prefix(DropOnDestroyed __instance, ref DropTable ___m_dropWhenDestroyed, ref DropTable __state)
             {
                 if (seasonState.GetWoodFromTreesMultiplier() == 1.0f)
                     return;
@@ -647,35 +666,53 @@ namespace Seasons
                 if (IsProtectedPosition(__instance.transform.position))
                     return;
 
-                TreeLog_Destroy_TreeWoodDrop.ApplyWoodMultiplier(___m_dropWhenDestroyed);
+                TreeLog_Destroy_TreeWoodDrop.ApplyWoodMultiplier(ref ___m_dropWhenDestroyed, ref __state);
+            }
+
+            private static void Finalizer(ref DropTable ___m_dropWhenDestroyed, DropTable __state)
+            {
+                if (__state != null)
+                    ___m_dropWhenDestroyed = __state;
             }
         }
 
         [HarmonyPatch(typeof(CharacterDrop), nameof(CharacterDrop.GenerateDropList))]
         public static class CharacterDrop_GenerateDropList_MeatDrop
         {
-            public static void ApplyMeatMultiplier(List<CharacterDrop.Drop> m_drops)
+            private static void Prefix(CharacterDrop __instance, ref List<CharacterDrop.Drop> ___m_drops, ref List<CharacterDrop.Drop> __state)
             {
-                foreach (CharacterDrop.Drop drop in m_drops)
-                {
-                    if (drop.m_prefab == null || !ControlMeatDrop(drop.m_prefab))
-                        continue;
-
-                    drop.m_amountMax = Mathf.CeilToInt(drop.m_amountMax * seasonState.GetMeatFromAnimalsMultiplier());
-                    if (drop.m_amountMin < drop.m_amountMax)
-                        drop.m_amountMin = drop.m_amountMax;
-                }
-            }
-
-            private static void Prefix(CharacterDrop __instance, ref List<CharacterDrop.Drop> ___m_drops)
-            {
-                if (seasonState.GetMeatFromAnimalsMultiplier() == 1.0f)
+                float multiplier = Mathf.Max(0f, seasonState.GetMeatFromAnimalsMultiplier());
+                if (multiplier == 1f)
                     return;
 
                 if (IsProtectedPosition(__instance.transform.position))
                     return;
 
-                ApplyMeatMultiplier(___m_drops);
+                __state = ___m_drops;
+                ___m_drops = __state.Select(drop => new CharacterDrop.Drop
+                {
+                    m_prefab = drop.m_prefab,
+                    m_amountMin = drop.m_amountMin,
+                    m_amountMax = drop.m_amountMax,
+                    m_chance = drop.m_chance,
+                    m_onePerPlayer = drop.m_onePerPlayer,
+                    m_levelMultiplier = drop.m_levelMultiplier,
+                    m_dontScale = drop.m_dontScale
+                }).ToList();
+                foreach (CharacterDrop.Drop drop in ___m_drops)
+                {
+                    if (drop.m_prefab == null || !ControlMeatDrop(drop.m_prefab))
+                        continue;
+
+                    drop.m_amountMin = Mathf.CeilToInt(drop.m_amountMin * multiplier);
+                    drop.m_amountMax = Mathf.Max(drop.m_amountMin, Mathf.CeilToInt(drop.m_amountMax * multiplier));
+                }
+            }
+
+            private static void Finalizer(ref List<CharacterDrop.Drop> ___m_drops, List<CharacterDrop.Drop> __state)
+            {
+                if (__state != null)
+                    ___m_drops = __state;
             }
         }
 
@@ -692,9 +729,9 @@ namespace Seasons
                 ___m_TTLPerComfortLevel *= seasonState.GetRestedBuffDurationMultiplier();
             }
 
-            private static void Postfix(ref float ___m_baseTTL, ref float ___m_TTLPerComfortLevel, Tuple<float, float> __state)
+            private static void Finalizer(ref float ___m_baseTTL, ref float ___m_TTLPerComfortLevel, Tuple<float, float> __state)
             {
-                if (seasonState.GetRestedBuffDurationMultiplier() == 1.0f)
+                if (__state == null)
                     return;
 
                 ___m_baseTTL = __state.Item1;
@@ -713,36 +750,39 @@ namespace Seasons
                 public float m_pregnancyDuration;
             }
 
-            private static readonly ProcreateState _procreateState = new ProcreateState();
-
-            private static void Prefix(ref Procreation __instance)
+            private static bool Prefix(Procreation __instance, ref ProcreateState __state)
             {
-                if (seasonState.GetLivestockProcreationMultiplier() == 1.0f)
-                    return;
+                float multiplier = Mathf.Max(0f, seasonState.GetLivestockProcreationMultiplier());
+                if (multiplier == 1f)
+                    return true;
+                if (multiplier == 0f)
+                    return false;
 
-                _procreateState.m_totalCheckRange = __instance.m_totalCheckRange;
-                _procreateState.m_partnerCheckRange = __instance.m_partnerCheckRange;
-                _procreateState.m_pregnancyChance = __instance.m_pregnancyChance;
-                _procreateState.m_pregnancyDuration = __instance.m_pregnancyDuration;
-
-                __instance.m_pregnancyChance *= seasonState.GetLivestockProcreationMultiplier();
-                __instance.m_partnerCheckRange *= seasonState.GetLivestockProcreationMultiplier();
-                if (seasonState.GetLivestockProcreationMultiplier() != 0f)
+                __state = new ProcreateState
                 {
-                    __instance.m_totalCheckRange /= seasonState.GetLivestockProcreationMultiplier();
-                    __instance.m_pregnancyDuration /= seasonState.GetLivestockProcreationMultiplier();
-                }
+                    m_totalCheckRange = __instance.m_totalCheckRange,
+                    m_partnerCheckRange = __instance.m_partnerCheckRange,
+                    m_pregnancyChance = __instance.m_pregnancyChance,
+                    m_pregnancyDuration = __instance.m_pregnancyDuration
+                };
+
+                // Native Procreate skips when the random value is below this threshold.
+                __instance.m_pregnancyChance = 1f - Mathf.Clamp01((1f - __instance.m_pregnancyChance) * multiplier);
+                __instance.m_partnerCheckRange *= multiplier;
+                __instance.m_totalCheckRange /= multiplier;
+                __instance.m_pregnancyDuration /= multiplier;
+                return true;
             }
 
-            private static void Postfix(ref Procreation __instance)
+            private static void Finalizer(Procreation __instance, ProcreateState __state)
             {
-                if (seasonState.GetLivestockProcreationMultiplier() == 1.0f)
+                if (__state == null)
                     return;
 
-                __instance.m_pregnancyChance = _procreateState.m_pregnancyChance;
-                __instance.m_totalCheckRange = _procreateState.m_totalCheckRange;
-                __instance.m_partnerCheckRange = _procreateState.m_partnerCheckRange;
-                __instance.m_pregnancyDuration = _procreateState.m_pregnancyDuration;
+                __instance.m_pregnancyChance = __state.m_pregnancyChance;
+                __instance.m_totalCheckRange = __state.m_totalCheckRange;
+                __instance.m_partnerCheckRange = __state.m_partnerCheckRange;
+                __instance.m_pregnancyDuration = __state.m_pregnancyDuration;
             }
         }
 
@@ -757,15 +797,15 @@ namespace Seasons
                 yield return AccessTools.Method(typeof(Player), nameof(Player.RemoveOneFood));
             }
 
-            private static void Prefix(Player __instance, ref int __state)
+            private static void Prefix(Player __instance, ref bool __state)
             {
                 if (__instance == Player.m_localPlayer)
-                    __state = __instance.GetFoods().Count;
+                    __state = SeasonState.HasCoolingFood(__instance);
             }
 
-            private static void Postfix(Player __instance, int __state)
+            private static void Postfix(Player __instance, bool __state)
             {
-                if (__instance == Player.m_localPlayer && __state != __instance.GetFoods().Count)
+                if (__instance == Player.m_localPlayer && __state != SeasonState.HasCoolingFood(__instance))
                     seasonState.CheckOverheatStatus(__instance);
             }
         }
@@ -773,33 +813,39 @@ namespace Seasons
         [HarmonyPatch(typeof(Player), nameof(Player.UpdateEnvStatusEffects))]
         public static class Player_UpdateEnvStatusEffects_ColdStatus
         {
-            public static bool removeFrostResistanceFromArmor = false;
-
-            private static int warmPieces;
-            private static int GetWarmClothesCountCached(Player player) => warmPieces == -1 ? warmPieces = SeasonState.GetWarmClothesCount(player) : warmPieces;
-            private static void ClearWarmClothesCache() => warmPieces = -1;
+            private static Player coldStatusPlayer;
+            private static bool removeFrostResistanceFromArmor;
             private static readonly int s_wetStatusHash = SEMan.s_statusEffectWet;
 
-            private static void Prefix(Player __instance)
+            public static bool ShouldRemoveFrostResistance(Player player) => coldStatusPlayer == player && removeFrostResistanceFromArmor;
+
+            private static void Prefix(Player __instance, ref Tuple<Player, bool> __state)
             {
-                ClearWarmClothesCache();
+                __state = Tuple.Create(coldStatusPlayer, removeFrostResistanceFromArmor);
+                coldStatusPlayer = __instance;
+                removeFrostResistanceFromArmor = false;
+                int warmPieces = SeasonState.GetWarmClothesCount(__instance);
 
                 if (__instance.GetCurrentBiome() == Heightmap.Biome.Mountain ? gettingWetInMountainsCausesCold.Value : gettingWetInWinterCausesCold.Value && seasonState.GetCurrentSeason() == Season.Winter)
                 {
-                    bool isWetInColdEnv = EnvMan.IsCold() && __instance.GetSEMan().HaveStatusEffect(s_wetStatusHash);
+                    bool isWetInColdEnv = (EnvMan.IsCold() || EnvMan.IsFreezing()) && __instance.GetSEMan().HaveStatusEffect(s_wetStatusHash);
 
-                    bool isProtectedFromCold = wearing2WarmPiecesPreventsWetCold.Value && GetWarmClothesCountCached(__instance) > 1;
+                    bool isProtectedFromCold = wearing2WarmPiecesPreventsWetCold.Value && warmPieces > 1;
 
                     removeFrostResistanceFromArmor = isWetInColdEnv && (!isProtectedFromCold || __instance.IsSwimming());
                 }
 
-                if (mountainInWinterRequires2WarmPieces.Value && __instance.GetCurrentBiome() == Heightmap.Biome.Mountain && seasonState.GetCurrentSeason() == Season.Winter && GetWarmClothesCountCached(__instance) < 2)
+                if (mountainInWinterRequires2WarmPieces.Value && __instance.GetCurrentBiome() == Heightmap.Biome.Mountain && seasonState.GetCurrentSeason() == Season.Winter && warmPieces < 2)
                     removeFrostResistanceFromArmor = true;
             }
 
-            private static void Postfix()
+            private static void Finalizer(Tuple<Player, bool> __state)
             {
-                removeFrostResistanceFromArmor = false;
+                if (__state == null)
+                    return;
+
+                coldStatusPlayer = __state.Item1;
+                removeFrostResistanceFromArmor = __state.Item2;
             }
         }
 
@@ -815,9 +861,9 @@ namespace Seasons
             private static void Prefix(HitData.DamageModifiers mods, ref bool __state) => __state = IsFrostResistant(mods); // Check for innate frost resistance
 
             [HarmonyPriority(Priority.Last)]
-            private static void Postfix(ref HitData.DamageModifiers mods, bool __state)
+            private static void Postfix(Player __instance, ref HitData.DamageModifiers mods, bool __state)
             {
-                if (!__state && Player_UpdateEnvStatusEffects_ColdStatus.removeFrostResistanceFromArmor && IsFrostResistant(mods))
+                if (!__state && Player_UpdateEnvStatusEffects_ColdStatus.ShouldRemoveFrostResistance(__instance) && IsFrostResistant(mods))
                     mods.m_frost = HitData.DamageModifier.Normal;
 
                 // This is called if player is not innately frost resistant and:
@@ -857,20 +903,15 @@ namespace Seasons
 
                 List<SeasonRandomEvents.SeasonRandomEvent> randEvents = SeasonState.seasonRandomEvents.GetSeasonEvents(seasonState.GetCurrentSeason());
 
-                __state = new List<RandomEvent>();
-                for (int i = 0; i < __instance.m_events.Count; i++)
+                __state = __instance.m_events;
+                List<RandomEvent> events = new List<RandomEvent>();
+                foreach (RandomEvent original in __state)
                 {
-                    RandomEvent randEvent = __instance.m_events[i];
-                    __state.Add(JsonUtility.FromJson<RandomEvent>(JsonUtility.ToJson(randEvent)));
-
+                    RandomEvent randEvent = original.Clone();
                     SeasonRandomEvents.SeasonRandomEvent seasonRandEvent = randEvents.Find(re => re.m_name == randEvent.m_name);
                     if (seasonRandEvent != null)
                     {
-                        if (seasonRandEvent.m_biomes != null)
-                        {
-                            randEvent.m_biome = seasonRandEvent.GetBiome();
-                            randEvent.m_spawn.ForEach(spawn => spawn.m_biome |= randEvent.m_biome);
-                        }
+                        SeasonState.seasonRandomEvents.ApplySeasonalBiomes(randEvent);
 
                         if (seasonRandEvent.m_weight == 0)
                         {
@@ -880,21 +921,56 @@ namespace Seasons
                         {
                             for (int r = 2; r <= seasonRandEvent.m_weight; r++)
                             {
-                                RandEventSystem.instance.m_events.Insert(i, randEvent);
-                                i++;
+                                events.Add(randEvent);
                             }
                         }
                     }
+                    events.Add(randEvent);
                 }
+                __instance.m_events = events;
             }
 
-            private static void Postfix(ref RandEventSystem __instance, List<RandomEvent> __state)
+            private static void Finalizer(RandEventSystem __instance, List<RandomEvent> __state)
+            {
+                if (__state != null)
+                    __instance.m_events = __state;
+            }
+        }
+
+        [HarmonyPatch(typeof(RandEventSystem), nameof(RandEventSystem.GetValidEventPoints))]
+        public static class RandEventSystem_GetValidEventPoints_SeasonalBiomes
+        {
+            private static bool Prefix(ref RandomEvent ev, ref List<Vector3> __result)
             {
                 if (!controlRandomEvents.Value)
+                    return true;
+
+                string ev_name = ev.m_name;
+
+                SeasonRandomEvents.SeasonRandomEvent settings = SeasonState.seasonRandomEvents.GetSeasonEvents(seasonState.GetCurrentSeason()).Find(item => item.m_name == ev_name);
+                if (settings?.m_weight == 0)
+                {
+                    __result = new List<Vector3>();
+                    return false;
+                }
+
+                ev = ev.Clone();
+                SeasonState.seasonRandomEvents.ApplySeasonalBiomes(ev);
+                return true;
+            }
+        }
+
+        [HarmonyPatch(typeof(RandEventSystem), nameof(RandEventSystem.SetRandomEvent))]
+        public static class RandEventSystem_SetRandomEvent_SeasonalBiomes
+        {
+            private static void Prefix(ref RandomEvent ev)
+            {
+                if (!controlRandomEvents.Value || ev == null)
                     return;
 
-                __instance.m_events.Clear();
-                __instance.m_events.AddRange(__state.ToList());
+                // Clients reconstruct active events by name instead of receiving spawn data.
+                ev = ev.Clone();
+                SeasonState.seasonRandomEvents.ApplySeasonalBiomes(ev);
             }
         }
 
@@ -926,12 +1002,58 @@ namespace Seasons
         public static class Bed_CheckFire_PreventSleepingWithTorchFiresource
         {
             [HarmonyPriority(Priority.First)]
-            private static void Prefix(Humanoid human)
+            private static void Prefix(Player human, ref List<Tuple<EffectArea, EffectArea.Type, bool>> __state)
             {
-                if (human == Player.m_localPlayer && seasonState.GetTorchAsFiresource() &&
-                    (human.GetLeftItem() != null && human.GetLeftItem().m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch
-                     || human.GetRightItem() != null && human.GetRightItem().m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch))
-                    human.HideHandItems();
+                if (human == null || human != Player.m_localPlayer || !seasonState.GetTorchAsFiresource())
+                    return;
+
+                bool leftTorch = human.GetLeftItem()?.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch;
+                bool rightTorch = human.GetRightItem()?.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch;
+                if (!leftTorch && !rightTorch)
+                    return;
+
+                __state = new List<Tuple<EffectArea, EffectArea.Type, bool>>();
+                if (human.m_visEquipment != null)
+                {
+                    if (leftTorch)
+                        SuppressHeat(human.m_visEquipment.m_leftItemInstance, __state);
+                    if (rightTorch)
+                        SuppressHeat(human.m_visEquipment.m_rightItemInstance, __state);
+                }
+
+                // Hiding items updates equipment hashes before the visual heat areas are removed.
+                human.HideHandItems();
+            }
+
+            private static void SuppressHeat(GameObject visual, List<Tuple<EffectArea, EffectArea.Type, bool>> state)
+            {
+                if (visual == null)
+                    return;
+
+                foreach (EffectArea area in visual.GetComponentsInChildren<EffectArea>(true))
+                {
+                    if (state.Any(entry => entry.Item1 == area))
+                        continue;
+
+                    state.Add(Tuple.Create(area, area.m_type, area.m_isHeatType));
+                    area.m_type &= ~EffectArea.Type.Heat;
+                    area.m_isHeatType = false;
+                }
+            }
+
+            private static void Finalizer(List<Tuple<EffectArea, EffectArea.Type, bool>> __state)
+            {
+                if (__state == null)
+                    return;
+
+                foreach (var entry in __state)
+                {
+                    if (entry.Item1 == null)
+                        continue;
+
+                    entry.Item1.m_type = entry.Item2;
+                    entry.Item1.m_isHeatType = entry.Item3;
+                }
             }
         }
 
@@ -973,12 +1095,13 @@ namespace Seasons
             }
         }
 
-        [HarmonyPatch(typeof(Settings), nameof(Settings.ApplyAndClose))]
-        public static class Settings_ApplyAndClose_ForceUpdateState
+        [HarmonyPatch(typeof(CameraEffects), nameof(CameraEffects.SetBloom))]
+        public static class CameraEffects_SetBloom_WinterOverride
         {
-            private static void Postfix()
+            private static void Prefix(ref bool enabled)
             {
-                seasonState?.UpdateWinterBloomEffect();
+                if (SeasonState.IsActive && UseTextureControllers() && disableBloomInWinter.Value && seasonState.GetCurrentSeason() == Season.Winter)
+                    enabled = false;
             }
         }
     }
