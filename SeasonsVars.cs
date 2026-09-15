@@ -28,6 +28,7 @@
         public static int s_seasonalSnowFrom = "Seasons_SeasonalSnowFrom".GetStableHashCode();
         public static int s_seasonalSnowBaseline = "Seasons_SeasonalSnowBaseline".GetStableHashCode();
         public static int s_seasonalSnowMeltedBelowMinimum = "Seasons_SeasonalSnowMeltedBelowMinimum".GetStableHashCode();
+        public static int s_enemySnowLevel = "Seasons_EnemySnowLevel".GetStableHashCode();
 
         public static int s_terrainDecultivated = "Seasons_Terrain_Decultivated".GetStableHashCode();
     }

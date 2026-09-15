@@ -107,6 +107,7 @@ namespace Seasons
         public static ConfigEntry<float> seasonalSnowLeakyPieceMeltMultiplier;
         public static ConfigEntry<float> seasonalSnowRoofPieceMeltMultiplier;
         public static ConfigEntry<string> seasonalSnowClippingFixes;
+        public static ConfigEntry<string> seasonalEnemySnowLevels;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -577,6 +578,8 @@ namespace Seasons
                 "Controls heat-based melting on roof pieces. 0 keeps snow on roofs even when a fire is nearby.");
             seasonalSnowClippingFixes = config("Season - Winter snow", "Fix snow clipping through some pieces", defaultValue: "wood_floor:-0.19;stone_arch:0.46;Piece_grausten_floor_4x4:-0.02;ashwood_stair:0.90;stone_floor_2x2:0.23;blackmarble_2x2x2:0.73;blackmarble_floor:0.23;smelter:3.8",
                 "Semicolon-separated prefab:localY entries that set the local Y position of snow meshes for pieces where the vanilla snow mesh clips through the model.");
+            seasonalEnemySnowLevels = serverConfig("Season - Winter snow", "Enemy snow cover levels", defaultValue: SeasonalEnemySnow.DefaultSnowLevelRanges,
+                "Semicolon-separated prefab:min-max entries that apply a random VisEquipment snow-cover level while the current environment has snow buildup. Values are clamped to 0..1. An empty value disables the feature.");
 
             enableSeasonalSnow.SettingChanged += (sender, args) => SeasonalSnow.OnEnabledConfigChanged();
             seasonalSnowBuildup.SettingChanged += (sender, args) => SeasonalSnow.OnSnowRangeConfigChanged();
