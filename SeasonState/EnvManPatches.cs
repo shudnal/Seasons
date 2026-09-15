@@ -95,7 +95,9 @@ namespace Seasons
                 if (logTime.Value && timeForSeasonToChange)
                     LogInfo($"It's time to check for seasons change {oldDayFraction} -> {newDayFraction}");
 
-                bool forceSeasonChange = totalSecondsCached != 0 && Math.Abs(totalSecondsCached - (int)seasonState.GetTotalSeconds()) > 10;
+                bool totalSecondsJumped = totalSecondsCached != 0
+                    && Math.Abs(totalSecondsCached - (int)seasonState.GetTotalSeconds()) > 10;
+                bool forceSeasonChange = totalSecondsJumped;
                 if (logTime.Value && forceSeasonChange)
                     LogInfo($"Force update season after total seconds was changed significantly");
 
@@ -117,7 +119,7 @@ namespace Seasons
                     LogInfo("Force update season state after sleeping update");
                 }
 
-                bool updateLoadedSeasonalSnow = skiptimeUsed || sleepingUpdated;
+                bool updateLoadedSeasonalSnow = totalSecondsJumped || skiptimeUsed || sleepingUpdated;
 
                 skiptimeUsed = false;
                 settingsUpdated = false;
