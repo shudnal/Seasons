@@ -1,4 +1,3 @@
-using BepInEx.Configuration;
 using HarmonyLib;
 using System;
 using System.Collections.Generic;
@@ -28,10 +27,6 @@ namespace Seasons
         private const float NearbyHeatDistance = 3f;
         private const float HeatMeltDeltaScale = 0.6f;
         private const float InteractiveMeltDeltaScale = 0.002f;
-        private const float DefaultHeatSourceMeltMultiplier = 0.1f;
-        private const float DefaultInteractiveObjectMeltMultiplier = 5f;
-        private const float DefaultLeakyPieceMeltMultiplier = 2f;
-        private const float DefaultRoofPieceMeltMultiplier = 0f;
         private const double SnowTimeStampScale = 1000d;
 
         public sealed class BiomeSnowTimeline
@@ -177,10 +172,6 @@ namespace Seasons
         private static long seasonalSnowFirstEnvironmentPeriod;
         private static long seasonalSnowEnvironmentDuration = 1L;
         private static bool collectingBiomeEnvironments;
-        private static ConfigEntry<float> heatSourceMeltMultiplier;
-        private static ConfigEntry<float> interactiveObjectMeltMultiplier;
-        private static ConfigEntry<float> leakyPieceMeltMultiplier;
-        private static ConfigEntry<float> roofPieceMeltMultiplier;
 
         public static double TimelineStartSeconds => seasonalSnowTimelineStartSeconds;
         public static double TimelineEndSeconds => seasonalSnowTimelineEndSeconds;
@@ -193,13 +184,15 @@ namespace Seasons
         public static float ReducedMinimumSnowBuildup => GetReducedSnowBuildupRange().x;
         public static float ReducedMaximumSnowBuildup => GetReducedSnowBuildupRange().y;
         private static float HeatSourceMeltMultiplier =>
-            Mathf.Max(0f, heatSourceMeltMultiplier?.Value ?? DefaultHeatSourceMeltMultiplier);
+            Mathf.Max(0f, seasonalSnowHeatSourceMeltMultiplier?.Value ?? 0.2f);
+        private static float SelfHeatMultiplier =>
+            Mathf.Max(0f, seasonalSnowSelfHeatMultiplier?.Value ?? 5f);
         private static float InteractiveObjectMeltMultiplier =>
-            Mathf.Max(0f, interactiveObjectMeltMultiplier?.Value ?? DefaultInteractiveObjectMeltMultiplier);
+            Mathf.Max(0f, seasonalSnowInteractiveObjectMeltMultiplier?.Value ?? 5f);
         private static float LeakyPieceMeltMultiplier =>
-            Mathf.Max(0f, leakyPieceMeltMultiplier?.Value ?? DefaultLeakyPieceMeltMultiplier);
+            Mathf.Max(0f, seasonalSnowLeakyPieceMeltMultiplier?.Value ?? 2f);
         private static float RoofPieceMeltMultiplier =>
-            Mathf.Max(0f, roofPieceMeltMultiplier?.Value ?? DefaultRoofPieceMeltMultiplier);
+            Mathf.Max(0f, seasonalSnowRoofPieceMeltMultiplier?.Value ?? 0f);
 
         private static readonly MethodInfo UpdateBiomeMethod =
             AccessTools.Method(typeof(WearNTear), nameof(WearNTear.UpdateBiome));
@@ -211,60 +204,6 @@ namespace Seasons
             AccessTools.Method(typeof(EnvMan), nameof(EnvMan.GetSnowBuildup));
         private static readonly MethodInfo GetSeasonalSnowBuildupMethod =
             AccessTools.Method(typeof(SeasonalSnow), nameof(GetSeasonalSnowBuildup));
-
-        private static void EnsureSnowMeltConfigs()
-        {
-            if (Seasons.instance == null)
-                return;
-
-            if (heatSourceMeltMultiplier == null)
-            {
-                heatSourceMeltMultiplier = Seasons.configSync.AddConfigEntry(
-                    Seasons.instance.Config,
-                    "Season - Winter snow",
-                    "Snow melt speed multiplier - heat sources",
-                    DefaultHeatSourceMeltMultiplier,
-                    new ConfigDescription("Controls how quickly seasonal snow melts near active heat sources such as fires. 0.1 is the default rate; 0 disables heat-based melting."),
-                    syncMode: ConditionalConfigSync.ConfigSyncMode.AlwaysServerControlled,
-                    serverControlledByDefault: true).SourceConfig;
-            }
-
-            if (interactiveObjectMeltMultiplier == null)
-            {
-                interactiveObjectMeltMultiplier = Seasons.configSync.AddConfigEntry(
-                    Seasons.instance.Config,
-                    "Season - Winter snow",
-                    "Snow melt speed multiplier - interactive objects",
-                    DefaultInteractiveObjectMeltMultiplier,
-                    new ConfigDescription("Controls how quickly snow melts while an object is actively used, including crafting stations, chairs, beds and similar objects."),
-                    syncMode: ConditionalConfigSync.ConfigSyncMode.AlwaysServerControlled,
-                    serverControlledByDefault: true).SourceConfig;
-            }
-
-            if (leakyPieceMeltMultiplier == null)
-            {
-                leakyPieceMeltMultiplier = Seasons.configSync.AddConfigEntry(
-                    Seasons.instance.Config,
-                    "Season - Winter snow",
-                    "Snow melt speed multiplier - leaky pieces",
-                    DefaultLeakyPieceMeltMultiplier,
-                    new ConfigDescription("Additional multiplier for heat-based melting on pieces that let rain through, such as open floors and similar building parts. 2 means twice the normal heat-melting speed."),
-                    syncMode: ConditionalConfigSync.ConfigSyncMode.AlwaysServerControlled,
-                    serverControlledByDefault: true).SourceConfig;
-            }
-
-            if (roofPieceMeltMultiplier == null)
-            {
-                roofPieceMeltMultiplier = Seasons.configSync.AddConfigEntry(
-                    Seasons.instance.Config,
-                    "Season - Winter snow",
-                    "Snow melt speed multiplier - roof pieces",
-                    DefaultRoofPieceMeltMultiplier,
-                    new ConfigDescription("Controls how quickly snow melts on roof pieces near heat sources. 0 keeps snow on roofs even when a fire is nearby."),
-                    syncMode: ConditionalConfigSync.ConfigSyncMode.AlwaysServerControlled,
-                    serverControlledByDefault: true).SourceConfig;
-            }
-        }
 
         public static void InitializePrefabs()
         {
@@ -867,12 +806,6 @@ namespace Seasons
                 return true;
             }
 
-            if (zdo.HasOwner() && !instance.m_nview.IsOwner())
-            {
-                ClearPresentationSnow(state);
-                return true;
-            }
-
             if (!forceRefresh && Time.time < state.nextPresentationUpdateTime)
                 return false;
 
@@ -1010,7 +943,7 @@ namespace Seasons
             ZDO zdo = instance.m_nview?.GetZDO();
             if (zdo != null && zdo.HasOwner() && !instance.m_nview.IsOwner())
             {
-                ClearPresentationSnow(state);
+                RefreshPresentationSnow(instance, state, forceRefresh: enteredActiveArea);
                 UpdatePresentationVisualIfChanged(
                     instance,
                     state,
@@ -1674,11 +1607,13 @@ namespace Seasons
             if (forceRefresh || Time.time >= state.nextHeatCheckTime)
                 RefreshMeltSourceState(instance, state);
 
-            bool heated = state.activeInternalHeatArea
-                || state.nearbyHeatArea
-                || state.insideHeatArea;
+            float multiplier = 0f;
+            if (state.nearbyHeatArea || state.insideHeatArea)
+                multiplier = HeatSourceMeltMultiplier;
+            if (state.activeInternalHeatArea)
+                multiplier = Mathf.Max(multiplier, HeatSourceMeltMultiplier * SelfHeatMultiplier);
 
-            return heated ? HeatSourceMeltMultiplier * GetPieceSnowMeltMultiplier(state) : 0f;
+            return multiplier * GetPieceSnowMeltMultiplier(state);
         }
 
         private static void TryApplyPassiveSeasonalSnow(WearNTear instance)
@@ -2111,6 +2046,60 @@ namespace Seasons
                 SetAccumulationBaselineNow(
                     wearNTear,
                     zdo.GetBool(SeasonsVars.s_seasonalSnowMeltedBelowMinimum));
+            }
+        }
+
+
+        public static void ReconcileLoadedSnowAfterTimeSkip()
+        {
+            if (!IsWinterStateReady() || ZNetScene.instance == null)
+                return;
+
+            foreach (WearNTear wearNTear in WearNTear.GetAllInstances().ToArray())
+            {
+                if (!CanOwnSnowState(wearNTear) || !SupportsSeasonalSnow(wearNTear) ||
+                    IsDeepNorth(wearNTear) || !IsSeasonalSnowPosition(wearNTear) ||
+                    ZNetScene.instance.OutsideActiveArea(wearNTear.transform.position) ||
+                    !ZNetScene.instance.IsAreaReady(wearNTear.transform.position))
+                    continue;
+
+                if (!EnsureCurrentWinterState(wearNTear))
+                    continue;
+
+                if (IsSnowBlocked(wearNTear, forceRefresh: true))
+                {
+                    if (wearNTear.m_snowBuildup > SnowChangeEpsilon)
+                        SetSnowBuildup(wearNTear, 0f, markSeasonalSnow: false);
+
+                    SetAccumulationBaselineNow(wearNTear, meltedBelowMinimum: false);
+                    CompleteActiveAreaReconciliation(wearNTear);
+                    continue;
+                }
+
+                if (IsInteractiveObjectMeltActive(wearNTear) ||
+                    GetMeltMultiplier(wearNTear, forceRefresh: true) > 0f)
+                {
+                    ZDO zdo = wearNTear.m_nview.GetZDO();
+                    SetAccumulationBaselineNow(
+                        wearNTear,
+                        zdo.GetBool(SeasonsVars.s_seasonalSnowMeltedBelowMinimum));
+                    CompleteActiveAreaReconciliation(wearNTear);
+                    continue;
+                }
+
+                float target = GetPersonalSnowTarget(wearNTear, requireGain: false);
+                if (wearNTear.m_snowBuildup + SnowChangeEpsilon < target)
+                {
+                    SetSnowBuildup(
+                        wearNTear,
+                        target,
+                        markSeasonalSnow: target > SnowChangeEpsilon);
+                    RemoveBoolWithRevision(
+                        wearNTear.m_nview.GetZDO(),
+                        SeasonsVars.s_seasonalSnowMeltedBelowMinimum);
+                }
+
+                CompleteActiveAreaReconciliation(wearNTear);
             }
         }
 
@@ -2623,13 +2612,6 @@ namespace Seasons
         [HarmonyPatch(typeof(CraftingStation), nameof(CraftingStation.PokeInUse))]
         private static class CraftingStation_PokeInUse_SeasonalSnow
         {
-            [HarmonyPrepare]
-            private static bool Prepare()
-            {
-                EnsureSnowMeltConfigs();
-                return true;
-            }
-
             [HarmonyPostfix]
             private static void Postfix(CraftingStation __instance)
             {

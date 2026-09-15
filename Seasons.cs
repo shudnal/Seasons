@@ -1,4 +1,4 @@
-﻿using BepInEx;
+using BepInEx;
 using BepInEx.Bootstrap;
 using BepInEx.Configuration;
 using HarmonyLib;
@@ -101,6 +101,11 @@ namespace Seasons
         public static ConfigEntry<Vector2> reducedSeasonalSnowBuildup;
         public static ConfigEntry<string> reducedSeasonalSnowPrefabs;
         public static ConfigEntry<float> seasonalSnowAccumulationSpeed;
+        public static ConfigEntry<float> seasonalSnowHeatSourceMeltMultiplier;
+        public static ConfigEntry<float> seasonalSnowSelfHeatMultiplier;
+        public static ConfigEntry<float> seasonalSnowInteractiveObjectMeltMultiplier;
+        public static ConfigEntry<float> seasonalSnowLeakyPieceMeltMultiplier;
+        public static ConfigEntry<float> seasonalSnowRoofPieceMeltMultiplier;
         public static ConfigEntry<string> seasonalSnowClippingFixes;
 
         public static ConfigEntry<bool> enableFrozenWater;
@@ -560,6 +565,16 @@ namespace Seasons
                 "Comma-separated prefab names that use Reduced snow buildup limits instead of Snow buildup limits.");
             seasonalSnowAccumulationSpeed = serverConfig("Season - Winter snow", "Snow accumulation speed", defaultValue: 1f,
                 "Multiplier for seasonal snow accumulation from weather. 1 is the default rate, 0 disables accumulation above the configured minimum.");
+            seasonalSnowHeatSourceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - heat sources", defaultValue: 0.2f,
+                "Controls how quickly seasonal snow melts near active heat sources such as fires. 0 disables heat-based melting.");
+            seasonalSnowSelfHeatMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - self-heating pieces", defaultValue: 5f,
+                "Additional heat-melting speed for pieces that produce their own heat while active, such as kilns and smelters.");
+            seasonalSnowInteractiveObjectMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - interactive objects", defaultValue: 5f,
+                "Controls how quickly snow melts while an object is actively used, including crafting stations, chairs, beds and similar objects.");
+            seasonalSnowLeakyPieceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - leaky pieces", defaultValue: 2f,
+                "Additional heat-melting speed for pieces that let rain through, such as open floors and similar building parts.");
+            seasonalSnowRoofPieceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - roof pieces", defaultValue: 0f,
+                "Controls heat-based melting on roof pieces. 0 keeps snow on roofs even when a fire is nearby.");
             seasonalSnowClippingFixes = config("Season - Winter snow", "Fix snow clipping through some pieces", defaultValue: "wood_floor:-0.19;stone_arch:0.46;Piece_grausten_floor_4x4:-0.02;ashwood_stair:0.90;stone_floor_2x2:0.23;blackmarble_2x2x2:0.73;blackmarble_floor:0.23;smelter:3.8",
                 "Semicolon-separated prefab:localY entries that set the local Y position of snow meshes for pieces where the vanilla snow mesh clips through the model.");
 

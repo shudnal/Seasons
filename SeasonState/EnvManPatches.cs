@@ -1,4 +1,4 @@
-﻿using HarmonyLib;
+using HarmonyLib;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
@@ -117,6 +117,8 @@ namespace Seasons
                     LogInfo("Force update season state after sleeping update");
                 }
 
+                bool updateLoadedSeasonalSnow = skiptimeUsed || sleepingUpdated;
+
                 skiptimeUsed = false;
                 settingsUpdated = false;
                 sleepingUpdated = false;
@@ -125,6 +127,8 @@ namespace Seasons
                 {
                     totalSecondsCached = (int)seasonState.GetTotalSeconds();
                     seasonState.UpdateState(timeForSeasonToChange, forceSeasonChange);
+                    if (updateLoadedSeasonalSnow)
+                        SeasonalSnow.ReconcileLoadedSnowAfterTimeSkip();
                 }
             }
         }
