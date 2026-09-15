@@ -1642,6 +1642,9 @@ namespace Seasons
                 WearNTear.s_rayMask = LayerMask.GetMask("piece", "Default", "static_solid", "Default_small", "terrain");
 
             Vector3 origin = GetSnowRoofCheckOrigin(instance, state);
+            if (state.hasRoofCheckOrigin)
+                origin += Vector3.up * SnowRoofCastRadius;
+
             int hits = Physics.SphereCastNonAlloc(
                 origin,
                 SnowRoofCastRadius,
