@@ -20,6 +20,13 @@ namespace Seasons
         private const float SnowChangeEpsilon = 0.0001f;
         private const float SnowRpcStep = 0.005f;
         private const float HeatMeltCacheDuration = 5f;
+        private const float SnowRoofCastRadius = 0.1f;
+        private const float SnowRoofCastDistance = 100f;
+        private const float SnowRoofSurfaceProbeOffset = 0.05f;
+        private const float UncoveredRoofCheckMinInterval = 5f;
+        private const float UncoveredRoofCheckMaxInterval = 8f;
+        private const float CoveredRoofCheckMinInterval = 12f;
+        private const float CoveredRoofCheckMaxInterval = 18f;
         private const float PresentationUpdateInterval = 5f;
         private const float PresentationAreaReadyRetryInterval = 0.5f;
         private const float InteractiveMeltActivityTimeout = 1f;
@@ -64,6 +71,10 @@ namespace Seasons
         {
             public float nextRoofCheckTime;
             public bool haveSnowRoof;
+            public bool roofCheckOriginInitialized;
+            public bool hasRoofCheckOrigin;
+            public Vector3 localRoofCheckOrigin;
+            public float roofCheckIntervalFactor = -1f;
         }
 
         private sealed class SnowActivityState
@@ -1541,7 +1552,85 @@ namespace Seasons
             state.nearbyHeatArea = IsNearHeatArea(position);
         }
 
-        private static bool HasSnowRoof(WearNTear instance)
+        private static float GetRoofCheckIntervalFactor(WearNTear instance, SnowCoverageState state)
+        {
+            if (state.roofCheckIntervalFactor >= 0f)
+                return state.roofCheckIntervalFactor;
+
+            uint hash = unchecked((uint)instance.GetInstanceID());
+            unchecked
+            {
+                hash ^= hash >> 16;
+                hash *= 0x7FEB352Du;
+                hash ^= hash >> 15;
+                hash *= 0x846CA68Bu;
+                hash ^= hash >> 16;
+            }
+
+            state.roofCheckIntervalFactor = (hash & 0x00FFFFFFu) / 16777215f;
+            return state.roofCheckIntervalFactor;
+        }
+
+        private static void InitializeSnowRoofCheckOrigin(WearNTear instance, SnowCoverageState state)
+        {
+            state.roofCheckOriginInitialized = true;
+            state.hasRoofCheckOrigin = false;
+
+            Piece piece = instance.m_piece;
+            if (!piece)
+                piece = instance.GetComponent<Piece>();
+
+            List<Collider> colliders = piece?.GetAllColliders();
+            if (colliders == null || colliders.Count == 0)
+                return;
+
+            Collider highestCollider = null;
+            float highestPoint = float.NegativeInfinity;
+            foreach (Collider collider in colliders)
+            {
+                if (!collider || !collider.enabled || !collider.gameObject.activeInHierarchy || collider.isTrigger)
+                    continue;
+
+                float colliderTop = collider.bounds.max.y;
+                if (colliderTop <= highestPoint)
+                    continue;
+
+                highestCollider = collider;
+                highestPoint = colliderTop;
+            }
+
+            if (!highestCollider)
+                return;
+
+            Bounds bounds = highestCollider.bounds;
+            Vector3 probeOrigin = new Vector3(
+                bounds.center.x,
+                bounds.max.y + SnowRoofSurfaceProbeOffset,
+                bounds.center.z);
+            float probeDistance = bounds.size.y + SnowRoofSurfaceProbeOffset * 2f;
+
+            if (!highestCollider.Raycast(
+                    new Ray(probeOrigin, Vector3.down),
+                    out RaycastHit hit,
+                    probeDistance))
+                return;
+
+            state.localRoofCheckOrigin = instance.transform.InverseTransformPoint(hit.point);
+            state.hasRoofCheckOrigin = true;
+        }
+
+        private static Vector3 GetSnowRoofCheckOrigin(WearNTear instance, SnowCoverageState state)
+        {
+            if (!state.roofCheckOriginInitialized)
+                InitializeSnowRoofCheckOrigin(instance, state);
+
+            if (state.hasRoofCheckOrigin)
+                return instance.transform.TransformPoint(state.localRoofCheckOrigin);
+
+            return instance.transform.position + new Vector3(0f, instance.m_roofCheckOffset, 0f);
+        }
+
+        private static bool HasSnowRoof(WearNTear instance, SnowCoverageState state)
         {
             if (!instance)
                 return true;
@@ -1552,13 +1641,13 @@ namespace Seasons
             if (WearNTear.s_rayMask == 0)
                 WearNTear.s_rayMask = LayerMask.GetMask("piece", "Default", "static_solid", "Default_small", "terrain");
 
-            Vector3 origin = instance.transform.position + new Vector3(0f, instance.m_roofCheckOffset, 0f);
+            Vector3 origin = GetSnowRoofCheckOrigin(instance, state);
             int hits = Physics.SphereCastNonAlloc(
                 origin,
-                0.1f,
+                SnowRoofCastRadius,
                 Vector3.up,
                 WearNTear.s_raycastHits,
-                100f,
+                SnowRoofCastDistance,
                 WearNTear.s_rayMask);
 
             for (int i = 0; i < hits; ++i)
@@ -1577,6 +1666,22 @@ namespace Seasons
             return false;
         }
 
+        private static void RefreshSnowRoofState(WearNTear instance, SnowCoverageState state)
+        {
+            state.haveSnowRoof = HasSnowRoof(instance, state);
+
+            float intervalFactor = GetRoofCheckIntervalFactor(instance, state);
+            float minimumInterval = state.haveSnowRoof
+                ? CoveredRoofCheckMinInterval
+                : UncoveredRoofCheckMinInterval;
+            float maximumInterval = state.haveSnowRoof
+                ? CoveredRoofCheckMaxInterval
+                : UncoveredRoofCheckMaxInterval;
+
+            state.nextRoofCheckTime = Time.time
+                + Mathf.Lerp(minimumInterval, maximumInterval, intervalFactor);
+        }
+
         private static bool IsSnowBlocked(WearNTear instance, bool forceRefresh = false)
         {
             if (!instance)
@@ -1586,10 +1691,7 @@ namespace Seasons
             SnowCoverageState state = SeasonalSnowCoverageChecks.GetValue(instance, _ => new SnowCoverageState());
 
             if (forceRefresh || Time.time >= state.nextRoofCheckTime)
-            {
-                state.nextRoofCheckTime = Time.time + 5f;
-                state.haveSnowRoof = HasSnowRoof(instance);
-            }
+                RefreshSnowRoofState(instance, state);
 
             return shielded || state.haveSnowRoof;
         }
@@ -2494,11 +2596,7 @@ namespace Seasons
                     return;
 
                 if (__state.refreshExpected && IsSeasonalSnowPosition(__instance))
-                {
-                    SnowCoverageState state = SeasonalSnowCoverageChecks.GetValue(__instance, _ => new SnowCoverageState());
-                    state.haveSnowRoof = HasSnowRoof(__instance);
-                    state.nextRoofCheckTime = Time.time + 5f;
-                }
+                    IsSnowBlocked(__instance);
 
                 TryClearCoveredSeasonalSnow(__instance);
             }
