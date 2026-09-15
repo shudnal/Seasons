@@ -1569,7 +1569,7 @@ namespace Seasons
 
             bool heated = state.activeInternalHeatArea
                 || state.nearbyHeatArea
-                || (state.insideHeatArea && (blocked ?? IsSnowBlocked(instance)));
+                || state.insideHeatArea;
 
             return heated ? HeatMeltMultiplier * GetPieceSnowMeltMultiplier(instance, state) : 0f;
         }
