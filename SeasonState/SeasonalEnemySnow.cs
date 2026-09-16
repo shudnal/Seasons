@@ -173,7 +173,7 @@ namespace Seasons
         private static void ApplySnowCover(VisEquipment instance)
         {
             if (!instance || MaterialMan.instance == null || EnvMan.instance == null ||
-                EnvMan.instance.GetSnowBuildup() < 0.1f || instance.m_lodGroup == null ||
+                EnvMan.instance.GetSnowBuildup() <= 0f || instance.m_lodGroup == null ||
                 !TryGetSnowSeed(instance, out int seed))
                 return;
 
