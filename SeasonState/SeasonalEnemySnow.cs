@@ -25,6 +25,10 @@ namespace Seasons
         private static readonly int SnowCoverProperty = Shader.PropertyToID("_SnowCover");
         private static readonly Dictionary<string, Vector2> SnowMaterialRanges =
             new Dictionary<string, Vector2>(StringComparer.OrdinalIgnoreCase);
+        private static readonly HashSet<VisEquipment> PendingSnowCover =
+            new HashSet<VisEquipment>();
+        private static readonly List<VisEquipment> PendingSnowCoverBuffer =
+            new List<VisEquipment>();
 
         private static string parsedConfigValue;
 
@@ -169,13 +173,54 @@ namespace Seasons
             }
         }
 
+        private static void QueueSnowCover(VisEquipment instance)
+        {
+            if (instance)
+                PendingSnowCover.Add(instance);
+        }
+
+        private static void ProcessPendingSnowCover()
+        {
+            if (PendingSnowCover.Count == 0)
+                return;
+
+            PendingSnowCoverBuffer.Clear();
+            PendingSnowCoverBuffer.AddRange(PendingSnowCover);
+            PendingSnowCover.Clear();
+
+            foreach (VisEquipment instance in PendingSnowCoverBuffer)
+                ApplySnowCover(instance);
+
+            PendingSnowCoverBuffer.Clear();
+        }
+
         [HarmonyPatch(typeof(VisEquipment), nameof(VisEquipment.Start))]
         private static class VisEquipment_Start_SeasonalEnemySnow
         {
             [HarmonyPostfix]
             private static void Postfix(VisEquipment __instance)
             {
-                ApplySnowCover(__instance);
+                QueueSnowCover(__instance);
+            }
+        }
+
+        [HarmonyPatch(typeof(VisEquipment), nameof(VisEquipment.RefreshSnowLevel))]
+        private static class VisEquipment_RefreshSnowLevel_SeasonalEnemySnow
+        {
+            [HarmonyPostfix]
+            private static void Postfix(VisEquipment __instance)
+            {
+                QueueSnowCover(__instance);
+            }
+        }
+
+        [HarmonyPatch(typeof(MaterialMan), nameof(MaterialMan.Update))]
+        private static class MaterialMan_Update_SeasonalEnemySnow
+        {
+            [HarmonyPostfix]
+            private static void Postfix()
+            {
+                ProcessPendingSnowCover();
             }
         }
     }
