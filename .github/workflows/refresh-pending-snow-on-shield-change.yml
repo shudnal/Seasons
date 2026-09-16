@@ -27,53 +27,62 @@ jobs:
           path = Path("SeasonState/SeasonalSnow.cs")
           text = path.read_text(encoding="utf-8-sig")
 
-          def replace_once(old: str, new: str, label: str) -> None:
+          def replace_once(old, new, label):
               global text
               count = text.count(old)
               if count != 1:
                   raise RuntimeError(f"Expected one {label}, found {count}")
               text = text.replace(old, new, 1)
 
-          replace_once(
-              """            public bool localVisualApplied;
-            public float localVisualSnow;
-            public long observedOwner = long.MinValue;""",
-              """            public bool localVisualApplied;
-            public float localVisualSnow;
-            public int localVisualShieldChangeID = int.MinValue;
-            public long observedOwner = long.MinValue;""",
-              "local preview shield revision field")
+          old = "\n".join([
+              "            public bool localVisualApplied;",
+              "            public float localVisualSnow;",
+              "            public long observedOwner = long.MinValue;",
+          ])
+          new = "\n".join([
+              "            public bool localVisualApplied;",
+              "            public float localVisualSnow;",
+              "            public int localVisualShieldChangeID = int.MinValue;",
+              "            public long observedOwner = long.MinValue;",
+          ])
+          replace_once(old, new, "local preview shield revision field")
 
-          replace_once(
-              """            state.localVisualApplied = false;
-            state.localVisualSnow = 0f;
-            return true;""",
-              """            state.localVisualApplied = false;
-            state.localVisualSnow = 0f;
-            state.localVisualShieldChangeID = int.MinValue;
-            return true;""",
-              "local preview reset")
+          old = "\n".join([
+              "            state.localVisualApplied = false;",
+              "            state.localVisualSnow = 0f;",
+              "            return true;",
+          ])
+          new = "\n".join([
+              "            state.localVisualApplied = false;",
+              "            state.localVisualSnow = 0f;",
+              "            state.localVisualShieldChangeID = int.MinValue;",
+              "            return true;",
+          ])
+          replace_once(old, new, "local preview reset")
 
-          replace_once(
-              """            ApplyLocalSnowVisual(
-                instance,
-                state,
-                GetPassiveSeasonalSnowTarget(instance));""",
-              """            int shieldChangeID = ShieldGenerator.m_instanceChangeID;
-            if (state.localVisualApplied &&
-                state.localVisualShieldChangeID == shieldChangeID)
-                return;
-
-            state.localVisualShieldChangeID = shieldChangeID;
-            bool shielded = ShieldGenerator.IsInsideShieldCached(
-                instance.transform.position,
-                ref instance.m_shieldChangeID);
-
-            ApplyLocalSnowVisual(
-                instance,
-                state,
-                shielded ? 0f : GetPassiveSeasonalSnowTarget(instance));""",
-              "pending local snow preview application")
+          old = "\n".join([
+              "            ApplyLocalSnowVisual(",
+              "                instance,",
+              "                state,",
+              "                GetPassiveSeasonalSnowTarget(instance));",
+          ])
+          new = "\n".join([
+              "            int shieldChangeID = ShieldGenerator.m_instanceChangeID;",
+              "            if (state.localVisualApplied &&",
+              "                state.localVisualShieldChangeID == shieldChangeID)",
+              "                return;",
+              "",
+              "            state.localVisualShieldChangeID = shieldChangeID;",
+              "            bool shielded = ShieldGenerator.IsInsideShieldCached(",
+              "                instance.transform.position,",
+              "                ref instance.m_shieldChangeID);",
+              "",
+              "            ApplyLocalSnowVisual(",
+              "                instance,",
+              "                state,",
+              "                shielded ? 0f : GetPassiveSeasonalSnowTarget(instance));",
+          ])
+          replace_once(old, new, "pending local snow preview application")
 
           path.write_text(text, encoding="utf-8")
           Path(".github/workflows/refresh-pending-snow-on-shield-change.yml").unlink()
