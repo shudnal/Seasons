@@ -21,18 +21,17 @@ namespace Seasons
 
         private const float SnowLevelEpsilon = 0.0001f;
         private const string MaterialInstanceSuffix = " (Instance)";
+        private const string MaterialRendererKeySeparator = "\u001f";
 
         private static readonly int SnowCoverProperty = Shader.PropertyToID("_SnowCover");
         private static readonly Dictionary<string, Vector2> SnowMaterialRanges =
             new Dictionary<string, Vector2>(StringComparer.OrdinalIgnoreCase);
-        private static readonly HashSet<VisEquipment> PendingSnowCover =
-            new HashSet<VisEquipment>();
-        private static readonly List<VisEquipment> PendingSnowCoverBuffer =
-            new List<VisEquipment>();
-        private static readonly Dictionary<LODGroup, int> PendingRagdollSnowCover =
-            new Dictionary<LODGroup, int>();
-        private static readonly List<KeyValuePair<LODGroup, int>> PendingRagdollSnowCoverBuffer =
-            new List<KeyValuePair<LODGroup, int>>();
+        private static readonly Dictionary<string, Vector2> SnowMaterialRendererRanges =
+            new Dictionary<string, Vector2>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<GameObject, int> PendingSnowCover =
+            new Dictionary<GameObject, int>();
+        private static readonly List<KeyValuePair<GameObject, int>> PendingSnowCoverBuffer =
+            new List<KeyValuePair<GameObject, int>>();
 
         private static string parsedConfigValue;
 
@@ -44,6 +43,7 @@ namespace Seasons
 
             parsedConfigValue = configValue;
             SnowMaterialRanges.Clear();
+            SnowMaterialRendererRanges.Clear();
 
             foreach (string rawEntry in configValue.Split(';'))
             {
@@ -54,21 +54,31 @@ namespace Seasons
                 int valueSeparator = entry.LastIndexOf(':');
                 if (valueSeparator <= 0 || valueSeparator >= entry.Length - 1)
                 {
-                    LogWarning($"Invalid enemy snow-cover entry '{entry}'. Expected material:min-max.");
+                    LogWarning($"Invalid enemy snow-cover entry '{entry}'. Expected material[-renderer]:min-max.");
                     continue;
                 }
 
-                string materialName = entry.Substring(0, valueSeparator).Trim();
+                string targetName = entry.Substring(0, valueSeparator).Trim();
+                string materialName = targetName;
+                string rendererName = null;
+                int rendererSeparator = targetName.IndexOf('-');
+                if (rendererSeparator > 0 && rendererSeparator < targetName.Length - 1)
+                {
+                    materialName = targetName.Substring(0, rendererSeparator).Trim();
+                    rendererName = targetName.Substring(rendererSeparator + 1).Trim();
+                }
+
                 string rangeText = entry.Substring(valueSeparator + 1).Trim();
                 int rangeSeparator = rangeText.IndexOf('-');
                 if (String.IsNullOrWhiteSpace(materialName) ||
+                    (rendererName != null && String.IsNullOrWhiteSpace(rendererName)) ||
                     rangeSeparator <= 0 || rangeSeparator >= rangeText.Length - 1 ||
                     !TryParseSnowLevel(rangeText.Substring(0, rangeSeparator), out float first) ||
                     !TryParseSnowLevel(rangeText.Substring(rangeSeparator + 1), out float second) ||
                     Single.IsNaN(first) || Single.IsInfinity(first) ||
                     Single.IsNaN(second) || Single.IsInfinity(second))
                 {
-                    LogWarning($"Invalid enemy snow-cover entry '{entry}'. Expected material:min-max with finite values from 0 to 1.");
+                    LogWarning($"Invalid enemy snow-cover entry '{entry}'. Expected material[-renderer]:min-max with finite values from 0 to 1.");
                     continue;
                 }
 
@@ -80,7 +90,11 @@ namespace Seasons
                     continue;
                 }
 
-                SnowMaterialRanges[materialName] = new Vector2(minimum, maximum);
+                Vector2 range = new Vector2(minimum, maximum);
+                if (rendererName == null)
+                    SnowMaterialRanges[materialName] = range;
+                else
+                    SnowMaterialRendererRanges[GetMaterialRendererKey(materialName, rendererName)] = range;
             }
         }
 
@@ -109,39 +123,28 @@ namespace Seasons
             return materialName;
         }
 
-        private static bool TryGetSnowMaterialRange(Material material, out Vector2 range)
+        private static string GetMaterialRendererKey(string materialName, string rendererName)
         {
-            range = Vector2.zero;
-            return SnowMaterialRanges.TryGetValue(GetMaterialName(material), out range);
+            return materialName + MaterialRendererKeySeparator + rendererName;
         }
 
-        private static bool TryGetSnowSeed(VisEquipment instance, out int seed)
+        private static bool TryGetSnowMaterialRange(Material material, Renderer renderer, out Vector2 range)
         {
-            seed = 0;
-            if (!instance)
+            range = Vector2.zero;
+            if (!renderer)
                 return false;
 
-            Humanoid humanoid = instance.GetComponent<Humanoid>();
-            if (!humanoid)
-                humanoid = instance.GetComponentInParent<Humanoid>();
-            if (humanoid)
-            {
-                if (humanoid.IsPlayer())
-                    return false;
+            string materialName = GetMaterialName(material);
+            if (String.IsNullOrWhiteSpace(materialName))
+                return false;
 
-                seed = humanoid.m_seed;
+            string rendererName = renderer.name?.Trim() ?? String.Empty;
+            if (SnowMaterialRendererRanges.TryGetValue(
+                    GetMaterialRendererKey(materialName, rendererName),
+                    out range))
                 return true;
-            }
 
-            Ragdoll ragdoll = instance.GetComponent<Ragdoll>();
-            if (!ragdoll)
-                ragdoll = instance.GetComponentInParent<Ragdoll>();
-            ZDO zdo = ragdoll?.m_nview?.GetZDO();
-            if (zdo == null)
-                return false;
-
-            seed = zdo.GetInt(ZDOVars.s_seed, 0);
-            return seed != 0;
+            return SnowMaterialRanges.TryGetValue(materialName, out range);
         }
 
         private static bool ApplyRendererSnow(Renderer renderer, int seed, ref int materialIndex)
@@ -155,7 +158,7 @@ namespace Seasons
 
             foreach (Material material in materials)
             {
-                if (!TryGetSnowMaterialRange(material, out Vector2 range))
+                if (!TryGetSnowMaterialRange(material, renderer, out Vector2 range))
                     continue;
 
                 UnityEngine.Random.InitState(unchecked(seed + materialIndex));
@@ -174,25 +177,43 @@ namespace Seasons
             return false;
         }
 
-        private static void ApplySnowCover(LODGroup lodGroup, int seed)
+        private static Renderer[] GetVisualRenderers(GameObject visual)
         {
-            if (!lodGroup || MaterialMan.instance == null || EnvMan.instance == null ||
+            if (!visual)
+                return Array.Empty<Renderer>();
+
+            LODGroup lodGroup = visual.GetComponent<LODGroup>();
+            if (lodGroup)
+            {
+                LOD[] lods = lodGroup.GetLODs();
+                if (lods == null || lods.Length == 0 || lods[0].renderers == null)
+                    return Array.Empty<Renderer>();
+
+                return lods[0].renderers;
+            }
+
+            return visual.GetComponentsInChildren<Renderer>(true);
+        }
+
+        private static void ApplySnowCover(GameObject visual, int seed)
+        {
+            if (!visual || MaterialMan.instance == null || EnvMan.instance == null ||
                 EnvMan.instance.GetSnowBuildup() <= 0f)
                 return;
 
             RefreshSnowMaterialRanges();
-            if (SnowMaterialRanges.Count == 0)
+            if (SnowMaterialRanges.Count == 0 && SnowMaterialRendererRanges.Count == 0)
                 return;
 
-            LOD[] lods = lodGroup.GetLODs();
-            if (lods == null || lods.Length == 0 || lods[0].renderers == null)
+            Renderer[] renderers = GetVisualRenderers(visual);
+            if (renderers.Length == 0)
                 return;
 
             UnityEngine.Random.State randomState = UnityEngine.Random.state;
             try
             {
                 int materialIndex = 0;
-                foreach (Renderer renderer in lods[0].renderers)
+                foreach (Renderer renderer in renderers)
                     ApplyRendererSnow(renderer, seed, ref materialIndex);
             }
             finally
@@ -201,71 +222,46 @@ namespace Seasons
             }
         }
 
-        private static void ApplySnowCover(VisEquipment instance)
+        private static GameObject GetVisual(Ragdoll ragdoll)
         {
-            if (!instance || instance.m_lodGroup == null ||
-                !TryGetSnowSeed(instance, out int seed))
-                return;
+            if (!ragdoll)
+                return null;
 
-            ApplySnowCover(instance.m_lodGroup, seed);
+            Transform visual = ragdoll.transform.Find("Visual");
+            return visual ? visual.gameObject : null;
         }
 
-        private static void QueueSnowCover(VisEquipment instance)
+        private static void QueueSnowCover(GameObject visual, int seed)
         {
-            if (instance)
-                PendingSnowCover.Add(instance);
-        }
-
-        private static void QueueSnowCover(LODGroup lodGroup, int seed)
-        {
-            if (lodGroup)
-                PendingRagdollSnowCover[lodGroup] = seed;
+            if (visual)
+                PendingSnowCover[visual] = seed;
         }
 
         private static void ProcessPendingSnowCover()
         {
-            if (PendingSnowCover.Count > 0)
-            {
-                PendingSnowCoverBuffer.Clear();
-                PendingSnowCoverBuffer.AddRange(PendingSnowCover);
-                PendingSnowCover.Clear();
-
-                foreach (VisEquipment instance in PendingSnowCoverBuffer)
-                    ApplySnowCover(instance);
-
-                PendingSnowCoverBuffer.Clear();
-            }
-
-            if (PendingRagdollSnowCover.Count == 0)
+            if (PendingSnowCover.Count == 0)
                 return;
 
-            PendingRagdollSnowCoverBuffer.Clear();
-            PendingRagdollSnowCoverBuffer.AddRange(PendingRagdollSnowCover);
-            PendingRagdollSnowCover.Clear();
+            PendingSnowCoverBuffer.Clear();
+            PendingSnowCoverBuffer.AddRange(PendingSnowCover);
+            PendingSnowCover.Clear();
 
-            foreach (KeyValuePair<LODGroup, int> entry in PendingRagdollSnowCoverBuffer)
+            foreach (KeyValuePair<GameObject, int> entry in PendingSnowCoverBuffer)
                 ApplySnowCover(entry.Key, entry.Value);
 
-            PendingRagdollSnowCoverBuffer.Clear();
+            PendingSnowCoverBuffer.Clear();
         }
 
-        [HarmonyPatch(typeof(VisEquipment), nameof(VisEquipment.Start))]
-        private static class VisEquipment_Start_SeasonalEnemySnow
+        [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.Start))]
+        private static class Humanoid_Start_SeasonalEnemySnow
         {
             [HarmonyPostfix]
-            private static void Postfix(VisEquipment __instance)
+            private static void Postfix(Humanoid __instance)
             {
-                QueueSnowCover(__instance);
-            }
-        }
+                if (!__instance || __instance.IsPlayer())
+                    return;
 
-        [HarmonyPatch(typeof(VisEquipment), nameof(VisEquipment.RefreshSnowLevel))]
-        private static class VisEquipment_RefreshSnowLevel_SeasonalEnemySnow
-        {
-            [HarmonyPostfix]
-            private static void Postfix(VisEquipment __instance)
-            {
-                QueueSnowCover(__instance);
+                QueueSnowCover(__instance.m_visual, __instance.m_seed);
             }
         }
 
@@ -278,20 +274,7 @@ namespace Seasons
                 if (!__instance || __instance.IsPlayer() || !ragdoll)
                     return;
 
-                VisEquipment visEquipment = ragdoll.GetComponent<VisEquipment>();
-                if (visEquipment)
-                {
-                    ZDO zdo = ragdoll.m_nview?.GetZDO();
-                    if (zdo != null)
-                        zdo.Set(ZDOVars.s_seed, __instance.m_seed, okForNotOwner: true);
-
-                    QueueSnowCover(visEquipment);
-                    return;
-                }
-
-                LODGroup lodGroup = ragdoll.GetComponent<LODGroup>();
-                if (lodGroup)
-                    QueueSnowCover(lodGroup, __instance.m_seed);
+                QueueSnowCover(GetVisual(ragdoll), __instance.m_seed);
             }
         }
 
