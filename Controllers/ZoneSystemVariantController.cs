@@ -1800,7 +1800,7 @@ namespace Seasons
             if (!character.IsOnIce())
                 return true;
 
-            __result = Player.m_localPlayer.GetCurrentBiome() == Biome.Ocean ? FootStep.GroundMaterial.Default : FootStep.GroundMaterial.Snow;
+            __result = Player.m_localPlayer.GetCurrentBiome() == Biome.Ocean ? FootStep.GroundMaterial.Ice : FootStep.GroundMaterial.Snow;
             return false;
         }
     }

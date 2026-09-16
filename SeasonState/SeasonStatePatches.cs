@@ -985,7 +985,7 @@ namespace Seasons
                 if (seasonState.GetCurrentSeason() == Season.Winter && (material == FootStep.GroundMaterial.Mud || material == FootStep.GroundMaterial.Grass || material == FootStep.GroundMaterial.GenericGround))
                     material = FootStep.GroundMaterial.Snow;
                 else if (ZoneSystemVariantController.IsWaterSurfaceFrozen() && material == FootStep.GroundMaterial.Water)
-                    material = FootStep.GroundMaterial.Snow;
+                    material = FootStep.GroundMaterial.Ice;
             }
         }
 
