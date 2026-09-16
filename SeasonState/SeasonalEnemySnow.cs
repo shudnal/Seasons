@@ -177,7 +177,7 @@ namespace Seasons
         private static void ApplySnowCover(LODGroup lodGroup, int seed)
         {
             if (!lodGroup || MaterialMan.instance == null || EnvMan.instance == null ||
-                EnvMan.instance.GetSnowBuildup() <= 0.1f)
+                EnvMan.instance.GetSnowBuildup() <= 0f)
                 return;
 
             RefreshSnowMaterialRanges();
