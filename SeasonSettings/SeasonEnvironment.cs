@@ -665,6 +665,18 @@ namespace Seasons
                     m_alwaysDark = true,
                     m_psystems = "GroundMist",
                     m_ambientLoop = "SW008_Wendland_Autumn_Wind_In_Reeds_Medium_Distance_Leaves_Only",
+                },
+                new SeasonEnvironment
+                {
+                    m_name = "Snow Winter",
+                    m_cloneFrom = "Snow",
+                    m_snowBuildup = 0.2f,
+                },
+                new SeasonEnvironment
+                {
+                    m_name = "SnowStorm Winter",
+                    m_cloneFrom = "SnowStorm",
+                    m_snowBuildup = 0.4f,
                 }
             };
         }
