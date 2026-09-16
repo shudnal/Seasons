@@ -1,4 +1,4 @@
-﻿using BepInEx;
+using BepInEx;
 using HarmonyLib;
 using Newtonsoft.Json;
 using System;
@@ -464,6 +464,8 @@ namespace Seasons
             CustomMusic.ResetWorldState();
             ResetWorldRuntimeState();
             TerrainDecultivation.ResetRuntimeState();
+            SeasonalPlayerCapeSnow.Reset();
+            SeasonalEnemySnow.Reset();
             SeasonalSnow.Reset();
             Compatibility.EWDCompat.ResetWorldState();
         }

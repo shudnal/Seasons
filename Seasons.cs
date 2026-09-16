@@ -110,6 +110,7 @@ namespace Seasons
         public static ConfigEntry<float> seasonalSnowRoofPieceMeltMultiplier;
         public static ConfigEntry<string> seasonalSnowClippingFixes;
         public static ConfigEntry<string> seasonalEnemySnowMaterialLevels;
+        public static ConfigEntry<string> seasonalPlayerCapeSnowMaterialLevels;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -585,7 +586,9 @@ namespace Seasons
             seasonalSnowClippingFixes = config("Season - Winter snow", "Fix snow clipping through some pieces", defaultValue: "wood_floor:-0.19;stone_arch:0.46;Piece_grausten_floor_4x4:-0.02;ashwood_stair:0.90;stone_floor_2x2:0.23;blackmarble_2x2x2:0.73;blackmarble_floor:0.23;smelter:3.8;piece_bed02:0.24;bed:0.14;piece_chest_grausten:0.75",
                 "Semicolon-separated prefab:localY entries that set the local Y position of snow meshes for pieces where the vanilla snow mesh clips through the model.");
             seasonalEnemySnowMaterialLevels = serverConfig("Season - Winter snow", "Enemy snow cover material levels", defaultValue: SeasonalEnemySnow.DefaultSnowMaterialRanges,
-                "Semicolon-separated material:min-max entries that apply deterministic snow cover to matching materials on non-player VisEquipment while the current environment has snow buildup. Values are clamped to 0..1. An empty value disables the feature.");
+                "Semicolon-separated material[-renderer]:min-max entries that apply deterministic snow cover to matching materials on non-player Humanoid and ragdoll visuals while the current environment has snow buildup. Values are clamped to 0..1. Renderer-qualified rules take priority over material-only rules. An empty value disables the feature.");
+            seasonalPlayerCapeSnowMaterialLevels = serverConfig("Season - Winter snow", "Player cape snow cover material levels", defaultValue: SeasonalPlayerCapeSnow.DefaultSnowMaterialRanges,
+                "Semicolon-separated material[-renderer]:min-max entries that define the fully accumulated snow cover for player cape renderers. Values are clamped to 0..1. Renderer-qualified rules take priority over material-only rules. An empty value disables cape snow visuals.");
 
             enableSeasonalSnow.SettingChanged += (sender, args) => SeasonalSnow.OnEnabledConfigChanged();
             seasonalSnowBuildup.SettingChanged += (sender, args) => SeasonalSnow.OnSnowRangeConfigChanged();
@@ -594,6 +597,7 @@ namespace Seasons
             seasonalSnowAccumulationSpeed.SettingChanged += (sender, args) => SeasonalSnow.OnAccumulationSpeedConfigChanged();
             seasonalSnowClippingFixes.SettingChanged += (sender, args) => SeasonalSnow.OnSnowClippingFixConfigChanged();
             seasonalEnemySnowMaterialLevels.SettingChanged += (sender, args) => SeasonalEnemySnow.RefreshSnowMaterialRanges();
+            seasonalPlayerCapeSnowMaterialLevels.SettingChanged += (sender, args) => SeasonalPlayerCapeSnow.RefreshSnowMaterialRanges();
             SeasonalSnow.RebuildReducedSnowBuildupPrefabs();
             
 

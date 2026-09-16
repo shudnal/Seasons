@@ -255,6 +255,15 @@ namespace Seasons
             PendingSnowCoverBuffer.Clear();
         }
 
+        internal static void Reset()
+        {
+            parsedConfigValue = null;
+            SnowMaterialRanges.Clear();
+            SnowMaterialRendererRanges.Clear();
+            PendingSnowCover.Clear();
+            PendingSnowCoverBuffer.Clear();
+        }
+
         [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.Start))]
         private static class Humanoid_Start_SeasonalEnemySnow
         {
