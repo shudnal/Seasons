@@ -10,14 +10,17 @@ namespace Seasons
     public static class SeasonalEnemySnow
     {
         public const string DefaultSnowMaterialRanges =
-            "Abomination_mat:0.7-0.8;goblin_armor:0.65-0.8;BruteArmor_mat:0.65-0.8;" +
-            "GoblinStuff_mat:0.65-0.8;BruteHipCloth_mat:0.65-0.8;dvergerArbalest_mat:0.78-0.81;" +
-            "RangerAshlands_mat:0.77-0.8;dvergermage_mat:0.77-0.79;DvergerMageICe_mat:0.77-0.8;" +
-            "DvergerMageSupport_mat:0.77-0.8;goblin:0.7-0.75;GoblinBrute_hildir_mat:0.7-0.8;" +
-            "GoblinBrute_mat:0.7-0.77;GoblinShaman_mat:0.45-0.65;GoblinShaman_Hildir_mat:0.66-0.72;" +
-            "DvergerBody:0.75-0.775;DvergerBodyashlands_mat:0.74-0.765;Skeleton:0.68-0.78;" +
-            "Skeleton_dark:0.7-0.8;Draugr_mat:0.7-0.8;Draugr_Archer_mat:0.7-0.8;" +
-            "Draugr_elite_mat:0.7-0.8;troll:0.65-0.72";
+            "Abomination_mat:0.7-0.8;goblin_armor:0.65-0.79;BruteArmor_mat:0.65-0.79;" +
+            "GoblinStuff_mat:0.65-0.8;BruteHipCloth_mat:0.65-0.8;dvergerArbalest_mat:0.77-0.79;" +
+            "RangerAshlands_mat:0.77-0.79;dvergermage_mat:0.77-0.79;DvergerMageICe_mat:0.77-0.79;" +
+            "DvergerMageSupport_mat:0.77-0.79;goblin:0.7-0.73;GoblinBrute_hildir_mat:0.7-0.79;" +
+            "GoblinBrute_mat:0.7-0.75;GoblinShaman_mat:0.45-0.65;GoblinShaman_Hildir_mat:0.66-0.72;" +
+            "DvergerBody:0.75-0.765;DvergerBodyashlands_mat:0.74-0.765;Skeleton:0.68-0.78;" +
+            "Skeleton_dark:0.7-0.8;Skeleton_Swamps:0.7-0.8;SkeletonBig:0.7-0.8;" +
+            "Skeleton_Mountains:0.7-0.8;Skeleton_Meadows:0.7-0.8;Draugr_mat:0.7-0.8;" +
+            "Draugr_Archer_mat:0.7-0.8;Draugr_elite_mat:0.7-0.8;troll:0.65-0.72;" +
+            "lox-Furr1:0.7-0.75;Bjorn_mat:0.75-0.77;Boar Skin Valheim:0.75-0.77;" +
+            "Deer 2:0.755-0.765;greydwarf:0.70-0.74";
 
         private const float SnowLevelEpsilon = 0.0001f;
         private const string MaterialInstanceSuffix = " (Instance)";
