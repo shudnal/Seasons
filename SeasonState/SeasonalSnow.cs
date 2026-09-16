@@ -82,6 +82,7 @@ namespace Seasons
             public bool initializationComplete;
             public bool localVisualApplied;
             public float localVisualSnow;
+            public int localVisualShieldChangeID = int.MinValue;
             public long observedOwner = long.MinValue;
         }
 
@@ -640,6 +641,7 @@ namespace Seasons
 
             state.localVisualApplied = false;
             state.localVisualSnow = 0f;
+            state.localVisualShieldChangeID = int.MinValue;
             return true;
         }
 
@@ -707,10 +709,20 @@ namespace Seasons
                 return;
             }
 
+            int shieldChangeID = ShieldGenerator.m_instanceChangeID;
+            if (state.localVisualApplied &&
+                state.localVisualShieldChangeID == shieldChangeID)
+                return;
+
+            state.localVisualShieldChangeID = shieldChangeID;
+            bool shielded = ShieldGenerator.IsInsideShieldCached(
+                instance.transform.position,
+                ref instance.m_shieldChangeID);
+
             ApplyLocalSnowVisual(
                 instance,
                 state,
-                GetPassiveSeasonalSnowTarget(instance));
+                shielded ? 0f : GetPassiveSeasonalSnowTarget(instance));
         }
 
         private static bool CanInitializeSnowState(WearNTear instance, ZDO zdo)
