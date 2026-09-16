@@ -32,7 +32,7 @@ namespace Seasons
 
         private static string parsedConfigValue;
 
-        private static void RefreshSnowMaterialRanges()
+        internal static void RefreshSnowMaterialRanges()
         {
             string configValue = seasonalEnemySnowMaterialLevels?.Value ?? String.Empty;
             if (String.Equals(parsedConfigValue, configValue, StringComparison.Ordinal))

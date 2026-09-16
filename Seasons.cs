@@ -593,7 +593,9 @@ namespace Seasons
             reducedSeasonalSnowPrefabs.SettingChanged += (sender, args) => SeasonalSnow.OnReducedSnowPrefabsConfigChanged();
             seasonalSnowAccumulationSpeed.SettingChanged += (sender, args) => SeasonalSnow.OnAccumulationSpeedConfigChanged();
             seasonalSnowClippingFixes.SettingChanged += (sender, args) => SeasonalSnow.OnSnowClippingFixConfigChanged();
+            seasonalEnemySnowMaterialLevels.SettingChanged += (sender, args) => SeasonalEnemySnow.RefreshSnowMaterialRanges();
             SeasonalSnow.RebuildReducedSnowBuildupPrefabs();
+            
 
             enableFrozenWater = serverConfig("Season - Winter ocean", "Enable frozen water", defaultValue: true, "Enable frozen water in winter");
             waterFreezesInWinterDays = serverConfig("Season - Winter ocean", "Freeze the water at given days from to", defaultValue: new Vector2(6f, 9f), "Water will freeze in the first set day of winter and will be unfrozen after second set day");
