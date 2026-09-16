@@ -102,12 +102,14 @@ namespace Seasons
         public static ConfigEntry<string> reducedSeasonalSnowPrefabs;
         public static ConfigEntry<float> seasonalSnowAccumulationSpeed;
         public static ConfigEntry<float> seasonalSnowHeatSourceMeltMultiplier;
+        public static ConfigEntry<Vector2> seasonalSnowHeatDistanceMultipliers;
+        public static ConfigEntry<float> seasonalSnowHeatSourceCheckDistance;
         public static ConfigEntry<float> seasonalSnowSelfHeatMultiplier;
         public static ConfigEntry<float> seasonalSnowInteractiveObjectMeltMultiplier;
         public static ConfigEntry<float> seasonalSnowLeakyPieceMeltMultiplier;
         public static ConfigEntry<float> seasonalSnowRoofPieceMeltMultiplier;
         public static ConfigEntry<string> seasonalSnowClippingFixes;
-        public static ConfigEntry<string> seasonalEnemySnowLevels;
+        public static ConfigEntry<string> seasonalEnemySnowMaterialLevels;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -566,8 +568,12 @@ namespace Seasons
                 "Comma-separated prefab names that use Reduced snow buildup limits instead of Snow buildup limits.");
             seasonalSnowAccumulationSpeed = serverConfig("Season - Winter snow", "Snow accumulation speed", defaultValue: 1f,
                 "Multiplier for seasonal snow accumulation from weather. 1 is the default rate, 0 disables accumulation above the configured minimum.");
-            seasonalSnowHeatSourceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - heat sources", defaultValue: 0.2f,
-                "Controls how quickly seasonal snow melts near active heat sources such as fires. 0 disables heat-based melting.");
+            seasonalSnowHeatSourceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - all heat sources", defaultValue: 1f,
+                "Global multiplier for seasonal snow melting from active heat sources. 1 uses the balanced default rate, 0 disables heat-based melting.");
+            seasonalSnowHeatDistanceMultipliers = serverConfig("Season - Winter snow", "Snow melt speed multiplier - heat distance scaling", defaultValue: new Vector2(2f, 0.5f),
+                "Near and far heat-melting multipliers. The first value applies at 1 meter or closer, the second at the configured maximum heat-source distance, with linear scaling between them.");
+            seasonalSnowHeatSourceCheckDistance = serverConfig("Season - Winter snow", "Snow melt heat source check distance", defaultValue: 3f,
+                "Maximum center-to-center distance in meters for active heat sources to melt seasonal snow. Values below 1 are treated as 1. A piece still counts as heated when its position is inside an active heat area.");
             seasonalSnowSelfHeatMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - self-heating pieces", defaultValue: 5f,
                 "Additional heat-melting speed for pieces that produce their own heat while active, such as kilns and smelters.");
             seasonalSnowInteractiveObjectMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - interactive objects", defaultValue: 5f,
@@ -578,8 +584,8 @@ namespace Seasons
                 "Controls heat-based melting on roof pieces. 0 keeps snow on roofs even when a fire is nearby.");
             seasonalSnowClippingFixes = config("Season - Winter snow", "Fix snow clipping through some pieces", defaultValue: "wood_floor:-0.19;stone_arch:0.46;Piece_grausten_floor_4x4:-0.02;ashwood_stair:0.90;stone_floor_2x2:0.23;blackmarble_2x2x2:0.73;blackmarble_floor:0.23;smelter:3.8;piece_bed02:0.24;bed:0.14;piece_chest_grausten:0.75",
                 "Semicolon-separated prefab:localY entries that set the local Y position of snow meshes for pieces where the vanilla snow mesh clips through the model.");
-            seasonalEnemySnowLevels = serverConfig("Season - Winter snow", "Enemy snow cover levels", defaultValue: SeasonalEnemySnow.DefaultSnowLevelRanges,
-                "Semicolon-separated prefab:min-max entries that apply a random VisEquipment snow-cover level while the current environment has snow buildup. Values are clamped to 0..1. An empty value disables the feature.");
+            seasonalEnemySnowMaterialLevels = serverConfig("Season - Winter snow", "Enemy snow cover material levels", defaultValue: SeasonalEnemySnow.DefaultSnowMaterialRanges,
+                "Semicolon-separated material:min-max entries that apply deterministic snow cover to matching materials on non-player VisEquipment while the current environment has snow buildup. Values are clamped to 0..1. An empty value disables the feature.");
 
             enableSeasonalSnow.SettingChanged += (sender, args) => SeasonalSnow.OnEnabledConfigChanged();
             seasonalSnowBuildup.SettingChanged += (sender, args) => SeasonalSnow.OnSnowRangeConfigChanged();

@@ -9,39 +9,33 @@ namespace Seasons
 {
     public static class SeasonalEnemySnow
     {
-        public const string DefaultSnowLevelRanges =
-            "Abomination:0.7-0.8;Draugr:0.7-0.8;Draugr_Elite:0.7-0.8;Draugr_elite_ragdoll:0.7-0.8;" +
-            "Draugr_ragdoll:0.7-0.8;Draugr_Elite_sleeping:0.7-0.8;Draugr_Ranged:0.7-0.8;" +
-            "Draugr_ranged_ragdoll:0.7-0.8;Draugr_Ranged_sleeping:0.7-0.8;Draugr_sleeping:0.7-0.8;" +
-            "Dverger:0.75-0.78;Dverger_ragdoll:0.75-0.78;DvergerAshlands:0.74-0.765;" +
-            "DvergerDeepNorth:0.74-0.765;DvergerMage:0.75-0.78;DvergerMageFire:0.75-0.78;" +
-            "DvergerMageIce:0.75-0.78;DvergerMageSupport:0.75-0.78;Goblin:0.7-0.75;GoblinArcher:0.7-0.75;" +
-            "Goblin_DN_Dragdoll:0.7-0.78;Goblin_Dragdoll:0.7-0.78;GoblinBrute:0.7-0.78;" +
-            "GoblinBrute_ragdoll:0.7-0.78;GoblinBrute_Hildir:0.7-0.8;GoblinBrute_Hildir_ragdoll:0.7-0.8;" +
-            "GoblinBruteBros:0.7-0.78;GoblinBruteBros_nochest:0.7-0.78;GoblinDeepNorth:0.74-0.77;" +
-            "GoblinShaman:0.45-0.65;GoblinShaman_ragdoll:0.45-0.65;GoblinShaman_Hildir:0.66-0.72;" +
-            "GoblinShaman_Hildir_nochest:0.66-0.72;GoblinShaman_Hildir_ragdoll:0.66-0.72;" +
-            "Skeleton:0.68-0.78;Skeleton_Friendly:0.7-0.8;Skeleton_Meadows:0.68-0.78;" +
-            "Skeleton_Mountains:0.68-0.78;Skeleton_NoArcher:0.68-0.78;Skeleton_Poison:0.68-0.78;" +
-            "Skeleton_Swamps:0.68-0.78;Skeleton_Swamps_noarcher:0.68-0.78;Troll:0.65-0.72;" +
-            "Troll_sleeping:0.65-0.72";
+        public const string DefaultSnowMaterialRanges =
+            "Abomination_mat:0.7-0.8;goblin_armor:0.65-0.8;BruteArmor_mat:0.65-0.8;" +
+            "GoblinStuff_mat:0.65-0.8;BruteHipCloth_mat:0.65-0.8;dvergerArbalest_mat:0.78-0.81;" +
+            "RangerAshlands_mat:0.77-0.8;dvergermage_mat:0.77-0.79;DvergerMageICe_mat:0.77-0.8;" +
+            "DvergerMageSupport_mat:0.77-0.8;goblin:0.7-0.75;GoblinBrute_hildir_mat:0.7-0.8;" +
+            "GoblinBrute_mat:0.7-0.77;GoblinShaman_mat:0.45-0.65;GoblinShaman_Hildir_mat:0.66-0.72;" +
+            "DvergerBody:0.75-0.775;DvergerBodyashlands_mat:0.74-0.765;Skeleton:0.68-0.78;" +
+            "Skeleton_dark:0.7-0.8;Draugr_mat:0.7-0.8;Draugr_Archer_mat:0.7-0.8;" +
+            "Draugr_elite_mat:0.7-0.8;troll:0.65-0.72";
 
         private const float SnowLevelEpsilon = 0.0001f;
+        private const string MaterialInstanceSuffix = " (Instance)";
 
-        private static readonly Dictionary<string, Vector2> SnowLevelRanges =
+        private static readonly int SnowCoverProperty = Shader.PropertyToID("_SnowCover");
+        private static readonly Dictionary<string, Vector2> SnowMaterialRanges =
             new Dictionary<string, Vector2>(StringComparer.OrdinalIgnoreCase);
-        private static readonly System.Random SnowLevelRandom = new System.Random();
 
         private static string parsedConfigValue;
 
-        private static void RefreshSnowLevelRanges()
+        private static void RefreshSnowMaterialRanges()
         {
-            string configValue = seasonalEnemySnowLevels?.Value ?? String.Empty;
+            string configValue = seasonalEnemySnowMaterialLevels?.Value ?? String.Empty;
             if (String.Equals(parsedConfigValue, configValue, StringComparison.Ordinal))
                 return;
 
             parsedConfigValue = configValue;
-            SnowLevelRanges.Clear();
+            SnowMaterialRanges.Clear();
 
             foreach (string rawEntry in configValue.Split(';'))
             {
@@ -52,21 +46,21 @@ namespace Seasons
                 int valueSeparator = entry.LastIndexOf(':');
                 if (valueSeparator <= 0 || valueSeparator >= entry.Length - 1)
                 {
-                    LogWarning($"Invalid enemy snow-cover entry '{entry}'. Expected prefab:min-max.");
+                    LogWarning($"Invalid enemy snow-cover entry '{entry}'. Expected material:min-max.");
                     continue;
                 }
 
-                string prefabName = entry.Substring(0, valueSeparator).Trim();
+                string materialName = entry.Substring(0, valueSeparator).Trim();
                 string rangeText = entry.Substring(valueSeparator + 1).Trim();
                 int rangeSeparator = rangeText.IndexOf('-');
-                if (String.IsNullOrWhiteSpace(prefabName) ||
+                if (String.IsNullOrWhiteSpace(materialName) ||
                     rangeSeparator <= 0 || rangeSeparator >= rangeText.Length - 1 ||
                     !TryParseSnowLevel(rangeText.Substring(0, rangeSeparator), out float first) ||
                     !TryParseSnowLevel(rangeText.Substring(rangeSeparator + 1), out float second) ||
                     Single.IsNaN(first) || Single.IsInfinity(first) ||
                     Single.IsNaN(second) || Single.IsInfinity(second))
                 {
-                    LogWarning($"Invalid enemy snow-cover entry '{entry}'. Expected prefab:min-max with finite values from 0 to 1.");
+                    LogWarning($"Invalid enemy snow-cover entry '{entry}'. Expected material:min-max with finite values from 0 to 1.");
                     continue;
                 }
 
@@ -78,7 +72,7 @@ namespace Seasons
                     continue;
                 }
 
-                SnowLevelRanges[prefabName] = new Vector2(minimum, maximum);
+                SnowMaterialRanges[materialName] = new Vector2(minimum, maximum);
             }
         }
 
@@ -91,107 +85,97 @@ namespace Seasons
                 out snowLevel);
         }
 
-        private static bool TryGetSnowLevelRange(string prefabName, out Vector2 range)
+        private static string GetMaterialName(Material material)
+        {
+            if (!material)
+                return String.Empty;
+
+            string materialName = material.name?.Trim() ?? String.Empty;
+            if (materialName.EndsWith(MaterialInstanceSuffix, StringComparison.Ordinal))
+            {
+                materialName = materialName.Substring(
+                    0,
+                    materialName.Length - MaterialInstanceSuffix.Length);
+            }
+
+            return materialName;
+        }
+
+        private static bool TryGetSnowMaterialRange(Material material, out Vector2 range)
         {
             range = Vector2.zero;
-            RefreshSnowLevelRanges();
-            return !String.IsNullOrWhiteSpace(prefabName) &&
-                SnowLevelRanges.TryGetValue(prefabName, out range);
+            return SnowMaterialRanges.TryGetValue(GetMaterialName(material), out range);
         }
 
-        private static string GetOwnerPrefabName(VisEquipment instance, ZDO zdo)
+        private static bool ApplyRendererSnow(Renderer renderer)
         {
-            if (ZNetScene.instance != null)
+            if (!renderer)
+                return false;
+
+            Material[] materials = renderer.sharedMaterials;
+            if (materials == null)
+                return false;
+
+            foreach (Material material in materials)
             {
-                GameObject prefab = ZNetScene.instance.GetPrefab(zdo.GetPrefab());
-                if (prefab)
-                    return prefab.name;
+                if (!TryGetSnowMaterialRange(material, out Vector2 range))
+                    continue;
+
+                float snowLevel = range.y <= range.x
+                    ? range.x
+                    : UnityEngine.Random.Range(range.x, range.y);
+                MaterialMan.instance.SetValue(
+                    renderer.gameObject,
+                    SnowCoverProperty,
+                    snowLevel);
+                return true;
             }
 
-            GameObject owner = instance.m_nview != null
-                ? instance.m_nview.gameObject
-                : instance.gameObject;
-            return Utils.GetPrefabName(owner);
+            return false;
         }
 
-        private static float GetRandomSnowLevel(Vector2 range)
+        private static void ApplySnowCover(VisEquipment instance)
         {
-            if (range.y <= range.x)
-                return range.x;
-
-            return Mathf.Lerp(range.x, range.y, (float)SnowLevelRandom.NextDouble());
-        }
-
-        private static void ApplyVisualSnowLevel(VisEquipment instance, float snowLevel)
-        {
-            snowLevel = Mathf.Clamp01(snowLevel);
-            if (MaterialMan.instance != null)
-                instance.SnowLevel = snowLevel;
-            else
-                instance.m_snowLevel = snowLevel;
-        }
-
-        private static void ApplySnowLevel(VisEquipment instance)
-        {
-            if (!instance || EnvMan.instance == null || instance.m_nview == null ||
-                !instance.m_nview.IsValid())
+            if (!instance || MaterialMan.instance == null || EnvMan.instance == null ||
+                EnvMan.instance.GetSnowBuildup() <= 0f || instance.m_lodGroup == null)
                 return;
 
-            ZDO zdo = instance.m_nview.GetZDO();
-            if (zdo == null ||
-                !TryGetSnowLevelRange(GetOwnerPrefabName(instance, zdo), out Vector2 range))
+            Humanoid humanoid = instance.GetComponent<Humanoid>();
+            if (!humanoid)
+                humanoid = instance.GetComponentInParent<Humanoid>();
+            if (!humanoid || humanoid.IsPlayer())
                 return;
 
-            float storedSnowLevel = zdo.GetFloat(SeasonsVars.s_enemySnowLevel, 0f);
-            bool invalidStoredSnowLevel = Single.IsNaN(storedSnowLevel) ||
-                Single.IsInfinity(storedSnowLevel) || storedSnowLevel < 0f;
-            if (invalidStoredSnowLevel)
-            {
-                if (instance.m_nview.IsOwner())
-                    zdo.Set(SeasonsVars.s_enemySnowLevel, 0f);
-                storedSnowLevel = 0f;
-            }
-            else if (storedSnowLevel <= SnowLevelEpsilon)
-            {
-                storedSnowLevel = 0f;
-            }
-            else
-            {
-                storedSnowLevel = Mathf.Clamp01(storedSnowLevel);
-            }
-
-            if (EnvMan.instance.GetSnowBuildup() > 0f)
-            {
-                if (storedSnowLevel <= SnowLevelEpsilon)
-                {
-                    if (!instance.m_nview.IsOwner())
-                        return;
-
-                    storedSnowLevel = GetRandomSnowLevel(range);
-                    zdo.Set(SeasonsVars.s_enemySnowLevel, storedSnowLevel);
-                }
-
-                ApplyVisualSnowLevel(instance, storedSnowLevel);
-                return;
-            }
-
-            if (storedSnowLevel <= SnowLevelEpsilon)
+            RefreshSnowMaterialRanges();
+            if (SnowMaterialRanges.Count == 0)
                 return;
 
-            if (instance.m_nview.IsOwner())
-                zdo.Set(SeasonsVars.s_enemySnowLevel, 0f);
+            LOD[] lods = instance.m_lodGroup.GetLODs();
+            if (lods == null || lods.Length == 0 || lods[0].renderers == null)
+                return;
 
-            if (!Mathf.Approximately(instance.m_snowLevel, 0f))
-                ApplyVisualSnowLevel(instance, 0f);
+            UnityEngine.Random.State randomState = UnityEngine.Random.state;
+            try
+            {
+                UnityEngine.Random.InitState(
+                    unchecked(humanoid.m_seed + (int)EnvMan.instance.m_environmentPeriod));
+
+                foreach (Renderer renderer in lods[0].renderers)
+                    ApplyRendererSnow(renderer);
+            }
+            finally
+            {
+                UnityEngine.Random.state = randomState;
+            }
         }
 
-        [HarmonyPatch(typeof(VisEquipment), nameof(VisEquipment.Awake))]
-        private static class VisEquipment_Awake_SeasonalEnemySnow
+        [HarmonyPatch(typeof(VisEquipment), nameof(VisEquipment.Start))]
+        private static class VisEquipment_Start_SeasonalEnemySnow
         {
             [HarmonyPostfix]
             private static void Postfix(VisEquipment __instance)
             {
-                ApplySnowLevel(__instance);
+                ApplySnowCover(__instance);
             }
         }
     }

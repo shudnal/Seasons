@@ -30,8 +30,8 @@ namespace Seasons
         private const float CoveredRoofCheckMaxInterval = 18f;
         private const float InteractiveMeltActivityTimeout = 1f;
         private const float InteractiveMeltKeepAliveInterval = 0.2f;
-        private const float NearbyHeatDistance = 3f;
-        private const float HeatMeltDeltaScale = 0.6f;
+        private const float MinimumHeatDistance = 1f;
+        private const float HeatMeltDeltaScale = 0.18f;
         private const float InteractiveMeltDeltaScale = 0.002f;
         private const double SnowTimeStampScale = 1000d;
 
@@ -113,9 +113,8 @@ namespace Seasons
             public readonly bool leaky;
             public readonly bool roof;
             public float nextHeatCheckTime;
-            public bool insideHeatArea;
-            public bool activeInternalHeatArea;
-            public bool nearbyHeatArea;
+            public float nearestHeatDistance = float.PositiveInfinity;
+            public float nearestInternalHeatDistance = float.PositiveInfinity;
 
             public PieceMeltSourceState(WearNTear instance)
             {
@@ -187,7 +186,17 @@ namespace Seasons
         public static float ReducedMinimumSnowBuildup => GetReducedSnowBuildupRange().x;
         public static float ReducedMaximumSnowBuildup => GetReducedSnowBuildupRange().y;
         private static float HeatSourceMeltMultiplier =>
-            Mathf.Max(0f, seasonalSnowHeatSourceMeltMultiplier?.Value ?? 0.2f);
+            Mathf.Max(0f, seasonalSnowHeatSourceMeltMultiplier?.Value ?? 1f);
+        private static Vector2 HeatDistanceMultipliers
+        {
+            get
+            {
+                Vector2 configured = seasonalSnowHeatDistanceMultipliers?.Value ?? new Vector2(2f, 0.5f);
+                return new Vector2(Mathf.Max(0f, configured.x), Mathf.Max(0f, configured.y));
+            }
+        }
+        private static float HeatSourceCheckDistance =>
+            Mathf.Max(MinimumHeatDistance, seasonalSnowHeatSourceCheckDistance?.Value ?? 3f);
         private static float SelfHeatMultiplier =>
             Mathf.Max(0f, seasonalSnowSelfHeatMultiplier?.Value ?? 5f);
         private static float InteractiveObjectMeltMultiplier =>
@@ -743,7 +752,7 @@ namespace Seasons
             if (zdo == null)
                 return;
 
-            zdo.Set(SeasonsVars.s_seasonalSnowWinter, true);
+            zdo.Set(SeasonsVars.s_seasonalSnowWinter, 1, okForNotOwner: true);
             if (zdo.RemoveLong(SeasonsVars.s_seasonalSnowWinter))
                 zdo.IncreaseDataRevision();
 
@@ -774,7 +783,7 @@ namespace Seasons
             zdo.Set(ZDOVars.s_snow, value);
 
             if (markSeasonalSnow && value > SnowChangeEpsilon)
-                zdo.Set(SeasonsVars.s_seasonalSnowWatermark, true);
+                zdo.Set(SeasonsVars.s_seasonalSnowWatermark, 1, okForNotOwner: true);
             else if (value <= SnowChangeEpsilon)
                 RemoveBoolWithRevision(
                     zdo,
@@ -808,7 +817,7 @@ namespace Seasons
                     GetCurrentSnowTimeStamp(),
                     currentSnow);
                 zdo.Set(ZDOVars.s_snow, currentSnow);
-                zdo.Set(SeasonsVars.s_seasonalSnowWatermark, true);
+                zdo.Set(SeasonsVars.s_seasonalSnowWatermark, 1, okForNotOwner: true);
                 ClearLocalSnowVisual(state);
                 instance.m_snowBuildup = currentSnow;
                 instance.UpdateSnowVisual();
@@ -1570,26 +1579,14 @@ namespace Seasons
                 && area.m_collider.gameObject.activeInHierarchy;
         }
 
-        private static bool IsInsideHeatArea(Vector3 position)
-        {
-            return IsActiveHeatArea(EffectArea.IsPointInsideArea(position, EffectArea.Type.Heat));
-        }
-
         private static PieceMeltSourceState GetMeltSourceState(WearNTear instance)
         {
             return instance ? SeasonalSnowMeltSources.GetValue(instance, key => new PieceMeltSourceState(key)) : null;
         }
 
-        private static bool HasActiveInternalHeatArea(PieceMeltSourceState state)
+        private static bool IsInternalHeatArea(PieceMeltSourceState state, EffectArea area)
         {
-            if (state == null)
-                return false;
-
-            foreach (EffectArea area in state.heatAreas)
-                if (IsActiveHeatArea(area))
-                    return true;
-
-            return false;
+            return state != null && area && Array.IndexOf(state.heatAreas, area) >= 0;
         }
 
         private static float GetPieceSnowMeltMultiplier(PieceMeltSourceState state)
@@ -1603,27 +1600,54 @@ namespace Seasons
             return state.leaky ? LeakyPieceMeltMultiplier : 1f;
         }
 
-        private static bool IsNearHeatArea(Vector3 position)
+        private static float GetHeatDistanceMultiplier(float distance)
         {
-            foreach (EffectArea area in EffectArea.GetAllAreas())
-            {
-                if (!IsActiveHeatArea(area) || (area.m_type & EffectArea.Type.Heat) == 0)
-                    continue;
+            Vector2 multipliers = HeatDistanceMultipliers;
+            float maximumDistance = HeatSourceCheckDistance;
+            if (maximumDistance <= MinimumHeatDistance + SnowChangeEpsilon)
+                return multipliers.x;
 
-                if (Vector3.Distance(position, area.transform.position) <= NearbyHeatDistance)
-                    return true;
-            }
-
-            return false;
+            float factor = Mathf.InverseLerp(
+                MinimumHeatDistance,
+                maximumDistance,
+                Mathf.Clamp(distance, MinimumHeatDistance, maximumDistance));
+            return Mathf.Lerp(multipliers.x, multipliers.y, factor);
         }
 
         private static void RefreshMeltSourceState(WearNTear instance, PieceMeltSourceState state)
         {
             state.nextHeatCheckTime = Time.time + HeatMeltCacheDuration;
+            state.nearestHeatDistance = float.PositiveInfinity;
+            state.nearestInternalHeatDistance = float.PositiveInfinity;
+
             Vector3 position = instance.transform.position;
-            state.insideHeatArea = IsInsideHeatArea(position);
-            state.activeInternalHeatArea = HasActiveInternalHeatArea(state);
-            state.nearbyHeatArea = IsNearHeatArea(position);
+            float maximumDistance = HeatSourceCheckDistance;
+            EffectArea containingHeatArea = EffectArea.IsPointInsideArea(
+                position,
+                EffectArea.Type.Heat);
+
+            foreach (EffectArea area in EffectArea.GetAllAreas())
+            {
+                if (!IsActiveHeatArea(area) || (area.m_type & EffectArea.Type.Heat) == 0)
+                    continue;
+
+                bool internalHeat = IsInternalHeatArea(state, area);
+                float distance = Vector3.Distance(position, area.transform.position);
+                if (!internalHeat && area != containingHeatArea && distance > maximumDistance)
+                    continue;
+
+                float effectiveDistance = Mathf.Min(distance, maximumDistance);
+                state.nearestHeatDistance = Mathf.Min(
+                    state.nearestHeatDistance,
+                    effectiveDistance);
+
+                if (internalHeat)
+                {
+                    state.nearestInternalHeatDistance = Mathf.Min(
+                        state.nearestInternalHeatDistance,
+                        effectiveDistance);
+                }
+            }
         }
 
         private static float GetRoofCheckIntervalFactor(WearNTear instance, SnowCoverageState state)
@@ -1787,10 +1811,20 @@ namespace Seasons
                 RefreshMeltSourceState(instance, state);
 
             float multiplier = 0f;
-            if (state.nearbyHeatArea || state.insideHeatArea)
-                multiplier = HeatSourceMeltMultiplier;
-            if (state.activeInternalHeatArea)
-                multiplier = Mathf.Max(multiplier, HeatSourceMeltMultiplier * SelfHeatMultiplier);
+            if (!float.IsPositiveInfinity(state.nearestHeatDistance))
+            {
+                multiplier = HeatSourceMeltMultiplier
+                    * GetHeatDistanceMultiplier(state.nearestHeatDistance);
+            }
+
+            if (!float.IsPositiveInfinity(state.nearestInternalHeatDistance))
+            {
+                multiplier = Mathf.Max(
+                    multiplier,
+                    HeatSourceMeltMultiplier
+                        * SelfHeatMultiplier
+                        * GetHeatDistanceMultiplier(state.nearestInternalHeatDistance));
+            }
 
             return multiplier * GetPieceSnowMeltMultiplier(state);
         }
