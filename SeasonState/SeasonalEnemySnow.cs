@@ -198,7 +198,7 @@ namespace Seasons
         private static void ApplySnowCover(GameObject visual, int seed)
         {
             if (!visual || MaterialMan.instance == null || EnvMan.instance == null ||
-                EnvMan.instance.GetSnowBuildup() <= 0f)
+                EnvMan.instance.GetSnowBuildup() <= 0.1f)
                 return;
 
             RefreshSnowMaterialRanges();
