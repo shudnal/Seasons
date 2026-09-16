@@ -93,6 +93,7 @@ namespace Seasons
 
         private static bool TryGetSnowLevelRange(string prefabName, out Vector2 range)
         {
+            range = Vector2.zero;
             RefreshSnowLevelRanges();
             return !String.IsNullOrWhiteSpace(prefabName) &&
                 SnowLevelRanges.TryGetValue(prefabName, out range);
