@@ -111,7 +111,36 @@ namespace Seasons
             return SnowMaterialRanges.TryGetValue(GetMaterialName(material), out range);
         }
 
-        private static bool ApplyRendererSnow(Renderer renderer)
+        private static bool TryGetSnowSeed(VisEquipment instance, out int seed)
+        {
+            seed = 0;
+            if (!instance)
+                return false;
+
+            Humanoid humanoid = instance.GetComponent<Humanoid>();
+            if (!humanoid)
+                humanoid = instance.GetComponentInParent<Humanoid>();
+            if (humanoid)
+            {
+                if (humanoid.IsPlayer())
+                    return false;
+
+                seed = humanoid.m_seed;
+                return true;
+            }
+
+            Ragdoll ragdoll = instance.GetComponent<Ragdoll>();
+            if (!ragdoll)
+                ragdoll = instance.GetComponentInParent<Ragdoll>();
+            ZDO zdo = ragdoll?.m_nview?.GetZDO();
+            if (zdo == null)
+                return false;
+
+            seed = zdo.GetInt(ZDOVars.s_seed, 0);
+            return seed != 0;
+        }
+
+        private static bool ApplyRendererSnow(Renderer renderer, int seed, ref int materialIndex)
         {
             if (!renderer)
                 return false;
@@ -124,6 +153,9 @@ namespace Seasons
             {
                 if (!TryGetSnowMaterialRange(material, out Vector2 range))
                     continue;
+
+                UnityEngine.Random.InitState(unchecked(seed + materialIndex));
+                materialIndex++;
 
                 float snowLevel = range.y <= range.x
                     ? range.x
@@ -141,13 +173,8 @@ namespace Seasons
         private static void ApplySnowCover(VisEquipment instance)
         {
             if (!instance || MaterialMan.instance == null || EnvMan.instance == null ||
-                EnvMan.instance.GetSnowBuildup() <= 0f || instance.m_lodGroup == null)
-                return;
-
-            Humanoid humanoid = instance.GetComponent<Humanoid>();
-            if (!humanoid)
-                humanoid = instance.GetComponentInParent<Humanoid>();
-            if (!humanoid || humanoid.IsPlayer())
+                EnvMan.instance.GetSnowBuildup() <= 0f || instance.m_lodGroup == null ||
+                !TryGetSnowSeed(instance, out int seed))
                 return;
 
             RefreshSnowMaterialRanges();
@@ -161,11 +188,9 @@ namespace Seasons
             UnityEngine.Random.State randomState = UnityEngine.Random.state;
             try
             {
-                UnityEngine.Random.InitState(
-                    unchecked(humanoid.m_seed + (int)EnvMan.instance.m_environmentPeriod));
-
+                int materialIndex = 0;
                 foreach (Renderer renderer in lods[0].renderers)
-                    ApplyRendererSnow(renderer);
+                    ApplyRendererSnow(renderer, seed, ref materialIndex);
             }
             finally
             {
@@ -211,6 +236,25 @@ namespace Seasons
             private static void Postfix(VisEquipment __instance)
             {
                 QueueSnowCover(__instance);
+            }
+        }
+
+        [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.SetupVisEquipment))]
+        private static class Humanoid_SetupVisEquipment_SeasonalEnemySnow
+        {
+            [HarmonyPostfix]
+            private static void Postfix(Humanoid __instance, VisEquipment visEq, bool isRagdoll)
+            {
+                if (!isRagdoll || !__instance || __instance.IsPlayer() || !visEq ||
+                    visEq.m_nview == null || !visEq.m_nview.IsValid())
+                    return;
+
+                ZDO zdo = visEq.m_nview.GetZDO();
+                if (zdo == null)
+                    return;
+
+                zdo.Set(ZDOVars.s_seed, __instance.m_seed, okForNotOwner: true);
+                QueueSnowCover(visEq);
             }
         }
 
