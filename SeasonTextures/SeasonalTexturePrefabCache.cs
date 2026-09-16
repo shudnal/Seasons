@@ -43,12 +43,16 @@ namespace Seasons
     {
         private static void Postfix()
         {
+            if (!UseTextureControllers())
+                return;
+
             PrefabVariantController.instance?.RevertPrefabsState();
             ClutterVariantController.Instance?.RevertColors();
+            ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.Clear();
+
             texturesVariants.Dispose();
             texturesVariants = new SeasonalTextureVariants();
             SeasonalTexturePrefabCache.SetCurrentTextureVariants(texturesVariants);
-            ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.Clear();
         }
     }
 
