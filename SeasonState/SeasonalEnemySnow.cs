@@ -29,6 +29,10 @@ namespace Seasons
             new HashSet<VisEquipment>();
         private static readonly List<VisEquipment> PendingSnowCoverBuffer =
             new List<VisEquipment>();
+        private static readonly Dictionary<LODGroup, int> PendingRagdollSnowCover =
+            new Dictionary<LODGroup, int>();
+        private static readonly List<KeyValuePair<LODGroup, int>> PendingRagdollSnowCoverBuffer =
+            new List<KeyValuePair<LODGroup, int>>();
 
         private static string parsedConfigValue;
 
@@ -170,18 +174,17 @@ namespace Seasons
             return false;
         }
 
-        private static void ApplySnowCover(VisEquipment instance)
+        private static void ApplySnowCover(LODGroup lodGroup, int seed)
         {
-            if (!instance || MaterialMan.instance == null || EnvMan.instance == null ||
-                EnvMan.instance.GetSnowBuildup() <= 0f || instance.m_lodGroup == null ||
-                !TryGetSnowSeed(instance, out int seed))
+            if (!lodGroup || MaterialMan.instance == null || EnvMan.instance == null ||
+                EnvMan.instance.GetSnowBuildup() <= 0f)
                 return;
 
             RefreshSnowMaterialRanges();
             if (SnowMaterialRanges.Count == 0)
                 return;
 
-            LOD[] lods = instance.m_lodGroup.GetLODs();
+            LOD[] lods = lodGroup.GetLODs();
             if (lods == null || lods.Length == 0 || lods[0].renderers == null)
                 return;
 
@@ -198,25 +201,52 @@ namespace Seasons
             }
         }
 
+        private static void ApplySnowCover(VisEquipment instance)
+        {
+            if (!instance || instance.m_lodGroup == null ||
+                !TryGetSnowSeed(instance, out int seed))
+                return;
+
+            ApplySnowCover(instance.m_lodGroup, seed);
+        }
+
         private static void QueueSnowCover(VisEquipment instance)
         {
             if (instance)
                 PendingSnowCover.Add(instance);
         }
 
+        private static void QueueSnowCover(LODGroup lodGroup, int seed)
+        {
+            if (lodGroup)
+                PendingRagdollSnowCover[lodGroup] = seed;
+        }
+
         private static void ProcessPendingSnowCover()
         {
-            if (PendingSnowCover.Count == 0)
+            if (PendingSnowCover.Count > 0)
+            {
+                PendingSnowCoverBuffer.Clear();
+                PendingSnowCoverBuffer.AddRange(PendingSnowCover);
+                PendingSnowCover.Clear();
+
+                foreach (VisEquipment instance in PendingSnowCoverBuffer)
+                    ApplySnowCover(instance);
+
+                PendingSnowCoverBuffer.Clear();
+            }
+
+            if (PendingRagdollSnowCover.Count == 0)
                 return;
 
-            PendingSnowCoverBuffer.Clear();
-            PendingSnowCoverBuffer.AddRange(PendingSnowCover);
-            PendingSnowCover.Clear();
+            PendingRagdollSnowCoverBuffer.Clear();
+            PendingRagdollSnowCoverBuffer.AddRange(PendingRagdollSnowCover);
+            PendingRagdollSnowCover.Clear();
 
-            foreach (VisEquipment instance in PendingSnowCoverBuffer)
-                ApplySnowCover(instance);
+            foreach (KeyValuePair<LODGroup, int> entry in PendingRagdollSnowCoverBuffer)
+                ApplySnowCover(entry.Key, entry.Value);
 
-            PendingSnowCoverBuffer.Clear();
+            PendingRagdollSnowCoverBuffer.Clear();
         }
 
         [HarmonyPatch(typeof(VisEquipment), nameof(VisEquipment.Start))]
@@ -239,22 +269,29 @@ namespace Seasons
             }
         }
 
-        [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.SetupVisEquipment))]
-        private static class Humanoid_SetupVisEquipment_SeasonalEnemySnow
+        [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.OnRagdollCreated))]
+        private static class Humanoid_OnRagdollCreated_SeasonalEnemySnow
         {
             [HarmonyPostfix]
-            private static void Postfix(Humanoid __instance, VisEquipment visEq, bool isRagdoll)
+            private static void Postfix(Humanoid __instance, Ragdoll ragdoll)
             {
-                if (!isRagdoll || !__instance || __instance.IsPlayer() || !visEq ||
-                    visEq.m_nview == null || !visEq.m_nview.IsValid())
+                if (!__instance || __instance.IsPlayer() || !ragdoll)
                     return;
 
-                ZDO zdo = visEq.m_nview.GetZDO();
-                if (zdo == null)
-                    return;
+                VisEquipment visEquipment = ragdoll.GetComponent<VisEquipment>();
+                if (visEquipment)
+                {
+                    ZDO zdo = ragdoll.m_nview?.GetZDO();
+                    if (zdo != null)
+                        zdo.Set(ZDOVars.s_seed, __instance.m_seed, okForNotOwner: true);
 
-                zdo.Set(ZDOVars.s_seed, __instance.m_seed, okForNotOwner: true);
-                QueueSnowCover(visEq);
+                    QueueSnowCover(visEquipment);
+                    return;
+                }
+
+                LODGroup lodGroup = ragdoll.GetComponent<LODGroup>();
+                if (lodGroup)
+                    QueueSnowCover(lodGroup, __instance.m_seed);
             }
         }
 
