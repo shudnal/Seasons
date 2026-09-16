@@ -157,34 +157,18 @@ namespace Seasons
             return SnowMaterialRanges.TryGetValue(materialName, out range);
         }
 
-        private static bool ApplyRendererSnow(Renderer renderer, int seed, float snow, ref int materialIndex)
+        private static void ApplyRendererSnow(Renderer renderer, float snow)
         {
             if (!renderer)
-                return false;
+                return;
 
             Material[] materials = renderer.sharedMaterials;
             if (materials == null)
-                return false;
+                return;
 
             foreach (Material material in materials)
-            {
-                if (!TryGetSnowMaterialRange(material, renderer, out Vector2 range))
-                    continue;
-
-                UnityEngine.Random.InitState(unchecked(seed + materialIndex));
-                materialIndex++;
-
-                float targetSnow = range.y <= range.x
-                    ? range.x
-                    : UnityEngine.Random.Range(range.x, range.y);
-                MaterialMan.instance.SetValue(
-                    renderer.gameObject,
-                    SnowCoverProperty,
-                    targetSnow * snow);
-                return true;
-            }
-
-            return false;
+                if (TryGetSnowMaterialRange(material, renderer, out Vector2 range))
+                    MaterialMan.instance.SetValue(renderer.gameObject, SnowCoverProperty, snow);
         }
 
         private static void ApplySnowCover(Player player, float snow)
@@ -201,22 +185,13 @@ namespace Seasons
             if (shoulderInstances == null || shoulderInstances.Count == 0)
                 return;
 
-            UnityEngine.Random.State randomState = UnityEngine.Random.state;
-            try
+            foreach (GameObject shoulderInstance in shoulderInstances)
             {
-                int materialIndex = 0;
-                foreach (GameObject shoulderInstance in shoulderInstances)
-                {
-                    if (!shoulderInstance)
-                        continue;
+                if (!shoulderInstance)
+                    continue;
 
-                    foreach (Renderer renderer in shoulderInstance.GetComponentsInChildren<Renderer>(true))
-                        ApplyRendererSnow(renderer, player.m_seed, snow, ref materialIndex);
-                }
-            }
-            finally
-            {
-                UnityEngine.Random.state = randomState;
+                foreach (Renderer renderer in shoulderInstance.GetComponentsInChildren<Renderer>(true))
+                    ApplyRendererSnow(renderer, snow);
             }
         }
 

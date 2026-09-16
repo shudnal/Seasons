@@ -384,57 +384,6 @@ namespace Seasons
             return true;
         }
 
-        public void CheckBiomeChanged(Biome biome)
-        {
-            if (!UseTextureControllers())
-                return;
-
-            if (!SeasonState.IsActive)
-                return;
-
-            // Feature disabled until 1.0 extensive tests
-            return;
-
-            if (reduceSnowStormInWinter.Value == Vector2.zero || Player.m_localPlayer == null)
-            {
-                RestoreSnowStorm();
-                return;
-            }
-
-            if (m_snowStorm == null)
-            {
-                Transform snowStormTransform = EnvMan.instance.transform.Find("FollowPlayer/SnowStorm") ?? Utils.FindChild(EnvMan.instance.transform, "SnowStorm");
-                if (snowStormTransform == null)
-                    return;
-
-                Transform snowParticles = snowStormTransform.Find("snow (1)");
-                if (snowParticles == null)
-                    return;
-
-                m_snowStorm = snowParticles.GetComponent<ParticleSystem>();
-                if (m_snowStorm == null)
-                    return;
-                m_snowStormMaxParticles = m_snowStorm.main.maxParticles;
-                m_snowStormEmissionRate = m_snowStorm.emission.rateOverTimeMultiplier;
-            }
-
-            ParticleSystem.MainModule snowStormMain = m_snowStorm.main;
-            ParticleSystem.EmissionModule snowStormEmission = m_snowStorm.emission;
-
-            bool reduceParticles = seasonState.GetCurrentSeason() == Season.Winter && biome != Biome.Mountain && biome != Biome.AshLands && biome != Biome.DeepNorth;
-
-            snowStormEmission.rateOverTimeMultiplier = reduceParticles ? reduceSnowStormInWinter.Value.x : m_snowStormEmissionRate;
-            snowStormMain.maxParticles = reduceParticles ? (int)reduceSnowStormInWinter.Value.y : m_snowStormMaxParticles;
-        }
-        
-        public static void SnowStormReduceParticlesChanged()
-        {
-            if (!Instance)
-                return;
-
-            Instance.m_currentBiome = Biome.None;
-        }
-
         public static void UpdateTerrainColor(Heightmap heightmap)
         {
             if (heightmap?.m_renderMesh == null)
@@ -2399,16 +2348,6 @@ namespace Seasons
 
             if (IsProtectedHeightmap(__instance))
                 UpdateTerrainColor(__instance);
-        }
-    }
-
-    [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.UpdateEnvironment))]
-    public static class EnvMan_UpdateEnvironment_CheckSnowStormOnBiomeChange
-    {
-        private static void Postfix(EnvMan __instance)
-        {
-            if (__instance.m_currentBiome != null)
-                Instance?.CheckBiomeChanged(__instance.m_currentBiome.Biome);
         }
     }
 

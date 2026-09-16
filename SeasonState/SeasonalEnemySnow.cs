@@ -225,13 +225,26 @@ namespace Seasons
             }
         }
 
-        private static GameObject GetVisual(Ragdoll ragdoll)
+        private static GameObject GetRagdollVisual(Ragdoll ragdoll)
         {
             if (!ragdoll)
                 return null;
 
-            Transform visual = ragdoll.transform.Find("Visual");
-            return visual ? visual.gameObject : null;
+            return ragdoll.GetComponentInChildren<LODGroup>() is LODGroup lodGroup ? lodGroup.gameObject : ragdoll.gameObject;
+        }
+
+        private static GameObject GetHumanoidVisual(Humanoid human)
+        {
+            if (!human)
+                return null;
+
+            if (human.m_lodGroup)
+                return human.m_lodGroup.gameObject;
+
+            if (human.m_visual)
+                return human.m_visual.gameObject;
+
+            return human.gameObject;
         }
 
         private static void QueueSnowCover(GameObject visual, int seed)
@@ -273,7 +286,7 @@ namespace Seasons
                 if (!__instance || __instance.IsPlayer())
                     return;
 
-                QueueSnowCover(__instance.m_visual, __instance.m_seed);
+                QueueSnowCover(GetHumanoidVisual(__instance), __instance.m_seed);
             }
         }
 
@@ -286,7 +299,7 @@ namespace Seasons
                 if (!__instance || __instance.IsPlayer() || !ragdoll)
                     return;
 
-                QueueSnowCover(GetVisual(ragdoll), __instance.m_seed);
+                QueueSnowCover(GetRagdollVisual(ragdoll), __instance.m_seed);
             }
         }
 
@@ -299,5 +312,12 @@ namespace Seasons
                 ProcessPendingSnowCover();
             }
         }
+
+        [HarmonyPatch(typeof(VisEquipment), nameof(VisEquipment.RefreshSnowLevel))]
+        private static class VisEquipment_RefreshSnowLevel_PreventVanillaSnowUpdate
+        {
+            private static bool Prefix() => false;
+        }
+
     }
 }

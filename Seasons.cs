@@ -71,7 +71,6 @@ namespace Seasons
         public static ConfigEntry<bool> overrideNewDayMessagesOnSeasonStartEnd;
 
         public static ConfigEntry<bool> disableBloomInWinter;
-        public static ConfigEntry<Vector2> reduceSnowStormInWinter;
         public static ConfigEntry<bool> enableSeasonalItems;
         public static ConfigEntry<bool> preventDeathFromFreezing;
         public static ConfigEntry<bool> freezingSwimmingInWinter;
@@ -451,10 +450,6 @@ namespace Seasons
 
             disableBloomInWinter = config("Season", "Disable Bloom in Winter", defaultValue: true, "Force disables Bloom graphics setting while in Winter and restores it in other seasons (it will not change Graphics setting, only disables posteffect)." +
                                                                                                    "\nBloom in Winter is what makes you blind with that much of white.", synchronizedSetting: false);
-            reduceSnowStormInWinter = config("Season", "Reduce SnowStorm particles in Winter", defaultValue: new Vector2(250, 1000), "Reduce SnowStorm particles emission rate and maximum amount. Vanilla values is 500:2000" +
-                                                                                                   "\nFirst parameter is emission rate and second is max particles amount." +
-                                                                                                   "\nHelps fps in Winter. Doesn't affect Mountains, Ashlands and DeepNorth." +
-                                                                                                   "\nSet to 0:0 to return Vanilla behaviour.", synchronizedSetting: false);
             enableSeasonalItems = serverConfig("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
             preventDeathFromFreezing = serverConfig("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
             seasonalStatsOutdoorsOnly = serverConfig("Season", "Seasonal stats works only outdoors", defaultValue: true, "Make seasonal stats works only outdoors");
@@ -501,7 +496,6 @@ namespace Seasons
             woodListToControlDrop.SettingChanged += (sender, args) => FillListsToControl();
             meatListToControlDrop.SettingChanged += (sender, args) => FillListsToControl();
             disableBloomInWinter.SettingChanged += (sender, args) => seasonState?.UpdateWinterBloomEffect();
-            reduceSnowStormInWinter.SettingChanged += (sender, args) => ZoneSystemVariantController.SnowStormReduceParticlesChanged();
 
             shieldGeneratorProtection.SettingChanged += (sender, args) => PrefabVariantController.UpdateShieldStateAfterConfigChange();
             shieldGeneratorOnlyWinter.SettingChanged += (sender, args) => PrefabVariantController.UpdateShieldStateAfterConfigChange();
