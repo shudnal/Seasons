@@ -20,6 +20,7 @@ namespace Seasons
         private const float SnowChangeEpsilon = 0.0001f;
         private const float SnowRpcStep = 0.005f;
         private const float HeatMeltCacheDuration = 5f;
+        private const float SnowRoofCastOffset = 0.3f;
         private const float SnowRoofCastRadius = 0.1f;
         private const float SnowRoofCastDistance = 100f;
         private const float SnowRoofSurfaceProbeOffset = 0.05f;
@@ -1704,7 +1705,7 @@ namespace Seasons
 
             Vector3 origin = GetSnowRoofCheckOrigin(instance, state);
             if (state.hasRoofCheckOrigin)
-                origin += Vector3.up * SnowRoofCastRadius;
+                origin += Vector3.up * SnowRoofCastOffset;
 
             int hits = Physics.SphereCastNonAlloc(
                 origin,
@@ -1721,7 +1722,7 @@ namespace Seasons
                     continue;
 
                 Transform hitTransform = collider.transform;
-                if (hitTransform == instance.transform || hitTransform.IsChildOf(instance.transform))
+                if (hitTransform == instance.transform || hitTransform.IsAncestor(instance.transform))
                     continue;
 
                 return true;
