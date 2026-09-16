@@ -20,7 +20,7 @@ namespace Seasons
         private const float SnowChangeEpsilon = 0.0001f;
         private const float SnowRpcStep = 0.005f;
         private const float HeatMeltCacheDuration = 5f;
-        private const float SnowRoofCastOffset = 0.3f;
+        private const float SnowRoofCastOffset = 0.4f;
         private const float SnowRoofCastRadius = 0.1f;
         private const float SnowRoofCastDistance = 100f;
         private const float SnowRoofSurfaceProbeOffset = 0.05f;

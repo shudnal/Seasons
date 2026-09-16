@@ -558,7 +558,7 @@ namespace Seasons
 
             enableSeasonalSnow = serverConfig("Season - Winter snow", "Enable seasonal snow", defaultValue: true,
                 "Enable seasonal snow buildup on supported pieces outside Deep North.");
-            seasonalSnowBuildup = serverConfig("Season - Winter snow", "Snow buildup limits", defaultValue: new Vector2(0.4f, 0.99f),
+            seasonalSnowBuildup = serverConfig("Season - Winter snow", "Snow buildup limits", defaultValue: new Vector2(0.51f, 0.99f),
                 "Minimum and maximum seasonal snow buildup for supported pieces outside Deep North. Values are clamped to 0..1 and the smaller value is used as minimum. The applied maximum is limited to 0.99 to prevent vanilla heavy snow damage.");
             reducedSeasonalSnowBuildup = serverConfig("Season - Winter snow", "Reduced snow buildup limits", defaultValue: new Vector2(0.3f, 0.6f),
                 "Alternative minimum and maximum seasonal snow buildup intended for flat pieces where a thick snow mesh looks unnatural.");
@@ -576,7 +576,7 @@ namespace Seasons
                 "Additional heat-melting speed for pieces that let rain through, such as open floors and similar building parts.");
             seasonalSnowRoofPieceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - roof pieces", defaultValue: 0f,
                 "Controls heat-based melting on roof pieces. 0 keeps snow on roofs even when a fire is nearby.");
-            seasonalSnowClippingFixes = config("Season - Winter snow", "Fix snow clipping through some pieces", defaultValue: "wood_floor:-0.19;stone_arch:0.46;Piece_grausten_floor_4x4:-0.02;ashwood_stair:0.90;stone_floor_2x2:0.23;blackmarble_2x2x2:0.73;blackmarble_floor:0.23;smelter:3.8",
+            seasonalSnowClippingFixes = config("Season - Winter snow", "Fix snow clipping through some pieces", defaultValue: "wood_floor:-0.19;stone_arch:0.46;Piece_grausten_floor_4x4:-0.02;ashwood_stair:0.90;stone_floor_2x2:0.23;blackmarble_2x2x2:0.73;blackmarble_floor:0.23;smelter:3.8;piece_bed02:0.24;bed:0.14;piece_chest_grausten:0.75",
                 "Semicolon-separated prefab:localY entries that set the local Y position of snow meshes for pieces where the vanilla snow mesh clips through the model.");
             seasonalEnemySnowLevels = serverConfig("Season - Winter snow", "Enemy snow cover levels", defaultValue: SeasonalEnemySnow.DefaultSnowLevelRanges,
                 "Semicolon-separated prefab:min-max entries that apply a random VisEquipment snow-cover level while the current environment has snow buildup. Values are clamped to 0..1. An empty value disables the feature.");
