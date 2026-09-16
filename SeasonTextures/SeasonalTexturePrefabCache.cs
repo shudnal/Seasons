@@ -276,7 +276,6 @@ namespace Seasons
                     "copper_roof",
                     "goblin_roof",
                     "roof_wood_",
-                    "roof_darkwood_",
                     "elvenwood_roof",
                     "BFP_FineWoodRoof",
                     "cloth_roof",
@@ -689,7 +688,12 @@ namespace Seasons
                     Fall = grass.Fall,
                     Winter = grass.Winter
                 }));
-                
+
+                materialOverrides.Add(new MaterialOverrides(new List<string>() { "straw" }, new SeasonalColorVariants()
+                {
+                    Winter = conifer.Winter
+                }));
+
             }
 
             private readonly Dictionary<string, SeasonalColorVariants> _prefabs = new Dictionary<string, SeasonalColorVariants>();
@@ -943,18 +947,6 @@ namespace Seasons
                 specific.Add(new ColorSpecific(
                     new List<MaterialFits>()
                     {
-                        new MaterialFits(prefab: "darkwood_roof", partial: true, only: true),
-                        new MaterialFits(material: "RoofShingles", partial: true, only: true),
-                    },
-                    new List<ColorFits>()
-                    {
-                        new ColorFits(),
-                    }
-                ));
-
-                specific.Add(new ColorSpecific(
-                    new List<MaterialFits>()
-                    {
                         new MaterialFits(prefab: "copper_roof", partial: true, only: true),
                         new MaterialFits(material: "RoofShingles", partial: true, only: true),
                     },
@@ -967,7 +959,7 @@ namespace Seasons
                 specific.Add(new ColorSpecific(
                     new List<MaterialFits>()
                     {
-                        new MaterialFits(prefab: "wood_roof", partial: true, only: true),
+                        //new MaterialFits(prefab: "wood_roof", partial: true, only: true),
                         new MaterialFits(material: "straw", partial: true, only: true),
                     },
                     new List<ColorFits>()
@@ -1074,20 +1066,7 @@ namespace Seasons
                 specific.Add(new ColorSpecific(
                     new List<MaterialFits>()
                     {
-                        new MaterialFits(prefab: "roof_wood_", partial: true, only: true),
                         new MaterialFits(material: "straw", partial: true, only: true),
-                    },
-                    new List<ColorFits>()
-                    {
-                        new ColorFits(),
-                    }
-                ));
-
-                specific.Add(new ColorSpecific(
-                    new List<MaterialFits>()
-                    {
-                        new MaterialFits(prefab: "roof_darkwood_", partial: true, only: true),
-                        new MaterialFits(material: "RoofShingles", partial: true, only: true),
                     },
                     new List<ColorFits>()
                     {
@@ -1386,18 +1365,6 @@ namespace Seasons
                 positions.Add(new PositionSpecific(
                     new List<MaterialFits>()
                     {
-                        new MaterialFits(prefab: "darkwood_roof", partial: true, only: true),
-                        new MaterialFits(material: "RoofShingles", partial: true, only: true),
-                    },
-                    new List<PositionFits>()
-                    {
-                        new PositionFits(0, 0, 0, 54),
-                    }
-                ));
-
-                positions.Add(new PositionSpecific(
-                    new List<MaterialFits>()
-                    {
                         new MaterialFits(prefab: "copper_roof", partial: true, only: true),
                         new MaterialFits(material: "RoofShingles", partial: true, only: true),
                     },
@@ -1474,18 +1441,6 @@ namespace Seasons
                     {
                         new MaterialFits(prefab: "roof_wood_", partial: true, only: true),
                         new MaterialFits(material: "straw", partial: true, only: true),
-                    },
-                    new List<PositionFits>()
-                    {
-                        new PositionFits(),
-                    }
-                ));
-
-                positions.Add(new PositionSpecific(
-                    new List<MaterialFits>()
-                    {
-                        new MaterialFits(prefab: "roof_darkwood_", partial: true, only: true),
-                        new MaterialFits(material: "RoofShingles", partial: true, only: true),
                     },
                     new List<PositionFits>()
                     {

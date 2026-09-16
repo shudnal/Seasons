@@ -213,6 +213,7 @@ namespace Seasons
                         oldTexture.Dispose();
                 }
 
+                m_reloading = false;
                 yield return waitForFixedUpdate;
                 PrefabVariantController.UpdatePrefabColors();
                 ClutterVariantController.Instance?.UpdateColors();
@@ -282,6 +283,7 @@ namespace Seasons
                     yield break;
 
                 m_rebuildSucceeded = true;
+                m_reloading = false;
                 PrefabVariantController.UpdatePrefabColors();
                 ClutterVariantController.Instance?.UpdateColors();
                 LogInfo($"Colors reinitialized in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
