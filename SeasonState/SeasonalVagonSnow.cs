@@ -1,5 +1,3 @@
-using BepInEx.Configuration;
-using ConditionalConfigSync;
 using HarmonyLib;
 using System.Collections.Generic;
 using System.Reflection.Emit;
@@ -13,24 +11,6 @@ namespace Seasons
     {
         private const float MinimumHeightAboveUnfrozenWater = 1f;
         private const float VanillaSlippingMaximumWaterDepth = 4f;
-
-        private static ConfigEntry<bool> enableVanillaSlippingOnShallowFrozenWater;
-
-        private static void InitializeConfig()
-        {
-            if (enableVanillaSlippingOnShallowFrozenWater != null || instance == null)
-                return;
-
-            enableVanillaSlippingOnShallowFrozenWater = configSync.AddConfigEntry(
-                instance.Config,
-                "Season - Winter ocean",
-                "Enable vanilla slipping on shallow frozen water",
-                true,
-                new ConfigDescription(
-                    "Enable Valheim's stronger native slipping on frozen shallow water up to 4 meters deep outside the Ocean biome. Deeper water and the Ocean biome keep Seasons' smoother sliding. Ice skates always use native slipping; ice shoes disable Seasons sliding."),
-                syncMode: ConfigSyncMode.AlwaysServerControlled,
-                serverControlledByDefault: true).SourceConfig;
-        }
 
         private static bool ShouldUseSeasonalWinterSnow(Vagon vagon)
         {
@@ -51,8 +31,7 @@ namespace Seasons
             if (character.m_skating)
                 return true;
 
-            InitializeConfig();
-            if (enableVanillaSlippingOnShallowFrozenWater?.Value != true || ZoneSystem.instance == null)
+            if (!enableVanillaSlippingOnShallowFrozenWater.Value || ZoneSystem.instance == null)
                 return false;
 
             Vector3 groundPosition = character.transform.position;
@@ -104,13 +83,6 @@ namespace Seasons
         [HarmonyPatch(typeof(Vagon), "UpdateSnow")]
         private static class Vagon_UpdateSnow_SeasonalWinterSnow
         {
-            [HarmonyPrepare]
-            private static bool Prepare()
-            {
-                InitializeConfig();
-                return true;
-            }
-
             [HarmonyTranspiler]
             private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
             {
