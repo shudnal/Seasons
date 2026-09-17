@@ -1,3 +1,6 @@
+# 1.9.1
+* improved Marketplace territory map compatibility: seasonal colors and water appearance now remain consistent through season changes, territory updates and world reloads without losing exploration progress
+
 # 1.9.0
 * updated for the current Valheim release and Deep North changes
 * added configurable seasonal snow buildup outside Deep North for build pieces, enemies, ragdolls and player capes; building snow accumulates from winter weather and can melt around heat sources and active objects

@@ -40,6 +40,7 @@
     <Compile Include="Compatibility\MyLittleUICompat.cs" />
     <Compile Include="Compatibility\EWDCompat.cs" />
     <Compile Include="Compatibility\MarketplaceCompat.cs" />
+    <Compile Include="Compatibility\MarketplaceMapOverlay.cs" />
     <Compile Include="Controllers\TextureCachingController.cs" />
     <Compile Include="LoadingTips.cs" />
     <Compile Include="SeasonState\ControlledComponentsExtentions.cs" />

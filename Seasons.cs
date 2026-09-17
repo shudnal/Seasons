@@ -27,7 +27,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.9.0";
+        public const string pluginVersion = "1.9.1";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -403,6 +403,7 @@ namespace Seasons
 
         private void OnDestroy()
         {
+            Compatibility.MarketplaceCompat.ReleaseMap();
             harmony?.UnpatchSelf();
         }
 

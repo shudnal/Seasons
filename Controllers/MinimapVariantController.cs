@@ -19,6 +19,7 @@ namespace Seasons
         private Minimap m_minimap;
         private static MinimapVariantController m_instance;
         private bool m_started;
+        private bool m_destroying;
         private bool m_mapDataReady;
         private bool m_initialized;
         private bool m_isWinter;
@@ -45,30 +46,51 @@ namespace Seasons
             m_smallForestTex = m_minimap.m_mapSmallShader.GetTexture("_ForestTex");
             m_started = true;
 
-            if (m_mapDataReady || m_minimap.m_hasGenerated)
+            if (m_mapDataReady && m_mapTexture != null && m_sourceTexture == m_minimap.m_mapTexture)
+                m_generationCoroutine = StartCoroutine(GenerateWinterWorldMap());
+            else if (m_minimap.m_hasGenerated)
                 OnMapDataReady();
         }
 
         private void OnDestroy()
         {
+            m_destroying = true;
+            Compatibility.MarketplaceCompat.ReleaseMap(m_minimap);
             CancelGeneration();
-            RevertTextures();
+            RevertTextures(notifyMarketplace: false);
             if (m_instance == this)
                 m_instance = null;
         }
 
         private void Update()
         {
+            if (m_destroying)
+                return;
+
             if (m_started && m_mapDataReady && m_minimap && m_minimap.m_mapTexture
                 && (m_sourceTexture != m_minimap.m_mapTexture || m_mapTexture == null
                     || m_mapTexture.Length != m_minimap.m_mapTexture.width * m_minimap.m_mapTexture.height))
                 OnMapDataReady();
+
+            Compatibility.MarketplaceCompat.UpdatePendingMap(m_minimap);
+        }
+
+        internal static void OnNativeMapDataReady(Minimap minimap)
+        {
+            if (!UseTextureControllers() || !minimap)
+                return;
+            MinimapVariantController controller = minimap.GetComponent<MinimapVariantController>();
+            if (!controller)
+                controller = minimap.gameObject.AddComponent<MinimapVariantController>();
+            controller.OnMapDataReady(nativePixelsChanged: true);
         }
 
         public void OnMapDataReady(bool nativePixelsChanged = false)
         {
+            if (m_destroying)
+                return;
             m_mapDataReady = true;
-            if (!m_started || !m_minimap || !m_minimap.m_mapTexture)
+            if (!m_minimap || !m_minimap.m_mapTexture)
                 return;
 
             // Duplicate readiness notifications must not capture our winter output as the original.
@@ -85,11 +107,16 @@ namespace Seasons
             {
                 // Capture the actual vanilla map after generation or cache loading, not a reconstruction.
                 m_mapTexture = m_sourceTexture.GetPixels32();
-                m_generationCoroutine = StartCoroutine(GenerateWinterWorldMap());
+                if (nativePixelsChanged)
+                    Compatibility.MarketplaceCompat.CaptureNativeMap(m_minimap, m_mapTexture);
+                if (m_started)
+                    m_generationCoroutine = StartCoroutine(GenerateWinterWorldMap());
             }
             catch (Exception error)
             {
                 m_mapTexture = null;
+                if (nativePixelsChanged)
+                    Compatibility.MarketplaceCompat.ReleaseMap(m_minimap);
                 LogWarning($"Unable to prepare seasonal minimap textures:\n{error}");
             }
         }
@@ -105,12 +132,14 @@ namespace Seasons
             m_generationCoroutine = null;
         }
 
-        public void RevertTextures()
+        public void RevertTextures() => RevertTextures(notifyMarketplace: true);
+
+        private void RevertTextures(bool notifyMarketplace)
         {
             if (!m_minimap)
                 return;
 
-            if (m_isWinter && ApplyMapTexture(m_mapTexture))
+            if (m_isWinter && ApplyMapTexture(m_mapTexture, notifyMarketplace))
                 m_isWinter = false;
 
             RestoreForestTextures();
@@ -120,6 +149,9 @@ namespace Seasons
 
         private void UpdateColors(bool forceMapUpdate)
         {
+            if (m_destroying)
+                return;
+
             if (m_mapDataReady && m_minimap && m_minimap.m_mapTexture
                 && (m_sourceTexture != m_minimap.m_mapTexture || m_mapTexture == null
                     || m_mapTexture.Length != m_minimap.m_mapTexture.width * m_minimap.m_mapTexture.height))
@@ -195,7 +227,7 @@ namespace Seasons
             };
         }
 
-        private bool ApplyMapTexture(Color32[] pixels)
+        private bool ApplyMapTexture(Color32[] pixels, bool notifyMarketplace = true)
         {
             if (!m_minimap || !m_sourceTexture || m_sourceTexture != m_minimap.m_mapTexture || pixels == null)
                 return false;
@@ -207,7 +239,8 @@ namespace Seasons
             {
                 m_sourceTexture.SetPixels32(pixels);
                 m_sourceTexture.Apply();
-                Compatibility.MarketplaceCompat.UpdateMap();
+                if (notifyMarketplace && !m_destroying)
+                    Compatibility.MarketplaceCompat.UpdateMap(m_minimap, pixels);
                 return true;
             }
             catch (Exception error)
@@ -248,6 +281,9 @@ namespace Seasons
 
             try
             {
+                // Finish all native/Marketplace generation postfixes before sampling
+                // biomes; Marketplace temporarily changes biome rules while generating.
+                yield return null;
                 WorldGenerator world = null;
                 while (IsCurrentRequest())
                 {
@@ -331,21 +367,23 @@ namespace Seasons
     [HarmonyPatch(typeof(Minimap), nameof(Minimap.GenerateWorldMap))]
     public static class Minimap_GenerateWorldMap_MinimapContollerInit
     {
-        [HarmonyPriority(Priority.Last)]
+        [HarmonyPriority(Priority.First)]
+        [HarmonyBefore(Compatibility.MarketplaceCompat.GUID)]
         private static void Postfix(Minimap __instance)
         {
-            __instance.GetComponent<MinimapVariantController>()?.OnMapDataReady(nativePixelsChanged: true);
+            MinimapVariantController.OnNativeMapDataReady(__instance);
         }
     }
 
     [HarmonyPatch(typeof(Minimap), nameof(Minimap.TryLoadMinimapTextureData))]
     public static class Minimap_TryLoadMinimapTextureData_RefreshSeasonalMap
     {
-        [HarmonyPriority(Priority.Last)]
+        [HarmonyPriority(Priority.First)]
+        [HarmonyBefore(Compatibility.MarketplaceCompat.GUID)]
         private static void Postfix(Minimap __instance, bool __result)
         {
             if (__result)
-                __instance.GetComponent<MinimapVariantController>()?.OnMapDataReady(nativePixelsChanged: true);
+                MinimapVariantController.OnNativeMapDataReady(__instance);
         }
     }
 }
