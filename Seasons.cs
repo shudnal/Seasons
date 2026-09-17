@@ -27,7 +27,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.8.2";
+        public const string pluginVersion = "1.9.0";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
@@ -71,7 +71,6 @@ namespace Seasons
         public static ConfigEntry<bool> overrideNewDayMessagesOnSeasonStartEnd;
 
         public static ConfigEntry<bool> disableBloomInWinter;
-        public static ConfigEntry<Vector2> reduceSnowStormInWinter;
         public static ConfigEntry<bool> enableSeasonalItems;
         public static ConfigEntry<bool> preventDeathFromFreezing;
         public static ConfigEntry<bool> freezingSwimmingInWinter;
@@ -96,6 +95,22 @@ namespace Seasons
         public static ConfigEntry<float> secondsToFreezeForCropInWinter;
         public static ConfigEntry<bool> cultivatedGroundTurnsIntoDirtInWinter;
 
+        public static ConfigEntry<bool> enableSeasonalSnow;
+        public static ConfigEntry<Vector2> seasonalSnowBuildup;
+        public static ConfigEntry<Vector2> reducedSeasonalSnowBuildup;
+        public static ConfigEntry<string> reducedSeasonalSnowPrefabs;
+        public static ConfigEntry<float> seasonalSnowAccumulationSpeed;
+        public static ConfigEntry<float> seasonalSnowHeatSourceMeltMultiplier;
+        public static ConfigEntry<Vector2> seasonalSnowHeatDistanceMultipliers;
+        public static ConfigEntry<float> seasonalSnowHeatSourceCheckDistance;
+        public static ConfigEntry<float> seasonalSnowSelfHeatMultiplier;
+        public static ConfigEntry<float> seasonalSnowInteractiveObjectMeltMultiplier;
+        public static ConfigEntry<float> seasonalSnowLeakyPieceMeltMultiplier;
+        public static ConfigEntry<float> seasonalSnowRoofPieceMeltMultiplier;
+        public static ConfigEntry<string> seasonalSnowClippingFixes;
+        public static ConfigEntry<string> seasonalEnemySnowMaterialLevels;
+        public static ConfigEntry<string> seasonalPlayerCapeSnowMaterialLevels;
+
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
         public static ConfigEntry<bool> enableIceFloes;
@@ -103,6 +118,7 @@ namespace Seasons
         public static ConfigEntry<Vector2> amountOfIceFloesInWinterDays;
         public static ConfigEntry<bool> enableNightMusicOnFrozenOcean;
         public static ConfigEntry<float> frozenOceanSlipperiness;
+        public static ConfigEntry<bool> enableVanillaSlippingOnShallowFrozenWater;
         public static ConfigEntry<bool> placeShipAboveFrozenOcean;
         public static ConfigEntry<bool> placeFloatingContainersAboveFrozenOcean;
         public static ConfigEntry<Vector2> iceFloesScale;
@@ -275,7 +291,7 @@ namespace Seasons
 
         private static int _instanceChangeIDShieldGeneratorCache;
         private static readonly Dictionary<Vector2, bool> _cachedIgnoredPositions = new Dictionary<Vector2, bool>();
-        private static readonly Dictionary<Vector2, bool> _cachedShieldedPositions = new Dictionary<Vector2, bool>();
+        private static readonly Dictionary<Vector3, bool> _cachedShieldedPositions = new Dictionary<Vector3, bool>();
         private static int _cachedShieldedPositionsChangeID;
 
         private static readonly Dictionary<string, GameObject> _treeRegrowthPrefabs = new Dictionary<string, GameObject>();
@@ -435,10 +451,6 @@ namespace Seasons
 
             disableBloomInWinter = config("Season", "Disable Bloom in Winter", defaultValue: true, "Force disables Bloom graphics setting while in Winter and restores it in other seasons (it will not change Graphics setting, only disables posteffect)." +
                                                                                                    "\nBloom in Winter is what makes you blind with that much of white.", synchronizedSetting: false);
-            reduceSnowStormInWinter = config("Season", "Reduce SnowStorm particles in Winter", defaultValue: new Vector2(250, 1000), "Reduce SnowStorm particles emission rate and maximum amount. Vanilla values is 500:2000" +
-                                                                                                   "\nFirst parameter is emission rate and second is max particles amount." +
-                                                                                                   "\nHelps fps in Winter. Doesn't affect Mountains, Ashlands and DeepNorth." +
-                                                                                                   "\nSet to 0:0 to return Vanilla behaviour.", synchronizedSetting: false);
             enableSeasonalItems = serverConfig("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
             preventDeathFromFreezing = serverConfig("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
             seasonalStatsOutdoorsOnly = serverConfig("Season", "Seasonal stats works only outdoors", defaultValue: true, "Make seasonal stats works only outdoors");
@@ -485,7 +497,6 @@ namespace Seasons
             woodListToControlDrop.SettingChanged += (sender, args) => FillListsToControl();
             meatListToControlDrop.SettingChanged += (sender, args) => FillListsToControl();
             disableBloomInWinter.SettingChanged += (sender, args) => seasonState?.UpdateWinterBloomEffect();
-            reduceSnowStormInWinter.SettingChanged += (sender, args) => ZoneSystemVariantController.SnowStormReduceParticlesChanged();
 
             shieldGeneratorProtection.SettingChanged += (sender, args) => PrefabVariantController.UpdateShieldStateAfterConfigChange();
             shieldGeneratorOnlyWinter.SettingChanged += (sender, args) => PrefabVariantController.UpdateShieldStateAfterConfigChange();
@@ -543,6 +554,48 @@ namespace Seasons
             overrideSeasonDay.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
             seasonDayOverrided.SettingChanged += (sender, args) => SeasonState.CheckSeasonChange();
 
+            enableSeasonalSnow = serverConfig("Season - Winter snow", "Enable seasonal snow", defaultValue: true,
+                "Enable seasonal snow buildup on supported pieces outside Deep North.");
+            seasonalSnowBuildup = serverConfig("Season - Winter snow", "Snow buildup limits", defaultValue: new Vector2(0.51f, 0.99f),
+                "Minimum and maximum seasonal snow buildup for supported pieces outside Deep North. Values are clamped to 0..1 and the smaller value is used as minimum. The applied maximum is limited to 0.99 to prevent vanilla heavy snow damage.");
+            reducedSeasonalSnowBuildup = serverConfig("Season - Winter snow", "Reduced snow buildup limits", defaultValue: new Vector2(0.3f, 0.6f),
+                "Alternative minimum and maximum seasonal snow buildup intended for flat pieces where a thick snow mesh looks unnatural.");
+            reducedSeasonalSnowPrefabs = serverConfig("Season - Winter snow", "Reduced snow buildup prefabs", defaultValue: "wood_floor_1x1,wood_floor,wood_stair,wood_stepladder,stone_floor_2x2,stone_stair,blackmarble_2x2x2,blackmarble_floor,blackmarble_floor_triangle,blackmarble_stair,piece_dvergr_spiralstair,piece_dvergr_spiralstair_right,ashwood_floor_1x1,ashwood_floor_2x2,ashwood_deco_floor,ashwood_stair,Piece_grausten_floor_1x1,Piece_grausten_floor_2x2,Piece_grausten_floor_4x4,Piece_grausten_stone_ladder,charcoal_kiln,piece_beehive,stone_pile,flint_pile,blackmarble_pile,grausten_pile,coal_pile,piece_chest_barrel,skull_pile",
+                "Comma-separated prefab names that use Reduced snow buildup limits instead of Snow buildup limits.");
+            seasonalSnowAccumulationSpeed = serverConfig("Season - Winter snow", "Snow accumulation speed", defaultValue: 1f,
+                "Multiplier for seasonal snow accumulation from weather. 1 is the default rate, 0 disables accumulation above the configured minimum.");
+            seasonalSnowHeatSourceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - all heat sources", defaultValue: 1f,
+                "Global multiplier for seasonal snow melting from active heat sources. 1 uses the balanced default rate, 0 disables heat-based melting.");
+            seasonalSnowHeatDistanceMultipliers = serverConfig("Season - Winter snow", "Snow melt speed multiplier - heat distance scaling", defaultValue: new Vector2(2f, 0.5f),
+                "Near and far heat-melting multipliers. The first value applies at 1 meter or closer, the second at the configured maximum heat-source distance, with linear scaling between them.");
+            seasonalSnowHeatSourceCheckDistance = serverConfig("Season - Winter snow", "Snow melt heat source check distance", defaultValue: 3f,
+                "Maximum center-to-center distance in meters for active heat sources to melt seasonal snow. Values below 1 are treated as 1. A piece still counts as heated when its position is inside an active heat area.");
+            seasonalSnowSelfHeatMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - self-heating pieces", defaultValue: 5f,
+                "Additional heat-melting speed for pieces that produce their own heat while active, such as kilns and smelters.");
+            seasonalSnowInteractiveObjectMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - interactive objects", defaultValue: 5f,
+                "Controls how quickly snow melts while an object is actively used, including crafting stations, chairs, beds and similar objects.");
+            seasonalSnowLeakyPieceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - leaky pieces", defaultValue: 2f,
+                "Additional heat-melting speed for pieces that let rain through, such as open floors and similar building parts.");
+            seasonalSnowRoofPieceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - roof pieces", defaultValue: 0f,
+                "Controls heat-based melting on roof pieces. 0 keeps snow on roofs even when a fire is nearby.");
+            seasonalSnowClippingFixes = config("Season - Winter snow", "Fix snow clipping through some pieces", defaultValue: "wood_floor:-0.19;stone_arch:0.46;Piece_grausten_floor_4x4:-0.02;ashwood_stair:0.90;stone_floor_2x2:0.23;blackmarble_2x2x2:0.73;blackmarble_floor:0.23;smelter:3.8;piece_bed02:0.24;bed:0.14;piece_chest_grausten:0.75",
+                "Semicolon-separated prefab:localY entries that set the local Y position of snow meshes for pieces where the vanilla snow mesh clips through the model.");
+            seasonalEnemySnowMaterialLevels = serverConfig("Season - Winter snow", "Enemy snow cover material levels", defaultValue: SeasonalEnemySnow.DefaultSnowMaterialRanges,
+                "Semicolon-separated material[-renderer]:min-max entries that apply deterministic snow cover to matching materials on non-player Humanoid and ragdoll visuals while the current environment has snow buildup. Values are clamped to 0..1. Renderer-qualified rules take priority over material-only rules. An empty value disables the feature.");
+            seasonalPlayerCapeSnowMaterialLevels = serverConfig("Season - Winter snow", "Player cape snow cover material levels", defaultValue: SeasonalPlayerCapeSnow.DefaultSnowMaterialRanges,
+                "Semicolon-separated material[-renderer]:min-max entries that define the fully accumulated snow cover for player cape renderers. Values are clamped to 0..1. Renderer-qualified rules take priority over material-only rules. An empty value disables cape snow visuals.");
+
+            enableSeasonalSnow.SettingChanged += (sender, args) => SeasonalSnow.OnEnabledConfigChanged();
+            seasonalSnowBuildup.SettingChanged += (sender, args) => SeasonalSnow.OnSnowRangeConfigChanged();
+            reducedSeasonalSnowBuildup.SettingChanged += (sender, args) => SeasonalSnow.OnSnowRangeConfigChanged();
+            reducedSeasonalSnowPrefabs.SettingChanged += (sender, args) => SeasonalSnow.OnReducedSnowPrefabsConfigChanged();
+            seasonalSnowAccumulationSpeed.SettingChanged += (sender, args) => SeasonalSnow.OnAccumulationSpeedConfigChanged();
+            seasonalSnowClippingFixes.SettingChanged += (sender, args) => SeasonalSnow.OnSnowClippingFixConfigChanged();
+            seasonalEnemySnowMaterialLevels.SettingChanged += (sender, args) => SeasonalEnemySnow.RefreshSnowMaterialRanges();
+            seasonalPlayerCapeSnowMaterialLevels.SettingChanged += (sender, args) => SeasonalPlayerCapeSnow.RefreshSnowMaterialRanges();
+            SeasonalSnow.RebuildReducedSnowBuildupPrefabs();
+            
+
             enableFrozenWater = serverConfig("Season - Winter ocean", "Enable frozen water", defaultValue: true, "Enable frozen water in winter");
             waterFreezesInWinterDays = serverConfig("Season - Winter ocean", "Freeze the water at given days from to", defaultValue: new Vector2(6f, 9f), "Water will freeze in the first set day of winter and will be unfrozen after second set day");
             enableIceFloes = serverConfig("Season - Winter ocean", "Enable ice floes in winter", defaultValue: true, "Enable ice floes in winter");
@@ -552,6 +605,8 @@ namespace Seasons
             iceFloesHealth = serverConfig("Season - Winter ocean", "Health of ice floes", defaultValue: 20f, "Health of ice floe of average size. Health changes proportionally the volume of an ice floe. Floes respawn is required to apply changes.");
             enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
             frozenOceanSlipperiness = serverConfig("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1f, "Slipperiness factor of the frozen ocean surface");
+            enableVanillaSlippingOnShallowFrozenWater = serverConfig("Season - Winter ocean", "Enable vanilla slipping on shallow frozen water", defaultValue: true,
+                "Enable Valheim's stronger native slipping on frozen shallow water up to 4 meters deep outside the Ocean biome. Deeper water and the Ocean biome keep Seasons' smoother sliding. Ice skates always use native slipping; ice shoes disable Seasons sliding.");
             placeShipAboveFrozenOcean = serverConfig("Season - Winter ocean", "Place ship above frozen ocean surface", defaultValue: false, "Place ship above frozen ocean surface to move them without destroying");
             placeFloatingContainersAboveFrozenOcean = serverConfig("Season - Winter ocean", "Place floating containers above frozen ocean surface", defaultValue: false, "Place floating containers above frozen ocean surface");
 
@@ -862,6 +917,9 @@ namespace Seasons
             if (seconds <= 0)
                 return "$hud_ready".Localize();
 
+            if (double.IsPositiveInfinity(seconds))
+                return "\u221e";
+
             TimeSpan ts = TimeSpan.FromSeconds(seconds);
             return ts.ToString(ts.Hours > 0 ? @"h\:mm\:ss" : @"m\:ss");
         }
@@ -973,6 +1031,15 @@ namespace Seasons
             return _GrassToControlSize.Contains(PrefabVariantController.GetPrefabName(gameObject).ToLower());
         }
 
+        public static void ResetWorldRuntimeState()
+        {
+            _treeRegrowthPrefabs.Clear();
+            _cachedIgnoredPositions.Clear();
+            _cachedShieldedPositions.Clear();
+            _instanceChangeIDShieldGeneratorCache = 0;
+            _cachedShieldedPositionsChangeID = 0;
+        }
+
         public static void InvalidatePositionsCache()
         {
             _cachedIgnoredPositions.Clear();
@@ -1022,7 +1089,7 @@ namespace Seasons
                 _cachedShieldedPositionsChangeID = shieldChangeID;
             }
 
-            Vector2 pos = new(position.x, position.z);
+            Vector3 pos = position;
             if (_cachedShieldedPositions.TryGetValue(pos, out bool shielded))
                 return shielded;
 
@@ -1073,12 +1140,13 @@ namespace Seasons
 
         public static IEnumerator PickableSetPickedInWinter(Pickable pickable)
         {
+            ZNetScene scene = ZNetScene.instance;
             yield return waitFor1Second;
 
-            if (!pickable.ShouldBePickedInWinter())
+            if (!scene || ZNetScene.instance != scene || !pickable || !pickable.ShouldBePickedInWinter())
                 yield break;
 
-            if (!pickable.m_nview || !pickable.m_nview.IsValid())
+            if (!pickable.m_nview || !pickable.m_nview.IsValid() || !pickable.m_nview.IsOwner())
                 yield break;
 
             if (UnityEngine.Random.Range(0f, 1f) < Mathf.Clamp01(chanceToProduceACropInWinter.Value))
@@ -1089,9 +1157,14 @@ namespace Seasons
 
         public static IEnumerator ReplantTree(GameObject prefab, Vector3 position, Quaternion rotation, float scale)
         {
+            ZNetScene scene = ZNetScene.instance;
+            ZoneSystem zones = ZoneSystem.instance;
             yield return waitFor5Seconds;
 
-            if (ZoneSystem.instance.IsBlocked(position))
+            if (!scene || ZNetScene.instance != scene || !zones || ZoneSystem.instance != zones || !prefab)
+                yield break;
+
+            if (zones.IsBlocked(position))
                 yield break;
 
             if ((bool)EffectArea.IsPointInsideArea(position, EffectArea.Type.PlayerBase))
@@ -1101,7 +1174,10 @@ namespace Seasons
 
             yield return waitForFixedUpdate;
 
-            if (result != null && result.TryGetComponent(out ZNetView m_nview) && m_nview.IsValid())
+            if (!scene || ZNetScene.instance != scene)
+                yield break;
+
+            if (result != null && result.TryGetComponent(out ZNetView m_nview) && m_nview.IsValid() && m_nview.IsOwner())
             {
                 m_nview.GetZDO().Set(SeasonsVars.s_treeRegrowthHaveGrowSpace, true);
 

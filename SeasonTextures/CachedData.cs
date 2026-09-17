@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using static Seasons.Seasons;
@@ -22,7 +22,9 @@ namespace Seasons
 
             public bool Initialized()
             {
-                return variants.Any(variant => variant.Value.Count > 0);
+                return properties != null && Enum.GetValues(typeof(Season)).Cast<Season>().All(season =>
+                    variants.TryGetValue(season, out Dictionary<int, byte[]> values)
+                    && Enumerable.Range(0, seasonColorVariants).All(variant => values.TryGetValue(variant, out byte[] data) && data?.Length > 0));
             }
 
             public TextureData(TextureVariants textureVariants)
@@ -83,7 +85,7 @@ namespace Seasons
 
         public bool Initialized()
         {
-            return controllers.Count > 0 && textures.Count > 0;
+            return controllers?.Count > 0 && textures?.Count > 0 && textures.Values.All(texture => texture != null && texture.Initialized());
         }
 
         public void SaveOnDisk()
@@ -102,10 +104,19 @@ namespace Seasons
 
         public void LoadFromDisk()
         {
-            if (cacheStorageFormat.Value == CacheFormat.Json)
-                LoadFromJSON();
-            else
-                LoadFromBinary();
+            try
+            {
+                if (cacheStorageFormat.Value == CacheFormat.Json)
+                    LoadFromJSON();
+                else
+                    LoadFromBinary();
+            }
+            catch (Exception error)
+            {
+                controllers = new Dictionary<string, PrefabController>();
+                textures = new Dictionary<int, TextureData>();
+                LogWarning($"Unable to load seasonal texture cache:\n{error}");
+            }
         }
 
         private void SaveToJSON()
@@ -175,7 +186,8 @@ namespace Seasons
 
             foreach (DirectoryInfo texDirectory in texDir[0].GetDirectories())
             {
-                int hash = Int32.Parse(texDirectory.Name);
+                if (!Int32.TryParse(texDirectory.Name, out int hash))
+                    continue;
                 if (textures.ContainsKey(hash))
                     continue;
 

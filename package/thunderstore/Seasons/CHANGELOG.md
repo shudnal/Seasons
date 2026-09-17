@@ -1,3 +1,12 @@
+# 1.9.0
+* updated for the current Valheim release and Deep North changes
+* added configurable seasonal snow buildup outside Deep North for build pieces, enemies, ragdolls and player capes; building snow accumulates from winter weather and can melt around heat sources and active objects
+* reworked frozen-water movement: shallow non-Ocean ice uses Valheim's stronger native slipping by default, deeper water and the Ocean keep Seasons' smoother sliding, and ice skates and ice shoes are supported
+* carts now gain winter snow/slippery behavior outside the vanilla Mountain and Deep North conditions, while avoiding shoreline slipping before the water fully freezes
+* custom seasonal environments can now configure snow buildup, aurora colors and intensity, cloud opacity and ambient occlusion settings
+* removed the old `Reduce SnowStorm particles in Winter` config
+* improved compatibility and stability across frozen water, ice floes and ships, seasonal weather and Expand World Data, custom music, minimap, seasonal textures, grass and protected terrain
+
 # 1.8.2
 * updated Expand World Data compatibility for the current environment and biome reload lifecycle
 * preserved EWD biome environment key conditions and custom biome names when seasonal weather rules are applied
