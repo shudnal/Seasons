@@ -484,7 +484,7 @@ namespace Seasons
             disableTorchWarmthInInterior = serverConfig("Season", "Disable torch warmth in dungeons in winter", defaultValue: true, "If enabled - torch will not provide heat in dungeons.");
             gettingWetInMountainsCausesCold = serverConfig("Season", "Getting Wet in Mountains causes Cold", defaultValue: true, "If you get Wet status in Mountains in dungeon you will get Cold status in all seasons," +
                                                                                                                         "\nunless you have frost resistance mead or you are near a fire or in shelter");
-            wearing2WarmPiecesPreventsWetCold = serverConfig("Season", "Wearing 2 warm armor pieces prevents Cold caused by Wet", defaultValue: true, "If you get Wet status in Mountains or in Winter you will get Cold status caused by" +
+            wearing2WarmPiecesPreventsWetCold = serverConfig("Season", "Wearing 2 warm armor pieces prevents Cold caused by Wet", defaultValue: true, "If you get Wet status in Mountains or in Winter you will not get Cold status caused by" +
                 "\nGetting Wet in winter causes Cold or Getting Wet in Mountains causes Cold configs");
             mountainInWinterRequires2WarmPieces = serverConfig("Season", "Mountains in Winter require 2 warm armor pieces", defaultValue: true, "If enabled - you have to wear 2 armor pieces with frost resistance in Winter or get frost resistance mead.");
 
@@ -910,7 +910,7 @@ namespace Seasons
 
         public static string GetSeasonIsComing(Season season) => $"$seasons_season_{season.ToString().ToLower()}_is_coming";
 
-        public static Sprite GetSeasonIcon(Season season) => showCurrentSeasonBuff.Value ? instance.GetSpriteConfig($"icon{season}" ) : null;
+        public static Sprite GetSeasonIcon(Season season) => showCurrentSeasonBuff.Value ? instance.GetSpriteConfig($"icon{season}") : null;
 
         public static string FromSeconds(double seconds)
         {
@@ -1043,6 +1043,7 @@ namespace Seasons
         public static void InvalidatePositionsCache()
         {
             _cachedIgnoredPositions.Clear();
+            _cachedShieldedPositions.Clear();
             _cachedShieldedPositionsChangeID = ShieldGenerator.m_instanceChangeID;
         }
 
