@@ -1,22 +1,11 @@
-# 1.8.3
-* updated for Valheim 1.0.7 and Deep North changes
-* fixed seasonal day/night timing and restoring vanilla day length when custom day length control is disabled
-* fixed torch warmth after equipping, respawning and changing biome or entering/leaving interiors; held torches no longer count as a fire for sleeping
-* fixed seasonal growth and production calculations, including vine growth and production completely paused by seasonal settings
-* fixed seasonal breeding chances and resource drop amounts behaving incorrectly or accumulating between calls
-* fixed seasonal trader items affecting original trader entries and one-time purchase/unlock behavior
-* fixed seasonal random and standalone events using incorrect biomes or spawn settings, including event reconstruction on clients
-* fixed several freezing and Summer Heat edge cases, including jump, fire/frost and heat distortion behavior
-* fixed frozen ocean waves, thaw transitions and ship state restoration
-* improved seasonal ice floe spawning, cleanup and ownership; natural Deep North ice is no longer treated as seasonal ice
-* fixed custom music and frozen ocean music registration, reload, removal and stale track lookups
-* fixed seasonal minimap colors with cached maps, world changes, control toggling and runtime color changes
-* improved seasonal texture cache reliability and fixed stale or incorrect materials, particle colors and seasonal visuals after game/content changes
-* fixed seasonal rendering and grass updates inside protected areas, including changing shield radius
-* fixed winter cultivated-ground processing for old and current terrain data while preserving Deep North snow, roads and unrelated terrain changes; also fixed processing being skipped on the first winter
-* further improved seasonal weather handling for alternate biomes and Expand World Data
-* many compatibility and stability fixes for world transitions, seasonal visuals and gameplay mechanics
-* added seasonal snow buildup for build pieces
+# 1.9.0
+* updated for the current Valheim release and Deep North changes
+* added configurable seasonal snow buildup outside Deep North for build pieces, enemies, ragdolls and player capes; building snow accumulates from winter weather and can melt around heat sources and active objects
+* reworked frozen-water movement: shallow non-Ocean ice uses Valheim's stronger native slipping by default, deeper water and the Ocean keep Seasons' smoother sliding, and ice skates and ice shoes are supported
+* carts now gain winter snow/slippery behavior outside the vanilla Mountain and Deep North conditions, while avoiding shoreline slipping before the water fully freezes
+* custom seasonal environments can now configure snow buildup, aurora colors and intensity, cloud opacity and ambient occlusion settings
+* removed the old `Reduce SnowStorm particles in Winter` config
+* improved compatibility and stability across frozen water, ice floes and ships, seasonal weather and Expand World Data, custom music, minimap, seasonal textures, grass and protected terrain
 
 # 1.8.2
 * updated Expand World Data compatibility for the current environment and biome reload lifecycle
