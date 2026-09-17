@@ -78,6 +78,7 @@
     <Compile Include="SeasonSettings\SeasonSettingsFile.cs" />
     <Compile Include="SeasonState\SeasonStatePatches.cs" />
     <Compile Include="SeasonState\SeasonalSnow.cs" />
+    <Compile Include="SeasonState\SeasonalVagonSnow.cs" />
     <Compile Include="SeasonState\SeasonalEnemySnow.cs" />
     <Compile Include="SeasonState\SeasonalPlayerCapeSnow.cs" />
     <Compile Include="SeasonState\EnvManPatches.cs" />
