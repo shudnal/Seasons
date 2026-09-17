@@ -270,8 +270,8 @@ namespace Seasons
 
         public static readonly CustomSyncedValue<Dictionary<int, string>> seasonsSettingsJSON = new CustomSyncedValue<Dictionary<int, string>>(configSync, "Seasons settings JSON", new Dictionary<int, string>(), syncPrioritySeasonsSettings, DictionaryContentComparer<int, string>.Instance);
 
-        public static readonly CustomSyncedValue<string> customMaterialSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom material settings JSON", "", syncPriorityCustomMaterialSettings);
-        public static readonly CustomSyncedValue<string> customColorSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom color settings JSON", "", syncPriorityCustomColorSettings);
+        public static readonly CustomSyncedValue<string> customMaterialSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom materials JSON", "", syncPriorityCustomMaterialSettings);
+        public static readonly CustomSyncedValue<string> customColorSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom colors JSON", "", syncPriorityCustomColorSettings);
         public static readonly CustomSyncedValue<string> customColorReplacementJSON = new CustomSyncedValue<string>(configSync, "Custom color replacements JSON", "", syncPriorityCustomColorReplacement);
         public static readonly CustomSyncedValue<string> customColorPositionsJSON = new CustomSyncedValue<string>(configSync, "Custom color positions JSON", "", syncPriorityCustomColorPositions);
 
@@ -450,8 +450,7 @@ namespace Seasons
             customTextures.SettingChanged += (sender, args) => CustomTextures.UpdateTexturesOnChange();
 
             disableBloomInWinter = config("Season", "Disable Bloom in Winter", defaultValue: true, "Force disables Bloom graphics setting while in Winter and restores it in other seasons (it will not change Graphics setting, only disables posteffect)." +
-                                                                                                   "\
-Bloom in Winter is what makes you blind with that much of white.", synchronizedSetting: false);
+                                                                                                   "\nBloom in Winter is what makes you blind with that much of white.", synchronizedSetting: false);
             enableSeasonalItems = serverConfig("Season", "Enable seasonal items", defaultValue: true, "Enables seasonal (Halloween, Midsummer, Yule) items in the corresponding season");
             preventDeathFromFreezing = serverConfig("Season", "Prevent death from freezing", defaultValue: true, "Prevents death from freezing when not in mountains or deep north");
             seasonalStatsOutdoorsOnly = serverConfig("Season", "Seasonal stats works only outdoors", defaultValue: true, "Make seasonal stats works only outdoors");
@@ -479,18 +478,14 @@ Bloom in Winter is what makes you blind with that much of white.", synchronizedS
             shieldGeneratorProtection = serverConfig("Season", "Shield generator protects from weather", defaultValue: true, "If enabled - objects inside shield generator dome will be protected from seasonal effects both positive and negative.");
             shieldGeneratorOnlyWinter = serverConfig("Season", "Shield generator protects from Winter only", defaultValue: true, "If enabled - objects inside shield generator dome will be protected from Winter only. If disabled - protection will work through all seasons.");
             gettingWetInWinterCausesCold = serverConfig("Season", "Getting Wet in winter causes Cold", defaultValue: true, "If you get Wet status during winter you will get Cold status," +
-                                                                                                                     "\
-unless you have frost resistance mead or you are near a fire or in shelter");
+                                                                                                                     "\nunless you have frost resistance mead or you are near a fire or in shelter");
             changeNightLengthGradually = serverConfig("Season", "Change night length gradually", defaultValue: true, "If enabled - night length from seasonal settings will peak at mid season and gradually change to the next season." +
-                                                                                                             "\
-If disabled - it will be fixed value for any day of a season.");
+                                                                                                             "\nIf disabled - it will be fixed value for any day of a season.");
             disableTorchWarmthInInterior = serverConfig("Season", "Disable torch warmth in dungeons in winter", defaultValue: true, "If enabled - torch will not provide heat in dungeons.");
             gettingWetInMountainsCausesCold = serverConfig("Season", "Getting Wet in Mountains causes Cold", defaultValue: true, "If you get Wet status in Mountains in dungeon you will get Cold status in all seasons," +
-                                                                                                                        "\
-unless you have frost resistance mead or you are near a fire or in shelter");
+                                                                                                                        "\nunless you have frost resistance mead or you are near a fire or in shelter");
             wearing2WarmPiecesPreventsWetCold = serverConfig("Season", "Wearing 2 warm armor pieces prevents Cold caused by Wet", defaultValue: true, "If you get Wet status in Mountains or in Winter you will not get Cold status caused by" +
-                "\
-Getting Wet in winter causes Cold or Getting Wet in Mountains causes Cold configs");
+                "\nGetting Wet in winter causes Cold or Getting Wet in Mountains causes Cold configs");
             mountainInWinterRequires2WarmPieces = serverConfig("Season", "Mountains in Winter require 2 warm armor pieces", defaultValue: true, "If enabled - you have to wear 2 armor pieces with frost resistance in Winter or get frost resistance mead.");
 
 
@@ -634,7 +629,7 @@ Getting Wet in winter causes Cold or Getting Wet in Mountains causes Cold config
             summerHeatNightFactor = serverConfig("Season - Summer heat", "Night warmth factor", defaultValue: 0.5f, new ConfigDescription("How warm summer nights remain compared to daytime. At 50%, night can only hold about half of the daytime heat: the air is still warm, but without direct sun you should cool down toward a safer level instead of building up to full overheating. Set to 0% to reduce the normal night heat cap to zero.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
             summerHeatZoneHysteresis = serverConfig("Season - Summer heat", "State switch buffer", defaultValue: 10f, new ConfigDescription("Small buffer around heat states, in percentage points. It prevents the status from rapidly switching back and forth when your heat is close to a boundary.", new AcceptableValueRange<float>(0f, 100f)));
             summerHeatGreenFadeWidth = serverConfig("Season - Summer heat", "Comfortable heat range", defaultValue: 20f, new ConfigDescription("How wide the bonus area is around comfortable heat, in percentage points. With the default 25% threshold and 20% range, the bonus starts at 5%, reaches full strength at 25%, then fades out by 45%.", new AcceptableValueRange<float>(0f, 100f)));
-            summerHeatRedRampWidth = serverConfig("Season - Summer heat", "Penalty buildup range", defaultValue: 20f, new ConfigDescription("How gradually penalties build after you become too hot, in percentage points. With the default 60% threshold and 20% penalty range, negative effects start at 60% and reach full strength at 80%.", new AcceptableValueRange<float>(0f, 100f)));
+            summerHeatRedRampWidth = serverConfig("Season - Summer heat", "Penalty buildup range", defaultValue: 20f, new ConfigDescription("How gradually penalties build after you become too hot, in percentage points. With the default 60% threshold and 20% range, negative effects start at 60% and reach full strength at 80%.", new AcceptableValueRange<float>(0f, 100f)));
             summerHeatMaxOverflow = serverConfig("Season - Summer heat", "Overheat buffer", defaultValue: 5f, new ConfigDescription("Small hidden heat reserve above 100%, in percentage points. It makes full overheating take a little time to cool off instead of disappearing instantly.", new AcceptableValueRange<float>(0f, 100f)));
             summerHeatWorldHazeEnabled = config("Season - Summer heat", "World heat haze", defaultValue: true, "Shows a subtle world haze during hot sunny summer days. This is only visual and does not change heat buildup.");
             summerHeatPersonalDistortionEnabled = config("Season - Summer heat", "Personal heat distortion", defaultValue: true, "Shows the personal camera heat distortion when your own heat rises above the comfortable range. This is only visual and does not change heat buildup.");
@@ -939,7 +934,7 @@ Getting Wet in winter causes Cold or Getting Wet in Mountains causes Cold config
         public static void FillListsToControl()
         {
             _PlantsToControlGrowth = ConfigToHashSet(cropsToControlGrowth.Value);
-            _PlantsToSurviveWinter = ConfigToHashSet(cropsToSurviveInWinter.Value);
+            _PlantsToSurviveWinter = ConfigToHashSet(cropsToSurviveWinter.Value);
 
             _WoodToControlDrop = ConfigToHashSet(woodListToControlDrop.Value);
             _MeatToControlDrop = ConfigToHashSet(meatListToControlDrop.Value);
