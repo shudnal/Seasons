@@ -417,6 +417,11 @@ namespace Seasons
             instance.Logger.LogWarning(data);
         }
 
+        public static void LogError(object data)
+        {
+            instance.Logger.LogError(data);
+        }
+
         private ConfigDescription GetDescriptionSeparatedStrings(string description) =>
             Chainloader.PluginInfos.ContainsKey("_shudnal.ConfigurationManager")
                     ? new ConfigDescription(description)
