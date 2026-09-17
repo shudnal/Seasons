@@ -31,20 +31,17 @@ namespace Seasons
             public readonly MeshRenderer renderer;
             private readonly Vector3 originalPosition;
             private readonly Vector3 originalScale;
-            private readonly bool originalForceRenderingOff;
             private bool positionApplied;
             private bool scaleApplied;
-            private bool exclusionApplied;
 
             public RendererState(MeshRenderer renderer)
             {
                 this.renderer = renderer;
                 originalPosition = renderer.transform.localPosition;
                 originalScale = renderer.transform.localScale;
-                originalForceRenderingOff = renderer.forceRenderingOff;
             }
 
-            public void Apply(PositionOverride? position, Vector3? scale, bool excluded, bool refreshBounds)
+            public void Apply(PositionOverride? position, Vector3? scale, bool refreshBounds)
             {
                 if (!renderer)
                     return;
@@ -74,18 +71,11 @@ namespace Seasons
                     scaleApplied = scale.HasValue;
                 }
 
-                if (excluded || exclusionApplied)
-                {
-                    // Do not fight the native new/worn/broken GameObject activation logic.
-                    renderer.forceRenderingOff = excluded || originalForceRenderingOff;
-                    exclusionApplied = excluded;
-                }
-
                 if (transformChanged || (refreshBounds && (hadTransformOverride || positionApplied || scaleApplied)))
                     RefreshBounds(renderer);
             }
 
-            public void Restore() => Apply(null, null, false, false);
+            public void Restore() => Apply(null, null, false);
         }
 
         private sealed class InstanceState
@@ -115,10 +105,10 @@ namespace Seasons
                 ReferenceEquals(worn, instance.m_snowWorn) &&
                 ReferenceEquals(broken, instance.m_snowBroken);
 
-            public void Apply(PositionOverride? position, Vector3? scale, bool excluded, bool refreshBounds)
+            public void Apply(PositionOverride? position, Vector3? scale, bool refreshBounds)
             {
                 foreach (RendererState renderer in renderers)
-                    renderer.Apply(position, scale, excluded, refreshBounds);
+                    renderer.Apply(position, scale, refreshBounds);
             }
 
             public void Restore()
@@ -220,7 +210,7 @@ namespace Seasons
         }
 
         public static bool HasSnowCopy(string prefabName) =>
-            copySourceScene && copySourceScene == ZNetScene.instance &&
+            !IsPrefabIgnored(prefabName) && copySourceScene && copySourceScene == ZNetScene.instance &&
             CopySources.TryGetValue(prefabName, out string source) &&
             SnowTemplates.TryGetValue(source, out GameObject template) && template;
 
@@ -232,7 +222,7 @@ namespace Seasons
                 return false;
 
             string prefabName = Utils.GetPrefabName(instance.gameObject);
-            if (!CopySources.TryGetValue(prefabName, out string source) ||
+            if (IsPrefabIgnored(prefabName) || !CopySources.TryGetValue(prefabName, out string source) ||
                 !SnowTemplates.TryGetValue(source, out GameObject template) || !template ||
                 copySourceScene.GetPrefab(prefabName) == instance.gameObject)
                 return false;
@@ -268,7 +258,7 @@ namespace Seasons
             bool changed = false;
             if (CopiedInstances.TryGetValue(instance, out CopiedSnowState copy))
             {
-                bool matches = copy.renderer && instance.m_snow == copy.renderer &&
+                bool matches = !IsPrefabIgnored(prefabName) && copy.renderer && instance.m_snow == copy.renderer &&
                     CopySources.TryGetValue(prefabName, out string source) &&
                     String.Equals(copy.sourcePrefab, source, StringComparison.OrdinalIgnoreCase) &&
                     SnowTemplates.TryGetValue(source, out GameObject template) && template == copy.sourceObject;
@@ -331,6 +321,7 @@ namespace Seasons
         private static readonly HashSet<string> ExcludedPrefabs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<string> DisabledPrefabs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<WearNTear> DisabledInstances = new HashSet<WearNTear>();
+        private static readonly HashSet<WearNTear> IgnoredInstances = new HashSet<WearNTear>();
         private static readonly Dictionary<string, PositionOverride> Positions =
             new Dictionary<string, PositionOverride>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, Vector3> Scales =
@@ -364,9 +355,33 @@ namespace Seasons
             ApplyToLoadedInstances();
         }
 
+        public static void OnIgnoredPrefabsChanged()
+        {
+            RebuildConfiguration();
+            // Also update the prefab allow-list used for unloaded ZDO cleanup and restore
+            // copied caps when an instance is removed from the ignore list.
+            if (ZNetScene.instance)
+                SeasonalSnow.InitializePrefabs();
+        }
+
+        internal static bool IsPrefabIgnored(string prefabName) =>
+            !String.IsNullOrEmpty(prefabName) && ExcludedPrefabs.Contains(prefabName);
+
+        internal static bool IsSnowIgnored(WearNTear instance)
+        {
+            if (ExcludedPrefabs.Count == 0 || !instance || !instance.gameObject.scene.IsValid())
+                return false;
+
+            string prefabName = Instances.TryGetValue(instance, out InstanceState state)
+                ? state.prefabName
+                : Utils.GetPrefabName(instance.gameObject);
+            return IsPrefabIgnored(prefabName) &&
+                (!ZNetScene.instance || ZNetScene.instance.GetPrefab(prefabName) != instance.gameObject);
+        }
+
         private static void ParseTransforms(string value, bool allowYOnly)
         {
-            string configName = allowYOnly ? "Fix snow clipping through some pieces" : "Snow cap scales";
+            string configName = allowYOnly ? "Snow cap positions" : "Snow cap scales";
             string expected = allowYOnly ? "prefab:Y or prefab:X,Y,Z" : "prefab:X,Y,Z";
             foreach (string rawEntry in (value ?? String.Empty).Split(';'))
             {
@@ -455,7 +470,7 @@ namespace Seasons
                 if (ownedZdo.GetBool(ZDOVars.s_preSnow))
                     ownedZdo.Set(ZDOVars.s_preSnow, false);
             }
-            SeasonalSnow.ClearDisabledSnowState(instance, ownedZdo);
+            SeasonalSnow.ClearInstanceSnowState(instance, ownedZdo);
 
             DeactivateSnowCap(instance.m_snow);
             DeactivateSnowCap(instance.m_snowWorn);
@@ -493,6 +508,22 @@ namespace Seasons
                     instance.UpdateSnowVisual();
             }
 
+            if (IsSnowIgnored(instance))
+            {
+                IgnoredInstances.Add(instance);
+                RestoreTransforms(instance);
+                if (CopiedInstances.ContainsKey(instance))
+                {
+                    RemoveCopiedSnowMesh(instance);
+                    RefreshRendererCaches(instance);
+                }
+                // Restore only Seasons-owned state. Do not suppress vanilla snow or hide its mesh.
+                SeasonalSnow.ReleaseIgnoredSnowState(instance);
+                return;
+            }
+            if (IgnoredInstances.Remove(instance))
+                SeasonalSnow.OnSnowMeshChanged(instance);
+
             Instances.TryGetValue(instance, out InstanceState state);
             if (state != null && !state.Matches(instance))
             {
@@ -514,8 +545,7 @@ namespace Seasons
 
             bool hasPosition = Positions.TryGetValue(prefabName, out PositionOverride position);
             bool hasScale = Scales.TryGetValue(prefabName, out Vector3 scale);
-            bool excluded = ExcludedPrefabs.Contains(prefabName);
-            if (!hasPosition && !hasScale && !excluded)
+            if (!hasPosition && !hasScale)
             {
                 if (state != null)
                 {
@@ -532,7 +562,7 @@ namespace Seasons
             }
 
             state.Apply(hasPosition ? position : (PositionOverride?)null,
-                hasScale ? scale : (Vector3?)null, excluded, refreshBounds);
+                hasScale ? scale : (Vector3?)null, refreshBounds);
         }
 
         public static void ApplyToLoadedInstances(bool updateCopies = false)
@@ -541,6 +571,7 @@ namespace Seasons
             HashSet<WearNTear> targets = new HashSet<WearNTear>(Instances.Keys);
             targets.UnionWith(CopiedInstances.Keys);
             targets.UnionWith(DisabledInstances);
+            targets.UnionWith(IgnoredInstances);
             targets.UnionWith(WearNTear.GetAllInstances());
             // Config changes are rare; include inactive previews that native instance lists omit.
             // Shared prefab assets are filtered out by Apply.
@@ -553,6 +584,7 @@ namespace Seasons
                     {
                         Instances.Remove(instance);
                         DisabledInstances.Remove(instance);
+                        IgnoredInstances.Remove(instance);
                         RemoveCopiedSnowMesh(instance);
                     }
                     continue;
@@ -587,6 +619,7 @@ namespace Seasons
                 return;
 
             DisabledInstances.Remove(instance);
+            IgnoredInstances.Remove(instance);
             RestoreTransforms(instance);
             if (CopiedInstances.ContainsKey(instance))
             {
@@ -601,6 +634,7 @@ namespace Seasons
                 state.Restore();
             Instances.Clear();
             DisabledInstances.Clear();
+            IgnoredInstances.Clear();
             foreach (WearNTear instance in CopiedInstances.Keys.ToArray())
             {
                 RemoveCopiedSnowMesh(instance);

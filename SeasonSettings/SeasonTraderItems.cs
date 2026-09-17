@@ -125,19 +125,20 @@ namespace Seasons
                     if (!string.IsNullOrEmpty(original?.m_buyKey) && Player.m_localPlayer != null && Player.m_localPlayer.HaveUniqueKey(original.m_buyKey))
                         continue;
 
+                    // StoreGui reads m_tooltip.Length even when this item has no vanilla trade entry.
                     Trader.TradeItem itemTrader = new Trader.TradeItem
                     {
                         m_prefab = prefab,
                         m_price = item.price,
                         m_stack = item.stack,
-                        m_requiredGlobalKey = item.requiredGlobalKey,
+                        m_requiredGlobalKey = item.requiredGlobalKey ?? string.Empty,
                         m_levelUpEffect = original?.m_levelUpEffect ?? false,
                         m_buyPlayerEffects = original?.m_buyPlayerEffects ?? new EffectList(),
                         m_icon = original?.m_icon,
-                        m_name = original?.m_name,
-                        m_tooltip = original?.m_tooltip,
-                        m_buyKey = original?.m_buyKey,
-                        m_incrementKey = original?.m_incrementKey,
+                        m_name = original?.m_name ?? string.Empty,
+                        m_tooltip = original?.m_tooltip ?? string.Empty,
+                        m_buyKey = original?.m_buyKey ?? string.Empty,
+                        m_incrementKey = original?.m_incrementKey ?? string.Empty,
                         m_incrementAmount = original?.m_incrementAmount ?? 1
                     };
                     if (index >= 0)

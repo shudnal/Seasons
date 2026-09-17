@@ -414,7 +414,7 @@ namespace Seasons
 
         public static void LogInfo(object data)
         {
-            if (loggingEnabled.Value)
+            if (loggingEnabled?.Value == true)
                 instance.Logger.LogInfo(data);
         }
 
@@ -586,11 +586,11 @@ namespace Seasons
                 "Controls heat-based melting on roof pieces. 0 keeps snow on roofs even when a fire is nearby.");
             seasonalSnowMeshCopies = serverConfig("Season - Winter snow", "Copy snow caps from pieces", defaultValue: "stone_fence:stone_wall_2x1",
                 "Comma-separated target:source prefab pairs that copy the source piece's main snow cap to target instances without one. Source prefabs must already have a snow cap; copy chains are not resolved. Existing snow caps are never replaced. Position, scale and exclusion settings apply to copied caps. Changes update loaded pieces; removing a pair removes only caps created by Seasons.");
-            seasonalSnowExcludedPrefabs = config("Season - Winter snow", "Pieces without snow caps", defaultValue: "",
-                GetDescriptionSeparatedStrings("Comma-separated prefab names whose snow cap meshes are hidden in every biome. This affects only the snow caps, not seasonal textures, snow accumulation or snow damage. An empty value disables these exclusions."));
+            seasonalSnowExcludedPrefabs = serverConfig("Season - Winter snow", "Ignore snow caps on pieces", defaultValue: "",
+                GetDescriptionSeparatedStrings("Comma-separated prefab names excluded from Seasons snow-cap processing: no seasonal buildup, melting, copied caps or cap position/scale overrides. Vanilla snow remains enabled. Seasonal texture recoloring is unaffected. Disabled snow caps takes priority. An empty value disables these exclusions."));
             seasonalSnowDisabledPrefabs = serverConfig("Season - Winter snow", "Disabled snow caps", defaultValue: "wood_fence_gate",
-                GetDescriptionSeparatedStrings("Comma-separated prefab names whose snow is completely disabled in every biome and season, including vanilla Deep North snow. Snow buildup is kept at zero and all snow cap objects are deactivated, preventing snow damage. This applies even when seasonal snow is disabled and takes priority over visual-only exclusions. Changes affect loaded pieces immediately; removing a name restores normal snow handling without restoring the cleared buildup."));
-            seasonalSnowClippingFixes = config("Season - Winter snow", "Fix snow clipping through some pieces", defaultValue: "wood_floor:-0.19;stone_arch:0.46;Piece_grausten_floor_4x4:-0.02;ashwood_stair:0.90;stone_floor_2x2:0.23;blackmarble_2x2x2:0.73;blackmarble_floor:0.23;smelter:3.8;piece_bed02:0.24;bed:0.14;piece_chest_grausten:0.75;stave_gate:6.14;stone_fence:0.19",
+                GetDescriptionSeparatedStrings("Comma-separated prefab names whose snow is completely disabled in every biome and season, including vanilla Deep North snow. Snow buildup is kept at zero and all snow cap objects are deactivated, preventing snow damage. This applies even when seasonal snow is disabled and takes priority over ignored snow caps. Changes affect loaded pieces immediately; removing a name restores normal snow handling without restoring the cleared buildup."));
+            seasonalSnowClippingFixes = config("Season - Winter snow", "Snow cap positions", defaultValue: "wood_floor:-0.19;stone_arch:0.46;Piece_grausten_floor_4x4:-0.02;ashwood_stair:0.90;stone_floor_2x2:0.23;blackmarble_2x2x2:0.73;blackmarble_floor:0.23;smelter:3.8;piece_bed02:0.24;bed:0.14;piece_chest_grausten:0.75;stave_gate:6.14;stone_fence:0.19",
                 "Semicolon-separated prefab:Y or prefab:X,Y,Z entries that set the local position of snow cap meshes. One number changes only Y and preserves the original X and Z; three numbers set XYZ. Two numbers are invalid and produce a warning. Use a dot as the decimal separator. Removing an entry restores the original position.");
             seasonalSnowMeshScales = config("Season - Winter snow", "Snow cap scales", defaultValue: "stave_gate:1.11,1.00,1.30;stone_fence:1.9,1,0.75",
                 "Semicolon-separated prefab:X,Y,Z entries that set the local scale of snow cap meshes. Exactly three finite numbers are required, using a dot as the decimal separator. Values replace the local scale; they are not multipliers. Removing an entry restores the original scale.");
@@ -606,7 +606,7 @@ namespace Seasons
             seasonalSnowAccumulationSpeed.SettingChanged += (sender, args) => SeasonalSnow.OnAccumulationSpeedConfigChanged();
             seasonalSnowMeshCopies.SettingChanged += (sender, args) => SeasonalSnowMeshSettings.OnCopyConfigurationChanged();
             EventHandler snowMeshSettingsChanged = (sender, args) => SeasonalSnowMeshSettings.RebuildConfiguration();
-            seasonalSnowExcludedPrefabs.SettingChanged += snowMeshSettingsChanged;
+            seasonalSnowExcludedPrefabs.SettingChanged += (sender, args) => SeasonalSnowMeshSettings.OnIgnoredPrefabsChanged();
             seasonalSnowDisabledPrefabs.SettingChanged += snowMeshSettingsChanged;
             seasonalSnowClippingFixes.SettingChanged += snowMeshSettingsChanged;
             seasonalSnowMeshScales.SettingChanged += snowMeshSettingsChanged;
