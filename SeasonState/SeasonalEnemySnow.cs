@@ -14,7 +14,7 @@ namespace Seasons
             "GoblinStuff_mat:0.65-0.8;BruteHipCloth_mat:0.65-0.8;dvergerArbalest_mat:0.77-0.79;" +
             "RangerAshlands_mat:0.77-0.79;dvergermage_mat:0.77-0.79;DvergerMageICe_mat:0.77-0.79;" +
             "DvergerMageSupport_mat:0.77-0.79;goblin:0.7-0.73;GoblinBrute_hildir_mat:0.7-0.79;" +
-            "GoblinBrute_mat:0.7-0.75;GoblinShaman_mat:0.45-0.65;GoblinShaman_Hildir_mat:0.66-0.72;" +
+            "GoblinBrute_mat:0.7-0.75;GoblinShaman_mat-Shaman:0.45-0.65;GoblinShaman_Hildir_mat-Shaman:0.66-0.72;" +
             "DvergerBody:0.75-0.765;DvergerBodyashlands_mat:0.74-0.765;Skeleton:0.68-0.78;" +
             "Skeleton_dark:0.7-0.8;Skeleton_Swamps:0.7-0.8;SkeletonBig:0.7-0.8;" +
             "Skeleton_Mountains:0.7-0.8;Skeleton_Meadows:0.7-0.8;Draugr_mat:0.7-0.8;" +
@@ -283,7 +283,7 @@ namespace Seasons
             [HarmonyPostfix]
             private static void Postfix(Humanoid __instance)
             {
-                if (!__instance || __instance.IsPlayer())
+                if (!__instance || __instance.IsPlayer() || __instance.InInterior())
                     return;
 
                 QueueSnowCover(GetHumanoidVisual(__instance), __instance.m_seed);
@@ -296,7 +296,7 @@ namespace Seasons
             [HarmonyPostfix]
             private static void Postfix(Humanoid __instance, Ragdoll ragdoll)
             {
-                if (!__instance || __instance.IsPlayer() || !ragdoll)
+                if (!__instance || __instance.IsPlayer() || __instance.InInterior() || !ragdoll)
                     return;
 
                 QueueSnowCover(GetRagdollVisual(ragdoll), __instance.m_seed);

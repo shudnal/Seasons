@@ -347,5 +347,15 @@ namespace Seasons
                     PlayerSnowStates.Remove(__instance);
             }
         }
+
+        [HarmonyPatch(typeof(VisEquipment), nameof(VisEquipment.SetShoulderEquipped))]
+        private static class VisEquipment_SetShoulderEquipped_ResetSnowStateOnEquip
+        {
+            private static void Postfix(VisEquipment __instance, bool __result)
+            {
+                if (__result && Player.m_localPlayer && __instance == Player.m_localPlayer.GetVisEquipment() && PlayerSnowStates.TryGetValue(Player.m_localPlayer, out CapeSnowState state))
+                    state.snowPercent = 0;
+            }
+        }
     }
 }
