@@ -51,12 +51,22 @@ namespace Seasons
             if (character.m_skating)
                 return true;
 
-            if (enableVanillaSlippingOnShallowFrozenWater?.Value != true ||
-                character.m_lastBiome == Heightmap.Biome.Ocean ||
-                ZoneSystem.instance == null)
+            InitializeConfig();
+            if (enableVanillaSlippingOnShallowFrozenWater?.Value != true || ZoneSystem.instance == null)
                 return false;
 
-            float waterDepth = ZoneSystem.instance.m_waterLevel - character.m_lastGroundHeight.y;
+            Vector3 groundPosition = character.transform.position;
+            ZoneSystem.instance.GetGroundData(
+                ref groundPosition,
+                out var _,
+                out Heightmap.Biome biome,
+                out var _,
+                out var _);
+
+            if (biome == Heightmap.Biome.Ocean)
+                return false;
+
+            float waterDepth = ZoneSystem.instance.m_waterLevel - groundPosition.y;
             return waterDepth <= VanillaSlippingMaximumWaterDepth;
         }
 
@@ -94,11 +104,16 @@ namespace Seasons
         [HarmonyPatch(typeof(Vagon), "UpdateSnow")]
         private static class Vagon_UpdateSnow_SeasonalWinterSnow
         {
+            [HarmonyPrepare]
+            private static bool Prepare()
+            {
+                InitializeConfig();
+                return true;
+            }
+
             [HarmonyTranspiler]
             private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
             {
-                InitializeConfig();
-
                 List<CodeInstruction> codes = new List<CodeInstruction>(instructions);
                 var lastBiomeField = AccessTools.Field(typeof(Vagon), "m_lastBiome");
                 var conditionMethod = AccessTools.Method(typeof(SeasonalVagonSnow), nameof(ShouldUseSeasonalWinterSnow));
@@ -187,7 +202,8 @@ namespace Seasons
                 if (!__instance || !__instance.IsOnIce())
                     return;
 
-                if (ShouldSuppressSeasonsIceSliding(__instance))
+                bool useVanillaSlipping = ShouldUseVanillaIceSlipping(__instance);
+                if (__instance.m_iceShoes || __instance.m_skating || useVanillaSlipping)
                     __instance.StopIceSliding();
 
                 if (__instance.m_iceShoes)
@@ -199,7 +215,7 @@ namespace Seasons
                     return;
                 }
 
-                if (!ShouldUseVanillaIceSlipping(__instance))
+                if (!useVanillaSlipping)
                     return;
 
                 // Keep the character collider frictionless through the physics step while this surface
