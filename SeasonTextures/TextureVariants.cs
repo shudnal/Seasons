@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using static Seasons.Seasons;
@@ -21,6 +21,8 @@ namespace Seasons
                 return;
 
             properties = texData.properties;
+            if (properties == null)
+                return;
 
             foreach (Season season in Enum.GetValues(typeof(Season)))
             {
@@ -49,14 +51,27 @@ namespace Seasons
 
         public void SetOriginalTexture(Texture texture)
         {
+            if (texture is not Texture2D)
+                return;
             original = texture as Texture2D;
             properties = new TextureProperties(texture as Texture2D);
             originalName = original.name;
         }
 
+        public void Dispose()
+        {
+            foreach (var variants in seasons.Values)
+                foreach (Texture2D texture in variants.Values)
+                    if (texture)
+                        Object.Destroy(texture);
+            seasons.Clear();
+        }
+
         public bool Initialized()
         {
-            return seasons.Any(season => season.Value.Count > 0);
+            return properties != null && Enum.GetValues(typeof(Season)).Cast<Season>().All(season =>
+                seasons.TryGetValue(season, out Dictionary<int, Texture2D> variants)
+                && Enumerable.Range(0, seasonColorVariants).All(variant => variants.TryGetValue(variant, out Texture2D texture) && texture));
         }
 
         public bool HaveOriginalTexture()

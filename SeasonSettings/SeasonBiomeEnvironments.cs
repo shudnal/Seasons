@@ -128,9 +128,14 @@ namespace Seasons
             Winter.replace.Add(new SeasonBiomeEnvironment.EnvironmentReplace("Mistlands_rain", "Mistlands_rain Winter"));
             Winter.replace.Add(new SeasonBiomeEnvironment.EnvironmentReplace("Mistlands_thunder", "Mistlands_thunder Winter"));
             Winter.replace.Add(new SeasonBiomeEnvironment.EnvironmentReplace("Heath clear", "Heath clear Winter"));
+            Winter.replace.Add(new SeasonBiomeEnvironment.EnvironmentReplace("Snow", "Snow Winter"));
+            Winter.replace.Add(new SeasonBiomeEnvironment.EnvironmentReplace("SnowStorm", "SnowStorm Winter"));
 
+            Winter.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Black forest", new EnvEntry { m_environment = "Snow", m_weight = 0.1f }));
+            Winter.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Mountain", new EnvEntry { m_environment = "Twilight_Snow", m_weight = 1.0f }));
             Winter.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Mountain", new EnvEntry { m_environment = "Twilight_SnowStorm", m_weight = 1.0f }));
             Winter.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Plains", new EnvEntry { m_environment = "Snow", m_weight = 0.5f }));
+            Winter.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Plains", new EnvEntry { m_environment = "Twilight_SnowStorm", m_weight = 0.3f }));
             Winter.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Ocean", new EnvEntry { m_environment = "Darklands_dark Winter", m_weight = 0.1f }));
             Winter.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Mistlands", new EnvEntry { m_environment = "Twilight_Snow", m_weight = 0.1f }));
             Winter.add.Add(new SeasonBiomeEnvironment.EnvironmentAdd("Mistlands", new EnvEntry { m_environment = "Twilight_SnowStorm", m_weight = 0.1f }));

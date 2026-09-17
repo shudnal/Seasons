@@ -155,12 +155,17 @@
     <Compile Include="SeasonSettings\SeasonSettings.cs" />
     <Compile Include="SeasonSettings\SeasonSettingsFile.cs" />
     <Compile Include="SeasonState\SeasonStatePatches.cs" />
+    <Compile Include="SeasonState\SeasonalSnow.cs" />
+    <Compile Include="SeasonState\SeasonalVagonSnow.cs" />
+    <Compile Include="SeasonState\SeasonalEnemySnow.cs" />
+    <Compile Include="SeasonState\SeasonalPlayerCapeSnow.cs" />
     <Compile Include="SeasonState\EnvManPatches.cs" />
     <Compile Include="SeasonState\SeasonState.cs" />
     <Compile Include="SeasonSettings\SeasonStats.cs" />
     <Compile Include="SeasonSettings\SeasonTraderItems.cs" />
     <Compile Include="SeasonSettings\SeasonWorldSettings.cs" />
     <Compile Include="SE_Season.cs" />
+    <Compile Include="Controllers\FrozenOceanSliding.cs" />
     <Compile Include="Controllers\PrefabVariantController.cs" />
     <Compile Include="Controllers\ZoneSystemVariantController.cs" />
     <Compile Include="Utils\ItemNameTokens.cs" />
@@ -355,7 +360,9 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="ILRepack.Lib.MSBuild.Task">
-      <Version>2.0.18.2</Version>
+      <Version>2.0.46</Version>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Newtonsoft.Json">
       <Version>13.0.3</Version>

@@ -10,7 +10,7 @@ namespace Seasons
         public void Start()
         {
             ZNetView m_nview = GetComponent<ZNetView>();
-            if (m_nview != null && m_nview.m_body != null)
+            if (m_nview != null && m_nview.IsValid() && m_nview.m_body != null)
             {
                 float mass = m_nview.GetZDO().GetFloat(SeasonsVars.s_iceFloeMass);
                 if (mass != 0f)
@@ -49,21 +49,22 @@ namespace Seasons
             return "";
         }
 
+        public float GetHoverOffset() => 0f;
+
         public bool InUseDistance(Humanoid human)
         {
+            if (human == null)
+                return false;
+
+            ZNetView view = GetComponent<ZNetView>();
+            if (view == null || !view.IsValid() || !view.GetZDO().GetBool(SeasonsVars.s_iceFloeWatermark))
+                return false;
+
             if (base.transform.position.y - human.transform.position.y < 0.5f)
                 return false;
 
-            Vector3 distance = human.transform.position - transform.position;
-            distance.y = 0f;
-
-            float sx = Mathf.Max(0.0001f, transform.lossyScale.x);
-            float sz = Mathf.Max(0.0001f, transform.lossyScale.z);
-
-            float ellipticalDistance = Mathf.Sqrt(
-                (distance.x * distance.x) / (sx * sx) +
-                (distance.z * distance.z) / (sz * sz)
-            );
+            Vector3 distance = transform.InverseTransformPoint(human.transform.position);
+            float ellipticalDistance = Mathf.Sqrt(distance.x * distance.x + distance.z * distance.z);
 
             return m_radius < ellipticalDistance && ellipticalDistance < m_radius + m_useDistance;
         }

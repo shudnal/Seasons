@@ -213,17 +213,23 @@ namespace Seasons.Compatibility
             }
         }
 
-        [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.GetAvailableEnvironments))]
+        [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.GetAvailableEnvironments), new Type[] { typeof(BiomeSector) })]
         public static class EnvMan_GetAvailableEnvironments_ApplySeasonalRulesAfterEWD
         {
             [HarmonyPriority(Priority.Last)]
             [HarmonyAfter(new string[1] { GUID })]
-            public static void Postfix(Heightmap.Biome biome, ref List<EnvEntry> __result)
+            public static void Postfix(BiomeSector biome, ref List<EnvEntry> __result)
             {
-                if (__result == null || !ShouldApplySeasonalRulesToAvailableEnvironments())
+                if (biome == null || __result == null || !SeasonState.IsActive || !Seasons.controlEnvironments.Value)
                     return;
 
-                __result = SeasonState.ApplySeasonBiomeEnvironmentRules(biome, __result);
+                // Apply once after native alternate-biome and optional EWD selection.
+                __result = SeasonState.ApplySeasonBiomeEnvironmentRules(biome.Biome, __result);
+                foreach (AltBiome alternateBiome in biome.AltBiomes)
+                    foreach (string blockedEnvironment in alternateBiome.m_blockEnvironments)
+                        __result.RemoveAll(environment => environment.m_environment.Contains(blockedEnvironment));
+
+                SeasonalSnow.RegisterBiomeEnvironments(biome.Biome, __result);
             }
         }
     }

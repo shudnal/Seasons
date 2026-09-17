@@ -186,8 +186,32 @@ These files are for reference only.
 - **m\_isCold (bool):** Characters get the Cold debuff.
 - **m\_isColdAtNight (bool):** Cold debuff only at night.
 - **m\_alwaysDark (bool):** Darkens all colors (e.g., Swamp).
+- **m\_snowBuildup (float):** Snow buildup rate supplied by the environment. Vanilla uses this for the Deep North building snow system.
+- **m\_auroraColors:** Aurora color gradient. Uses `colorKeys`, `alphaKeys`, and `mode`.
+- **m\_auroraIntensityNight / Morning / Day / Evening (float):** Aurora intensity by time of day.
+- **m\_cloudOpacityNight / Morning / Day / Evening (float):** Cloud opacity by time of day.
 - **m\_psystems (string):** Particle system names (mist, rain, snow, etc.). Comma separated.
+- **m\_ambientOcclusionColor (string):** Ambient occlusion color in `#RRGGBBAA` format.
+- **m\_aoIntensityNight / Morning / Day / Evening (float):** Ambient occlusion intensity by time of day.
 - **m\_ambientLoop (string):** Looping ambient audio (sounds of wind, snow, rain, etc).
+
+Aurora gradient example:
+
+```json
+{
+  "m_auroraColors": {
+    "colorKeys": [
+      { "color": "#80FFD0FF", "time": 0.0 },
+      { "color": "#8090FFFF", "time": 1.0 }
+    ],
+    "alphaKeys": [
+      { "alpha": 1.0, "time": 0.0 },
+      { "alpha": 1.0, "time": 1.0 }
+    ],
+    "mode": "Blend"
+  }
+}
+```
 
 Custom properties:
 - **m\_cloneFrom (string):** Which vanilla environment properties should be copied to custom environment
