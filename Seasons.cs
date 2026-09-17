@@ -118,6 +118,7 @@ namespace Seasons
         public static ConfigEntry<Vector2> amountOfIceFloesInWinterDays;
         public static ConfigEntry<bool> enableNightMusicOnFrozenOcean;
         public static ConfigEntry<float> frozenOceanSlipperiness;
+        public static ConfigEntry<bool> enableVanillaSlippingOnShallowFrozenWater;
         public static ConfigEntry<bool> placeShipAboveFrozenOcean;
         public static ConfigEntry<bool> placeFloatingContainersAboveFrozenOcean;
         public static ConfigEntry<Vector2> iceFloesScale;
@@ -604,6 +605,8 @@ namespace Seasons
             iceFloesHealth = serverConfig("Season - Winter ocean", "Health of ice floes", defaultValue: 20f, "Health of ice floe of average size. Health changes proportionally the volume of an ice floe. Floes respawn is required to apply changes.");
             enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
             frozenOceanSlipperiness = serverConfig("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1f, "Slipperiness factor of the frozen ocean surface");
+            enableVanillaSlippingOnShallowFrozenWater = serverConfig("Season - Winter ocean", "Enable vanilla slipping on shallow frozen water", defaultValue: true,
+                "Enable Valheim's stronger native slipping on frozen shallow water up to 4 meters deep outside the Ocean biome. Deeper water and the Ocean biome keep Seasons' smoother sliding. Ice skates always use native slipping; ice shoes disable Seasons sliding.");
             placeShipAboveFrozenOcean = serverConfig("Season - Winter ocean", "Place ship above frozen ocean surface", defaultValue: false, "Place ship above frozen ocean surface to move them without destroying");
             placeFloatingContainersAboveFrozenOcean = serverConfig("Season - Winter ocean", "Place floating containers above frozen ocean surface", defaultValue: false, "Place floating containers above frozen ocean surface");
 

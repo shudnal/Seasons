@@ -87,6 +87,7 @@
     <Compile Include="SeasonSettings\SeasonTraderItems.cs" />
     <Compile Include="SeasonSettings\SeasonWorldSettings.cs" />
     <Compile Include="SE_Season.cs" />
+    <Compile Include="Controllers\FrozenOceanSliding.cs" />
     <Compile Include="Controllers\PrefabVariantController.cs" />
     <Compile Include="Controllers\ZoneSystemVariantController.cs" />
     <Compile Include="Utils\ItemNameTokens.cs" />
