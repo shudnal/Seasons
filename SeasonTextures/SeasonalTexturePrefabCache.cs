@@ -168,6 +168,7 @@ namespace Seasons
                     { "Grausten_RoofSlab_mat", new string[] { } },
                     { "Vine_Sapling_ashlands_mat", new string[] { }},
                     { "Vines_ashlands_mat", new string[] { }},
+                    { "stonefence_mat", new string[] { "_MossTex" }},
                 };
 
                 shaderTextures = new Dictionary<string, string[]>
@@ -267,7 +268,8 @@ namespace Seasons
                     "piece_maypole",
                     "piece_xmastree",
                     "VineAsh",
-                    "VineAsh_sapling"
+                    "VineAsh_sapling",
+                    "stone_fence"
                 };
 
                 piecePrefabPartialName = new List<string>()

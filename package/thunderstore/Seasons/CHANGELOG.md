@@ -1,3 +1,7 @@
+# 1.9.2
+* added per-piece snow cap exclusions and local scale settings; snow clipping fixes now support full XYZ positions while preserving the existing Y-only format
+* adjusted stave gate snow caps and disabled snow caps on wooden fence gates by default
+
 # 1.9.1
 * improved Marketplace territory map compatibility: seasonal colors and water appearance now remain consistent through season changes, territory updates and world reloads without losing exploration progress
 
