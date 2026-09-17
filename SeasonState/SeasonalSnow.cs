@@ -205,7 +205,7 @@ namespace Seasons
                     continue;
 
                 WearNTear wearNTear = prefab.GetComponent<WearNTear>();
-                if (!wearNTear || !wearNTear.m_snow)
+                if (!wearNTear || (!wearNTear.m_snow && !SeasonalSnowMeshSettings.HasSnowCopy(prefab.name)))
                     continue;
 
                 int prefabHash = ZNetScene.instance.GetPrefabHash(prefab);
@@ -213,7 +213,7 @@ namespace Seasons
             }
 
             seasonalSnowPrefabsInitialized = true;
-            SeasonalSnowMeshSettings.ApplyToLoadedInstances();
+            SeasonalSnowMeshSettings.ApplyToLoadedInstances(updateCopies: true);
             RebuildReducedSnowBuildupPrefabs();
             LogInfo($"Seasonal snow support initialized for {SeasonalSnowPrefabs.Count} prefab(s)");
         }
@@ -376,7 +376,8 @@ namespace Seasons
 
         public static bool SupportsSeasonalSnow(WearNTear instance)
         {
-            if (!instance || !instance.m_snow || instance.m_nview == null || !instance.m_nview.IsValid())
+            if (!instance || !instance.m_snow || instance.m_nview == null || !instance.m_nview.IsValid() ||
+                SeasonalSnowMeshSettings.IsSnowDisabled(instance))
                 return false;
 
             ZDO zdo = instance.m_nview.GetZDO();
@@ -430,7 +431,7 @@ namespace Seasons
 
         private static void QueueSnowInitialization(WearNTear instance)
         {
-            if (!instance || !instance.m_snow)
+            if (!instance || !instance.m_snow || SeasonalSnowMeshSettings.TryApplyDisabledSnow(instance))
                 return;
 
             SnowActivityState state = SeasonalSnowActivityStates.GetValue(
@@ -518,7 +519,7 @@ namespace Seasons
 
         private static void ApplyPersistedSnowVisual(WearNTear instance, SnowActivityState state)
         {
-            if (!instance || state == null)
+            if (!instance || state == null || SeasonalSnowMeshSettings.TryApplyDisabledSnow(instance))
                 return;
 
             float snow = GetPersistedSnow(instance);
@@ -633,6 +634,9 @@ namespace Seasons
             float value,
             bool markSeasonalSnow)
         {
+            if (SeasonalSnowMeshSettings.TryApplyDisabledSnow(instance))
+                return;
+
             ClearLocalSnowVisual(state);
 
             Vector2 range = GetSnowBuildupRange(instance);
@@ -736,6 +740,9 @@ namespace Seasons
             SnowActivityState state,
             bool forceEnvironmentRefresh)
         {
+            if (SeasonalSnowMeshSettings.TryApplyDisabledSnow(instance))
+                return true;
+
             if (!instance || state == null || instance.m_nview == null ||
                 !instance.m_nview.IsValid())
                 return true;
@@ -819,6 +826,9 @@ namespace Seasons
 
         private static bool UpdateActiveAreaState(WearNTear instance)
         {
+            if (SeasonalSnowMeshSettings.TryApplyDisabledSnow(instance))
+                return false;
+
             if (!instance || ZNetScene.instance == null || ZNet.instance == null ||
                 ZoneSystem.instance == null)
                 return false;
@@ -1011,7 +1021,7 @@ namespace Seasons
 
         private static void SetSnowBuildup(WearNTear instance, float value, bool markSeasonalSnow, bool allowBelowMinimum = false)
         {
-            if (!instance)
+            if (!instance || SeasonalSnowMeshSettings.TryApplyDisabledSnow(instance))
                 return;
 
             Vector2 range = GetSnowBuildupRange(instance);
@@ -1214,7 +1224,7 @@ namespace Seasons
 
         public static float GetPassiveSeasonalSnowTarget(WearNTear instance)
         {
-            if (!instance)
+            if (!instance || SeasonalSnowMeshSettings.IsSnowDisabled(instance))
                 return 0f;
 
             Heightmap.Biome biome = GetBiome(instance);
@@ -1224,7 +1234,7 @@ namespace Seasons
 
         private static float GetSeasonalSnowBuildup(EnvMan environmentManager, WearNTear instance)
         {
-            if (environmentManager == null)
+            if (environmentManager == null || SeasonalSnowMeshSettings.IsSnowDisabled(instance))
                 return 0f;
 
             if (!IsSeasonalSnowPosition(instance))
@@ -1805,9 +1815,36 @@ namespace Seasons
             return true;
         }
 
-        private static void TryInitializeSeasonalSnowOnStart(WearNTear instance)
+        internal static void ClearDisabledSnowState(WearNTear instance, ZDO ownedZdo)
+        {
+            // No callbacks or visual refresh here: this is also called from snow visual patches.
+            // Drop catch-up and local prediction state so it cannot restore a disabled cap.
+            SeasonalSnowCoverageChecks.Remove(instance);
+            SeasonalSnowActivityStates.Remove(instance);
+            SeasonalSnowMeltSources.Remove(instance);
+            InteractiveObjectMeltStates.Remove(instance);
+            PendingSnowInitializations.Remove(instance);
+            if (ownedZdo != null)
+                RemoveRuntimeState(ownedZdo);
+        }
+
+        internal static void OnSnowMeshChanged(WearNTear instance)
         {
             if (!instance)
+                return;
+
+            SeasonalSnowCoverageChecks.Remove(instance);
+            SeasonalSnowActivityStates.Remove(instance);
+            SeasonalSnowMeltSources.Remove(instance);
+            InteractiveObjectMeltStates.Remove(instance);
+            PendingSnowInitializations.Remove(instance);
+            if (instance.m_snow)
+                QueueSnowInitialization(instance);
+        }
+
+        private static void TryInitializeSeasonalSnowOnStart(WearNTear instance)
+        {
+            if (!instance || SeasonalSnowMeshSettings.TryApplyDisabledSnow(instance))
                 return;
 
             SeasonalSnowCoverageChecks.Remove(instance);
@@ -2597,6 +2634,9 @@ namespace Seasons
 
                 ApplyRealtimeHeatMelt(__instance);
             }
+
+            [HarmonyFinalizer]
+            private static void Finalizer(WearNTear __instance) => SeasonalSnowMeshSettings.TryApplyDisabledSnow(__instance);
         }
 
         [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateCover))]
@@ -2638,17 +2678,6 @@ namespace Seasons
             }
         }
 
-        [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.Awake))]
-        private static class WearNTear_Awake_SnowMeshSettings
-        {
-            [HarmonyPostfix]
-            private static void Postfix(WearNTear __instance)
-            {
-                // Awake assigns custom world bounds after its first visual updates.
-                SeasonalSnowMeshSettings.Apply(__instance, refreshBounds: true);
-            }
-        }
-
         [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.Start))]
         private static class WearNTear_Start_SeasonalSnow
         {
@@ -2674,14 +2703,18 @@ namespace Seasons
         private static class WearNTear_UpdateSnowVisual_SeasonalSnow
         {
             [HarmonyPrefix]
-            private static void Prefix(WearNTear __instance, ref SnowVisualState __state)
+            private static bool Prefix(WearNTear __instance, ref SnowVisualState __state)
             {
-                if (!TryGetVisualSnowOverride(__instance, out float snow))
-                    return;
+                if (SeasonalSnowMeshSettings.TryApplyDisabledSnow(__instance))
+                    return false;
 
-                __state.applied = true;
-                __state.originalSnow = __instance.m_snowBuildup;
-                __instance.m_snowBuildup = snow;
+                if (TryGetVisualSnowOverride(__instance, out float snow))
+                {
+                    __state.applied = true;
+                    __state.originalSnow = __instance.m_snowBuildup;
+                    __instance.m_snowBuildup = snow;
+                }
+                return true;
             }
 
             [HarmonyFinalizer]
@@ -2701,6 +2734,13 @@ namespace Seasons
             private static bool Prefix(WearNTear __instance, ref float value, ref float __state)
             {
                 __state = __instance ? __instance.m_snowBuildup : 0f;
+                if (SeasonalSnowMeshSettings.TryApplyDisabledSnow(__instance))
+                {
+                    value = 0f;
+                    __state = 0f;
+                    return false;
+                }
+
                 if (!__instance || __instance.m_nview == null || !__instance.m_nview.IsValid())
                     return true;
 
@@ -2754,6 +2794,9 @@ namespace Seasons
             {
                 RecordSnowDecrease(__instance, __state);
             }
+
+            [HarmonyFinalizer]
+            private static void Finalizer(WearNTear __instance) => SeasonalSnowMeshSettings.TryApplyDisabledSnow(__instance);
         }
 
         [HarmonyPatch(typeof(CraftingStation), nameof(CraftingStation.PokeInUse))]

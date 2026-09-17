@@ -443,6 +443,7 @@ namespace Seasons
         [HarmonyAfter(new string[1] { "expand_world_data" })]
         private static void Postfix()
         {
+            SeasonalSnowMeshSettings.InitializeCopySources();
             seasonState = new SeasonState(initialize: true);
             SeasonalSnow.InitializePrefabs();
             Compatibility.EWDCompat.MarkWorldInitialized();

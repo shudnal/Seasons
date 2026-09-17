@@ -107,7 +107,9 @@ namespace Seasons
         public static ConfigEntry<float> seasonalSnowInteractiveObjectMeltMultiplier;
         public static ConfigEntry<float> seasonalSnowLeakyPieceMeltMultiplier;
         public static ConfigEntry<float> seasonalSnowRoofPieceMeltMultiplier;
+        public static ConfigEntry<string> seasonalSnowMeshCopies;
         public static ConfigEntry<string> seasonalSnowExcludedPrefabs;
+        public static ConfigEntry<string> seasonalSnowDisabledPrefabs;
         public static ConfigEntry<string> seasonalSnowClippingFixes;
         public static ConfigEntry<string> seasonalSnowMeshScales;
         public static ConfigEntry<string> seasonalEnemySnowMaterialLevels;
@@ -582,11 +584,15 @@ namespace Seasons
                 "Additional heat-melting speed for pieces that let rain through, such as open floors and similar building parts.");
             seasonalSnowRoofPieceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - roof pieces", defaultValue: 0f,
                 "Controls heat-based melting on roof pieces. 0 keeps snow on roofs even when a fire is nearby.");
-            seasonalSnowExcludedPrefabs = config("Season - Winter snow", "Pieces without snow caps", defaultValue: "wood_fence_gate",
+            seasonalSnowMeshCopies = serverConfig("Season - Winter snow", "Copy snow caps from pieces", defaultValue: "stone_fence:stone_wall_2x1",
+                "Comma-separated target:source prefab pairs that copy the source piece's main snow cap to target instances without one. Source prefabs must already have a snow cap; copy chains are not resolved. Existing snow caps are never replaced. Position, scale and exclusion settings apply to copied caps. Changes update loaded pieces; removing a pair removes only caps created by Seasons.");
+            seasonalSnowExcludedPrefabs = config("Season - Winter snow", "Pieces without snow caps", defaultValue: "",
                 GetDescriptionSeparatedStrings("Comma-separated prefab names whose snow cap meshes are hidden in every biome. This affects only the snow caps, not seasonal textures, snow accumulation or snow damage. An empty value disables these exclusions."));
-            seasonalSnowClippingFixes = config("Season - Winter snow", "Fix snow clipping through some pieces", defaultValue: "wood_floor:-0.19;stone_arch:0.46;Piece_grausten_floor_4x4:-0.02;ashwood_stair:0.90;stone_floor_2x2:0.23;blackmarble_2x2x2:0.73;blackmarble_floor:0.23;smelter:3.8;piece_bed02:0.24;bed:0.14;piece_chest_grausten:0.75;stave_gate:6.14",
+            seasonalSnowDisabledPrefabs = serverConfig("Season - Winter snow", "Disabled snow caps", defaultValue: "wood_fence_gate",
+                GetDescriptionSeparatedStrings("Comma-separated prefab names whose snow is completely disabled in every biome and season, including vanilla Deep North snow. Snow buildup is kept at zero and all snow cap objects are deactivated, preventing snow damage. This applies even when seasonal snow is disabled and takes priority over visual-only exclusions. Changes affect loaded pieces immediately; removing a name restores normal snow handling without restoring the cleared buildup."));
+            seasonalSnowClippingFixes = config("Season - Winter snow", "Fix snow clipping through some pieces", defaultValue: "wood_floor:-0.19;stone_arch:0.46;Piece_grausten_floor_4x4:-0.02;ashwood_stair:0.90;stone_floor_2x2:0.23;blackmarble_2x2x2:0.73;blackmarble_floor:0.23;smelter:3.8;piece_bed02:0.24;bed:0.14;piece_chest_grausten:0.75;stave_gate:6.14;stone_fence:0.19",
                 "Semicolon-separated prefab:Y or prefab:X,Y,Z entries that set the local position of snow cap meshes. One number changes only Y and preserves the original X and Z; three numbers set XYZ. Two numbers are invalid and produce a warning. Use a dot as the decimal separator. Removing an entry restores the original position.");
-            seasonalSnowMeshScales = config("Season - Winter snow", "Snow cap scales", defaultValue: "stave_gate:1.11,1.00,1.30",
+            seasonalSnowMeshScales = config("Season - Winter snow", "Snow cap scales", defaultValue: "stave_gate:1.11,1.00,1.30;stone_fence:1.9,1,0.75",
                 "Semicolon-separated prefab:X,Y,Z entries that set the local scale of snow cap meshes. Exactly three finite numbers are required, using a dot as the decimal separator. Values replace the local scale; they are not multipliers. Removing an entry restores the original scale.");
             seasonalEnemySnowMaterialLevels = serverConfig("Season - Winter snow", "Enemy snow cover material levels", defaultValue: SeasonalEnemySnow.DefaultSnowMaterialRanges,
                 "Semicolon-separated material[-renderer]:min-max entries that apply deterministic snow cover to matching materials on non-player Humanoid and ragdoll visuals while the current environment has snow buildup. Values are clamped to 0..1. Renderer-qualified rules take priority over material-only rules. An empty value disables the feature.");
@@ -598,8 +604,10 @@ namespace Seasons
             reducedSeasonalSnowBuildup.SettingChanged += (sender, args) => SeasonalSnow.OnSnowRangeConfigChanged();
             reducedSeasonalSnowPrefabs.SettingChanged += (sender, args) => SeasonalSnow.OnReducedSnowPrefabsConfigChanged();
             seasonalSnowAccumulationSpeed.SettingChanged += (sender, args) => SeasonalSnow.OnAccumulationSpeedConfigChanged();
+            seasonalSnowMeshCopies.SettingChanged += (sender, args) => SeasonalSnowMeshSettings.OnCopyConfigurationChanged();
             EventHandler snowMeshSettingsChanged = (sender, args) => SeasonalSnowMeshSettings.RebuildConfiguration();
             seasonalSnowExcludedPrefabs.SettingChanged += snowMeshSettingsChanged;
+            seasonalSnowDisabledPrefabs.SettingChanged += snowMeshSettingsChanged;
             seasonalSnowClippingFixes.SettingChanged += snowMeshSettingsChanged;
             seasonalSnowMeshScales.SettingChanged += snowMeshSettingsChanged;
             seasonalEnemySnowMaterialLevels.SettingChanged += (sender, args) => SeasonalEnemySnow.RefreshSnowMaterialRanges();

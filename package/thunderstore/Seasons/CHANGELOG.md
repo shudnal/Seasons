@@ -1,5 +1,6 @@
 # 1.9.2
-* added per-piece snow cap exclusions and local scale settings; snow clipping fixes now support full XYZ positions while preserving the existing Y-only format
+* added configurable snow cap copying for pieces without their own cap, with stone fences supported by default
+* added separate per-piece settings to hide snow cap meshes or completely disable snow buildup, plus local scale settings; snow clipping fixes now support full XYZ positions while preserving the existing Y-only format
 * adjusted stave gate snow caps and disabled snow caps on wooden fence gates by default
 
 # 1.9.1
