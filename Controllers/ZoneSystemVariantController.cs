@@ -228,21 +228,6 @@ namespace Seasons
         public float m_createDestroyTimer;
         public RaycastHit[] rayHits = new RaycastHit[200];
         
-        private ParticleSystem m_snowStorm;
-        private Biome m_currentBiome;
-        private int m_snowStormMaxParticles;
-        private float m_snowStormEmissionRate;
-
-        private void RestoreSnowStorm()
-        {
-            if (m_snowStorm == null)
-                return;
-            ParticleSystem.MainModule main = m_snowStorm.main;
-            ParticleSystem.EmissionModule emission = m_snowStorm.emission;
-            emission.rateOverTimeMultiplier = m_snowStormEmissionRate;
-            main.maxParticles = m_snowStormMaxParticles;
-        }
-
         internal static bool waterStateInitialized = false;
         private static ZoneSystemVariantController m_instance;
 
@@ -307,7 +292,6 @@ namespace Seasons
 
         private void OnDestroy()
         {
-            RestoreSnowStorm();
             foreach (Ship ship in Ship.Instances.ToArray().Cast<Ship>())
                 if (ship != null)
                     ship.GetComponent<FrozenShipState>()?.Restore();
@@ -373,15 +357,6 @@ namespace Seasons
                 s_iceFloe.m_prefab.AddComponent<IceFloeClimb>();
 
             floeView.m_syncInitialScale = true;
-        }
-
-        public bool BiomeChanged(Biome biome)
-        {
-            if (m_currentBiome == biome)
-                return false;
-
-            m_currentBiome = biome;
-            return true;
         }
 
         public static void UpdateTerrainColor(Heightmap heightmap)

@@ -16,7 +16,6 @@ namespace Seasons
         public uint revision = 0;
 
         private bool m_reloading;
-        private bool m_rebuildSucceeded;
         private static readonly object s_diskLock = new object();
 
         public bool IsUpdating => m_reloading || Controllers.TextureCachingController.InProcess;
@@ -233,7 +232,6 @@ namespace Seasons
                 yield break;
 
             m_reloading = true;
-            m_rebuildSucceeded = false;
             ZoneSystem sourceZone = ZoneSystem.instance;
             SeasonalTextureVariants newTexturesVariants = new SeasonalTextureVariants();
             try
@@ -282,7 +280,6 @@ namespace Seasons
                 if (!sourceZone || sourceZone != ZoneSystem.instance)
                     yield break;
 
-                m_rebuildSucceeded = true;
                 m_reloading = false;
                 PrefabVariantController.UpdatePrefabColors();
                 ClutterVariantController.Instance?.UpdateColors();
