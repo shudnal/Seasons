@@ -270,8 +270,8 @@ namespace Seasons
 
         public static readonly CustomSyncedValue<Dictionary<int, string>> seasonsSettingsJSON = new CustomSyncedValue<Dictionary<int, string>>(configSync, "Seasons settings JSON", new Dictionary<int, string>(), syncPrioritySeasonsSettings, DictionaryContentComparer<int, string>.Instance);
 
-        public static readonly CustomSyncedValue<string> customMaterialSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom materials JSON", "", syncPriorityCustomMaterialSettings);
-        public static readonly CustomSyncedValue<string> customColorSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom colors JSON", "", syncPriorityCustomColorSettings);
+        public static readonly CustomSyncedValue<string> customMaterialSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom material settings JSON", "", syncPriorityCustomMaterialSettings);
+        public static readonly CustomSyncedValue<string> customColorSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom color settings JSON", "", syncPriorityCustomColorSettings);
         public static readonly CustomSyncedValue<string> customColorReplacementJSON = new CustomSyncedValue<string>(configSync, "Custom color replacements JSON", "", syncPriorityCustomColorReplacement);
         public static readonly CustomSyncedValue<string> customColorPositionsJSON = new CustomSyncedValue<string>(configSync, "Custom color positions JSON", "", syncPriorityCustomColorPositions);
 
@@ -934,7 +934,7 @@ namespace Seasons
         public static void FillListsToControl()
         {
             _PlantsToControlGrowth = ConfigToHashSet(cropsToControlGrowth.Value);
-            _PlantsToSurviveWinter = ConfigToHashSet(cropsToSurviveWinter.Value);
+            _PlantsToSurviveWinter = ConfigToHashSet(cropsToSurviveInWinter.Value);
 
             _WoodToControlDrop = ConfigToHashSet(woodListToControlDrop.Value);
             _MeatToControlDrop = ConfigToHashSet(meatListToControlDrop.Value);
