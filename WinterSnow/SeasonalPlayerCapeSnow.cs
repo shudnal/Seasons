@@ -1,7 +1,6 @@
 using HarmonyLib;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Runtime.CompilerServices;
 using UnityEngine;
 using static Seasons.Seasons;
@@ -10,24 +9,11 @@ namespace Seasons
 {
     public static class SeasonalPlayerCapeSnow
     {
-        public const string DefaultSnowMaterialRanges =
-            "CapeLinen:0.76-0.80;Ashcape_Mat:0.76-0.79;asksvincape_mat:0.7-0.79;" +
-            "NordCape_mat:0.4-0.74;MageCape_mat:0.75-0.78;feathercape_mat:0.76-0.79;" +
-            "LoxCape_Mat:0.75-0.79;CapeTrollHide:0.75-0.79;CapeDeerHide:0.76-0.81;" +
-            "WolfCape-WolfCape_cloth:0.50-0.75;WolfCapeChain-WolfCape:0.5-0.70";
-
-        private const float SnowLevelEpsilon = 0.0001f;
         private const float VisualUpdateThreshold = 0.001f;
         private const float SnowAccumulationSeconds = 180f;
         private const float NearFireMeltMultiplier = 3f;
-        private const string MaterialInstanceSuffix = " (Instance)";
-        private const string MaterialRendererKeySeparator = "\u001f";
-
-        private static readonly int SnowCoverProperty = Shader.PropertyToID("_SnowCover");
-        private static readonly Dictionary<string, Vector2> SnowMaterialRanges =
-            new Dictionary<string, Vector2>(StringComparer.OrdinalIgnoreCase);
-        private static readonly Dictionary<string, Vector2> SnowMaterialRendererRanges =
-            new Dictionary<string, Vector2>(StringComparer.OrdinalIgnoreCase);
+        private static readonly SeasonalSnowMaterialRules MaterialRules = new SeasonalSnowMaterialRules();
+        private static readonly SeasonalSnowMaterialOverrides MaterialOverrides = new SeasonalSnowMaterialOverrides();
 
         private sealed class CapeSnowState
         {
@@ -40,121 +26,16 @@ namespace Seasons
 
         private static ConditionalWeakTable<Player, CapeSnowState> PlayerSnowStates =
             new ConditionalWeakTable<Player, CapeSnowState>();
-        private static string parsedConfigValue;
         private static int configRevision;
 
         internal static void RefreshSnowMaterialRanges()
         {
-            string configValue = seasonalPlayerCapeSnowMaterialLevels?.Value ?? String.Empty;
-            if (String.Equals(parsedConfigValue, configValue, StringComparison.Ordinal))
+            MaterialOverrides.PruneDestroyedObjects();
+            if (!MaterialRules.Reload(SeasonalSnowSettings.Current.playerCapeMaterials))
                 return;
 
-            parsedConfigValue = configValue;
-            SnowMaterialRanges.Clear();
-            SnowMaterialRendererRanges.Clear();
-
-            foreach (string rawEntry in configValue.Split(';'))
-            {
-                string entry = rawEntry.Trim();
-                if (String.IsNullOrWhiteSpace(entry))
-                    continue;
-
-                int valueSeparator = entry.LastIndexOf(':');
-                if (valueSeparator <= 0 || valueSeparator >= entry.Length - 1)
-                {
-                    LogWarning($"Invalid player cape snow-cover entry '{entry}'. Expected material[-renderer]:min-max.");
-                    continue;
-                }
-
-                string targetName = entry.Substring(0, valueSeparator).Trim();
-                string materialName = targetName;
-                string rendererName = null;
-                int rendererSeparator = targetName.IndexOf('-');
-                if (rendererSeparator > 0 && rendererSeparator < targetName.Length - 1)
-                {
-                    materialName = targetName.Substring(0, rendererSeparator).Trim();
-                    rendererName = targetName.Substring(rendererSeparator + 1).Trim();
-                }
-
-                string rangeText = entry.Substring(valueSeparator + 1).Trim();
-                int rangeSeparator = rangeText.IndexOf('-');
-                if (String.IsNullOrWhiteSpace(materialName) ||
-                    (rendererName != null && String.IsNullOrWhiteSpace(rendererName)) ||
-                    rangeSeparator <= 0 || rangeSeparator >= rangeText.Length - 1 ||
-                    !TryParseSnowLevel(rangeText.Substring(0, rangeSeparator), out float first) ||
-                    !TryParseSnowLevel(rangeText.Substring(rangeSeparator + 1), out float second) ||
-                    Single.IsNaN(first) || Single.IsInfinity(first) ||
-                    Single.IsNaN(second) || Single.IsInfinity(second))
-                {
-                    LogWarning($"Invalid player cape snow-cover entry '{entry}'. Expected material[-renderer]:min-max with finite values from 0 to 1.");
-                    continue;
-                }
-
-                float minimum = Mathf.Clamp01(Mathf.Min(first, second));
-                float maximum = Mathf.Clamp01(Mathf.Max(first, second));
-                if (maximum <= SnowLevelEpsilon)
-                {
-                    LogWarning($"Player cape snow-cover entry '{entry}' does not contain a positive snow level.");
-                    continue;
-                }
-
-                Vector2 range = new Vector2(minimum, maximum);
-                if (rendererName == null)
-                    SnowMaterialRanges[materialName] = range;
-                else
-                    SnowMaterialRendererRanges[GetMaterialRendererKey(materialName, rendererName)] = range;
-            }
-
+            MaterialOverrides.RestoreAll();
             configRevision++;
-        }
-
-        private static bool TryParseSnowLevel(string value, out float snowLevel)
-        {
-            return Single.TryParse(
-                value.Trim().Replace(',', '.'),
-                NumberStyles.Float,
-                CultureInfo.InvariantCulture,
-                out snowLevel);
-        }
-
-        private static string GetMaterialName(Material material)
-        {
-            if (!material)
-                return String.Empty;
-
-            string materialName = material.name?.Trim() ?? String.Empty;
-            if (materialName.EndsWith(MaterialInstanceSuffix, StringComparison.Ordinal))
-            {
-                materialName = materialName.Substring(
-                    0,
-                    materialName.Length - MaterialInstanceSuffix.Length);
-            }
-
-            return materialName;
-        }
-
-        private static string GetMaterialRendererKey(string materialName, string rendererName)
-        {
-            return materialName + MaterialRendererKeySeparator + rendererName;
-        }
-
-        private static bool TryGetSnowMaterialRange(Material material, Renderer renderer, out Vector2 range)
-        {
-            range = Vector2.zero;
-            if (!renderer)
-                return false;
-
-            string materialName = GetMaterialName(material);
-            if (String.IsNullOrWhiteSpace(materialName))
-                return false;
-
-            string rendererName = renderer.name?.Trim() ?? String.Empty;
-            if (SnowMaterialRendererRanges.TryGetValue(
-                    GetMaterialRendererKey(materialName, rendererName),
-                    out range))
-                return true;
-
-            return SnowMaterialRanges.TryGetValue(materialName, out range);
         }
 
         private static void ApplyRendererSnow(Renderer renderer, float snowPercent)
@@ -168,13 +49,13 @@ namespace Seasons
 
             foreach (Material material in materials)
             {
-                if (!TryGetSnowMaterialRange(material, renderer, out Vector2 range))
+                if (!MaterialRules.TryGetRange(material, renderer, out Vector2 range))
                     continue;
 
                 float snowLevel = snowPercent <= 0f
                     ? 0f
                     : Mathf.Lerp(range.x, range.y, Mathf.Clamp01(snowPercent));
-                MaterialMan.instance.SetValue(renderer.gameObject, SnowCoverProperty, snowLevel);
+                MaterialOverrides.Set(renderer.gameObject, snowLevel);
                 return;
             }
         }
@@ -185,7 +66,7 @@ namespace Seasons
                 return;
 
             RefreshSnowMaterialRanges();
-            if (SnowMaterialRanges.Count == 0 && SnowMaterialRendererRanges.Count == 0)
+            if (MaterialRules.IsEmpty)
                 return;
 
             VisEquipment visEquipment = player.GetVisEquipment();
@@ -297,9 +178,8 @@ namespace Seasons
         internal static void Reset()
         {
             PlayerSnowStates = new ConditionalWeakTable<Player, CapeSnowState>();
-            parsedConfigValue = null;
-            SnowMaterialRanges.Clear();
-            SnowMaterialRendererRanges.Clear();
+            MaterialOverrides.RestoreAll();
+            MaterialRules.Reset();
             configRevision = 0;
         }
 

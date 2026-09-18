@@ -81,7 +81,45 @@ If your changes are applied, you will see this message in the BepInEx console or
 [Info   :   Seasons] Settings updated: Winter
 ```
 
-**Note:** Any property not defined in your custom file will default to the value in `Default settings`. This allows you to keep your custom file minimal, containing only the settings you want to change.
+**Note:** For the seasonal files such as `Winter.json`, omitted properties use their built-in values. `Seasonal snow.json` is different: it replaces the entire snow rule set. Missing piece or material rules are not copied from the default file.
+
+### Seasonal snow rules
+
+`Seasonal snow.json` controls snow behavior for individual building pieces and snow-cover ranges for creature materials and player capes. General snow switches, buildup limits and melting multipliers remain in the BepInEx configuration.
+
+Copy `Default settings/Seasonal snow.json` to the main `shudnal.Seasons` folder to customize it. The override file replaces the complete built-in rule set. When connected to a server, the server file replaces both local defaults and the local override. An empty object `{}` means that no individual rules are configured. Remove the override file to return to the built-in defaults. Changes reload while a world is running.
+
+#### Pieces
+
+The keys in `pieces` are prefab names. Each piece can use these fields:
+
+- **buildup:** Snow processing mode. `Seasonal` uses normal seasonal buildup, `Reduced` uses the reduced buildup limits, `Ignore` leaves the piece outside Seasons snow processing, and `Disabled` forces snow buildup to zero and keeps its snow caps disabled. If omitted, `Seasonal` is used.
+- **copyFrom:** Prefab whose main snow cap is copied when the target piece has no snow cap of its own.
+- **position:** Local snow-cap position override. `x`, `y` and `z` are optional; omitted axes keep their original values.
+- **scale:** Local snow-cap scale override. `x`, `y` and `z` are optional; omitted axes keep their original values.
+
+```json
+"stone_fence": {
+  "copyFrom": "stone_wall_2x1",
+  "position": { "y": 0.19 },
+  "scale": { "x": 1.9, "z": 0.75 }
+}
+```
+
+#### Creature and player cape materials
+
+`creatureMaterials` and `playerCapeMaterials` use material names as keys. Each material rule contains:
+
+- **min / max:** The `_SnowCover` range used by the material. Creature snow selects a value within this range; player cape snow moves from `min` to `max` as snow accumulates.
+- **renderers:** Optional list of renderer names. If omitted, the rule applies to every renderer using that material.
+
+```json
+"GoblinShaman_mat": {
+  "min": 0.45,
+  "max": 0.65,
+  "renderers": ["Shaman"]
+}
+```
 
 #### Example: Changing winter length
 

@@ -84,6 +84,7 @@ namespace Seasons
             SeasonSettings.SaveDefaultGrassSettings(folder);
             SeasonSettings.SaveDefaultClutterSettings(folder);
             SeasonSettings.SaveDefaultBiomesSettings(folder);
+            SeasonSettings.SaveDefaultSnowSettings(folder);
 
             UpdateUsingOfIngameDays();
         }

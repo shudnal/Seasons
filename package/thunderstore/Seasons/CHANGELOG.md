@@ -1,8 +1,8 @@
 # 1.9.2
-* added configurable snow cap copying for pieces without their own cap, with stone fences supported by default
-* added separate per-piece settings to ignore seasonal snow processing or completely disable snow buildup, plus local scale settings; renamed the snow clipping setting to `Snow cap positions`, with full XYZ positions and the existing Y-only format supported
-* adjusted stave gate snow caps and disabled snow caps on wooden fence gates by default
+* moved per-piece snow rules and creature/cape material ranges into `Seasonal snow.json`, with server synchronization and a complete editable default file; the old string settings are no longer used
+* added snow cap copying, per-axis position and scale overrides, and separate modes to ignore seasonal handling or completely disable snow; stone fences are supported, stave gate caps adjusted and wooden fence gate caps disabled by default
 * fixed an error when opening a trader with seasonal items available
+* fixed snow visuals for some vanilla build pieces
 
 # 1.9.1
 * improved Marketplace territory map compatibility: seasonal colors and water appearance now remain consistent through season changes, territory updates and world reloads without losing exploration progress

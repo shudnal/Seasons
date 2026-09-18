@@ -1,7 +1,6 @@
 using HarmonyLib;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using UnityEngine;
 using static Seasons.Seasons;
@@ -10,20 +9,21 @@ namespace Seasons
 {
     internal static class SeasonalSnowMeshSettings
     {
-        private readonly struct PositionOverride
+        private readonly struct TransformOverride
         {
-            public readonly Vector3 value;
-            public readonly bool yOnly;
+            private readonly float? x;
+            private readonly float? y;
+            private readonly float? z;
 
-            public PositionOverride(Vector3 value, bool yOnly)
+            public TransformOverride(float? x, float? y, float? z)
             {
-                this.value = value;
-                this.yOnly = yOnly;
+                this.x = x;
+                this.y = y;
+                this.z = z;
             }
 
-            public Vector3 ApplyTo(Vector3 original) => yOnly
-                ? new Vector3(original.x, value.y, original.z)
-                : value;
+            public Vector3 ApplyTo(Vector3 original) =>
+                new Vector3(x ?? original.x, y ?? original.y, z ?? original.z);
         }
 
         private sealed class RendererState
@@ -41,7 +41,7 @@ namespace Seasons
                 originalScale = renderer.transform.localScale;
             }
 
-            public void Apply(PositionOverride? position, Vector3? scale, bool refreshBounds)
+            public void Apply(TransformOverride? position, TransformOverride? scale, bool refreshBounds)
             {
                 if (!renderer)
                     return;
@@ -62,7 +62,7 @@ namespace Seasons
 
                 if (scale.HasValue || scaleApplied)
                 {
-                    Vector3 target = scale ?? originalScale;
+                    Vector3 target = scale.HasValue ? scale.Value.ApplyTo(originalScale) : originalScale;
                     if (!transform.localScale.Equals(target))
                     {
                         transform.localScale = target;
@@ -105,7 +105,7 @@ namespace Seasons
                 ReferenceEquals(worn, instance.m_snowWorn) &&
                 ReferenceEquals(broken, instance.m_snowBroken);
 
-            public void Apply(PositionOverride? position, Vector3? scale, bool refreshBounds)
+            public void Apply(TransformOverride? position, TransformOverride? scale, bool refreshBounds)
             {
                 foreach (RendererState renderer in renderers)
                     renderer.Apply(position, scale, refreshBounds);
@@ -147,40 +147,16 @@ namespace Seasons
             RebuildCopySources();
         }
 
-        public static void OnCopyConfigurationChanged()
-        {
-            // ConfigInit and server synchronization can precede ZoneSystem.Start.
-            // That startup hook will resolve the latest value once prefabs are ready.
-            if (!copySourceScene || copySourceScene != ZNetScene.instance)
-                return;
-
-            RebuildCopySources();
-            SeasonalSnow.InitializePrefabs();
-        }
-
         private static void RebuildCopySources()
         {
             CopySources.Clear();
             SnowTemplates.Clear();
-            foreach (string rawEntry in (seasonalSnowMeshCopies?.Value ?? String.Empty).Split(','))
+            foreach (KeyValuePair<string, SeasonSnow.PieceSnow> entry in SeasonalSnowSettings.Current.pieces)
             {
-                string entry = rawEntry.Trim();
-                if (entry.Length == 0)
-                    continue;
-
-                string[] pair = entry.Split(':');
-                if (pair.Length != 2 || String.IsNullOrWhiteSpace(pair[0]) || String.IsNullOrWhiteSpace(pair[1]) ||
-                    entry.Contains(";"))
-                {
-                    LogWarning($"Invalid 'Copy snow caps from pieces' entry '{entry}'. Expected target:source pairs separated by commas; entry ignored.");
-                    continue;
-                }
-
-                string target = pair[0].Trim();
-                string source = pair[1].Trim();
-                if (CopySources.ContainsKey(target))
-                    LogWarning($"Duplicate snow cap copy target '{target}'; the last valid pair is used.");
-                CopySources[target] = source;
+                SeasonSnow.PieceSnow rule = entry.Value;
+                if (rule.copyFrom != null && rule.buildup != SeasonSnow.SnowBuildup.Ignore &&
+                    rule.buildup != SeasonSnow.SnowBuildup.Disabled)
+                    CopySources.Add(entry.Key, rule.copyFrom);
             }
 
             if (!copySourceScene || copySourceScene != ZNetScene.instance)
@@ -210,7 +186,7 @@ namespace Seasons
         }
 
         public static bool HasSnowCopy(string prefabName) =>
-            !IsPrefabIgnored(prefabName) && copySourceScene && copySourceScene == ZNetScene.instance &&
+            !IsPrefabIgnored(prefabName) && !IsPrefabDisabled(prefabName) && copySourceScene && copySourceScene == ZNetScene.instance &&
             CopySources.TryGetValue(prefabName, out string source) &&
             SnowTemplates.TryGetValue(source, out GameObject template) && template;
 
@@ -222,7 +198,7 @@ namespace Seasons
                 return false;
 
             string prefabName = Utils.GetPrefabName(instance.gameObject);
-            if (IsPrefabIgnored(prefabName) || !CopySources.TryGetValue(prefabName, out string source) ||
+            if (IsPrefabIgnored(prefabName) || IsPrefabDisabled(prefabName) || !CopySources.TryGetValue(prefabName, out string source) ||
                 !SnowTemplates.TryGetValue(source, out GameObject template) || !template ||
                 copySourceScene.GetPrefab(prefabName) == instance.gameObject)
                 return false;
@@ -258,7 +234,7 @@ namespace Seasons
             bool changed = false;
             if (CopiedInstances.TryGetValue(instance, out CopiedSnowState copy))
             {
-                bool matches = !IsPrefabIgnored(prefabName) && copy.renderer && instance.m_snow == copy.renderer &&
+                bool matches = !IsPrefabIgnored(prefabName) && !IsPrefabDisabled(prefabName) && copy.renderer && instance.m_snow == copy.renderer &&
                     CopySources.TryGetValue(prefabName, out string source) &&
                     String.Equals(copy.sourcePrefab, source, StringComparison.OrdinalIgnoreCase) &&
                     SnowTemplates.TryGetValue(source, out GameObject template) && template == copy.sourceObject;
@@ -322,10 +298,10 @@ namespace Seasons
         private static readonly HashSet<string> DisabledPrefabs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<WearNTear> DisabledInstances = new HashSet<WearNTear>();
         private static readonly HashSet<WearNTear> IgnoredInstances = new HashSet<WearNTear>();
-        private static readonly Dictionary<string, PositionOverride> Positions =
-            new Dictionary<string, PositionOverride>(StringComparer.OrdinalIgnoreCase);
-        private static readonly Dictionary<string, Vector3> Scales =
-            new Dictionary<string, Vector3>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, TransformOverride> Positions =
+            new Dictionary<string, TransformOverride>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, TransformOverride> Scales =
+            new Dictionary<string, TransformOverride>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<WearNTear, InstanceState> Instances =
             new Dictionary<WearNTear, InstanceState>();
 
@@ -336,33 +312,38 @@ namespace Seasons
             Positions.Clear();
             Scales.Clear();
 
-            foreach (string rawName in (seasonalSnowExcludedPrefabs?.Value ?? String.Empty).Split(','))
+            foreach (KeyValuePair<string, SeasonSnow.PieceSnow> entry in SeasonalSnowSettings.Current.pieces)
             {
-                string prefabName = rawName.Trim();
-                if (prefabName.Length > 0)
-                    ExcludedPrefabs.Add(prefabName);
+                SeasonSnow.PieceSnow rule = entry.Value;
+                if (rule.buildup == SeasonSnow.SnowBuildup.Ignore)
+                {
+                    ExcludedPrefabs.Add(entry.Key);
+                    continue;
+                }
+                if (rule.buildup == SeasonSnow.SnowBuildup.Disabled)
+                {
+                    DisabledPrefabs.Add(entry.Key);
+                    continue;
+                }
+                if (rule.position != null)
+                    Positions.Add(entry.Key, new TransformOverride(rule.position.x, rule.position.y, rule.position.z));
+                if (rule.scale != null)
+                    Scales.Add(entry.Key, new TransformOverride(rule.scale.x, rule.scale.y, rule.scale.z));
             }
 
-            foreach (string rawName in (seasonalSnowDisabledPrefabs?.Value ?? String.Empty).Split(','))
-            {
-                string prefabName = rawName.Trim();
-                if (prefabName.Length > 0)
-                    DisabledPrefabs.Add(prefabName);
-            }
+            RebuildCopySources();
+            SeasonalSnow.RebuildReducedSnowBuildupPrefabs();
+            // No Unity-instance processing before ZoneSystem.Start resolves the current world's donors.
+            if (!copySourceScene || copySourceScene != ZNetScene.instance)
+                return;
 
-            ParseTransforms(seasonalSnowClippingFixes?.Value, allowYOnly: true);
-            ParseTransforms(seasonalSnowMeshScales?.Value, allowYOnly: false);
-            ApplyToLoadedInstances();
+            SeasonalSnow.InitializePrefabs();
+            SeasonalSnow.OnSnowRangeConfigChanged();
+            SeasonalSnow.UpdateLoadedSnowCover();
         }
 
-        public static void OnIgnoredPrefabsChanged()
-        {
-            RebuildConfiguration();
-            // Also update the prefab allow-list used for unloaded ZDO cleanup and restore
-            // copied caps when an instance is removed from the ignore list.
-            if (ZNetScene.instance)
-                SeasonalSnow.InitializePrefabs();
-        }
+        internal static bool IsPrefabDisabled(string prefabName) =>
+            !String.IsNullOrEmpty(prefabName) && DisabledPrefabs.Contains(prefabName);
 
         internal static bool IsPrefabIgnored(string prefabName) =>
             !String.IsNullOrEmpty(prefabName) && ExcludedPrefabs.Contains(prefabName);
@@ -377,64 +358,6 @@ namespace Seasons
                 : Utils.GetPrefabName(instance.gameObject);
             return IsPrefabIgnored(prefabName) &&
                 (!ZNetScene.instance || ZNetScene.instance.GetPrefab(prefabName) != instance.gameObject);
-        }
-
-        private static void ParseTransforms(string value, bool allowYOnly)
-        {
-            string configName = allowYOnly ? "Snow cap positions" : "Snow cap scales";
-            string expected = allowYOnly ? "prefab:Y or prefab:X,Y,Z" : "prefab:X,Y,Z";
-            foreach (string rawEntry in (value ?? String.Empty).Split(';'))
-            {
-                string entry = rawEntry.Trim();
-                if (entry.Length == 0)
-                    continue;
-
-                int separator = entry.LastIndexOf(':');
-                if (separator <= 0 || separator == entry.Length - 1)
-                {
-                    LogWarning($"Invalid '{configName}' entry '{entry}'. Expected {expected}; entry ignored.");
-                    continue;
-                }
-
-                string prefabName = entry.Substring(0, separator).Trim();
-                string[] components = entry.Substring(separator + 1).Split(',');
-                if (prefabName.Length == 0 || prefabName.Contains(":"))
-                {
-                    LogWarning($"Invalid '{configName}' entry '{entry}'. Expected {expected}; entry ignored.");
-                    continue;
-                }
-
-                bool yOnly = allowYOnly && components.Length == 1;
-                if (!yOnly && components.Length != 3)
-                {
-                    LogWarning($"Invalid '{configName}' entry '{entry}': received {components.Length} components. Expected {expected}; entry ignored.");
-                    continue;
-                }
-
-                Vector3 parsed = Vector3.zero;
-                bool valid = true;
-                for (int i = 0; i < components.Length; ++i)
-                {
-                    if (!Single.TryParse(components[i].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out float number) ||
-                        Single.IsNaN(number) || Single.IsInfinity(number))
-                    {
-                        valid = false;
-                        break;
-                    }
-                    parsed[yOnly ? 1 : i] = number;
-                }
-
-                if (!valid)
-                {
-                    LogWarning($"Invalid '{configName}' entry '{entry}': use finite numbers with a dot as the decimal separator. Expected {expected}; entry ignored.");
-                    continue;
-                }
-
-                if (allowYOnly)
-                    Positions[prefabName] = new PositionOverride(parsed, yOnly);
-                else
-                    Scales[prefabName] = parsed;
-            }
         }
 
         public static bool IsSnowDisabled(WearNTear instance)
@@ -500,7 +423,17 @@ namespace Seasons
             if (!instance || !instance.gameObject.scene.IsValid())
                 return;
 
-            if (!TryApplyDisabledSnow(instance) && DisabledInstances.Remove(instance))
+            if (TryApplyDisabledSnow(instance))
+            {
+                RestoreTransforms(instance);
+                if (CopiedInstances.ContainsKey(instance))
+                {
+                    RemoveCopiedSnowMesh(instance);
+                    RefreshRendererCaches(instance);
+                }
+                return;
+            }
+            if (DisabledInstances.Remove(instance))
             {
                 // Resume the ordinary snow lifecycle, not a snapshot from before the ban.
                 SeasonalSnow.OnSnowMeshChanged(instance);
@@ -543,8 +476,8 @@ namespace Seasons
                 return;
             }
 
-            bool hasPosition = Positions.TryGetValue(prefabName, out PositionOverride position);
-            bool hasScale = Scales.TryGetValue(prefabName, out Vector3 scale);
+            bool hasPosition = Positions.TryGetValue(prefabName, out TransformOverride position);
+            bool hasScale = Scales.TryGetValue(prefabName, out TransformOverride scale);
             if (!hasPosition && !hasScale)
             {
                 if (state != null)
@@ -561,8 +494,8 @@ namespace Seasons
                 Instances.Add(instance, state);
             }
 
-            state.Apply(hasPosition ? position : (PositionOverride?)null,
-                hasScale ? scale : (Vector3?)null, refreshBounds);
+            state.Apply(hasPosition ? position : (TransformOverride?)null,
+                hasScale ? scale : (TransformOverride?)null, refreshBounds);
         }
 
         public static void ApplyToLoadedInstances(bool updateCopies = false)

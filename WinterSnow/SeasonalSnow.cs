@@ -205,7 +205,7 @@ namespace Seasons
                     continue;
 
                 WearNTear wearNTear = prefab.GetComponent<WearNTear>();
-                if (SeasonalSnowMeshSettings.IsPrefabIgnored(prefab.name) ||
+                if (SeasonalSnowMeshSettings.IsPrefabIgnored(prefab.name) || SeasonalSnowMeshSettings.IsPrefabDisabled(prefab.name) ||
                     !wearNTear || (!wearNTear.m_snow && !SeasonalSnowMeshSettings.HasSnowCopy(prefab.name)))
                     continue;
 
@@ -214,8 +214,8 @@ namespace Seasons
             }
 
             seasonalSnowPrefabsInitialized = true;
-            SeasonalSnowMeshSettings.ApplyToLoadedInstances(updateCopies: true);
             RebuildReducedSnowBuildupPrefabs();
+            SeasonalSnowMeshSettings.ApplyToLoadedInstances(updateCopies: true);
             LogInfo($"Seasonal snow support initialized for {SeasonalSnowPrefabs.Count} prefab(s)");
         }
 
@@ -337,15 +337,13 @@ namespace Seasons
             ReducedSnowBuildupPrefabs.Clear();
             ReducedSnowBuildupPrefabNames.Clear();
 
-            string value = reducedSeasonalSnowPrefabs?.Value ?? String.Empty;
-            foreach (string rawName in value.Split(','))
+            foreach (KeyValuePair<string, SeasonSnow.PieceSnow> entry in SeasonalSnowSettings.Current.pieces)
             {
-                string prefabName = rawName.Trim();
-                if (String.IsNullOrWhiteSpace(prefabName))
+                if (entry.Value.buildup != SeasonSnow.SnowBuildup.Reduced)
                     continue;
 
-                ReducedSnowBuildupPrefabNames.Add(prefabName);
-                ReducedSnowBuildupPrefabs.Add(prefabName.GetStableHashCode());
+                ReducedSnowBuildupPrefabNames.Add(entry.Key);
+                ReducedSnowBuildupPrefabs.Add(entry.Key.GetStableHashCode());
             }
 
             if (ZNetScene.instance?.m_prefabs == null || ReducedSnowBuildupPrefabNames.Count == 0)
@@ -2333,12 +2331,6 @@ namespace Seasons
 
         public static void OnSnowRangeConfigChanged()
         {
-            ClampLoadedSnowMaximum();
-        }
-
-        public static void OnReducedSnowPrefabsConfigChanged()
-        {
-            RebuildReducedSnowBuildupPrefabs();
             ClampLoadedSnowMaximum();
         }
 

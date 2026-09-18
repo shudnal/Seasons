@@ -24,6 +24,7 @@ namespace Seasons
         public const string customGrassSettingsFileName = "Custom grass settings.json";
         public const string customClutterSettingsFileName = "Custom clutter settings.json";
         public const string customBiomesSettingsFileName = "Custom biome settings.json";
+        public const string seasonalSnowFileName = "Seasonal snow.json";
         public const int nightLentghDefault = 30;
         public const string itemDropNameTorch = "$item_torch";
         public const string itemNameTorch = "Torch";
@@ -194,7 +195,8 @@ namespace Seasons
                 customWorldSettingsFileName,
                 customGrassSettingsFileName,
                 customClutterSettingsFileName,
-                customBiomesSettingsFileName
+                customBiomesSettingsFileName,
+                seasonalSnowFileName
             })
             {
                 ReadConfigFile(filename, Path.Combine(configDirectory, filename), initial: true);
@@ -340,6 +342,11 @@ namespace Seasons
                 customSyncedValue = customBiomeSettingsJSON;
                 logMessage = "Custom biomes settings file loaded";
             }
+            else if (filename.Equals(seasonalSnowFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                customSyncedValue = seasonalSnowJSON;
+                logMessage = "Seasonal snow settings file loaded";
+            }
             else
             {
                 customSyncedValue = null;
@@ -424,6 +431,16 @@ namespace Seasons
         {
             LogInfo($"Saving default custom clutter settings");
             File.WriteAllText(Path.Combine(folder, customClutterSettingsFileName), JsonConvert.SerializeObject(new SeasonClutterSettings(loadDefaults: true), Formatting.Indented));
+        }
+
+        public static void SaveDefaultSnowSettings(string folder)
+        {
+            LogInfo("Saving default seasonal snow settings");
+            File.WriteAllText(Path.Combine(folder, seasonalSnowFileName),
+                JsonConvert.SerializeObject(new SeasonSnow(loadDefaults: true), Formatting.Indented, new JsonSerializerSettings
+                {
+                    NullValueHandling = NullValueHandling.Ignore,
+                }));
         }
 
         public static void SaveDefaultBiomesSettings(string folder)

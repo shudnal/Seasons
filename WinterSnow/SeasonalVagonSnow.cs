@@ -20,7 +20,7 @@ namespace Seasons
                 (!waterFrozen && vagon.transform.position.y - ZoneSystem.instance.m_waterLevel > MinimumHeightAboveUnfrozenWater);
         }
 
-        [HarmonyPatch(typeof(Vagon), "UpdateSnow")]
+        [HarmonyPatch(typeof(Vagon), nameof(Vagon.UpdateSnow))]
         private static class Vagon_UpdateSnow_SeasonalWinterSnow
         {
             [HarmonyTranspiler]
