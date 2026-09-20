@@ -48,3 +48,15 @@ No version, gameplay configuration default, snow JSON schema, or release changel
 Static review of native target signatures, project XML/source inclusion, duplicate includes, changed-file scope, lexical delimiter balance, and accidental Cyrillic outside localization. Remote content hashes are compared with the reviewed local files.
 
 No compilation, mod execution, automated gameplay tests, or in-game profiling was performed.
+
+## Roof wet-visual alias regression
+
+The maintainer reported disappearing sloped-roof caps after enabling Winter with Season override. A `wood_roof_45` dump showed saved buildup `0.7144539`, a positive controller target, an applied snow material, empty property blocks, and an inactive cap object. A second dump confirmed `m_wet == m_snow.gameObject`, with no alias in the health-visual objects.
+
+Native `WearNTear.UpdateWear` toggles `m_wet` from `m_rainWet` before its snow-visual refresh. The former unconditional snow drawing could undo that toggle. The new 0.01 gate correctly skips unchanged material levels but exposed this second writer of the same object's activity. This evidence identifies a visibility conflict, not a failed custom roof cast or an incorrect remap.
+
+Commit `4bb9775` filters only `UpdateWear`'s `m_wet` field reads through the controller's cached cap bindings. A managed cap is not returned as a wet visual, so the conflicting `SetActive` call is skipped. The actual field, all ordinary wet effects, rain wear, and native behavior after release remain unchanged. This prevents the conflicting write instead of adding a repeated scan or reactivation loop. No snow amount, threshold, timeline, cover query, or initialization predicate changes.
+
+The scene-update driver now also defers ordinary visual queue processing while `Game.IsPaused()` or `Time.timeScale <= 0`. Pending targets remain coalesced and resume without replaying intermediate levels. Explicit scene teardown and visual release still run; this is not a freeze of network state, configuration changes, or every vanilla callback.
+
+Maintainer-side checks still required: repeat Spring -> Winter -> Spring -> Winter overrides on loaded sloped roofs, remain beyond multiple wear updates in clear weather and snowfall, reload directly into Winter, verify ordinary wet visuals and Ignore/Disabled handoff, and pause/resume with pending visuals. The reported initial height difference must be reassessed separately after visibility is stable; it is not claimed fixed by the wet-alias change. No compilation or game execution was performed for these fixes.

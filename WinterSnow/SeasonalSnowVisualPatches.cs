@@ -73,7 +73,13 @@ namespace Seasons
     internal static class ZNetScene_Update_SnowVisuals
     {
         [HarmonyPostfix]
-        private static void Postfix(ZNetScene __instance) => SeasonalSnowController.Instance.UpdateVisuals(__instance);
+        private static void Postfix(ZNetScene __instance)
+        {
+            // The native Update can return early while Harmony still runs postfixes.
+            if (Game.IsPaused() || UnityEngine.Time.timeScale <= 0f)
+                return;
+            SeasonalSnowController.Instance.UpdateVisuals(__instance);
+        }
     }
 
     [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.Shutdown))]
