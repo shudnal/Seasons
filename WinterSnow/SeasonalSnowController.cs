@@ -145,6 +145,20 @@ namespace Seasons
             return true;
         }
 
+        // Some roof prefabs use the same object for wet effects and a snow cap.
+        // Filter only UpdateWear's read; keep the field intact for native handoff.
+        internal static GameObject GetWetVisual(WearNTear piece)
+        {
+            GameObject wet = piece.m_wet;
+            if (wet && Instance.visuals.TryGetValue(piece, out VisualState state))
+            {
+                for (int i = 0; i < state.Caps.Count; ++i)
+                    if (state.Caps[i].Object == wet)
+                        return null;
+            }
+            return wet;
+        }
+
         internal void DisableVisual(WearNTear piece)
         {
             if (!piece || (ZNet.instance && ZNet.instance.IsDedicated()))

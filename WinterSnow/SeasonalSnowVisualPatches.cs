@@ -1,4 +1,7 @@
 using HarmonyLib;
+using System.Collections.Generic;
+using System.Reflection.Emit;
+using static Seasons.Seasons;
 
 namespace Seasons
 {
@@ -10,6 +13,32 @@ namespace Seasons
         [HarmonyPrefix, HarmonyPriority(Priority.Last)]
         private static bool Prefix(WearNTear __instance) =>
             !SeasonalSnowController.Instance.TryQueueCurrentVisual(__instance);
+    }
+
+    [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateWear))]
+    internal static class WearNTear_UpdateWear_ExcludeSnowFromWetVisuals
+    {
+        [HarmonyTranspiler]
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        {
+            var wetField = AccessTools.Field(typeof(WearNTear), nameof(WearNTear.m_wet));
+            var getWetVisual = AccessTools.Method(typeof(SeasonalSnowController), nameof(SeasonalSnowController.GetWetVisual));
+            bool found = false;
+            foreach (CodeInstruction instruction in instructions)
+            {
+                if (instruction.LoadsField(wetField))
+                {
+                    // WearNTear -> GameObject has the same stack effect as the field load.
+                    // Retain labels and exception blocks on the replaced instruction.
+                    instruction.opcode = OpCodes.Call;
+                    instruction.operand = getWetVisual;
+                    found = true;
+                }
+                yield return instruction;
+            }
+            if (!found)
+                LogWarning("Failed to isolate WearNTear.UpdateWear wet visuals from managed snow caps.");
+        }
     }
 
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.Awake))]
