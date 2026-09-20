@@ -255,6 +255,7 @@ namespace Seasons
                 return;
 
             CopiedInstances.Remove(instance);
+            SeasonalSnowController.Instance.ReleaseVisual(instance, hide: true, restoreNative: false);
             if (!copy.renderer)
                 return;
 
@@ -285,13 +286,7 @@ namespace Seasons
             if (instance.m_renderers != null)
                 instance.m_renderers = instance.GetHighlightRenderers();
 
-            MaterialMan materials = MaterialMan.instance;
-            if (materials && materials.m_blocks.TryGetValue(instance.gameObject.GetInstanceID(),
-                out MaterialMan.PropertyContainer container))
-            {
-                container.RefreshRenderers(instance.gameObject);
-                materials.QueuePropertyUpdate(container);
-            }
+            SeasonalSnowController.Instance.InvalidateVisual(instance);
         }
 
         private static readonly HashSet<string> ExcludedPrefabs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -395,26 +390,11 @@ namespace Seasons
             }
             SeasonalSnow.ClearInstanceSnowState(instance, ownedZdo);
 
-            DeactivateSnowCap(instance.m_snow);
-            DeactivateSnowCap(instance.m_snowWorn);
-            DeactivateSnowCap(instance.m_snowBroken);
-
-            // Native UpdateSnowVisual does not reset the shader value when buildup reaches zero.
-            // Keep the shared per-instance property block consistent without dirtying it each call.
-            MaterialMan materials = MaterialMan.instance;
-            if (materials && materials.m_propertyBlock != null &&
-                (!materials.m_blocks.TryGetValue(instance.gameObject.GetInstanceID(), out MaterialMan.PropertyContainer container) ||
-                 !container.m_shaderProperties.TryGetValue(WearNTear.s_snowLevel, out MaterialMan.ShaderPropertyBase property) ||
-                 !(property is MaterialMan.ShaderProperty<float> snowLevel) || snowLevel.Get() != 0f))
-                materials.SetValue(instance.gameObject, WearNTear.s_snowLevel, 0f);
+            // Do not install a zero property block: it would mask a later pooled material.
+            // Disabled caps follow the same exclusive, coalesced visual path as seasonal caps.
+            SeasonalSnowController.Instance.DisableVisual(instance);
 
             return true;
-        }
-
-        private static void DeactivateSnowCap(MeshRenderer renderer)
-        {
-            if (renderer && renderer.gameObject.activeSelf)
-                renderer.gameObject.SetActive(false);
         }
 
         public static void Apply(WearNTear instance, bool refreshBounds = false)
@@ -437,13 +417,14 @@ namespace Seasons
             {
                 // Resume the ordinary snow lifecycle, not a snapshot from before the ban.
                 SeasonalSnow.OnSnowMeshChanged(instance);
-                if (instance.m_renderers != null && MaterialMan.instance)
+                if (instance.m_renderers != null)
                     instance.UpdateSnowVisual();
             }
 
             if (IsSnowIgnored(instance))
             {
                 IgnoredInstances.Add(instance);
+                SeasonalSnowController.Instance.ReleaseVisual(instance, hide: true, restoreNative: true);
                 RestoreTransforms(instance);
                 if (CopiedInstances.ContainsKey(instance))
                 {
@@ -531,7 +512,7 @@ namespace Seasons
                         RefreshBounds(instance.m_snow);
                     RefreshRendererCaches(instance);
                     SeasonalSnow.OnSnowMeshChanged(instance);
-                    if (instance.m_renderers != null && MaterialMan.instance)
+                    if (instance.m_renderers != null)
                         instance.UpdateSnowVisual();
                 }
             }
@@ -551,6 +532,7 @@ namespace Seasons
             if (ReferenceEquals(instance, null))
                 return;
 
+            SeasonalSnowController.Instance.ReleaseVisual(instance, hide: false, restoreNative: false);
             DisabledInstances.Remove(instance);
             IgnoredInstances.Remove(instance);
             RestoreTransforms(instance);
@@ -563,6 +545,7 @@ namespace Seasons
 
         public static void Reset()
         {
+            SeasonalSnowController.Instance.ResetVisuals();
             foreach (InstanceState state in Instances.Values)
                 state.Restore();
             Instances.Clear();
