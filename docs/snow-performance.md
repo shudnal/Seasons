@@ -6,7 +6,7 @@ Branch: `perf/snow-performance`.
 Baseline: `shudnal/Seasons` at `988e98c514ce49369a92cbaf934a7aca384fe6e1`.
 Game reference: `shudnal/assemblies_combined` at `d1374bfd9175ac8f733ae483b0a06e5c8b75906e`.
 
-This revision replaces the initial plan's conflicting rules. The latest maintainer decisions take precedence over preserving old gameplay: concurrent snowfall/heat, one-time discovery minimum, gradual covered-piece melting, a full 1.0 maximum, distance-independent ambient calculation, separate work budgets, and exclusive cap-renderer ownership are intentional changes. The source-oriented accumulation approximation and its consequences are recorded explicitly in section 4; it must not be mistaken for exact single-count snowfall.
+This revision supersedes both earlier concurrent snowfall/heat formulas. A managed piece is either accumulating or melting; active effective heat always selects melting, without a snowfall counter-term. Four mutually exclusive buckets hold the pieces, and region-filtered trigger queues maintain membership. The verified distant provisional display, ready-area reconciliation, and active-area/authority boundaries remain separate from these buckets. One-time discovery seeding, clean construction, gradual melting under a newly added roof, a full 1.0 maximum, separate work budgets, and exclusive cap ownership remain the selected design. This is a plan, not a claim that the runtime changes already exist.
 
 ## 1. Evidence and scope
 
@@ -23,13 +23,13 @@ The baseline contains `SeasonSettings/SeasonSnow.cs`, `WinterSnow`, common JSON 
 | Runtime storage | One ordinary `SeasonalSnowController` singleton owns states, source links, active lists, work cursors, and material pools. No additional component per piece/source. |
 | Persistence | Precise Seasons-owned float buildup plus snapshot/baseline time and winter epoch. Never store positive seasonal buildup in native `s_snow` or `m_snowBuildup`. |
 | Materials | `Dictionary<Material, Material[101]>`, keyed by original identity. Index 0 is the original. Indices 1..100 are lazy immutable variants. Five observed originals imply at most 500 clones for this setup. |
-| Ambient simulation | Iterate compact changing-state collections directly. No heap or queued percentage event per piece. Use cached numeric inputs, not scene/component queries. |
+| Ambient simulation | Four exclusive buckets: accumulation-full, accumulation-open, melting-empty, melting-snow. Arithmetic visits only accumulation-open during eligible snowfall and melting-snow with a positive rate. No percentage heap. |
 | Visual application | A deduplicated dirty list, initially up to 50 piece-visual applications per frame, using the latest level rather than replaying intermediate levels. |
 | Expensive geometry | Independent resumable work, initially up to 20 piece inspections per frame and an elapsed-time guard. This is not a limit on arithmetic. |
 | Network work | Separate coalesced publication work. No write/RPC on every arithmetic update. |
 | Cover | Preserve the Seasons cover algorithm. Invalidate the center sector and its eight neighbors, without calculating each changed object's full bounds. |
-| Heat | Cached stationary logical sources and nearby pieces; add different heaters, deduplicate multiple areas belonging to one heater. |
-| Ownership | No owner/active-radius gate on ambient appearance and static-heat calculation in ready loaded areas. Retain narrower gates for live interactions and existing publication authority. |
+| Heat | Cache stationary sources and links; sum distinct heaters into a melt rate. Source changes enqueue only linked pieces/affected regions. No per-source snowfall term. |
+| Distance and authority | Preserve provisional caps before area readiness, geometry-aware reconciliation after readiness, and active-area live-use/publication gates independently. Never gate all cap display on readiness, activity, or ownership. |
 | Integration | Existing plugin drives the singleton. `PrefabVariantController` is neither the driver nor part of snow rendering. |
 | Configuration | Existing `SeasonSnow` model and common `CustomSyncedValue`/JSON path. No custom validation, partial overrides, or configuration migration. |
 
@@ -47,13 +47,13 @@ Remove the artificial hard maximum of `0.99`: the new calculation permits `1.0`.
 
 | Event | Initial value and subsequent behavior |
 | --- | --- |
-| First discovery of an eligible existing exposed piece for the current winter, without a valid snapshot | `min(maximum, configuredMinimum + timelineSnowSinceWinterStart)`. Apply once, then use normal deltas. Current heat does not replace this target with an invented zero; live melting handles it. |
+| First discovery of an eligible existing exposed piece for the current winter, without a valid snapshot | `min(maximum, configuredMinimum + timelineSnowSinceWinterStart)`. Apply once, then use normal deltas. Current heat does not replace this target with an invented zero; geometry-ready melting handles it within the permitted local calculation scope. |
 | A piece is newly built during the current winter | Start at zero and record placement time. It receives neither the discovery minimum nor snowfall from before placement. |
 | A known piece is reactivated | Restore its snapshot and account only for its unprocessed weather interval. Do not classify activation itself as first discovery and do not add the minimum again. |
 
 The minimum is a discovery seed, never a floor for ongoing accumulation. Growth after construction, melting, heater shutdown, or roof removal passes continuously through values below the configured minimum. Delete the old minimum-entry jump and any catch-up formula that silently reinserts it.
 
-A first-discovered piece already sheltered by the custom cover test starts clean, preserving the distinction between exposure and eligibility; a known snowy piece that acquires a roof follows gradual melting below. A shield remains a separate hard suppression rule. These two exclusions must not be conflated with ordinary heating. The first-discovery sheltered exception is retained explicitly rather than silently applying an exposed-piece seed indoors.
+A first-discovered piece already sheltered by the custom cover test starts clean. If it previously had only an unverified distant cap, remove that provisional cap as a correction when geometry becomes ready; do not convert that visual estimate into real snow and melt it slowly. A known piece with real snow that subsequently acquires a roof follows gradual melting below. A shield remains a separate hard suppression rule. These two exclusions must not be conflated with ordinary heating. The first-discovery sheltered exception is retained explicitly rather than silently applying an exposed-piece seed indoors.
 
 Retain placement identity, initialization epoch, and weather accounting position across unloads. A valid zero snapshot is not absence. An object built in an earlier season/winter is an existing object for a new winter; construction metadata must not suppress discovery seeding forever. Preliminary appearance before `IsAreaReady` remains read-only and cannot irrevocably seed or reject an object before geometry/placement state is known.
 
@@ -61,7 +61,7 @@ Retain placement identity, initialization epoch, and weather accounting position
 
 | Condition | Behavior |
 | --- | --- |
-| Snowfall and heat coexist | Integrate signed accumulation minus melting. Do not retain the old rule that any positive heat disables snowfall. Section 4 defines the selected source-wise approximation. |
+| Snowfall and effective heat coexist | The piece is in melting mode. Subtract its combined melt rate; do not add or subtract snowfall in this branch. Snowfall cannot reverse or slow this mode. |
 | Heat stops during snowfall | Continue from current buildup with positive weather delta. Never jump to the minimum or repay weather already processed during heating. |
 | A roof appears | Stop new snowfall on the piece and gradually melt its existing snow using a new covered-piece rate. |
 | A roof disappears | Stop covered-piece melting and resume exposed accumulation from the remaining value. No discovery reseed. |
@@ -78,42 +78,60 @@ Proposed new server-controlled config in `Season - Winter snow`:
 
 Define 1x as the normalized unit melt rate, before distance/self/leaky/roof heat multipliers. The previous plan's provisional reference is `0.0018` buildup units per active second; at 2x the independent cover rate would be `0.0036` per second. This numeric anchor remains a balance proposal, not a measured equivalence to the old frame-dependent implementation.
 
-A covered piece uses zero weather input and subtracts cover melting plus any applicable live heater/interaction melting. Cover melting does not require a fire and is not multiplied by the existing `roof pieces` heat multiplier, whose default is zero. It is also independent of the `all heat sources` multiplier: disabling fireplaces' contribution should not disable sheltered melting. Config zero stops this new melting but still blocks snowfall under a roof.
+A covered piece belongs to melting mode, uses no weather input, and subtracts cover melting plus the applicable heater or interaction rate. Cover melting does not require a fire and is not multiplied by the existing `roof pieces` heat multiplier, whose default is zero. It is also independent of the `all heat sources` multiplier: disabling fireplaces' contribution should not disable sheltered melting. Config zero stops this new melting but still blocks snowfall under a roof.
 
-Cache `covered` and the resulting rate after geometry inspection. Each subsequent update is subtraction and clamping only. Remove a covered piece from the changing list when it reaches zero, until an external condition changes. No extra raycast, collider access, or source search is needed for gradual melting. The remaining cost is continued rendering while a visible cap melts; unlike instant removal, geometry/shadow work lasts until buildup crosses the visibility threshold. Do not promise that extra visible lifetime is free.
+Cache `covered` and the resulting rate after geometry inspection. Each subsequent update is subtraction and clamping only. Move a covered piece from melting-snow to melting-empty at zero; retain its registry and source links for later condition changes. No extra raycast, collider access, or source search is needed for gradual melting. The remaining cost is continued rendering while a visible cap melts; unlike instant removal, geometry/shadow work lasts until buildup crosses the visibility threshold. Do not promise that extra visible lifetime is free.
 
-## 4. Source-wise arithmetic and repeated snowfall
+## 4. Two modes and four exclusive buckets
 
-The maintainer explicitly allows a simple source-oriented loop in which each active heater/piece link applies its own `snowfall - melting` contribution, even though the weather term repeats. Preserve that as an explicit selected approximation rather than silently substituting a different formula.
+Let `s` be the precise working buildup, `maximum` the configured limit, `A` the cached eligible per-biome weather gain for the interval, and `M` the cached effective melt rate.
 
-For one simulation interval, let `A_i` be genuine exposed weather gain for piece i, `H_si` the positive effective melt contribution of logical heater s, and `n_i` the count of contributing active logical heaters. Without the separate interaction path:
+- Accumulation mode: `s = min(maximum, s + A)`, only when eligible snowfall supplies positive gain.
+- Melting mode: `s = max(0, s - M * elapsedActiveSeconds)`. There is no weather term.
 
-- No effective heater: `delta_i = A_i - coverMelt_i`.
-- At least one effective heater: `delta_i = n_i * A_i - sum(H_si) - coverMelt_i`.
+This replaces both `A - combinedHeat` and `sourceCount * A - combinedHeat`. There is no source-count multiplier, net-rate sign classification, snowfall-dependent slowing of a heater, or weak-heater snow amplification. Distinct heaters still add their effective melt contributions. Source iteration maintains coefficients and invalidates states; it does not update the same piece once per heater.
 
-Covered pieces have `A_i = 0`. Disabled/inactive areas, duplicate areas of one logical heater, and zero-weight links do not increase `n_i`. A heater shared between biomes cannot supply one universal weather value: `A_i` uses the receiving piece's biome and cover state. Per-link distance/self/roof/leaky factors remain cached.
+### 4.1 The four lists
 
-This is **not** identical to exact `A_i - sum(H_si)`. Its excess weather is `(n_i - 1) * A_i`. It may slow melting as desired, but it also means adding a weak heater with `H_si < A_i` can increase accumulation or reverse net melting. The assumption that every heater always exceeds snowfall is not guaranteed by existing configurable rates. Record this behavior honestly and include it in acceptance; do not fix it later as a performance refactor without changing this plan.
+| Bucket | Membership | Normal arithmetic |
+| --- | --- | --- |
+| `AccumulationFull` | Accumulation mode, `s == maximum` | None. |
+| `AccumulationOpen` | Accumulation mode, `0 <= s < maximum` | Add weather only for a permitted evaluation scope and a snowing biome. No snowfall means no piece pass. |
+| `MeltingEmpty` | Melting mode, `s == 0` | None, even during snowfall. |
+| `MeltingSnow` | Melting mode, `s > 0` | Subtract the cached positive melt rate while the evaluation scope permits it. |
 
-The exact alternative needs the same source graph and only avoids repeating `A_i`; it is not computationally more expensive. It remains the recommended alternative if weak-heater snow amplification is undesirable. There is no new user-facing formula toggle in this plan.
+Every registered Seasons-managed seasonal piece has exactly one bucket, including a piece with a provisional visual value. Bucket membership does not certify that this value is authoritative or that geometry is ready. Section 7 defines those independent permissions. Native Deep North pieces, previews, Ignore/Disabled pieces, and globally disabled/out-of-season processing do not become a fifth simulation bucket: they are outside ordinary seasonal simulation while their cleanup/release is handled explicitly.
 
-### 4.1 Avoid repeated mutable piece updates
+Use four logical buckets partitioned by sector so regional work does not first scan all pieces. Keep dense lists and a stored bucket/index; swap-removal moves a state without `List.Contains`, `IndexOf`, or linear deletion. The registry owns each state once. Source links, the state-refresh queue, and the visual dirty queue hold handles to it, not independent copies of snow state.
 
-Do not clamp the piece once per source: the result at zero/maximum would depend on collection order. Accumulate contributions for a common interval, then update/clamp each distinct piece once. Swapping source iteration order must not alter visible accumulation, apart from insignificant floating-point summation noise.
+### 4.2 Melting includes shelter, not just a nearby fireplace
 
-The simplest direct implementation can use a reusable touched-state list and a numeric accumulator, not an event queue: source loops add contributions, then one pass finalizes unique pieces. There are no allocations or Unity calls in these passes.
+A positive effective stationary-heater contribution, an eligible active interaction, or confirmed shelter selects melting mode. A newly added roof therefore uses the same two melting buckets without a fifth roof-processing list. Preserve the existing separate interaction precedence: it replaces ordinary static-heat melting while active; cover melting remains independent. Do not add multiple users' interaction rates.
 
-A cheaper equivalent implementation caches `combinedHeatRate` and `activeLogicalSourceCount` when source activity/topology/coefficients change. Each live step then iterates unique changing pieces and evaluates the chosen formula once. Static sources do not require recomputing their distances or traversing every unchanged link every frame. Keep source-to-piece links for localized updates and reverse membership; prefer this cached aggregate path when it simplifies the code.
+A merely nearby inactive heater or a link whose effective multiplier is zero is not positive heat. Preserve the meanings of global heat disable, zero distance/self multipliers, and the existing roof-over-leaky heat rule. Thus a roof-tagged exposed piece with heat multiplier zero is not automatically stripped by a nearby fireplace. Distinguish that heat immunity from being geometrically covered by another roof.
 
-### 4.2 Sleeping states
+Shelter always blocks accumulation, even when its new covered-piece melt multiplier is zero. Such a nonempty piece remains in `MeltingSnow` with a cached zero rate and does no numeric integration; it wakes on a relevant parameter/source/cover change. This is a paused configured case, not a new simulated mode. For the selected positive 2x default it melts normally. Shields retain their independent hard-suppression behavior.
 
-A piece can leave the arithmetic collection when:
+### 4.3 Region-filtered state-refresh queue
 
-- buildup is zero and the **combined** rate is non-positive;
-- buildup is at its maximum and the combined rate is non-negative;
-- the combined rate is zero.
+External triggers enqueue reevaluation, not direct scene queries or immediate reassignment of all pieces. Deduplicate one pending record per piece/sector, combine reason flags, and retain the latest source/geometry revision. Scope work using source links or sector indices:
 
-`buildup == 0` alone is insufficient: after snowfall strengthens or a heater turns off, the rate may be positive. Do not remove the topology links when retiring arithmetic work. Source changes, weather changes, cover changes, config updates, incoming snapshots, and new interaction activity wake the affected states directly. At zero with a still-negative rate there are no periodic snow calculations or writes merely to confirm zero.
+- Heater ignition/extinction/destruction: its linked receivers, including zero/full idle receivers.
+- Roof/geometry change: the center sector plus its eight neighbors; a relocation invalidates both old and new groups.
+- Area readiness/active-area changes: affected regions, using the exact existing predicates where their result can differ within one sector.
+- Configuration, mode, ownership, relevant incoming snapshot, placement, and season changes: the applicable pieces/regions.
+
+A queued refresh uses cached data for cheap reasons. Only geometry/hierarchy/topology reasons request expensive work. Changing a fire's active bit must not force a new roof cast or full source search for every linked piece. While waiting for reevaluation a state remains in its previous bucket; it cannot be duplicated or disappear from the registry.
+
+After reevaluation, settle the old numeric mode to the refresh's effective boundary, update cached causes/rate/evaluation permissions, and move to the matching bucket. Source observation/queued classification is deliberately approximate: by default the refreshed state becomes effective when that refresh is applied. Do not backdate its new rate over the entire queue delay. Multiple toggles before a refresh can coalesce to the current observed state; no retained fuel/event history is required. Prompt cheap refresh processing limits this latency independently of the visual budget.
+
+When arithmetic reaches zero/maximum, clamp exactly to the bound and request a cheap bucket move. Drain these moves at a safe pass boundary, preferably the same frame; do not send them through geometry inspection or the renderer budget. A threshold move does not recompute sources or cover. Keep source/sector membership at the bounds so a later trigger reaches the sleeping piece.
+
+### 4.4 Per-frame work
+
+Process state refreshes, then the permitted accumulation-open groups and melting-snow groups. Read cached numbers and integrate each unique piece at most once for that interval. Queue a visual/publication change only when its independent threshold is reached. Do not iterate `AccumulationFull` or `MeltingEmpty` to confirm that nothing happened.
+
+Weather onset/cessation changes the weather input of accumulation groups; it does not transfer pieces between heating and cooling lists. A piece can remain in `AccumulationOpen` throughout clear weather at zero cost. Heating during a blizzard still drains `MeltingSnow` into `MeltingEmpty` and remains there until the heat/shelter cause changes. A second heater only changes `M`, unless it changes whether any effective melting cause exists.
 
 ## 5. Time, background catch-up, and transitions
 
@@ -125,27 +143,29 @@ Live heat/cover/interaction melting uses elapsed unpaused simulation time, not t
 
 Do not inspect historical fuel timestamps or reconstruct when fires stopped. At reactivation, restore the latest usable snapshot and add genuine timeline snowfall for the unprocessed interval, clipped to the applicable winter and not earlier than placement. Then apply the current heater states through ordinary live calculation. This guarantees the requested case: a nearly exhausted fire is out on return, and snowfall during the absence is added without a minimum jump.
 
-The simple approximation uses genuine weather gain **once** for the gap, not `n_i` times based on the heater count observed on return. Do not replay historical heat, cover melting, or interaction melting. A currently lit fire does not cause hours/days of instantaneous melting; it melts the restored snow live. This can show temporarily more snow even beside a still-burning fire and is an accepted approximation that avoids historical fuel simulation.
+The gap approximation uses genuine weather gain once; current heater counts do not multiply it. Do not replay historical heat, cover melting, or interaction melting. A currently lit fire does not cause hours/days of instantaneous melting; it melts the restored snow live. This can show temporarily more snow even beside a still-burning fire and is an accepted approximation that avoids historical fuel simulation.
 
-Use current cached cover to avoid crediting unseen snowfall to currently sheltered pieces; keep stored snow and let it melt live. Geometry history during absence is not reconstructed. The stored last-accounted weather position must advance during live heating, even at a saturated zero, so reactivation cannot repay snowfall already cancelled in a **loaded** interval. Publish/rebase at transitions or controlled deactivation as needed; do not write timestamps every frame at zero.
+Use current cached cover to avoid crediting unseen snowfall to currently sheltered pieces; keep stored snow and let it melt live. Geometry history during absence is not reconstructed. The last-accounted weather boundary must cover live heating, even at a saturated zero, so reactivation cannot repay snowfall already excluded by melting mode in a **loaded, actually evaluated** interval. Represent this with the state/region mode interval and settle its weather cursor on transition or controlled deactivation. Do not visit every `MeltingEmpty` piece or write timestamps each frame just to advance that cursor.
 
 A still-loaded ownerless piece that has been simulated locally has no gap merely because it lacks an owner. Preserve its runtime weather cursor and melt result. Likewise an incoming packet's snapshot time is not automatically the start of a new unprocessed interval. State handoff must distinguish actual skipped simulation from already integrated local time.
 
-### 5.2 No delayed arithmetic event history
+### 5.2 Queue classification, not each arithmetic step
 
-The earlier per-percentage heap and deferred condition-history architecture is unnecessary for the normal path. Compute numbers in direct collection passes. Observed source/weather changes settle affected numeric states to the observation boundary before updating cached rates. No piece waits behind the 50-item visual budget to have its arithmetic updated.
+Only state/topology/readiness changes wait for the region-filtered refresh queue. The current mode's ordinary arithmetic and its accumulated fractional deltas do not wait for the 50-item visual budget. Apply newly observed inputs at the queued refresh boundary described in section 4; no per-percentage heap, net-rate arbitration, or general event log is required.
 
-Source polling approximates change time by observation time; sub-poll fuel/wind transitions are not reconstructed. Several observations in one frame can be processed directly without a retained event log. Rendering can lag and use only the newest result. If a pathological math/topology pass is split across frames, preserve a cursor and an integration boundary so later inputs cannot be applied retroactively; this safeguard is not a generic multi-event history framework.
+Integrate an old mode to a known boundary at most once, then change the mode/rate. A piece migrating between lists in one frame cannot be integrated in both lists for the same time interval. Keep a last numeric time or pass stamp. Bound-triggered moves need only cheap metadata changes.
 
-Pause does not melt snow. Sleep/time jumps use weather catch-up once and no giant heat delta. On clock reversal, rebase from the accepted runtime/snapshot boundary, never integrate a negative duration. Distinguish winter epochs to prevent old snapshots reappearing next winter. Ordered intervals matter near clamps: clamping after a hot interval and then a snowy interval is not equivalent to one final clamp over their net sum.
+Pause does not melt snow. Sleep/time jumps use the existing weather catch-up time basis once and no giant heat delta. On clock reversal, rebase from the accepted runtime/snapshot boundary, never integrate a negative duration. Distinguish winter epochs to prevent old snapshots reappearing next winter. A readiness/ownership transition is not inherently elapsed offline time or a new discovery.
+
+A queued load-order correction is different from a physical condition change. Do not use a provisional distant cap as the old real value to integrate before readiness: first select the real saved/initialized state, correct unsupported provisional visuals, then start the permitted mode.
 
 ## 6. Work partition and performance envelope
 
 ### 6.1 Numeric work
 
-Use compact lists of unique changing pieces, cached references, cached coefficients, and swap-removal indices. Source links need traversal on topology/activity changes, not automatically once per rendered frame. Maintain source lists even while all nearby pieces sleep, so a later change can wake them.
+Use the four sector-partitioned buckets, cached references/rates, and swap-removal indices. Arithmetic visits only permitted accumulation-open groups during snowfall and positive-rate melting-snow groups. Source links are revisited on relevant queued changes, not automatically once per rendered frame. Keep links for idle buckets so triggers can wake them. Region evaluation status selects real or provisional processing without a full per-piece readiness poll in the numeric loop.
 
-Normal arithmetic has no arbitrary 20/50-piece cap. It may process the whole changing collection promptly. It must contain no `GetComponent*`, hierarchy walks, prefab-name parsing, collider/transform reads, material access, ZDO reads/writes, LINQ, or per-step allocations. Basic operations on cached vectors/numbers are allowed; no managed worker thread touches Unity APIs.
+Normal arithmetic and cheap metadata-only list moves have no arbitrary 20/50-piece cap. They may process their eligible collections promptly; expensive classification and Unity setters retain separate budgets. It must contain no `GetComponent*`, hierarchy walks, prefab-name parsing, collider/transform reads, material access, ZDO reads/writes, LINQ, or per-step allocations. Basic operations on cached vectors/numbers are allowed; no managed worker thread touches Unity APIs.
 
 For scale: 10,000 changing pieces at 60 updates/second imply 600,000 small state evaluations/second. This is an operation-count illustration, not a time benchmark. At 100 FPS it is 1,000,000. Cache locality, collection layout, runtime, and concurrent systems determine the cost. Use counters and an infrequent elapsed-time sample before choosing a lower arithmetic cadence or chunk size. Do not introduce a queue/heap whose administration costs more than the numeric work it schedules.
 
@@ -165,30 +185,62 @@ Publish coalesced coherent snapshots independently of visual application, after 
 
 End-of-world cleanup restores bindings before destroying owned material variants. It cannot depend on a frame driver that has already stopped. Destruction of one object retires its local state promptly; it never starts a world-wide calculation.
 
-## 7. Distance, readiness, ownership, and replication
+## 7. Preserve the verified distant-cap progression
 
-The original implementation already has a deliberate ownerless initialization path: `CanInitializeSnowState` allows `owner == 0` or the local owner, and its initialization helpers update state. `UpdatePendingLocalSnowVisual` can present a read-only passive target while area readiness is pending. `UpdateActiveAreaState`/`CanOwnSnowState` apply different gates to live owner-side work. The first plan's blanket owner-only interpretation was incorrect. [S1]
+The four thermal buckets are not four distance states. They must not replace the baseline's independent provisional appearance, geometry readiness, active area, and authority decisions. Preserve the existing predicates and their order, not a new fixed radius, a requirement for a loaded zone before drawing, or a blanket owner check.
 
-Keep these concerns separate:
+### 7.1 Code-derived contract at the pinned baseline
 
-| Concern | Required boundary |
-| --- | --- |
-| Discovery / provisional distant appearance | Do not wait for ownership acquisition. Preserve existing pending/readiness behavior. |
-| Final geometry/source classification | Wait for `IsAreaReady`; retry only affected pending sectors/states. |
-| Loaded ambient weather and static heat | Calculate/render in the supported loaded, ready area even when `owner == 0` or it is outside the narrow ownership/interaction radius. |
-| Live use of a station, bed, or chair | Retain existing active-area, valid-player/use, ownership/RPC boundaries. |
-| Normal authoritative publication | Current owner publishes; keep the existing ownerless initialization/reconciliation contract separately. Never claim ownership to paint or melt caps. |
-| Another actual owner | Accept its valid newer state; local ambient presentation is not permission to overwrite that owner's ZDO. |
+The following facts were re-read in `WinterSnow/SeasonalSnow.cs` and the pinned `ZNetScene.cs`. They describe current code; the new arithmetic elsewhere in this plan is a separate approved change. [S1], [G6]
 
-Map `IsAreaReady`, `OutsideActiveArea`, ownerless initialization, active-area entry/exit, and local provisional state method by method before deleting old code. Retain their purposes, distances, and readiness protection; do not preserve their old arithmetic when this revision intentionally replaces it. Do not gate all work behind `CanOwnSnowState`, and do not equate ready-but-unowned with unloaded.
+| Current method/path | Actual gate/order | Required preservation |
+| --- | --- | --- |
+| `TryInitializeSeasonalSnowOnStart` / `WearNTear.Start` | Applies mesh settings, prepares a local roof-probe origin, and queues initialization. | Keep instance discovery independent of acquiring ownership. Local collider-origin preparation is not evidence that the surrounding world is ready. |
+| `ProcessPendingSnowInitializations` | Calls `UpdatePendingLocalSnowVisual` **before** testing `IsAreaReady`; shares readiness results by `ZoneSystem.GetZone` during the pass. Invoked after `ZNetScene.CreateDestroyObjects`. | A missing/not-ready zone cannot block all cap display. Preserve the retry-after-scene-creation opportunity while replacing the full pending `ToArray()` scan with regional jobs. |
+| `UpdatePendingLocalSnowVisual` | Client-only provisional path; valid ZDO, winter/config/position gates; `CanInitializeSnowState`; no current-winter marker and no existing positive runtime/persisted snow. Shield revision can refresh it. | Keep a read-only passive timeline preview for qualifying ownerless/local-owner distant pieces. Do not overwrite a valid zero/current-winter snapshot or another owner's state with a new discovery minimum. |
+| `ApplyLocalSnowVisual` / `TryGetVisualSnowOverride` | Stores `localVisualApplied` and `localVisualSnow`; the old visual prefix temporarily supplies the value and restores `m_snowBuildup` in its finalizer. | Preserve the **separation** of provisional visual and stored/real state, not the temporary native-field rendering technique. Render the estimate directly with the new pool. |
+| `CanInitializeSnowState` | `owner == 0` **or** local ownership; does not require active-area membership. | Keep ownerless ready initialization. Never claim ownership to display snow. |
+| `TryInitializeLoadedSnow` / `TryInitializeCurrentWinterSnow` | Waits for season data and `IsAreaReady`, invalidates environment caches, then resolves real state; there is no blanket active-area gate in this initialization. | Inspect cover/heat after readiness without waiting for proximity ownership. Preserve the writer/readiness branches, replacing only the specifically revised seed/melt arithmetic. |
+| `SynchronizeSnowAuthority` / `ApplyPersistedSnowVisual` | Observes owner changes, requests reconciliation, and returns to persisted state for an actual other owner. | Do not treat all non-owners as ownerless, erase a cap on owner changes, or publish over another owner. Translate persistence to the new key. |
+| `UpdateActiveAreaState` | Uses `!OutsideActiveArea(position)`, records entry/exit, invalidates caches, and requests reconciliation. | Active-area entry is another transition, not the first point at which caps can exist or cover can be checked. |
+| `TryReconcileOwnedSnow` / live heat and interactive paths | Reconciliation requires readiness and local ownership; current continuous heat/use callers have additional activity checks. | Preserve the scope distinctions. The previously requested ready-area local static-heat evaluation is explicit, not a claim that the old owner-side loop already runs everywhere. Keep interactive/write gates separate. |
 
-For unowned ready pieces, maintain real local ambient state and timestamps, not just a static minimum preview. Keep the baseline's idempotent ownerless initialization/reconciliation of own snow metadata; continuous observations can stay local until the legitimate writer takes over. A local unowned ZDO change is not proof of delivery to the server. On acquiring ownership in the same process, retain already simulated continuous state when its epoch/snapshot lineage is valid instead of restarting it from an older initialization. Cross-peer handoff reconciles accepted snapshots and weather; no historical heat or takeover claim is invented.
+Relevant baseline ranges: provisional/pending handling `432..609`; ready initialization `667..801`; authority/activity `803..879`; override/owner checks `896..947`; custom cover geometry `1546..1673`; owner reconciliation `1706..1793`; start/live heat/placement `1883..1980`; creation-pass hook `2540..2548`; visual override restoration `2730..2754`. Line numbers are navigation aids for the pinned revision, not future patch anchors.
 
-For another owner's pieces, reuse valid accepted snow state and preserve distant presentation. Do not continuously reset a locally progressing visual to the same old packet. Rebase only for a newer snow snapshot/epoch, not every unrelated `DataRevision` change. Rendering/static-heat scope must not shrink to the interaction radius when a remote owner appears.
+Native `ZNetScene.IsAreaReady(point)` first requires the zone to be loaded, then inspects sector objects using `SimulationDistance(1, 0)` and requires instances for valid prefab ZDOs. It is not a cheap distance predicate. `OutsideActiveArea` is separate and uses the reference-position zone and synced simulation-distance policy. Reuse those rules; do not replace them with `owner != 0`, `IsZoneLoaded` alone, a single fixed meter cutoff, or an assumed LOD distance. The maintainer's established distant-LOD setup is a regression target, not authorization to change draw distance. [G6]
 
-`DataRevision` is not a notification. Observe completed incoming snow-relevant snapshots and ownership changes for tracked IDs, with numeric/state integration outside packet parsing. Idle pieces must wake on actual changed data. Do not patch every `ZDO.GetFloat` or write overload or add a global per-frame ZDO scan. [G3], [G4]
+### 7.2 Working progression, without coupling the axes
 
-Dedicated servers do not create material pools, but still perform applicable authoritative calculation. Visual preferences must not affect persistent snow or heater classification. Use the existing multiplayer trust boundary, expire remote interaction activity, and never accept a client-selected arbitrary snow value as authoritative.
+| Scene/evaluation situation | Cap behavior | What is not allowed |
+| --- | --- | --- |
+| A distant piece instance exists, but its zone/area is not ready | Keep existing persisted appearance, or the qualifying read-only timeline preview from the baseline's fallback. It may be visible with `owner == 0` and an unloaded zone. | Do not hide it merely because readiness/active area/owner is absent. Do not commit the provisional value, missing roofs, or missing heaters as resolved facts. |
+| Geometry becomes ready, before the player enters active area | Refresh the affected region, run the existing custom cover/heat classification, select real initialized/saved state, and correct provisional caps. Ready ownerless initialization remains possible. | Do not wait for owner acquisition to inspect geometry. Do not turn the erroneous part of a provisional cap into persistent snow. |
+| The player enters the existing active area | Reconcile under the existing readiness/authority conditions and enable the applicable live-use/write paths. Keep the already resolved appearance. | No second minimum seed, double timeline credit, temporary zero cap, or restart from a stale snapshot just because activity changed. |
+| Player leaves, ownership changes, or readiness is lost while an instance remains | Retain the valid local/persisted appearance and use the appropriate fallback/retry. Cancel only processes whose required scope was lost. | Leaving active area must not remove the renderer state. A pending state does not lose its bucket or become a new piece. |
+
+These are independent facts, not a mandatory linear enum: a ready piece may still have no owner, another owner may exist before local readiness, and activity/authority can change separately. Cache evaluation/provenance flags alongside the single bucket membership. A provisional value can occupy a logical bucket for display bookkeeping, but must not be integrated/published as authoritative geometry-aware snow. Unknown heat is not confirmed absence of heat.
+
+**Provisional correction versus roof melting:** if readiness reveals that the provisional snow was on an already covered or shielded surface, replace that estimate with the correct real value, normally zero for a first-discovered covered piece. Do not slowly melt nonexistent confirmed snow. Conversely, if real snow was already initialized and a roof is later built, move the piece into melting mode and use the configured gradual cover rate. An existing saved snowy piece also keeps its real value rather than being confused with a provisional preview.
+
+### 7.3 Regional retries and practical cost
+
+Keep region-filtered state refreshes separate from the four buckets. Registration, scene creation/removal, zone readiness changes, cover/source events, and activity/reference-zone changes enqueue affected regions. Recheck `IsAreaReady` once per relevant sector/pass after scene changes, not once per snow piece and not in either arithmetic loop. A pending unloaded region must not hot-loop through all its pieces every frame.
+
+Do not cache false readiness forever: neighbor instantiation can make it true even without a new snow piece, and a previously ready region can become incomplete. Preserve the post-`CreateDestroyObjects` retry opportunity and update the readiness revision before settling geometry. Use exact per-position active-area checks for boundary pieces when a policy boundary cuts through a sector; sector grouping is a work filter, not permission to round the game's activation shape.
+
+Do not ban physics outside active area. The baseline deliberately performs geometry checks once readiness allows them before active-area entry; keep that capability and the custom origin/cast algorithm. Avoid repeated expensive queries by invalidation, not by reducing the proven distance at which they work.
+
+Changing the evaluation stage does not add a second four-list system or a fifth simulation list. The same state keeps its cap bindings, snapshot identity, weather cursor, and bucket. Queued stage refreshes control which numeric/visual/publication operations are valid.
+
+### 7.4 Authority and receive behavior
+
+Ownerless display and ownerless initialization are not authorization to overwrite another peer's owned ZDO. Preserve the baseline's restricted ownerless initialization/reconciliation separately from ordinary current-owner publication. An ownerless local mutation is not proof of server delivery. Neither geometry-ready local static heat nor visual application may be gated by `CanOwnSnowState` alone.
+
+For ready unowned pieces, the previously selected local ambient/static-heat calculation may use resolved geometry without an ownership-radius gate. Keep that local working value separate from a persistable snapshot. When the same process gains legitimate ownership, retain compatible already-calculated state instead of replaying its interval. Another owner's valid newer snapshot can rebase presentation; repeated unchanged snow data or an unrelated `DataRevision` must not reset a locally progressing cap. Do not turn speculative preview from a not-ready area into a writable snapshot during this handoff.
+
+Observe incoming snow/owner changes for tracked IDs and enqueue refresh reasons outside packet parsing. Idle pieces must be reachable by these triggers without a global per-frame ZDO scan. Headless owners calculate applicable state but never create material pools. Interactive use keeps its existing valid-player, active-area, readiness, and owner/RPC boundaries. [G3], [G4]
+
+No extra chat export is required to establish these gates: the pinned baseline code is the reference. Preserve its scope and ordering explicitly before deleting old integration paths.
 
 ## 8. Heat registry and spatial links
 
@@ -202,7 +254,7 @@ Use game `SectorIndex` (64x64 meters) with local 8-meter heat cells. Save `Chunk
 
 Exclude moving sources: carried items, characters, ships/carts, and mobile parent hierarchies. `isStatic == false` or an asleep/kinematic rigidbody alone is not a reliable classification. A relocated supported source invalidates old/new links. Cached identity and generation protect against destruction/reuse. Removal/duplicate callbacks cannot double-subtract influence or leave a negative aggregate.
 
-Interactive melting remains a small separate active set and keeps its existing multiplier, single-object scope, and precedence over ordinary static-heat melting while a use is active. It does not multiply by number of users. Snowfall still participates in the signed calculation; use one weather contribution for this separate interaction path. Cover melting remains an independent environmental loss. Do not delete station/attachment behavior as a side effect of excluding moving heat sources.
+Interaction activity remains a small separate source registry with its existing multiplier, single-object scope, and precedence over ordinary static-heat melting while a use is active. Its affected piece still belongs to exactly one of the four buckets. It does not multiply by number of users and, like other melting, receives no snowfall term. Cover melting is independent. Use/timeout changes enqueue affected state refreshes; do not delete station/attachment behavior as a side effect of excluding moving heat sources.
 
 ## 9. Cover algorithm and sector invalidation
 
@@ -216,7 +268,7 @@ Notifications must include relevant non-snow geometry: placement/removal, zone l
 
 Area readiness and sector revisions protect against loading-order mistakes. If a revision changes while an inspection is pending, run again for the latest revision. Invalidate cached probe origins when the receiving piece's geometry changes. Avoid forcing `Physics.SyncTransforms` per piece. No stable static piece receives a periodic blanket roof recast.
 
-After inspection, update the cached covered flag and arithmetic collection directly. Gradual melting requires no further geometry work until the next invalidation. Shelter and shield are separate cached inputs.
+After the queued inspection, update the cached covered flag/rate and move the same piece to its correct bucket at a safe list boundary. Real roof acquisition triggers gradual melting; ready-area correction of a provisional cap does not. Shelter and shield are separate inputs. No additional geometry is required until the next invalidation.
 
 ## 10. Exclusive cap rendering
 
@@ -261,8 +313,8 @@ Use world/session generations and stable recorded ZDO IDs. A destroyed/recycled 
 1. Preserve the pinned baseline and map current readiness/ownership/active-area behavior. Treat this revision's gameplay decisions as intentional replacements, not an excuse to change unrelated gates.
 2. Separate precise own persistence and discovery/construction/reactivation paths. Remove the 0.99 cap and automatic minimum jumps; add winter epochs and correct weather-cursor accounting.
 3. Introduce cap-only pools, exclusive property-block cleanup, and MaterialMan cap exclusion. Keep `PrefabVariantController` unchanged.
-4. Add the singleton, compact source/piece relations, direct arithmetic, sleeping membership, and independent visual/geometry/publication work. Do not implement the superseded per-percentage heap.
-5. Add additive/source-wise heat, existing source predicates, preserved interaction boundaries, and covered-piece melting with the new config.
+4. Add the singleton, sector-partitioned four-bucket membership, region-filtered state-refresh queue, direct arithmetic, and independent visual/geometry/publication work. Do not implement a percentage heap or net-rate scheduler.
+5. Cache summed effective heat with existing source predicates, preserve interaction boundaries, and add covered-piece melting. Both causes select melting without any concurrent snowfall term.
 6. Replace periodic custom cover recasts with center-plus-neighbor sector invalidation without changing the custom test itself.
 7. Integrate distant ownerless state, incoming snapshots, gap weather catch-up, time skips, season cleanup, configuration changes, and teardown.
 8. Remove obsolete native snow RPC/value routes and redundant calculation paths. Manually measure functional/performance acceptance on the maintainer's game; no build/game execution is requested from the assistant.
@@ -277,17 +329,24 @@ Use world/session generations and stable recorded ZDO IDs. A destroyed/recycled 
 | Heat stops during snowfall | Continuous accumulation from current level, including below the minimum. |
 | Fire burns out during absence | Restore snapshot, add skipped genuine snowfall once, then use current activity. No fuel-history reconstruction. |
 | Fire still burns on return / sleep skips time | No retrospective heat loss over the entire gap; ordinary live melting resumes. |
-| Two heaters vs one / low-high child areas | Distinct logical sources count; duplicates of one source do not. Weather multiplicity follows section 4. |
-| Add weak heater during snow | Exercise and document the selected approximation's possible increase in snow rate; do not assume every heater beats weather. |
+| Two heaters vs one / low-high child areas | Independent heat contributions add once per logical source; duplicates do not. The piece is integrated once, without snowfall. |
+| Add a weak but effective heater during snow | Piece changes from accumulation to melting at refresh; snowfall cannot reverse or slow the selected melt rate. |
 | Same sources iterated in another order | Sum contributions then clamp once; no collection-order bias. |
-| Zero snow, heat weakens or snowfall strengthens | Sleeping piece wakes if combined rate becomes positive. Topology was not discarded at zero. |
+| `MeltingEmpty` during a stronger snowstorm | No numeric pass and no accumulation. Only losing the melt cause or changing real state can move it out; source links remain. |
+| Heat disappears from `MeltingEmpty` | Refresh moves it to `AccumulationOpen`; it stays zero in clear weather and grows gradually when snow falls. |
+| Reach zero/maximum during arithmetic | Exactly one terminal value and one cheap deferred bucket move; no duplicate membership or integration. |
+| Repeated trigger while refresh pending | One queued state with combined reason flags; no full-list reconstruction or redundant geometry check. |
 | Roof added, removed midway, then added again | Gradual configured loss, no repeated raycasts, continuous remaining value, no reset to minimum. |
 | Cover multiplier 0 / all-heat multiplier 0 / roof-tag multiplier 0 | Independent documented meanings; roof cover loss is not disabled by an unrelated heat setting. |
 | Shield vs roof / end of winter | Shield and season cleanup remain hard suppression; only ordinary roof acquisition melts gradually. |
 | Full 1.0 own buildup | Variant 100, no native heavy snow damage/support state and no new global damage patch. |
 | Ready ownerless distant pieces with static heat | Snow is calculated and shown without approaching the ownership radius. |
-| Area not ready, then ready | Provisional display is not a permanent geometry/placement decision; initialize correctly after readiness. |
-| Active-area entry/exit | Existing narrow interaction boundaries survive; ambient calculation is not accidentally disabled. |
+| Distant existing instance, unloaded zone, owner 0 | Qualifying passive cap is visible before readiness, through the existing fallback gates. No forced ownership or publication of a guessed value. |
+| Provisional covered cap, then area ready outside active area | Run custom geometry and remove the incorrect estimate promptly; do not keep it to melt slowly. |
+| Real initialized cap, then a roof is built | Gradual cover melting; not the provisional-correction path. |
+| Area not ready, neighbor instantiates, still outside active area | Regional readiness retry resolves state without waiting for another snow piece or ownership acquisition. |
+| Owner changes before/after readiness | Treat ownership independently of the geometry/evaluation stage; preserve fallback and accepted-state precedence. |
+| Active-area entry/exit and distant LOD transition | No missing caps, no new fixed distance cutoff, no second discovery minimum, and no double weather accounting; narrow interaction/write gates survive. |
 | Ownership changes, unrelated ZDO revision | No reset to a repeated stale snapshot, double catch-up, arbitrary ownership claim, or foreign-owner writes. |
 | Idle remote snapshot arrives | Changed snow wakes the state without a scan of every ZDO. |
 | 10,000 numeric changes, slow visual queue | Arithmetic completes promptly; at most 50 piece visual changes/frame; coalesce to latest result. |
@@ -306,9 +365,9 @@ Use world/session generations and stable recorded ZDO IDs. A destroyed/recycled 
 
 ## 14. Explicit proposals and non-goals
 
-The requested source-wise repeated snowfall is selected and disclosed, not silently corrected. Exact single-count snowfall is an equally cheap alternative but needs an explicit formula decision to replace it. The covered-piece config default 2x is selected as a planning proposal; the underlying per-second balance anchor remains to be checked against desired gameplay, not against a promise of a particular FPS.
+The latest decision selects exclusive accumulation or melting and four bucket lists. Earlier simultaneous snowfall-minus-heat and repeated snowfall formulas are superseded, not optional modes. The covered-piece config default 2x remains selected; its per-second balance anchor remains to be checked against desired gameplay. State-refresh latency is separate from rendering latency, and provisional distant appearance remains deliberately separate from confirmed geometry-aware state.
 
-No retained per-percentage heap, generic event-history subsystem, fuel-history simulator, partial JSON merge, renderer ownership negotiation, whole-world migration sweep, LOD redesign, or distance culling is part of this plan. Geometry/render/network work remains bounded separately even when arithmetic is allowed to run promptly. A quiet numerical state does not mean Unity stops drawing visible snow meshes.
+No per-percentage heap, net-rate arbitration, generic event-history subsystem, fuel-history simulator, partial JSON merge, renderer ownership negotiation, whole-world migration sweep, LOD redesign, or distance culling is part of this plan. Geometry/render/network work remains bounded separately even when arithmetic is allowed to run promptly. A quiet numerical state does not mean Unity stops drawing visible snow meshes.
 
 ## 15. Source map
 
@@ -320,6 +379,7 @@ No retained per-percentage heap, generic event-history subsystem, fuel-history s
 [G3]: https://github.com/shudnal/assemblies_combined/blob/d1374bfd9175ac8f733ae483b0a06e5c8b75906e/assembly_valheim/ZDO.cs
 [G4]: https://github.com/shudnal/assemblies_combined/blob/d1374bfd9175ac8f733ae483b0a06e5c8b75906e/assembly_valheim/ZDOMan.cs
 [G5]: https://github.com/shudnal/assemblies_combined/blob/d1374bfd9175ac8f733ae483b0a06e5c8b75906e/assembly_valheim/ZoneSystem.cs
+[G6]: https://github.com/shudnal/assemblies_combined/blob/d1374bfd9175ac8f733ae483b0a06e5c8b75906e/assembly_valheim/ZNetScene.cs
 [U1]: https://docs.unity3d.com/2022.3/Documentation/ScriptReference/Renderer.SetPropertyBlock.html
 [U2]: https://docs.unity3d.com/2022.3/Documentation/Manual/GPUInstancing.html
 
@@ -329,6 +389,7 @@ No retained per-percentage heap, generic event-history subsystem, fuel-history s
 - [G1] Native cap mapping, visual selection, snow storage, and heavy-snow inputs to isolate from own buildup.
 - [G2] `PropertyContainer.RefreshRenderers` and `UpdateBlock` explain why clearing a cap block once without registration exclusion is insufficient.
 - [G3], [G4] ZDO identity, typed data, deserialization, ownership, and synchronization boundaries.
-- [G5] Sector coordinates and area-readiness integration.
+- [G5] Sector coordinates and zone lifecycle.
+- [G6] Exact `IsAreaReady`, `OutsideActiveArea`/`PointInsideActiveArea`, distant instance creation, and the scene-creation retry boundary.
 - [U1] Removing per-renderer/per-material overrides; a retained zero is still an override.
 - [U2] Instancing requirements and limits of material sharing as a performance claim.
