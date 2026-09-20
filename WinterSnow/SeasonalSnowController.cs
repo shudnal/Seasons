@@ -105,8 +105,12 @@ namespace Seasons
         private readonly SeasonalSnowMaterials materials = new SeasonalSnowMaterials();
         private readonly Dictionary<WearNTear, VisualState> visuals = new Dictionary<WearNTear, VisualState>();
         private readonly HashSet<Renderer> ownedRenderers = new HashSet<Renderer>();
+        private readonly HashSet<string> unsupportedCaps = new HashSet<string>(StringComparer.Ordinal);
         private VisualState firstVisual;
         private VisualState lastVisual;
+        private ZNetScene visualScene;
+        private ZNetScene stoppedScene;
+        private int lastVisualFrame = -1;
 
         private SeasonalSnowController() { }
 
@@ -148,8 +152,24 @@ namespace Seasons
             QueueVisual(piece, 0f, disabled: true, force: true);
         }
 
+        private bool EnsureVisualScene()
+        {
+            ZNetScene scene = ZNetScene.instance;
+            if (!scene || ReferenceEquals(scene, stoppedScene))
+                return false;
+            if (!ReferenceEquals(scene, visualScene))
+            {
+                ResetVisuals();
+                visualScene = scene;
+                stoppedScene = null;
+            }
+            return true;
+        }
+
         private void QueueVisual(WearNTear piece, float snow, bool disabled, bool force)
         {
+            if (!EnsureVisualScene())
+                return;
             if (visuals.TryGetValue(piece, out VisualState state) && !state.Matches(piece))
             {
                 ReleaseVisual(piece, hide: true, restoreNative: false);
@@ -172,6 +192,7 @@ namespace Seasons
                     piece.m_healthPercentage <= 0.75f && state.Worn ? state.Worn : state.Normal;
             }
             float level = target ? Mathf.Clamp01((snow - VisibilityThreshold) / (1f - VisibilityThreshold)) : 0f;
+            bool prioritizeHide = !target && (state.Target || (disabled && !state.Disabled));
             state.Disabled = disabled;
             state.Target = target;
             state.TargetSnow = snow;
@@ -180,7 +201,7 @@ namespace Seasons
             if (!state.HasApplied || target != state.Applied ||
                 Mathf.Abs(level - state.AppliedLevel) + 0.000001f >= VisualStep ||
                 (force && !level.Equals(state.AppliedLevel)))
-                EnqueueVisual(state);
+                EnqueueVisual(state, prioritizeHide);
         }
 
         private void BindCap(VisualState state, MeshRenderer renderer)
@@ -196,14 +217,33 @@ namespace Seasons
             ownedRenderers.Add(renderer);
             DetachFromMaterialMan(renderer);
             if (!binding.Supported)
-                LogWarning($"Unsupported snow cap material on '{state.Piece.name}/{renderer.name}'; the cap will remain hidden.");
+            {
+                string key = Utils.GetPrefabName(state.Piece.gameObject) + "/" + renderer.name;
+                if (unsupportedCaps.Add(key))
+                    LogWarning($"Unsupported snow cap material on '{key}'; the cap will remain hidden.");
+            }
         }
 
-        private void EnqueueVisual(VisualState state)
+        private void EnqueueVisual(VisualState state, bool prioritize = false)
         {
             if (state.Queued)
-                return;
+            {
+                if (!prioritize)
+                    return;
+                RemoveQueuedVisual(state);
+            }
             state.Queued = true;
+            if (prioritize)
+            {
+                state.Previous = null;
+                state.Next = firstVisual;
+                if (firstVisual != null)
+                    firstVisual.Previous = state;
+                else
+                    lastVisual = state;
+                firstVisual = state;
+                return;
+            }
             state.Previous = lastVisual;
             state.Next = null;
             if (lastVisual != null)
@@ -230,8 +270,12 @@ namespace Seasons
             state.Next = null;
         }
 
-        internal void UpdateVisuals()
+        internal void UpdateVisuals(ZNetScene scene)
         {
+            if (!ReferenceEquals(scene, visualScene) || scene != ZNetScene.instance ||
+                ReferenceEquals(scene, stoppedScene) || lastVisualFrame == Time.frameCount)
+                return;
+            lastVisualFrame = Time.frameCount;
             int remaining = VisualsPerFrame;
             while (remaining-- > 0 && firstVisual != null)
             {
@@ -294,6 +338,14 @@ namespace Seasons
             }
         }
 
+        internal void StopVisuals(ZNetScene scene)
+        {
+            if (!ReferenceEquals(scene, visualScene) && scene != ZNetScene.instance)
+                return;
+            ResetVisuals();
+            stoppedScene = scene;
+        }
+
         internal void ResetVisuals()
         {
             // Restore bindings before disposing their pooled materials.
@@ -302,12 +354,17 @@ namespace Seasons
                 {
                     cap.SetVisible(false);
                     cap.ApplyMaterial(0);
+                    if (cap.Renderer)
+                        RestoreToMaterialMan(cap.Renderer);
                 }
             visuals.Clear();
             ownedRenderers.Clear();
+            unsupportedCaps.Clear();
             firstVisual = null;
             lastVisual = null;
             materials.Dispose();
+            visualScene = null;
+            lastVisualFrame = -1;
         }
 
         internal void FilterMaterialManRenderers(MaterialMan.PropertyContainer container)

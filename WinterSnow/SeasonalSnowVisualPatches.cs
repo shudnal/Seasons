@@ -44,20 +44,20 @@ namespace Seasons
     internal static class ZNetScene_Update_SnowVisuals
     {
         [HarmonyPostfix]
-        private static void Postfix() => SeasonalSnowController.Instance.UpdateVisuals();
+        private static void Postfix(ZNetScene __instance) => SeasonalSnowController.Instance.UpdateVisuals(__instance);
     }
 
     [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.Shutdown))]
     internal static class ZNetScene_Shutdown_SnowVisuals
     {
         [HarmonyPrefix]
-        private static void Prefix() => SeasonalSnowController.Instance.ResetVisuals();
+        private static void Prefix(ZNetScene __instance) => SeasonalSnowController.Instance.StopVisuals(__instance);
     }
 
     [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.OnDestroy))]
     internal static class ZNetScene_OnDestroy_SnowVisuals
     {
         [HarmonyPrefix]
-        private static void Prefix() => SeasonalSnowController.Instance.ResetVisuals();
+        private static void Prefix(ZNetScene __instance) => SeasonalSnowController.Instance.StopVisuals(__instance);
     }
 }

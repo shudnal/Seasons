@@ -423,8 +423,8 @@ namespace Seasons
 
             if (IsSnowIgnored(instance))
             {
-                IgnoredInstances.Add(instance);
-                SeasonalSnowController.Instance.ReleaseVisual(instance, hide: true, restoreNative: true);
+                bool enteredIgnore = IgnoredInstances.Add(instance);
+                SeasonalSnowController.Instance.ReleaseVisual(instance, hide: false, restoreNative: true);
                 RestoreTransforms(instance);
                 if (CopiedInstances.ContainsKey(instance))
                 {
@@ -433,6 +433,11 @@ namespace Seasons
                 }
                 // Restore only Seasons-owned state. Do not suppress vanilla snow or hide its mesh.
                 SeasonalSnow.ReleaseIgnoredSnowState(instance);
+                // A remote owner's native snow may still be present without local metadata.
+                // Refresh once on handoff; the finalizer reenters Apply with enteredIgnore false.
+                if (enteredIgnore && instance.m_renderers != null && MaterialMan.instance &&
+                    MaterialMan.instance.m_propertyBlock != null)
+                    instance.UpdateSnowVisual();
                 return;
             }
             if (IgnoredInstances.Remove(instance))
