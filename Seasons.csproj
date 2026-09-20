@@ -56,6 +56,8 @@
     <Compile Include="SummerHeat\SummerHeatState.cs" />
     <Compile Include="SummerHeat\SummerHeatVisuals.cs" />
     <Compile Include="WinterSnow\SeasonalSnowMaterials.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowController.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowVisualPatches.cs" />
     <Compile Include="WinterSnow\SeasonalSnowSettings.cs" />
     <Compile Include="WinterSnow\SeasonalSnowMaterialRules.cs" />
     <Compile Include="WinterSnow\SeasonalSnow.cs" />
