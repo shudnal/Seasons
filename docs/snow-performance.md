@@ -222,7 +222,25 @@ These are independent facts, not a mandatory linear enum: a ready piece may stil
 
 **Provisional correction versus roof melting:** if readiness reveals that the provisional snow was on an already covered or shielded surface, replace that estimate with the correct real value, normally zero for a first-discovered covered piece. Do not slowly melt nonexistent confirmed snow. Conversely, if real snow was already initialized and a roof is later built, move the piece into melting mode and use the configured gradual cover rate. An existing saved snowy piece also keeps its real value rather than being confused with a provisional preview.
 
-### 7.3 Regional retries and practical cost
+### 7.3 Saved-first appearance and a single confirmation
+
+At `WearNTear.Awake`, or the first initialization opportunity with its valid ZDO, choose the initial distant appearance once: use an applicable saved snow value if present; otherwise use the existing qualifying prediction path. A saved zero is a value, not permission to predict. Prefer the new Seasons snapshot; a recognized legacy Seasons snapshot may supply the same saved-first appearance during migration. Do not interpret the native key's default zero as evidence of a saved snapshot. An explicitly expired winter epoch and current hard-suppression rules still take precedence; this contract must not resurrect obsolete snow.
+
+An absent ZDO/readiness dependency is not a successful read proving that no saved value exists. Preserve the existing pending-registration gates. A newly constructed piece starts clean and must not briefly receive a discovery prediction before its placement initialization completes.
+
+Keep the chosen saved/predicted appearance while awaiting the complete ready-area result. Compute the real initialization or catch-up result in local scratch data: identity/epoch, placement, saved baseline, unprocessed timeline gain, cover/shield correction, and the initial melting classification. Do not publish or render each intermediate contribution. In particular, do not show saved/predicted -> zero -> minimum -> weather target -> cover-adjusted target. Current heat selects subsequent melting; it does not add speculative historical melting to this confirmation.
+
+Once the necessary inputs are ready, confirm the complete result once. Check that the instance, epoch, relevant geometry revision, and accepted snow snapshot are still the ones used by the calculation. If they changed during queued work, discard/recompute the pending result while retaining the currently valid appearance. Unknown roof/source data is not a completed result. Loss of readiness by itself must not clear an already displayed cap.
+
+Confirmation updates the real working value, its provenance/weather boundary, and the matching bucket together, then publishes the coherent Seasons snapshot where the existing current-owner/ownerless-initialization rules permit. It replaces the visual target directly. Clear the provisional flag only as part of this handoff, never earlier in a path that could expose an old/default ZDO value for a frame. Do not write guessed or temporary zero snow into the new key to announce that initialization has started. Ordinary later simulation and newer accepted snapshots remain valid updates; "once" describes this initialization/reconciliation, not the piece's lifetime.
+
+The visual queue keeps one handle to the latest desired state, not a sequence of captured levels. A queued prediction must never render after confirmation or override it. If confirmation precedes the first visual application, apply only the confirmed target. If the material/visibility did not actually change, confirmation needs no Unity setter at all. Initial/baseline confirmation is not delayed by the normal 0.01 publication gate; an actual one-time correction may bypass the visual magnitude gate, while still avoiding identical-material assignments and respecting the visual work budget.
+
+This is one logical state publication, not a new database transaction, RPC acknowledgement, interpolation stage, or promise that every peer renders in the same frame. A real remote owner is not overwritten, and no ownership claim is introduced. Repeated receipt of unchanged snow or the arrival of active-area ownership must not replay the handoff or re-credit weather. A newer legitimate remote snapshot supersedes stale queued local work directly, without first clearing the cap.
+
+Expected sequences are `saved -> confirmed` or `prediction -> confirmed`; equal endpoints need no visible change. A predicted cap disproved by ready geometry is corrected directly, normally to zero. A genuine saved snowy cap is not reclassified as imaginary snow: a newly established roof starts the agreed gradual melting from its real level. A later seasonal shutdown or explicit Disabled/shield rule remains a valid direct hide, not an initialization artefact.
+
+### 7.4 Regional retries and practical cost
 
 Keep region-filtered state refreshes separate from the four buckets. Registration, scene creation/removal, zone readiness changes, cover/source events, and activity/reference-zone changes enqueue affected regions. Recheck `IsAreaReady` once per relevant sector/pass after scene changes, not once per snow piece and not in either arithmetic loop. A pending unloaded region must not hot-loop through all its pieces every frame.
 
@@ -232,7 +250,7 @@ Do not ban physics outside active area. The baseline deliberately performs geome
 
 Changing the evaluation stage does not add a second four-list system or a fifth simulation list. The same state keeps its cap bindings, snapshot identity, weather cursor, and bucket. Queued stage refreshes control which numeric/visual/publication operations are valid.
 
-### 7.4 Authority and receive behavior
+### 7.5 Authority and receive behavior
 
 Ownerless display and ownerless initialization are not authorization to overwrite another peer's owned ZDO. Preserve the baseline's restricted ownerless initialization/reconciliation separately from ordinary current-owner publication. An ownerless local mutation is not proof of server delivery. Neither geometry-ready local static heat nor visual application may be gated by `CanOwnSnowState` alone.
 
@@ -326,6 +344,13 @@ Use world/session generations and stable recorded ZDO IDs. A destroyed/recycled 
 | First discovery on winter day N | Exposed eligible existing piece gets minimum plus timeline gain exactly once. Current heat then melts live. |
 | Build during snowfall | Starts clean and gains only later weather; no jump to the discovery minimum. |
 | Repeated zone reload / accepted zero snapshot | No reseeding or duplicate weather credit. |
+| Awake with applicable saved nonzero snow and no ready area | Display that saved level, not a new timeline prediction; replace it only with the complete confirmed target. |
+| Awake with applicable saved zero | Keep the cap absent while pending; no temporary discovery minimum or prediction. |
+| Prediction awaiting cover/timeline work | Retain the selected appearance until all confirmation inputs are ready; no zero/minimum/weather intermediate visuals or persisted levels. |
+| Confirmation before the queued prediction has rendered | One latest-target entry applies the confirmed result only; stale prediction cannot flash afterward. |
+| New snapshot/owner or lost readiness during queued confirmation | Recheck or discard stale work without clearing the displayed cap or publishing over another owner. |
+| Equal initial and confirmed visual targets / tiny confirmation correction | Confirm provenance and baseline even below 0.01; skip identical visual setters, but do not leave a required correction permanently pending. |
+| New construction Awake before placement initialization finishes | No one-frame discovery cap; new pieces remain clean. |
 | Heat stops during snowfall | Continuous accumulation from current level, including below the minimum. |
 | Fire burns out during absence | Restore snapshot, add skipped genuine snowfall once, then use current activity. No fuel-history reconstruction. |
 | Fire still burns on return / sleep skips time | No retrospective heat loss over the entire gap; ordinary live melting resumes. |
@@ -368,6 +393,14 @@ Use world/session generations and stable recorded ZDO IDs. A destroyed/recycled 
 The latest decision selects exclusive accumulation or melting and four bucket lists. Earlier simultaneous snowfall-minus-heat and repeated snowfall formulas are superseded, not optional modes. The covered-piece config default 2x remains selected; its per-second balance anchor remains to be checked against desired gameplay. State-refresh latency is separate from rendering latency, and provisional distant appearance remains deliberately separate from confirmed geometry-aware state.
 
 No per-percentage heap, net-rate arbitration, generic event-history subsystem, fuel-history simulator, partial JSON merge, renderer ownership negotiation, whole-world migration sweep, LOD redesign, or distance culling is part of this plan. Geometry/render/network work remains bounded separately even when arithmetic is allowed to run promptly. A quiet numerical state does not mean Unity stops drawing visible snow meshes.
+
+### 14.1 Implementation readiness
+
+There are no remaining architectural alternatives requiring another planning round. The single-confirmation handoff in section 7.3 is an acceptance contract in addition to the four-bucket model, not a new subsystem. Keep the existing distance, area-readiness, placement, and authority predicates as the integration reference.
+
+The first implementation step must map old calls to the new read/compute/confirm path before removing them, including all paths that clear a provisional override or write native snow. Confirm the exact storage key/presence/epoch mapping and hook order against the pinned source. These are implementation checks, not permission to add intermediate visible values, narrow draw distance, or invent additional gameplay modes.
+
+The covered-piece 2x setting and existing provisional per-second coefficients provide a starting balance for implementation. Their empirical timing and the numeric/geometry/visual/network costs remain maintainer-side acceptance work; no measured speed or FPS result is claimed in advance. Test distant saved/predicted handoff first, followed by the bucket transitions, persistence on removal, and the original performance scene. No additional chat export or prefab scan is required to start; runtime code remains outside this planning update.
 
 ## 15. Source map
 
