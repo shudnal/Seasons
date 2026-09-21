@@ -60,3 +60,21 @@ Commit `4bb9775` filters only `UpdateWear`'s `m_wet` field reads through the con
 The scene-update driver now also defers ordinary visual queue processing while `Game.IsPaused()` or `Time.timeScale <= 0`. Pending targets remain coalesced and resume without replaying intermediate levels. Explicit scene teardown and visual release still run; this is not a freeze of network state, configuration changes, or every vanilla callback.
 
 Maintainer-side checks still required: repeat Spring -> Winter -> Spring -> Winter overrides on loaded sloped roofs, remain beyond multiple wear updates in clear weather and snowfall, reload directly into Winter, verify ordinary wet visuals and Ignore/Disabled handoff, and pause/resume with pending visuals. The reported initial height difference must be reassessed separately after visibility is stable; it is not claimed fixed by the wet-alias change. No compilation or game execution was performed for these fixes.
+
+## Maintainer follow-up: visual parity and frame stability
+
+Reported on 2026-09-21 after the wet-visual fix and pause guard in `bf1880f`. These are maintainer-run observations, not assistant-executed tests.
+
+The maintainer confirmed that caps no longer flicker in the previously reported scenario. A subsequent concern that minimum caps were approximately 30-40% lower was not reproduced when comparing the branch with the master build on winter day 1, with default settings and no snowfall. In that comparison the new visual matched the old visual.
+
+The REPL height probe reported:
+
+```text
+buildup=0.51; materialLevel=0.34; exactLevel=0.3466667
+```
+
+Applying the exact unquantized value produced only a barely noticeable visual difference. Do not compensate by raising the minimum, removing the native remap, changing cap transforms, or changing the 0.01 material step. The suspected large height regression is closed for the tested scenario. Prior snowfall before an earlier day-2 comparison is a possible explanation for the initial impression, not a verified weather-history finding.
+
+The maintainer also reported noticeably steadier FPS with the new visuals, before the calculation refactor. Record this as qualitative frame-stability feedback only: no frame-time trace, FPS gain, low-percentile statistic, or CPU/GPU attribution was supplied. It does not establish that the original weak-PC 40-to-5 FPS report has been resolved.
+
+These results resolve the reported flicker and minimum-height concerns; they do not mark every lifecycle, multiplayer, distance, material, or configuration scenario in the acceptance matrix as tested. The next implementation boundary remains Seasons-owned float persistence and saved-first, single-confirmation initialization, followed by the four simulation lists. This documentation update does not change runtime code, configuration defaults, or the version.
