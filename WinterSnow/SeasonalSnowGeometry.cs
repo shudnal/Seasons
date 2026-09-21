@@ -6,6 +6,10 @@ namespace Seasons
 {
     internal sealed partial class SeasonalSnowController
     {
+        private readonly Dictionary<Door, float> movingSnowDoors = new Dictionary<Door, float>();
+        private readonly List<Door> completedSnowDoors = new List<Door>();
+        private float nextDoorCheck;
+
         internal void InvalidateSnowArea(Vector3 position, bool geometry)
         {
             if (snowRegions.Count == 0 || Character.InInterior(position))
@@ -24,10 +28,26 @@ namespace Seasons
                 }
         }
 
+        internal void SnowCoverHintChanged(WearNTear piece)
+        {
+            if (piece && snowPieces.TryGetValue(piece, out SnowPiece state))
+                QueueRefresh(state, SnowRefresh.Geometry);
+        }
+
+        internal void SnowSceneObjectsChanged()
+        {
+            // A failed readiness result is retried after scene construction, not forever cached.
+            // Only region records are touched; no per-piece physics or ZDO reads happen here.
+            foreach (SnowRegion region in regionList)
+                if (!region.Ready && ZoneSystem.instance.IsZoneLoaded(region.Zone))
+                    region.ReadinessDirty = true;
+        }
+
         private static void CaptureSnowGeometry(SnowPiece state)
         {
-            // Rebuild only on registration or a relevant hierarchy/geometry change.
             Piece piece = state.Piece.m_piece;
+            if (!piece)
+                piece = state.Piece.GetComponent<Piece>();
             List<Collider> colliders = piece ? piece.GetAllColliders() : null;
             state.Colliders = colliders != null ? colliders.ToArray() : Array.Empty<Collider>();
             state.HaveOrigin = false;
@@ -61,9 +81,9 @@ namespace Seasons
 
         private static bool HasSnowCover(SnowPiece state)
         {
-            // Preserve the custom Seasons probe, not vanilla HaveRoof's leaky filtering.
-            if (state.Piece.m_roof)
-                return true;
+            // A dirty geometry request invalidates positive roof caches too: an opened
+            // door can keep the same GameObject reference while moving its collider away.
+            // Preserve the Seasons cast and its leaky/self rules, not vanilla HaveRoof.
             if (WearNTear.s_rayMask == 0)
                 WearNTear.s_rayMask = LayerMask.GetMask("piece", "Default", "static_solid", "Default_small", "terrain");
             Vector3 origin = state.HaveOrigin
@@ -97,8 +117,38 @@ namespace Seasons
             if (snowPieces.TryGetValue(piece, out SnowPiece state))
             {
                 QueueRefresh(state, SnowRefresh.Geometry);
-                QueueVisual(piece, state.Snow, disabled: false, force: true);
+                QueueRuntimeVisual(state, force: true);
             }
+        }
+
+        internal void SnowDoorChanged(Door door)
+        {
+            if (!door || snowRegions.Count == 0)
+                return;
+            InvalidateSnowArea(door.transform.position, geometry: true);
+            movingSnowDoors[door] = Time.time + 8f;
+        }
+
+        private void UpdateSnowDoors()
+        {
+            if (movingSnowDoors.Count == 0 || Time.time < nextDoorCheck)
+                return;
+            nextDoorCheck = Time.time + 0.25f;
+            completedSnowDoors.Clear();
+            foreach (KeyValuePair<Door, float> entry in movingSnowDoors)
+            {
+                Door door = entry.Key;
+                if (!door || !door.m_animator || Time.time >= entry.Value ||
+                    (!door.m_animator.IsInTransition(0) && door.m_animator.GetCurrentAnimatorStateInfo(0).normalizedTime >= 1f))
+                    completedSnowDoors.Add(door);
+            }
+            foreach (Door door in completedSnowDoors)
+            {
+                if (door)
+                    InvalidateSnowArea(door.transform.position, geometry: true);
+                movingSnowDoors.Remove(door);
+            }
+            completedSnowDoors.Clear();
         }
     }
 }
