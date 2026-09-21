@@ -23,7 +23,9 @@ namespace Seasons
             Heat = 4,
             Snapshot = 8,
             Rules = 16,
-            All = Area | Geometry | Heat | Snapshot | Rules
+            Links = 32,
+            CatchUp = 64,
+            All = Area | Geometry | Heat | Snapshot | Rules | Links
         }
 
         private sealed class SnowPiece
@@ -52,6 +54,10 @@ namespace Seasons
             internal bool Roof;
             internal bool Leaky;
             internal bool HaveOrigin;
+            internal bool GeometryCaptured;
+            internal bool Simulates;
+            internal bool Melting;
+            internal bool ForceVisual;
             internal Vector3 LocalOrigin;
             internal Collider[] Colliders;
             internal long Epoch;
@@ -59,15 +65,18 @@ namespace Seasons
             internal long SnapshotEpoch;
             internal long SnapshotTime;
             internal float SnapshotValue;
+            internal float SnapshotBaseline;
             internal bool SnapshotPresent;
             internal float Snow;
             internal float Minimum;
             internal float Maximum;
             internal float HeatRate;
+            internal float MeltRate;
             internal float InteractiveUntil;
             internal float NextUseSignal;
-            internal float LastHeatTime;
+            internal double LastHeatTime;
             internal double WeatherTime;
+            internal double CatchUpFrom = double.NaN;
             internal int ReadyGeneration;
             internal readonly Dictionary<HeatSource, HeatLink> HeatLinks = new Dictionary<HeatSource, HeatLink>();
 
@@ -83,7 +92,6 @@ namespace Seasons
             }
 
             internal bool Valid => !Retired && Piece && View && View.GetZDO() == Zdo && Zdo.m_uid == Id;
-            internal bool Melting => Covered || HeatRate > 0f || InteractiveUntil > Time.time;
         }
 
         private sealed class SnowRegion
@@ -104,8 +112,12 @@ namespace Seasons
             internal SnowRefresh Scanning;
             internal int ReadyGeneration;
             internal double LastReadyWorld;
-            internal float LastReadyTime;
+            internal double LastReadyTime;
             internal double ResumeFromWorld;
+            internal double PauseAtWorld;
+            internal double PauseAtTime;
+            internal float NextReadinessCheck;
+            internal int ListIndex;
 
             internal SnowRegion(Vector2s zone)
             {
@@ -117,9 +129,13 @@ namespace Seasons
         private readonly Dictionary<WearNTear, SnowPiece> snowPieces = new Dictionary<WearNTear, SnowPiece>();
         private readonly Dictionary<ZDOID, SnowPiece> snowIds = new Dictionary<ZDOID, SnowPiece>();
         private readonly Dictionary<Vector2s, SnowRegion> snowRegions = new Dictionary<Vector2s, SnowRegion>();
+        private readonly List<SnowRegion> regionList = new List<SnowRegion>();
         private readonly Queue<SnowRegion> regionRefreshes = new Queue<SnowRegion>();
         private readonly Queue<SnowPiece> pieceRefreshes = new Queue<SnowPiece>();
+        private readonly Queue<SnowPiece> geometryRefreshes = new Queue<SnowPiece>();
         private readonly Queue<SnowPiece> snowPublications = new Queue<SnowPiece>();
+        private readonly HashSet<SnowPiece> interactingPieces = new HashSet<SnowPiece>();
+        private readonly List<SnowPiece> expiredInteractions = new List<SnowPiece>();
 
         private static void RemoveFromBucket(SnowPiece state)
         {
