@@ -25,12 +25,13 @@ The visual controller reads `SeasonalSnow.GetVisualSnow()` explicitly. The previ
 | `605ef4c` | Disable seasonal stat modifiers in Ashlands and Deep North; maintainer confirmed this separate fix works. |
 | `3a9bddd` | Add private float/epoch keys and storage primitives without connecting them yet. |
 | `fad274c` | Connect private persistence, explicit visual selection, and one complete ready-area confirmation; remove the automatic minimum top-up and whole-world ZDO cleanup. |
+| `5b83bd8` | Cache and update complete snow cap renderer groups, preferring root LODGroup membership over descendant discovery. |
 
 No version, gameplay configuration default, snow JSON schema, or release changelog has changed.
 
 ## Implemented rendering behavior
 
-- Capture each distinct normal/worn/broken renderer once, preserving source materials and non-snow material slots.
+- Capture each distinct normal/worn/broken cap root and its supported renderer dependencies once, preserving source materials and non-snow material slots.
 - Preserve the native 0.25 visibility threshold and damaged-cap fallback order.
 - Clear renderer-wide and per-slot property blocks when taking ownership. Exclude managed caps from existing MaterialMan assignments and future renderer refreshes, without filtering unrelated piece renderers.
 - Reuse `sharedMaterial` variants; do not mutate originals, use `renderer.material`, or involve `PrefabVariantController`.
@@ -118,3 +119,19 @@ Applying the exact unquantized value produced only a barely noticeable visual di
 The maintainer also reported noticeably steadier FPS with the new visuals, before the calculation refactor. Record this as qualitative frame-stability feedback only: no frame-time trace, FPS gain, low-percentile statistic, or CPU/GPU attribution was supplied. It does not establish that the original weak-PC 40-to-5 FPS report has been resolved.
 
 These results resolve the reported flicker and minimum-height concerns for the rendering stage; they do not mark every lifecycle, multiplayer, distance, material, or configuration scenario in the acceptance matrix as tested. The storage/confirmation changes in `fad274c` still require their own game verification.
+
+## Nested snow meshes and LOD groups
+
+The maintainer reported that only the renderer directly referenced by `m_snow` visibly melted. The supplied `piece_throne02` hierarchy has a `floor_2x2_snow` child beneath `floor_2x2_snow (1)`. A cap root is therefore not necessarily a complete list of its snow geometry. The earlier prefab scan counted the three WearNTear renderer fields, not all descendant renderers.
+
+Commit `5b83bd8` separates cap-root visibility from renderer material bindings. For each distinct `m_snow`, `m_snowWorn`, and `m_snowBroken` root, registration includes the directly referenced renderer and checks for an `LODGroup` on that same GameObject. When present, it collects renderer references from every LOD; otherwise it collects descendant renderers with `includeInactive: true`. It does not search the whole WearNTear object or a parent's LODGroup. References outside the cap hierarchy are ignored rather than taking ownership of unrelated geometry.
+
+Only renderers with a `Valheim/Snow Mesh` material enter snow ownership. Non-snow renderers retain their property blocks and materials; mixed renderers retain their non-snow material slots. Each snow material slot keeps its own source-material pool, so a multi-part cap need not use one material throughout. Renderer references repeated across LODs or cap collections share one binding and are assigned only once per visual application.
+
+Every renderer belonging to the selected cap receives the same visual percentage, including currently inactive LODs. Only the cap root's active state is toggled; child active states, `Renderer.enabled`, LOD selection, LOD distances, transforms, and bounds are not rewritten. Materials are assigned before revealing the root. Hidden variants return to their original materials. The same complete binding list is used for MaterialMan exclusion, property-block removal at registration, original-material restoration, native handoff, and world cleanup. The wet-visual alias guard also recognizes cached child snow renderer objects.
+
+`TryGetComponent`, `GetLODs`, and `GetComponentsInChildren` are registration operations only. Ordinary snow updates consume cached references; no hierarchy scan or component lookup is added to the percentage-update path. Replacing a WearNTear cap reference or removing a copied cap uses the existing release/rebind path. Arbitrary in-place hierarchy/LOD-list edits after registration require re-registration; this change does not introduce polling for them.
+
+The 0.01 visual gate, latest-target queue, and 50-piece-per-frame application limit remain unchanged. That limit counts pieces, not individual renderers; all cached parts of a processed piece are updated together. Simulation, persistence, heat, cover, configuration defaults, and the version are unchanged by this fix.
+
+Maintainer checks: melt and regrow all parts of `piece_throne02`; move between LOD distances during partial melting on a multi-renderer cap; check zero snow, normal/worn/broken changes, Ignore/Disabled, copied-cap replacement, and world reentry. A child using a different snow material must retain its own material family while sharing the selected level. These are pending game checks, not executed tests. Static review covers discovery placement, deduplication, material ownership/cleanup, diff scope, and source encoding. No compilation, gameplay execution, or profiling was performed.
