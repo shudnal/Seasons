@@ -49,6 +49,9 @@ namespace Seasons
             internal bool Confirmed;
             internal bool Construction;
             internal bool Saved;
+            internal bool AppearanceChosen;
+            internal bool MayPublish;
+            internal bool AllowOwnerlessPublication;
             internal bool Covered;
             internal bool Shielded;
             internal bool Roof;
@@ -57,7 +60,6 @@ namespace Seasons
             internal bool GeometryCaptured;
             internal bool Simulates;
             internal bool Melting;
-            internal bool ForceVisual;
             internal Vector3 LocalOrigin;
             internal Collider[] Colliders;
             internal long Epoch;
@@ -68,6 +70,7 @@ namespace Seasons
             internal float SnapshotBaseline;
             internal bool SnapshotPresent;
             internal float Snow;
+            internal float VisualSnow = float.NaN;
             internal float Minimum;
             internal float Maximum;
             internal float HeatRate;
