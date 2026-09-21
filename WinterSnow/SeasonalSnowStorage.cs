@@ -11,7 +11,29 @@ namespace Seasons
     /// <summary>Separates seasonal save data from native Deep North snow.</summary>
     internal static class SeasonalSnowStorage
     {
-        private const long MissingEpoch = long.MinValue;
+        internal const long MissingEpoch = long.MinValue;
+
+        internal readonly struct Snapshot
+        {
+            internal readonly bool Present;
+            internal readonly bool CurrentWinter;
+            internal readonly float Value;
+            internal readonly float Baseline;
+            internal readonly long From;
+            internal readonly long Epoch;
+
+            internal Snapshot(ZDO zdo)
+            {
+                Present = TryRead(zdo, out float value);
+                Value = value;
+                Epoch = zdo != null ? zdo.GetLong(SeasonsVars.s_seasonalSnowEpoch, MissingEpoch) : MissingEpoch;
+                From = zdo != null ? zdo.GetLong(SeasonsVars.s_seasonalSnowFrom, 0L) : 0L;
+                Baseline = zdo != null ? Sanitize(zdo.GetFloat(SeasonsVars.s_seasonalSnowBaseline, value)) : 0f;
+                CurrentWinter = zdo != null && zdo.GetBool(SeasonsVars.s_seasonalSnowWinter);
+            }
+
+            internal bool AppliesTo(long epoch) => Present && (Epoch == MissingEpoch || Epoch == epoch);
+        }
 
         // Read the calendar clock once: realtime seasons must not get a different
         // millisecond epoch from two DateTime reads while rounding a day boundary.
@@ -26,6 +48,9 @@ namespace Seasons
                 return (long)Math.Round(Math.Max(0d, start) * 1000d);
             }
         }
+
+        internal static long ToTimestamp(double seconds) => (long)Math.Round(Math.Max(0d, seconds) * 1000d);
+        internal static double FromTimestamp(long timestamp) => Math.Max(0L, timestamp) / 1000d;
 
         internal static bool IsPreviousWinter(ZDO zdo)
         {
@@ -52,12 +77,10 @@ namespace Seasons
             value = 0f;
             if (zdo == null)
                 return false;
-
             // An explicitly stored zero is a snapshot, not a request for prediction.
             if (!zdo.GetFloat(SeasonsVars.s_seasonalSnowValue, out value) &&
                 !(HasLegacyState(zdo) && zdo.GetFloat(ZDOVars.s_snow, out value)))
                 return false;
-
             value = Sanitize(value);
             return true;
         }
@@ -69,6 +92,43 @@ namespace Seasons
             view && view.IsValid() && zdo != null &&
                 (zdo.GetOwner() == 0L || view.IsOwner());
 
+        // Callers decide authority and cadence. Store the exact level and the weather
+        // interval already consumed by that level in the same main-thread operation.
+        internal static void Write(ZDO zdo, float value, long epoch, double consumedUntil)
+        {
+            if (zdo == null)
+                return;
+            value = Sanitize(value);
+            zdo.Set(SeasonsVars.s_seasonalSnowValue, value);
+            zdo.Set(SeasonsVars.s_seasonalSnowEpoch, epoch);
+            zdo.Set(SeasonsVars.s_seasonalSnowFrom, ToTimestamp(consumedUntil));
+            zdo.Set(SeasonsVars.s_seasonalSnowBaseline, value);
+            zdo.Set(SeasonsVars.s_seasonalSnowWinter, 1, okForNotOwner: true);
+            zdo.Set(SeasonsVars.s_seasonalSnowWatermark, value > 0f ? 1 : 0, okForNotOwner: true);
+            bool removed = zdo.RemoveLong(SeasonsVars.s_seasonalSnowWinter);
+            removed |= zdo.RemoveInt(SeasonsVars.s_seasonalSnowMeltedBelowMinimum);
+            if (removed)
+                zdo.IncreaseDataRevision();
+            ClearNative(zdo);
+        }
+
+        internal static void Clear(ZDO zdo, bool clearNative)
+        {
+            if (zdo == null)
+                return;
+            bool removed = RemoveSavedValue(zdo);
+            removed |= zdo.RemoveInt(SeasonsVars.s_seasonalSnowWinter);
+            removed |= zdo.RemoveLong(SeasonsVars.s_seasonalSnowWinter);
+            removed |= zdo.RemoveInt(SeasonsVars.s_seasonalSnowWatermark);
+            removed |= zdo.RemoveLong(SeasonsVars.s_seasonalSnowFrom);
+            removed |= zdo.RemoveFloat(SeasonsVars.s_seasonalSnowBaseline);
+            removed |= zdo.RemoveInt(SeasonsVars.s_seasonalSnowMeltedBelowMinimum);
+            if (removed)
+                zdo.IncreaseDataRevision();
+            if (clearNative)
+                ClearNative(zdo);
+        }
+
         internal static void MigrateLoaded(WearNTear piece)
         {
             // The caller has already classified this as a managed seasonal surface.
@@ -77,7 +137,6 @@ namespace Seasons
             ZDO zdo = view ? view.GetZDO() : null;
             if (!CanWrite(view, zdo))
                 return;
-
             bool hasValue = zdo.GetFloat(SeasonsVars.s_seasonalSnowValue, out _);
             bool legacy = HasLegacyState(zdo);
             if (!hasValue && legacy && zdo.GetFloat(ZDOVars.s_snow, out float oldValue))
@@ -85,7 +144,6 @@ namespace Seasons
                 zdo.Set(SeasonsVars.s_seasonalSnowValue, Sanitize(oldValue));
                 hasValue = true;
             }
-
             // Also finish an interrupted migration whose custom value was already written.
             if (hasValue || legacy)
                 ClearNative(zdo);
@@ -105,11 +163,8 @@ namespace Seasons
         {
             if (!SeasonalSnow.IsSeasonalSnowPosition(piece))
                 return ZDOVars.s_snow;
-
             MigrateLoaded(piece);
             ZDO zdo = piece.m_nview.GetZDO();
-            // A remote owner must perform migration. Until its snapshot arrives, preserve
-            // the legacy read without claiming ownership or publishing on its behalf.
             if (!HasSavedValue(zdo) && HasLegacyState(zdo) && !CanWrite(piece.m_nview, zdo))
                 return ZDOVars.s_snow;
             return SeasonsVars.s_seasonalSnowValue;
@@ -144,7 +199,6 @@ namespace Seasons
             {
                 if (instruction.LoadsField(snowKey))
                 {
-                    // Replace the hash load with a per-piece choice; preserve entry labels.
                     instruction.opcode = OpCodes.Ldarg_0;
                     instruction.operand = null;
                     yield return instruction;
@@ -158,5 +212,4 @@ namespace Seasons
                 LogWarning($"Failed to route seasonal snow storage in WearNTear.{original.Name}.");
         }
     }
-
 }
