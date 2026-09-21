@@ -61,10 +61,15 @@ namespace Seasons
 
         internal static void InitializePrefab(ZoneSystem instance)
         {
+            if (!instance || instance.m_vegetation.Count == 0)
+                return;
             prefabChecked = true;
             s_iceFloe = instance.m_vegetation.Find(veg => veg.m_prefab?.name == _iceFloeName)?.Clone();
             if (s_iceFloe?.m_prefab == null)
+            {
+                LogWarning("Unable to initialize seasonal ice floes: the ice1 vegetation prefab was not found.");
                 return;
+            }
             ZNetView view = s_iceFloe.m_prefab.GetComponent<ZNetView>();
             if (!view || !s_iceFloe.m_prefab.GetComponent<Rigidbody>())
             {
@@ -97,7 +102,9 @@ namespace Seasons
         private static bool Ready()
         {
             if (!ZoneSystem.instance || !ZNet.instance || !ZNet.instance.IsServer() ||
-                !ZNetScene.instance || ZDOMan.instance == null || !SeasonState.IsActive)
+                !ZNetScene.instance || ZDOMan.instance == null || WorldGenerator.instance == null ||
+                !SeasonState.IsActive || ZNet.GetConnectionStatus() != ZNet.ConnectionStatus.Connected ||
+                !ZoneSystem.instance.LocationsGenerated)
                 return false;
             if (world != ZoneSystem.instance)
             {
@@ -249,6 +256,10 @@ namespace Seasons
             exclusions.Clear();
             if (initialExclusions != null)
                 exclusions.AddRange(initialExclusions);
+            else if (world.m_locationInstances.TryGetValue(zone, out ZoneSystem.LocationInstance location) &&
+                location.m_placed && location.m_location != null && location.m_location.m_clearArea)
+                // Existing ghost sectors have no PlaceLocations pass to supply this exclusion.
+                exclusions.Add(new ZoneSystem.ClearArea(location.m_position, location.m_location.m_exteriorRadius));
             spawned.Clear();
             try
             {
@@ -281,7 +292,8 @@ namespace Seasons
             {
                 if (Ready() && IsTimeForIceFloes() &&
                     (mode == ZoneSystem.SpawnMode.Ghost || mode == ZoneSystem.SpawnMode.Full))
-                    Process(zoneID, mode, world.m_tempClearAreas, terrainExists: true);
+                    if (!Process(zoneID, mode, world.m_tempClearAreas, terrainExists: true))
+                        Schedule(zoneID);
             }
         }
 

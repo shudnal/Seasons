@@ -959,9 +959,9 @@ namespace Seasons
                         floes++;
                     }
 
-                    if (zdo.GetPrefab() == s_zoneCtrlPrefab && zdo.GetBool(SeasonsVars.s_iceFloesSpawned) && (!zdo.HasOwner() || zdo.IsOwner()))
+                    if (zdo.GetPrefab() == s_zoneCtrlPrefab && zdo.GetBool(SeasonsVars.s_iceFloesSpawned))
                     {
-                        zdo.Set(SeasonsVars.s_iceFloesSpawned, false);
+                        zdo.Set(SeasonsVars.s_iceFloesSpawned, 0, okForNotOwner: true);
                         zones++;
                     }
                 }
@@ -989,6 +989,9 @@ namespace Seasons
 
         public static void PlaceIceFloes(Vector2s zoneID, Vector3 zoneCenterPos, List<ZoneSystem.ClearArea> clearAreas, ZoneSystem.SpawnMode mode, List<GameObject> spawnedObjects)
         {
+            if (!ZNet.instance || !ZNet.instance.IsServer() ||
+                (mode != ZoneSystem.SpawnMode.Full && mode != ZoneSystem.SpawnMode.Ghost))
+                return;
             UnityEngine.Random.State state = UnityEngine.Random.state;
             int seed = WorldGenerator.instance.GetSeed();
             float num = ZoneSystem.instance.m_zoneSize / 2f;
