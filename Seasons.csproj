@@ -99,6 +99,7 @@
     <Compile Include="Controllers\FrozenOceanSliding.cs" />
     <Compile Include="Controllers\PrefabVariantController.cs" />
     <Compile Include="Controllers\ZoneSystemVariantController.cs" />
+    <Compile Include="Controllers\SeasonalIceFloes.cs" />
     <Compile Include="Utils\ItemNameTokens.cs" />
     <Compile Include="Utils\LocalizationManager.cs" />
     <Compile Include="Utils\StatusEffectHud.cs" />
