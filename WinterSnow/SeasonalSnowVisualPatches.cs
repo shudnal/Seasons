@@ -6,7 +6,7 @@ using static Seasons.Seasons;
 namespace Seasons
 {
     // Keep the existing saved/predicted calculation as the producer during the staged
-    // refactor. The last prefix consumes its chosen value and replaces only native drawing.
+    // refactor. Select its explicit visual value without substituting a native field.
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateSnowVisual))]
     internal static class WearNTear_UpdateSnowVisual_PooledCaps
     {
@@ -48,7 +48,8 @@ namespace Seasons
         private static void Postfix(WearNTear __instance)
         {
             // Native Awake hides caps after UpdateVisual and expands their bounds.
-            // Force one final application without reading a second/predicted level here.
+            // Select saved data (including zero) before any prediction or ready-area work.
+            SeasonalSnow.CaptureInitialSnowVisual(__instance);
             SeasonalSnowController.Instance.InvalidateVisual(__instance);
         }
     }

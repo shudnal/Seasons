@@ -118,8 +118,8 @@ namespace Seasons
         internal int MaterialPoolCount => materials.PoolCount;
         internal int CreatedMaterialCount => materials.CreatedMaterialCount;
 
-        // This adapter uses the existing calculation until the new simulation is connected.
-        // The existing prefix has already selected its saved or provisional visual value.
+        // The legacy simulation remains the producer until the four-list replacement.
+        // Read its selected value explicitly, without changing the native runtime field.
         internal bool TryQueueCurrentVisual(WearNTear piece)
         {
             if (!piece)
@@ -137,7 +137,7 @@ namespace Seasons
             if (ZNet.instance && ZNet.instance.IsDedicated())
                 return true;
 
-            float snow = piece.m_snowBuildup;
+            float snow = SeasonalSnow.GetVisualSnow(piece);
             if (float.IsNaN(snow) || float.IsInfinity(snow))
                 snow = 0f;
             QueueVisual(piece, snow, disabled: false,

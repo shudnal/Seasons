@@ -59,12 +59,6 @@ namespace Seasons
             public bool refreshExpected;
         }
 
-        private struct SnowVisualState
-        {
-            public bool applied;
-            public float originalSnow;
-        }
-
         private sealed class SnowCoverageState
         {
             public float nextRoofCheckTime;
@@ -501,7 +495,7 @@ namespace Seasons
             return zdo == null
                 ? 0f
                 : Mathf.Clamp(
-                    zdo.GetFloat(ZDOVars.s_snow, instance.m_snowBuildup),
+                    zdo.GetFloat(SeasonalSnowStorage.GetKey(instance), instance.m_snowBuildup),
                     0f,
                     GetSnowBuildupRange(instance).y);
         }
@@ -521,6 +515,12 @@ namespace Seasons
         {
             if (!instance || state == null || SeasonalSnowMeshSettings.TryApplyDisabledSnow(instance) ||
                 SeasonalSnowMeshSettings.IsSnowIgnored(instance))
+                return;
+
+            ZDO zdo = instance.m_nview ? instance.m_nview.GetZDO() : null;
+            if (IsWinterStateReady() && IsSeasonalSnowPosition(instance) &&
+                (zdo == null || SeasonalSnowStorage.IsPreviousWinter(zdo) ||
+                    !SeasonalSnowStorage.TryRead(zdo, out _)))
                 return;
 
             float snow = GetPersistedSnow(instance);
@@ -559,42 +559,38 @@ namespace Seasons
             if (!instance || state == null || ZNet.instance == null ||
                 ZNet.instance.IsDedicated() || instance.m_nview == null ||
                 !instance.m_nview.IsValid())
-            {
                 return;
-            }
 
             ZDO zdo = instance.m_nview.GetZDO();
-            bool shouldShowSnow = zdo != null
-                && IsWinterStateReady()
-                && Enabled
-                && controlEnvironments.Value
-                && CanInitializeSnowState(instance, zdo)
-                && IsSeasonalSnowPosition(instance)
-                && !IsDeepNorth(instance)
-                && !zdo.GetBool(SeasonsVars.s_seasonalSnowWinter)
-                && instance.m_snowBuildup <= SnowChangeEpsilon
-                && zdo.GetFloat(ZDOVars.s_snow, 0f) <= SnowChangeEpsilon;
-
-            if (!shouldShowSnow)
+            bool eligible = zdo != null && IsWinterStateReady() &&
+                IsSeasonalSnowPosition(instance) && !IsDeepNorth(instance);
+            if (!eligible)
             {
                 if (state.localVisualApplied)
                     ApplyPersistedSnowVisual(instance, state);
                 return;
             }
 
+            if (!SeasonalSnowStorage.IsPreviousWinter(zdo) &&
+                SeasonalSnowStorage.TryRead(zdo, out float savedSnow))
+            {
+                ApplyLocalSnowVisual(instance, state, savedSnow);
+                return;
+            }
+
+            // Keep an existing preview if ownership changes before a real snapshot arrives.
+            // Never replace it with an absent value merely to complete initialization.
+            if (!CanInitializeSnowState(instance, zdo))
+                return;
+
             int shieldChangeID = ShieldGenerator.m_instanceChangeID;
-            if (state.localVisualApplied &&
-                state.localVisualShieldChangeID == shieldChangeID)
+            if (state.localVisualApplied && state.localVisualShieldChangeID == shieldChangeID)
                 return;
 
             state.localVisualShieldChangeID = shieldChangeID;
             bool shielded = ShieldGenerator.IsInsideShieldCached(
-                instance.transform.position,
-                ref instance.m_shieldChangeID);
-
-            ApplyLocalSnowVisual(
-                instance,
-                state,
+                instance.transform.position, ref instance.m_shieldChangeID);
+            ApplyLocalSnowVisual(instance, state,
                 shielded ? 0f : GetPassiveSeasonalSnowTarget(instance));
         }
 
@@ -615,6 +611,7 @@ namespace Seasons
             if (zdo == null)
                 return;
 
+            zdo.Set(SeasonsVars.s_seasonalSnowEpoch, SeasonalSnowStorage.CurrentWinterEpoch);
             zdo.Set(SeasonsVars.s_seasonalSnowWinter, 1, okForNotOwner: true);
             if (zdo.RemoveLong(SeasonsVars.s_seasonalSnowWinter))
                 zdo.IncreaseDataRevision();
@@ -641,12 +638,11 @@ namespace Seasons
             ClearLocalSnowVisual(state);
 
             Vector2 range = GetSnowBuildupRange(instance);
-            value = markSeasonalSnow
-                ? ClampSnowBuildup(value, range)
-                : Mathf.Clamp(value, 0f, range.y);
+            value = Mathf.Clamp(value, 0f, range.y);
 
             instance.m_snowBuildup = value;
-            zdo.Set(ZDOVars.s_snow, value);
+            zdo.Set(SeasonsVars.s_seasonalSnowValue, value);
+            SeasonalSnowStorage.ClearNative(zdo);
 
             if (markSeasonalSnow && value > SnowChangeEpsilon)
                 zdo.Set(SeasonsVars.s_seasonalSnowWatermark, 1, okForNotOwner: true);
@@ -664,71 +660,33 @@ namespace Seasons
             ZDO zdo,
             bool forceEnvironmentRefresh)
         {
-            if (!CanInitializeSnowState(instance, zdo) ||
-                zdo.GetBool(SeasonsVars.s_seasonalSnowWinter))
+            if (!CanInitializeSnowState(instance, zdo))
                 return false;
 
-            Vector2 range = GetSnowBuildupRange(instance);
-            float currentSnow = Mathf.Clamp(
-                Mathf.Max(
-                    instance.m_snowBuildup,
-                    zdo.GetFloat(ZDOVars.s_snow, 0f)),
-                0f,
-                range.y);
-
-            if (currentSnow > SnowChangeEpsilon)
+            // Prepare the complete result without clearing or drawing the current preview.
+            // A saved zero is as authoritative as a saved positive buildup.
+            float savedSnow = 0f;
+            bool hasSavedSnow = !SeasonalSnowStorage.IsPreviousWinter(zdo) &&
+                SeasonalSnowStorage.TryRead(zdo, out savedSnow);
+            float target;
+            if (IsSnowBlocked(instance, forceRefresh: forceEnvironmentRefresh))
+                target = 0f;
+            else if (hasSavedSnow)
             {
-                SetCurrentWinterState(
-                    zdo,
-                    GetCurrentSnowTimeStamp(),
-                    currentSnow);
-                zdo.Set(ZDOVars.s_snow, currentSnow);
-                zdo.Set(SeasonsVars.s_seasonalSnowWatermark, 1, okForNotOwner: true);
-                ClearLocalSnowVisual(state);
-                instance.m_snowBuildup = currentSnow;
-                instance.UpdateSnowVisual();
+                bool melting = IsInteractiveObjectMeltActive(instance) ||
+                    GetMeltMultiplier(instance, forceRefresh: forceEnvironmentRefresh) > 0f;
+                target = SeasonalSnowStorage.HasCurrentWinterState(zdo) && !melting
+                    ? Mathf.Max(savedSnow, GetSnowTarget(instance, zdo))
+                    : savedSnow;
             }
             else
-            {
-                bool blocked = IsSnowBlocked(
-                    instance,
-                    forceRefresh: forceEnvironmentRefresh);
-                bool melting = IsInteractiveObjectMeltActive(instance) ||
-                    GetMeltMultiplier(
-                        instance,
-                        forceRefresh: forceEnvironmentRefresh) > 0f;
+                target = GetPassiveSeasonalSnowTarget(instance);
 
-                if (blocked || melting)
-                {
-                    SetCurrentWinterState(
-                        zdo,
-                        GetCurrentSnowTimeStamp(),
-                        0f);
-                    SetInitialSnowBuildup(
-                        instance,
-                        state,
-                        zdo,
-                        0f,
-                        markSeasonalSnow: false);
-                }
-                else
-                {
-                    SetCurrentWinterState(
-                        zdo,
-                        ToSnowTimeStamp(seasonalSnowTimelineStartSeconds),
-                        0f);
-                    float target = GetSnowTarget(
-                        instance,
-                        zdo,
-                        requireGain: false);
-                    SetInitialSnowBuildup(
-                        instance,
-                        state,
-                        zdo,
-                        target,
-                        markSeasonalSnow: target > SnowChangeEpsilon);
-                }
-            }
+            target = Mathf.Clamp(target, 0f, GetSnowBuildupRange(instance).y);
+            // Consume the weather interval once. Current heat is not a fuel-history model.
+            SetCurrentWinterState(zdo, GetCurrentSnowTimeStamp(), target);
+            SetInitialSnowBuildup(instance, state, zdo, target,
+                markSeasonalSnow: target > SnowChangeEpsilon);
 
             state.reconciliationPending = false;
             state.initializationComplete = true;
@@ -761,7 +719,19 @@ namespace Seasons
                 !controlEnvironments.Value || !IsSeasonalSnowPosition(instance) ||
                 IsDeepNorth(instance))
             {
-                ApplyPersistedSnowVisual(instance, state);
+                if (!IsDeepNorth(instance) && HasTrackedSeasonalSnowState(zdo))
+                {
+                    if (CanInitializeSnowState(instance, zdo))
+                        ClearTrackedInstance(instance);
+                    else
+                    {
+                        ClearLocalSnowVisual(state);
+                        instance.m_snowBuildup = 0f;
+                        instance.UpdateSnowVisual();
+                    }
+                }
+                else
+                    ApplyPersistedSnowVisual(instance, state);
                 state.initializationComplete = true;
                 state.reconciliationPending = false;
                 return true;
@@ -781,18 +751,9 @@ namespace Seasons
                     forceEnvironmentRefresh))
                 return true;
 
-            if (CanOwnSnowState(instance))
-            {
-                state.reconciliationPending = true;
-                if (!TryReconcileOwnedSnow(
-                        instance,
-                        state,
-                        forceEnvironmentRefresh: forceEnvironmentRefresh))
-                    return false;
-
-                state.initializationComplete = true;
-                return true;
-            }
+            if (SeasonalSnowStorage.IsPreviousWinter(zdo) ||
+                !SeasonalSnowStorage.TryRead(zdo, out _))
+                return false;
 
             ApplyPersistedSnowVisual(instance, state);
             state.reconciliationPending = false;
@@ -819,6 +780,9 @@ namespace Seasons
                 state.observedOwner = owner;
                 state.reconciliationPending = true;
                 InvalidateSnowEnvironmentCaches(instance);
+                if ((owner == 0L || localOwner) &&
+                    (!SeasonalSnowStorage.HasEpoch(zdo) || SeasonalSnowStorage.IsPreviousWinter(zdo)))
+                    QueueSnowInitialization(instance);
             }
 
             if (owner != 0L && !localOwner)
@@ -891,6 +855,26 @@ namespace Seasons
                     instance,
                     out SnowActivityState state) &&
                 state.initializationComplete;
+        }
+
+        internal static float GetVisualSnow(WearNTear instance)
+        {
+            if (TryGetVisualSnowOverride(instance, out float snow))
+                return snow;
+
+            ZDO zdo = instance.m_nview ? instance.m_nview.GetZDO() : null;
+            if (IsWinterStateReady() && zdo != null && SeasonalSnowStorage.IsPreviousWinter(zdo))
+                return 0f;
+            return instance.m_snowBuildup;
+        }
+
+        internal static void CaptureInitialSnowVisual(WearNTear instance)
+        {
+            if (!SupportsSeasonalSnow(instance))
+                return;
+            QueueSnowInitialization(instance);
+            if (SeasonalSnowActivityStates.TryGetValue(instance, out SnowActivityState state))
+                UpdatePendingLocalSnowVisual(instance, state);
         }
 
         private static bool TryGetVisualSnowOverride(WearNTear instance, out float snow)
@@ -1021,22 +1005,21 @@ namespace Seasons
             return ClampSnowBuildup(value, GetSnowBuildupRange(instance));
         }
 
-        private static void SetSnowBuildup(WearNTear instance, float value, bool markSeasonalSnow, bool allowBelowMinimum = false)
+        private static void SetSnowBuildup(WearNTear instance, float value, bool markSeasonalSnow)
         {
             if (!instance || SeasonalSnowMeshSettings.TryApplyDisabledSnow(instance) ||
                 SeasonalSnowMeshSettings.IsSnowIgnored(instance))
                 return;
 
             Vector2 range = GetSnowBuildupRange(instance);
-            value = markSeasonalSnow && !allowBelowMinimum
-                ? ClampSnowBuildup(value, range)
-                : Mathf.Clamp(value, 0f, range.y);
+            value = Mathf.Clamp(value, 0f, range.y);
             instance.m_snowBuildup = value;
 
             if (CanOwnSnowState(instance))
             {
                 ZDO zdo = instance.m_nview.GetZDO();
-                zdo.Set(ZDOVars.s_snow, value);
+                zdo.Set(SeasonsVars.s_seasonalSnowValue, value);
+                SeasonalSnowStorage.ClearNative(zdo);
 
                 if (markSeasonalSnow && value > SnowChangeEpsilon)
                     zdo.Set(SeasonsVars.s_seasonalSnowWatermark, true);
@@ -1285,7 +1268,7 @@ namespace Seasons
         private static bool HasCurrentWinterState(WearNTear instance)
         {
             return CanOwnSnowState(instance)
-                && instance.m_nview.GetZDO().GetBool(SeasonsVars.s_seasonalSnowWinter);
+                && SeasonalSnowStorage.HasCurrentWinterState(instance.m_nview.GetZDO());
         }
 
         private static bool EnsureCurrentWinterState(WearNTear instance)
@@ -1294,7 +1277,7 @@ namespace Seasons
                 return false;
 
             ZDO zdo = instance.m_nview.GetZDO();
-            if (!zdo.GetBool(SeasonsVars.s_seasonalSnowWinter))
+            if (!SeasonalSnowStorage.HasCurrentWinterState(zdo))
             {
                 SetCurrentWinterState(
                     zdo,
@@ -1385,60 +1368,26 @@ namespace Seasons
 
         private static float GetSnowTarget(
             WearNTear instance,
-            ZDO zdo,
-            bool requireGain)
+            ZDO zdo)
         {
             if (!instance || zdo == null)
                 return 0f;
 
             Vector2 range = GetSnowBuildupRange(instance);
-            float gain = GetSnowGain(instance, zdo);
-            bool preWinterPiece = IsPreWinterPiece(zdo);
-            float baseline = Mathf.Max(
-                0f,
-                zdo.GetFloat(SeasonsVars.s_seasonalSnowBaseline, 0f));
-
-            if (requireGain && gain <= SnowChangeEpsilon && !preWinterPiece)
-                return baseline;
-
-            if (preWinterPiece)
-                return Mathf.Clamp(
-                    Mathf.Max(baseline, range.x) + gain,
-                    0f,
-                    range.y);
-
-            if (baseline + SnowChangeEpsilon < range.x)
-            {
-                if (gain <= SnowChangeEpsilon)
-                    return baseline;
-                baseline = range.x;
-            }
-
-            return Mathf.Clamp(baseline + gain, 0f, range.y);
+            float baseline = Mathf.Max(0f, zdo.GetFloat(SeasonsVars.s_seasonalSnowBaseline, 0f));
+            // Legacy pre-winter baselines excluded the initial minimum. New confirmed
+            // baselines include their full value and must never receive that minimum again.
+            if (!SeasonalSnowStorage.HasEpoch(zdo) && IsPreWinterPiece(zdo))
+                baseline = Mathf.Max(baseline, range.x);
+            return Mathf.Clamp(baseline + GetSnowGain(instance, zdo), 0f, range.y);
         }
 
-        private static float GetPersonalSnowGain(WearNTear instance)
-        {
-            return CanOwnSnowState(instance)
-                ? GetSnowGain(instance, instance.m_nview.GetZDO())
-                : 0f;
-        }
-
-        private static bool IsPreWinterPiece(WearNTear instance)
-        {
-            return CanOwnSnowState(instance) &&
-                IsPreWinterPiece(instance.m_nview.GetZDO());
-        }
-
-        private static float GetPersonalSnowTarget(
-            WearNTear instance,
-            bool requireGain)
+        private static float GetPersonalSnowTarget(WearNTear instance)
         {
             return CanOwnSnowState(instance)
                 ? GetSnowTarget(
                     instance,
-                    instance.m_nview.GetZDO(),
-                    requireGain)
+                    instance.m_nview.GetZDO())
                 : Mathf.Max(0f, instance?.m_snowBuildup ?? 0f);
         }
 
@@ -1731,7 +1680,7 @@ namespace Seasons
 
             ZDO zdo = instance.m_nview.GetZDO();
             float persistedSnow = Mathf.Clamp(
-                zdo.GetFloat(ZDOVars.s_snow, instance.m_snowBuildup),
+                zdo.GetFloat(SeasonalSnowStorage.GetKey(instance), instance.m_snowBuildup),
                 0f,
                 GetSnowBuildupRange(instance).y);
 
@@ -1773,10 +1722,7 @@ namespace Seasons
                 return true;
             }
 
-            float target = GetSnowTarget(
-                instance,
-                zdo,
-                requireGain: hadCurrentWinterState);
+            float target = GetSnowTarget(instance, zdo);
             if (!hadCurrentWinterState ||
                 persistedSnow + SnowChangeEpsilon < target)
             {
@@ -1796,7 +1742,8 @@ namespace Seasons
         private static bool HasTrackedSeasonalSnowState(ZDO zdo)
         {
             return zdo != null &&
-                (zdo.GetBool(SeasonsVars.s_seasonalSnowWatermark)
+                (SeasonalSnowStorage.HasSavedValue(zdo)
+                || zdo.GetBool(SeasonsVars.s_seasonalSnowWatermark)
                 || zdo.GetBool(SeasonsVars.s_seasonalSnowWinter)
                 || zdo.GetLong(SeasonsVars.s_seasonalSnowWinter, 0L) != 0L);
         }
@@ -1887,7 +1834,6 @@ namespace Seasons
                 return;
 
             SeasonalSnowCoverageChecks.Remove(instance);
-            SeasonalSnowActivityStates.Remove(instance);
 
             SnowCoverageState coverageState = SeasonalSnowCoverageChecks.GetValue(
                 instance,
@@ -1943,34 +1889,21 @@ namespace Seasons
             SetSnowBuildup(
                 instance,
                 value,
-                markSeasonalSnow: value > SnowChangeEpsilon,
-                allowBelowMinimum: true);
+                markSeasonalSnow: value > SnowChangeEpsilon);
             SetAccumulationBaselineNow(instance, belowMinimum);
         }
 
         private static void MarkPlacedDuringWinter(WearNTear instance)
         {
-            PendingSnowInitializations.Remove(instance);
-            if (SeasonalSnowActivityStates.TryGetValue(
-                    instance,
-                    out SnowActivityState activityState) &&
-                ClearLocalSnowVisual(activityState))
-            {
-                instance.UpdateSnowVisual();
-            }
-
-            if (!UpdateActiveAreaState(instance) || !CanOwnSnowState(instance) ||
+            if (!CanOwnSnowState(instance) || !IsWinterStateReady() ||
                 !SupportsSeasonalSnow(instance) || IsDeepNorth(instance) || !IsSeasonalSnowPosition(instance))
                 return;
 
-            if (!EnsureCurrentWinterState(instance))
-                return;
-
+            SnowActivityState state = SeasonalSnowActivityStates.GetValue(instance, _ => new SnowActivityState());
             ZDO zdo = instance.m_nview.GetZDO();
-            zdo.Set(SeasonsVars.s_seasonalSnowFrom, GetCurrentSnowTimeStamp());
-            zdo.Set(SeasonsVars.s_seasonalSnowBaseline, 0f);
-            RemoveBoolWithRevision(zdo, SeasonsVars.s_seasonalSnowMeltedBelowMinimum);
-            SetSnowBuildup(instance, 0f, markSeasonalSnow: false);
+            SetCurrentWinterState(zdo, GetCurrentSnowTimeStamp(), 0f);
+            SetInitialSnowBuildup(instance, state, zdo, 0f, markSeasonalSnow: false);
+            PendingSnowInitializations.Remove(instance);
             CompleteActiveAreaReconciliation(instance);
         }
 
@@ -1980,7 +1913,7 @@ namespace Seasons
                 return;
 
             ZDO zdo = instance.m_nview.GetZDO();
-            float current = Mathf.Max(0f, zdo.GetFloat(ZDOVars.s_snow, instance.m_snowBuildup));
+            float current = Mathf.Max(0f, zdo.GetFloat(SeasonalSnowStorage.GetKey(instance), instance.m_snowBuildup));
             if (current >= persistedSnowBefore - SnowChangeEpsilon)
                 return;
 
@@ -2093,7 +2026,7 @@ namespace Seasons
 
             ZDO zdo = wearNTear.m_nview.GetZDO();
             float maximum = GetSnowBuildupRange(wearNTear).y;
-            float currentSnow = Mathf.Clamp(zdo.GetFloat(ZDOVars.s_snow, wearNTear.m_snowBuildup), 0f, maximum);
+            float currentSnow = Mathf.Clamp(zdo.GetFloat(SeasonalSnowStorage.GetKey(wearNTear), wearNTear.m_snowBuildup), 0f, maximum);
             long owner = zdo.GetOwner();
             InteractiveMeltState state = InteractiveObjectMeltStates.GetValue(
                 wearNTear,
@@ -2184,7 +2117,7 @@ namespace Seasons
             if (zdo == null)
                 return false;
 
-            bool removed = false;
+            bool removed = SeasonalSnowStorage.RemoveSavedValue(zdo);
             removed |= zdo.RemoveBool(SeasonsVars.s_seasonalSnowWatermark);
             removed |= zdo.RemoveBool(SeasonsVars.s_seasonalSnowWinter);
             removed |= zdo.RemoveLong(SeasonsVars.s_seasonalSnowWinter);
@@ -2198,11 +2131,12 @@ namespace Seasons
 
         private static void ClearTrackedInstance(WearNTear instance)
         {
-            if (!CanOwnSnowState(instance) || IsDeepNorth(instance))
+            if (!instance || instance.m_nview == null || !instance.m_nview.IsValid() ||
+                IsDeepNorth(instance))
                 return;
 
             ZDO zdo = instance.m_nview.GetZDO();
-            if (!HasTrackedSeasonalSnowState(zdo))
+            if (!CanInitializeSnowState(instance, zdo) || !HasTrackedSeasonalSnowState(zdo))
                 return;
 
             instance.m_snowBuildup = 0f;
@@ -2230,8 +2164,7 @@ namespace Seasons
                 SetSnowBuildup(
                     wearNTear,
                     value,
-                    markSeasonalSnow: value > SnowChangeEpsilon,
-                    allowBelowMinimum: true);
+                    markSeasonalSnow: value > SnowChangeEpsilon);
                 SetAccumulationBaselineNow(
                     wearNTear,
                     value + SnowChangeEpsilon < GetSnowBuildupRange(wearNTear).x);
@@ -2294,7 +2227,7 @@ namespace Seasons
                     continue;
                 }
 
-                float target = GetPersonalSnowTarget(wearNTear, requireGain: false);
+                float target = GetPersonalSnowTarget(wearNTear);
                 if (wearNTear.m_snowBuildup + SnowChangeEpsilon < target)
                 {
                     SetSnowBuildup(
@@ -2321,7 +2254,6 @@ namespace Seasons
             {
                 SeasonalSnowTimelines.Clear();
                 ClearLoadedSeasonalSnow();
-                ClearServerSeasonalSnowZDOs();
                 return;
             }
 
@@ -2387,7 +2319,7 @@ namespace Seasons
                 bool deepNorth = IsDeepNorth(wearNTear);
                 if (!deepNorth)
                 {
-                    if (CanOwnSnowState(wearNTear))
+                    if (CanInitializeSnowState(wearNTear, wearNTear.m_nview?.GetZDO()))
                     {
                         ClearTrackedInstance(wearNTear);
                     }
@@ -2411,35 +2343,6 @@ namespace Seasons
             PendingSnowAreaReadiness.Clear();
         }
 
-        private static void ClearServerSeasonalSnowZDOs()
-        {
-            if (ZNet.instance == null || !ZNet.instance.IsServer() || ZDOMan.instance == null || WorldGenerator.instance == null)
-                return;
-
-            if (!seasonalSnowPrefabsInitialized)
-                InitializePrefabs();
-
-            int cleared = 0;
-            foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values.ToArray())
-            {
-                if (zdo == null || !zdo.IsValid() || !SeasonalSnowPrefabs.Contains(zdo.GetPrefab()) || IsDeepNorth(zdo.GetPosition()))
-                    continue;
-
-                if (zdo.HasOwner() && !zdo.IsOwner())
-                    continue;
-
-                if (!HasTrackedSeasonalSnowState(zdo))
-                    continue;
-
-                zdo.Set(ZDOVars.s_snow, 0f);
-                RemoveRuntimeState(zdo);
-                cleared++;
-            }
-
-            if (cleared > 0)
-                LogInfo($"Cleared seasonal snow state from {cleared} ZDO(s)");
-        }
-
         public static void UpdateSeasonState()
         {
             if (!SeasonState.IsActive || seasonState.GetCurrentDay() <= 0)
@@ -2448,7 +2351,6 @@ namespace Seasons
             if (seasonState.GetCurrentSeason() != Season.Winter)
             {
                 ClearLoadedSeasonalSnow();
-                ClearServerSeasonalSnowZDOs();
             }
 
             SeasonalSnowCoverageChecks = new ConditionalWeakTable<WearNTear, SnowCoverageState>();
@@ -2632,19 +2534,7 @@ namespace Seasons
                     || GetMeltMultiplier(__instance) > 0f;
                 if (__state.trackSeasonalSnow && !melting && __instance.m_snowBuildup > __state.snowBefore + SnowChangeEpsilon)
                 {
-                    Vector2 range = GetSnowBuildupRange(__instance);
-                    float nativeGain = __instance.m_snowBuildup - __state.snowBefore;
-                    if (__state.snowBefore + SnowChangeEpsilon < range.x && __instance.m_snowBuildup < range.x)
-                    {
-                        SetSnowBuildup(
-                            __instance,
-                            Mathf.Min(range.y, range.x + nativeGain),
-                            markSeasonalSnow: true);
-                    }
-                    else
-                    {
-                        MarkSeasonalSnow(__instance);
-                    }
+                    MarkSeasonalSnow(__instance);
 
                     RemoveBoolWithRevision(__instance.m_nview.GetZDO(), SeasonsVars.s_seasonalSnowMeltedBelowMinimum);
                 }
@@ -2658,8 +2548,7 @@ namespace Seasons
                     SetSnowBuildup(
                         __instance,
                         maximum,
-                        markSeasonalSnow: true,
-                        allowBelowMinimum: true);
+                        markSeasonalSnow: true);
                     SetAccumulationBaselineNow(
                         __instance,
                         maximum + SnowChangeEpsilon < GetSnowBuildupRange(__instance).x);
@@ -2736,28 +2625,11 @@ namespace Seasons
         private static class WearNTear_UpdateSnowVisual_SeasonalSnow
         {
             [HarmonyPrefix]
-            private static bool Prefix(WearNTear __instance, ref SnowVisualState __state)
-            {
-                if (SeasonalSnowMeshSettings.TryApplyDisabledSnow(__instance))
-                    return false;
-
-                if (TryGetVisualSnowOverride(__instance, out float snow))
-                {
-                    __state.applied = true;
-                    __state.originalSnow = __instance.m_snowBuildup;
-                    __instance.m_snowBuildup = snow;
-                }
-                return true;
-            }
+            private static bool Prefix(WearNTear __instance) =>
+                !SeasonalSnowMeshSettings.TryApplyDisabledSnow(__instance);
 
             [HarmonyFinalizer]
-            private static void Finalizer(WearNTear __instance, SnowVisualState __state)
-            {
-                if (__state.applied && __instance)
-                    __instance.m_snowBuildup = __state.originalSnow;
-
-                SeasonalSnowMeshSettings.Apply(__instance);
-            }
+            private static void Finalizer(WearNTear __instance) => SeasonalSnowMeshSettings.Apply(__instance);
         }
 
         [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.RPC_SetSnow))]
@@ -2781,7 +2653,7 @@ namespace Seasons
                 if (zdo == null)
                     return true;
 
-                __state = zdo.GetFloat(ZDOVars.s_snow, __state);
+                __state = zdo.GetFloat(SeasonalSnowStorage.GetKey(__instance), __state);
                 if (!__instance.m_nview.IsOwner())
                     return true;
 

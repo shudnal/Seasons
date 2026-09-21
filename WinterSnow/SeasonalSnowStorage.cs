@@ -1,4 +1,8 @@
+using HarmonyLib;
 using System;
+using System.Collections.Generic;
+using System.Reflection;
+using System.Reflection.Emit;
 using UnityEngine;
 using static Seasons.Seasons;
 
@@ -9,15 +13,28 @@ namespace Seasons
     {
         private const long MissingEpoch = long.MinValue;
 
-        // Use the season calendar, not a frame-dependent estimate of its world-time offset.
-        internal static long CurrentWinterEpoch =>
-            (long)Math.Floor(Math.Max(0d, seasonState.GetStartOfCurrentSeason()) * 1000d);
+        // Read the calendar clock once: realtime seasons must not get a different
+        // millisecond epoch from two DateTime reads while rounding a day boundary.
+        internal static long CurrentWinterEpoch
+        {
+            get
+            {
+                double dayLength = seasonState.GetDayLengthInSeconds();
+                double startOfDay = Math.Floor(seasonState.GetTotalSeconds() / dayLength) * dayLength;
+                double start = startOfDay - (seasonState.GetCurrentDay() -
+                    (seasonState.IsPendingSeasonChange() ? 0 : 1)) * dayLength;
+                return (long)Math.Round(Math.Max(0d, start) * 1000d);
+            }
+        }
 
         internal static bool IsPreviousWinter(ZDO zdo)
         {
             long epoch = zdo.GetLong(SeasonsVars.s_seasonalSnowEpoch, MissingEpoch);
             return epoch != MissingEpoch && epoch != CurrentWinterEpoch;
         }
+
+        internal static bool HasEpoch(ZDO zdo) =>
+            zdo != null && zdo.GetLong(SeasonsVars.s_seasonalSnowEpoch, MissingEpoch) != MissingEpoch;
 
         internal static bool HasCurrentWinterState(ZDO zdo) =>
             zdo != null && zdo.GetBool(SeasonsVars.s_seasonalSnowWinter) && !IsPreviousWinter(zdo);
@@ -55,6 +72,7 @@ namespace Seasons
         internal static void MigrateLoaded(WearNTear piece)
         {
             // The caller has already classified this as a managed seasonal surface.
+            piece.m_addPreSnow = false;
             ZNetView view = piece.m_nview;
             ZDO zdo = view ? view.GetZDO() : null;
             if (!CanWrite(view, zdo))
@@ -104,4 +122,41 @@ namespace Seasons
             return changed;
         }
     }
+
+    [HarmonyPatch]
+    internal static class WearNTear_SeasonalSnowStorage
+    {
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            yield return AccessTools.Method(typeof(WearNTear), nameof(WearNTear.Awake));
+            yield return AccessTools.Method(typeof(WearNTear), nameof(WearNTear.UpdateWear));
+            yield return AccessTools.Method(typeof(WearNTear), nameof(WearNTear.RPC_SetSnow));
+        }
+
+        [HarmonyTranspiler]
+        private static IEnumerable<CodeInstruction> Transpiler(
+            IEnumerable<CodeInstruction> instructions, MethodBase original)
+        {
+            FieldInfo snowKey = AccessTools.Field(typeof(ZDOVars), nameof(ZDOVars.s_snow));
+            MethodInfo getKey = AccessTools.Method(typeof(SeasonalSnowStorage), nameof(SeasonalSnowStorage.GetKey));
+            bool found = false;
+            foreach (CodeInstruction instruction in instructions)
+            {
+                if (instruction.LoadsField(snowKey))
+                {
+                    // Replace the hash load with a per-piece choice; preserve entry labels.
+                    instruction.opcode = OpCodes.Ldarg_0;
+                    instruction.operand = null;
+                    yield return instruction;
+                    yield return new CodeInstruction(OpCodes.Call, getKey);
+                    found = true;
+                }
+                else
+                    yield return instruction;
+            }
+            if (!found)
+                LogWarning($"Failed to route seasonal snow storage in WearNTear.{original.Name}.");
+        }
+    }
+
 }
