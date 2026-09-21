@@ -19,6 +19,7 @@ namespace Seasons
         private int sourceDiscoveryCursor = -1;
         private int readinessCursor;
         private bool winterRunning;
+        private bool endingSnowWinter;
         private bool catchingUp;
         private long winterEpoch;
         private double snowClock;
@@ -29,6 +30,7 @@ namespace Seasons
 
         internal int SnowPieceCount => snowPieces.Count;
         internal int SnowRegionCount => snowRegions.Count;
+        internal bool HasSnowRuntime(WearNTear piece) => piece && snowPieces.ContainsKey(piece);
 
         private bool EnsureSnowScene()
         {
@@ -47,7 +49,7 @@ namespace Seasons
 
         internal void RegisterSnow(WearNTear piece)
         {
-            if (!piece || !EnsureSnowScene() || !SeasonalSnow.WinterReady ||
+            if (!piece || !EnsureSnowScene() || endingSnowWinter || !SeasonalSnow.WinterReady ||
                 !SeasonalSnow.IsSeasonalSnowPosition(piece) || piece.m_nview.m_ghost ||
                 ZNetView.m_forceDisableInit || !piece.gameObject.scene.IsValid())
                 return;
@@ -64,17 +66,11 @@ namespace Seasons
                 RetireSnow(replaced, releaseVisual: true);
 
             SeasonalSnowStorage.MigrateLoaded(piece);
+            // Native wear and heavy-snow checks must never see the seasonal amount.
+            piece.m_snowBuildup = 0f;
+            piece.m_heavySnow = false;
             SnowPiece state = new SnowPiece(piece, zdo);
-            Vector2s zone = ZoneSystem.GetZone(state.Position);
-            if (!snowRegions.TryGetValue(zone, out SnowRegion region))
-            {
-                region = new SnowRegion(zone) { ListIndex = regionList.Count };
-                snowRegions.Add(zone, region);
-                regionList.Add(region);
-            }
-            state.Region = region;
-            state.RegionIndex = region.Pieces.Count;
-            region.Pieces.Add(state);
+            AddSnowRegion(state);
             snowPieces.Add(piece, state);
             snowIds.Add(state.Id, state);
             Vector2 range = SeasonalSnow.GetSnowBuildupRange(piece);
@@ -102,9 +98,62 @@ namespace Seasons
             Classify(state);
             state.View.Unregister(UseSnowRpc);
             state.View.Register(UseSnowRpc, sender => ReceiveUse(state, sender));
-            QueueVisual(piece, state.Snow, disabled: false, force: true);
+            QueueRuntimeVisual(state, force: true);
             QueueRefresh(state, SnowRefresh.All);
-            QueueRegion(region, SnowRefresh.Area);
+            QueueRegion(state.Region, SnowRefresh.Area);
+        }
+
+        private void AddSnowRegion(SnowPiece state)
+        {
+            Vector2s zone = ZoneSystem.GetZone(state.Position);
+            if (!snowRegions.TryGetValue(zone, out SnowRegion region))
+            {
+                region = new SnowRegion(zone) { ListIndex = regionList.Count };
+                snowRegions.Add(zone, region);
+                regionList.Add(region);
+            }
+            state.Region = region;
+            state.RegionIndex = region.Pieces.Count;
+            region.Pieces.Add(state);
+        }
+
+        private void RemoveSnowRegion(SnowPiece state)
+        {
+            SnowRegion region = state.Region;
+            int last = region.Pieces.Count - 1;
+            SnowPiece moved = region.Pieces[last];
+            region.Pieces[state.RegionIndex] = moved;
+            moved.RegionIndex = state.RegionIndex;
+            region.Pieces.RemoveAt(last);
+            if (region.Queued)
+                region.Cursor = Math.Min(region.Cursor, state.RegionIndex);
+            if (region.Pieces.Count != 0)
+                return;
+            snowRegions.Remove(region.Zone);
+            int end = regionList.Count - 1;
+            SnowRegion movedRegion = regionList[end];
+            regionList[region.ListIndex] = movedRegion;
+            movedRegion.ListIndex = region.ListIndex;
+            regionList.RemoveAt(end);
+        }
+
+        private void MoveSnowPiece(SnowPiece state, Vector3 position)
+        {
+            Vector3 old = state.Position;
+            state.Position = position;
+            if (state.Region.Zone != ZoneSystem.GetZone(position))
+            {
+                RemoveFromBucket(state);
+                RemoveSnowRegion(state);
+                AddSnowRegion(state);
+                state.ReadyGeneration = -1;
+                Classify(state);
+                QueueRegion(state.Region, SnowRefresh.Area);
+            }
+            state.Biome = WorldGenerator.instance ? WorldGenerator.instance.GetBiome(position) : state.Biome;
+            state.GeometryCaptured = false;
+            InvalidateSnowArea(old, geometry: true);
+            InvalidateSnowArea(position, geometry: true);
         }
 
         internal float GetSnowValue(WearNTear piece)
@@ -136,7 +185,7 @@ namespace Seasons
                 RememberSnapshot(state, new SeasonalSnowStorage.Snapshot(state.Zdo));
             }
             Classify(state);
-            QueueVisual(piece, 0f, disabled: false, force: true);
+            QueueRuntimeVisual(state, force: true);
             QueueRefresh(state, SnowRefresh.All);
         }
 
@@ -147,8 +196,10 @@ namespace Seasons
             ReleaseVisual(piece, hide: true, restoreNative: false);
             if (snowPieces.TryGetValue(piece, out SnowPiece state))
             {
+                state.VisualSnow = float.NaN;
                 QueueRefresh(state, SnowRefresh.Rules | SnowRefresh.Geometry | SnowRefresh.Links);
-                QueueVisual(piece, state.Snow, disabled: false, force: true);
+                if (SeasonalSnow.IsSeasonalSnowPosition(piece))
+                    QueueRuntimeVisual(state, force: true);
             }
             else
                 RegisterSnow(piece);
@@ -180,7 +231,10 @@ namespace Seasons
         internal void ForgetSnow(WearNTear piece)
         {
             if (!ReferenceEquals(piece, null) && snowPieces.TryGetValue(piece, out SnowPiece state))
+            {
+                FlushSnowPiece(state);
                 RetireSnow(state, releaseVisual: false);
+            }
         }
 
         private void RetireSnow(SnowPiece state, bool releaseVisual)
@@ -196,23 +250,7 @@ namespace Seasons
                 snowIds.Remove(state.Id);
             if (state.View)
                 state.View.Unregister(UseSnowRpc);
-            SnowRegion region = state.Region;
-            int last = region.Pieces.Count - 1;
-            SnowPiece moved = region.Pieces[last];
-            region.Pieces[state.RegionIndex] = moved;
-            moved.RegionIndex = state.RegionIndex;
-            region.Pieces.RemoveAt(last);
-            if (region.Queued)
-                region.Cursor = Math.Min(region.Cursor, state.RegionIndex);
-            if (region.Pieces.Count == 0)
-            {
-                snowRegions.Remove(region.Zone);
-                int end = regionList.Count - 1;
-                SnowRegion movedRegion = regionList[end];
-                regionList[region.ListIndex] = movedRegion;
-                movedRegion.ListIndex = region.ListIndex;
-                regionList.RemoveAt(end);
-            }
+            RemoveSnowRegion(state);
             if (releaseVisual)
                 ReleaseVisual(state.Piece, hide: true, restoreNative: false);
         }
@@ -239,10 +277,11 @@ namespace Seasons
 
         internal void SettleBeforeWeatherChange()
         {
-            if (!simulationScene || !ZNet.instance)
+            if (!simulationScene || !ZNet.instance || !winterRunning || !SeasonalSnow.WeatherReady)
                 return;
             double now = ZNet.instance.GetTimeSeconds();
-            IntegrateSnow(now);
+            if (now >= lastWorldSeconds && now - lastWorldSeconds < 5d)
+                IntegrateSnow(now);
             weatherBoundary = now;
         }
 
@@ -257,9 +296,7 @@ namespace Seasons
 
         internal void RequestSnowCatchUp()
         {
-            if (!simulationScene || !ZNet.instance)
-                return;
-            if (catchingUp)
+            if (!simulationScene || !ZNet.instance || catchingUp)
                 return;
             foreach (SnowRegion region in regionList)
             {
@@ -272,8 +309,16 @@ namespace Seasons
 
         internal void SnowSnapshotReceived(ZDO zdo)
         {
-            if (zdo != null && snowIds.TryGetValue(zdo.m_uid, out SnowPiece state) && ReferenceEquals(state.Zdo, zdo))
-                QueueRefresh(state, SnowRefresh.Snapshot);
+            if (zdo == null || !snowIds.TryGetValue(zdo.m_uid, out SnowPiece state) || !ReferenceEquals(state.Zdo, zdo))
+                return;
+            QueueRefresh(state, SnowRefresh.Snapshot);
+        }
+
+        internal void SnowPositionChanged(ZDO zdo)
+        {
+            if (zdo != null && snowIds.TryGetValue(zdo.m_uid, out SnowPiece state) &&
+                ReferenceEquals(state.Zdo, zdo) && zdo.GetPosition() != state.Position)
+                QueueRefresh(state, SnowRefresh.Geometry | SnowRefresh.Links | SnowRefresh.Area);
         }
 
         internal void BeforeSnowViewReset(ZNetView view)
@@ -296,11 +341,21 @@ namespace Seasons
         {
             if (!state.Valid || !state.Confirmed || !state.View.IsOwner() || !ZNet.instance)
                 return;
-            double world = state.Region.Ready ? ZNet.instance.GetTimeSeconds() : state.Region.PauseAtWorld;
-            double clock = state.Region.Ready ? snowClock : state.Region.PauseAtTime;
-            if (state.Region.Ready)
-                IntegratePiece(state, world, clock);
-            double consumed = Math.Max(state.WeatherTime, state.Region.Ready ? world : state.Region.PauseAtWorld);
+            if (!SeasonalSnow.WinterReady || endingSnowWinter)
+            {
+                SeasonalSnowStorage.Clear(state.Zdo, clearNative: true);
+                return;
+            }
+            if (state.Epoch != SeasonalSnowStorage.CurrentWinterEpoch)
+                return;
+            // Never mark an unprocessed catch-up interval as consumed just because an
+            // object unloads or the save callback runs before its queued refresh.
+            bool settled = state.Region.Ready && state.ReadyGeneration == state.Region.ReadyGeneration &&
+                double.IsNaN(state.CatchUpFrom) && SeasonalSnow.WeatherReady;
+            if (settled)
+                IntegratePiece(state, ZNet.instance.GetTimeSeconds(), snowClock);
+            double consumed = settled ? state.WeatherTime :
+                Math.Max(state.WeatherTime, state.Region.PauseAtWorld);
             SeasonalSnowStorage.Write(state.Zdo, state.Snow, state.Epoch, consumed);
             RememberSnapshot(state, new SeasonalSnowStorage.Snapshot(state.Zdo));
         }
@@ -333,6 +388,9 @@ namespace Seasons
             interactingPieces.Clear();
             expiredInteractions.Clear();
             frameWeather.Clear();
+            movingSnowDoors.Clear();
+            completedSnowDoors.Clear();
+            nextDoorCheck = 0f;
             ResetHeatSources();
             observedStation = null;
             stationSnowPiece = null;
@@ -342,7 +400,7 @@ namespace Seasons
             discoveryCursor = sourceDiscoveryCursor = -1;
             readinessCursor = 0;
             simulationFrame = -1;
-            winterRunning = catchingUp = false;
+            winterRunning = endingSnowWinter = catchingUp = false;
             winterEpoch = 0L;
             snowClock = lastWorldSeconds = weatherBoundary = 0d;
         }
