@@ -21,12 +21,14 @@ namespace Seasons
         private bool winterRunning;
         private bool endingSnowWinter;
         private bool catchingUp;
+        private bool snowHeadless;
+        private bool snowWeatherReady;
         private long winterEpoch;
         private double snowClock;
         private double lastWorldSeconds;
-        private double weatherBoundary;
         private int observedShieldRevision;
         private readonly Dictionary<Heightmap.Biome, float> frameWeather = new Dictionary<Heightmap.Biome, float>();
+        private readonly HashSet<Heightmap.Biome> snowingBiomes = new HashSet<Heightmap.Biome>();
 
         internal int SnowPieceCount => snowPieces.Count;
         internal int SnowRegionCount => snowRegions.Count;
@@ -43,6 +45,7 @@ namespace Seasons
             simulationScene = scene;
             stoppedSnowScene = null;
             lastWorldSeconds = ZNet.instance.GetTimeSeconds();
+            snowHeadless = ZNet.instance.IsDedicated();
             observedShieldRevision = ShieldGenerator.m_instanceChangeID;
             return true;
         }
@@ -50,7 +53,7 @@ namespace Seasons
         internal void RegisterSnow(WearNTear piece)
         {
             if (!piece || !EnsureSnowScene() || endingSnowWinter || !SeasonalSnow.WinterReady ||
-                !SeasonalSnow.IsSeasonalSnowPosition(piece) || piece.m_nview.m_ghost ||
+                !SeasonalSnow.IsSeasonalSnowPosition(piece) || !piece.m_nview || piece.m_nview.m_ghost ||
                 ZNetView.m_forceDisableInit || !piece.gameObject.scene.IsValid())
                 return;
             ZDO zdo = piece.m_nview.GetZDO();
@@ -78,14 +81,21 @@ namespace Seasons
             state.Maximum = range.y;
             state.Biome = SeasonalSnow.GetBiome(piece);
             state.Epoch = SeasonalSnowStorage.CurrentWinterEpoch;
+            state.Construction = SeasonalSnowStorage.IsCurrentWinterPlacement(zdo);
             state.LastHeatTime = snowClock;
             state.WeatherTime = ZNet.instance.GetTimeSeconds();
+            state.WeatherGain = SeasonalSnow.GetCumulativeSnowGainAt(state.Biome, state.WeatherTime);
             SeasonalSnowStorage.Snapshot snapshot = new SeasonalSnowStorage.Snapshot(zdo);
             RememberSnapshot(state, snapshot);
             state.Saved = snapshot.AppliesTo(state.Epoch);
             if (state.Saved)
             {
                 state.Snow = Mathf.Min(state.Maximum, snapshot.Value);
+                state.AppearanceChosen = true;
+            }
+            else if (state.Construction)
+            {
+                state.Snow = 0f;
                 state.AppearanceChosen = true;
             }
             else if (SeasonalSnow.WeatherReady && (state.Owner == 0L || state.View.IsOwner()))
@@ -150,7 +160,7 @@ namespace Seasons
                 Classify(state);
                 QueueRegion(state.Region, SnowRefresh.Area);
             }
-            state.Biome = WorldGenerator.instance ? WorldGenerator.instance.GetBiome(position) : state.Biome;
+            state.Biome = WorldGenerator.instance != null ? WorldGenerator.instance.GetBiome(position) : state.Biome;
             state.GeometryCaptured = false;
             InvalidateSnowArea(old, geometry: true);
             InvalidateSnowArea(position, geometry: true);
@@ -170,6 +180,11 @@ namespace Seasons
 
         internal void SnowPlaced(WearNTear piece)
         {
+            if (!piece || !piece.m_nview || !piece.m_nview.IsValid())
+                return;
+            ZDO zdo = piece.m_nview.GetZDO();
+            if (SeasonalSnowStorage.CanWrite(piece.m_nview, zdo))
+                SeasonalSnowStorage.RecordPlacement(zdo);
             RegisterSnow(piece);
             if (!snowPieces.TryGetValue(piece, out SnowPiece state))
                 return;
@@ -177,6 +192,7 @@ namespace Seasons
             state.Saved = state.AppearanceChosen = true;
             state.Snow = 0f;
             state.WeatherTime = ZNet.instance.GetTimeSeconds();
+            state.WeatherGain = SeasonalSnow.GetCumulativeSnowGainAt(state.Biome, state.WeatherTime);
             state.LastHeatTime = snowClock;
             state.Epoch = SeasonalSnowStorage.CurrentWinterEpoch;
             if (SeasonalSnowStorage.CanWrite(state.View, state.Zdo))
@@ -196,7 +212,6 @@ namespace Seasons
             ReleaseVisual(piece, hide: true, restoreNative: false);
             if (snowPieces.TryGetValue(piece, out SnowPiece state))
             {
-                state.VisualSnow = float.NaN;
                 QueueRefresh(state, SnowRefresh.Rules | SnowRefresh.Geometry | SnowRefresh.Links);
                 if (SeasonalSnow.IsSeasonalSnowPosition(piece))
                     QueueRuntimeVisual(state, force: true);
@@ -217,14 +232,14 @@ namespace Seasons
         {
             if (!piece)
                 return;
+            ZNetView view = piece.m_nview;
+            ZDO zdo = view && view.IsValid() ? view.GetZDO() : null;
+            bool tracked = zdo != null && (SeasonalSnowStorage.HasSavedValue(zdo) || SeasonalSnowStorage.HasLegacyState(zdo));
+            if (tracked && SeasonalSnowStorage.CanWrite(view, zdo))
+                SeasonalSnowStorage.Clear(zdo, clearNative: SeasonalSnow.GetBiome(piece) != Heightmap.Biome.DeepNorth);
             if (snowPieces.TryGetValue(piece, out SnowPiece state))
-            {
-                if (SeasonalSnowStorage.CanWrite(state.View, state.Zdo))
-                    SeasonalSnowStorage.Clear(state.Zdo, clearNative: true);
                 RetireSnow(state, releaseVisual: false);
-            }
-            piece.m_snowBuildup = piece.m_nview && piece.m_nview.IsValid()
-                ? piece.m_nview.GetZDO().GetFloat(ZDOVars.s_snow) : 0f;
+            piece.m_snowBuildup = zdo != null ? zdo.GetFloat(ZDOVars.s_snow) : 0f;
             ReleaseVisual(piece, hide: true, restoreNative: true);
         }
 
@@ -244,7 +259,7 @@ namespace Seasons
             state.Retired = true;
             RemoveFromBucket(state);
             RemoveHeatLinks(state);
-            interactingPieces.Remove(state);
+            ForgetSnowInteraction(state);
             snowPieces.Remove(state.Piece);
             if (snowIds.TryGetValue(state.Id, out SnowPiece current) && ReferenceEquals(current, state))
                 snowIds.Remove(state.Id);
@@ -261,18 +276,19 @@ namespace Seasons
                 return;
             discoveryCursor = 0;
             foreach (SnowRegion region in regionList)
-                QueueRegion(region, rules ? SnowRefresh.All : SnowRefresh.Geometry);
+                QueueRegion(region, rules ? SnowRefresh.Rules | SnowRefresh.Area | SnowRefresh.Snapshot | SnowRefresh.Heat : SnowRefresh.Geometry);
         }
 
-        internal void RequestHeatRefresh()
+        internal void RequestHeatRefresh(bool rebuildLinks = false, bool reindexSources = false)
         {
             if (!EnsureSnowScene())
                 return;
-            foreach (HeatSource source in heatSources)
-                if (!source.Retired)
-                    ReindexHeatSource(source);
+            if (reindexSources)
+                foreach (HeatSource source in heatSources)
+                    if (!source.Retired)
+                        ReindexHeatSource(source);
             foreach (SnowRegion region in regionList)
-                QueueRegion(region, SnowRefresh.Heat | SnowRefresh.Links);
+                QueueRegion(region, SnowRefresh.Heat | (rebuildLinks ? SnowRefresh.Links : SnowRefresh.None));
         }
 
         internal void SettleBeforeWeatherChange()
@@ -282,14 +298,14 @@ namespace Seasons
             double now = ZNet.instance.GetTimeSeconds();
             if (now >= lastWorldSeconds && now - lastWorldSeconds < 5d)
                 IntegrateSnow(now);
-            weatherBoundary = now;
         }
 
         internal void WeatherTimelineChanged()
         {
             if (!EnsureSnowScene())
                 return;
-            weatherBoundary = ZNet.instance.GetTimeSeconds();
+            foreach (SnowPiece state in snowPieces.Values)
+                state.WeatherGain = SeasonalSnow.GetCumulativeSnowGainAt(state.Biome, state.WeatherTime);
             foreach (SnowRegion region in regionList)
                 QueueRegion(region, SnowRefresh.Area | SnowRefresh.Heat);
         }
@@ -300,11 +316,22 @@ namespace Seasons
                 return;
             foreach (SnowRegion region in regionList)
             {
+                PauseSnowRegion(region, region.LastReadyWorld);
                 region.ResumeFromWorld = region.LastReadyWorld;
                 region.ReadyGeneration++;
                 QueueRegion(region, SnowRefresh.CatchUp);
             }
             catchingUp = true;
+        }
+
+        private static void PauseSnowRegion(SnowRegion region, double boundary)
+        {
+            // Bounds sleep without per-frame cursor writes. Capture their last evaluated
+            // interval once at a gap boundary, retaining any earlier pending catch-up.
+            foreach (SnowPiece state in region.Pieces)
+                if (state.Confirmed && state.Simulates && double.IsNaN(state.CatchUpFrom))
+                    state.CatchUpFrom = Math.Max(state.WeatherTime,
+                        state.ReadyGeneration == region.ReadyGeneration ? boundary : state.WeatherTime);
         }
 
         internal void SnowSnapshotReceived(ZDO zdo)
@@ -341,6 +368,9 @@ namespace Seasons
         {
             if (!state.Valid || !state.Confirmed || !state.View.IsOwner() || !ZNet.instance)
                 return;
+            SeasonalSnowStorage.Snapshot current = new SeasonalSnowStorage.Snapshot(state.Zdo);
+            if (!SnapshotUnchanged(state, current))
+                return;
             if (!SeasonalSnow.WinterReady || endingSnowWinter)
             {
                 SeasonalSnowStorage.Clear(state.Zdo, clearNative: true);
@@ -354,8 +384,7 @@ namespace Seasons
                 double.IsNaN(state.CatchUpFrom) && SeasonalSnow.WeatherReady;
             if (settled)
                 IntegratePiece(state, ZNet.instance.GetTimeSeconds(), snowClock);
-            double consumed = settled ? state.WeatherTime :
-                Math.Max(state.WeatherTime, state.Region.PauseAtWorld);
+            double consumed = double.IsNaN(state.CatchUpFrom) ? state.WeatherTime : state.CatchUpFrom;
             SeasonalSnowStorage.Write(state.Zdo, state.Snow, state.Epoch, consumed);
             RememberSnapshot(state, new SeasonalSnowStorage.Snapshot(state.Zdo));
         }
@@ -385,12 +414,17 @@ namespace Seasons
             pieceRefreshes.Clear();
             geometryRefreshes.Clear();
             snowPublications.Clear();
-            interactingPieces.Clear();
-            expiredInteractions.Clear();
+            snowVisualChanges.Clear();
+            ResetSnowInteractions();
             frameWeather.Clear();
+            snowingBiomes.Clear();
             movingSnowDoors.Clear();
             completedSnowDoors.Clear();
             nextDoorCheck = 0f;
+            observedSnowGeometryScene = null;
+            observedSnowReferenceZone = default;
+            observedSnowSimulationDistance = default;
+            observedSnowZoneSize = 0f;
             ResetHeatSources();
             observedStation = null;
             stationSnowPiece = null;
@@ -401,8 +435,9 @@ namespace Seasons
             readinessCursor = 0;
             simulationFrame = -1;
             winterRunning = endingSnowWinter = catchingUp = false;
+            snowWeatherReady = false;
             winterEpoch = 0L;
-            snowClock = lastWorldSeconds = weatherBoundary = 0d;
+            snowClock = lastWorldSeconds = 0d;
         }
 
         private static void RememberSnapshot(SnowPiece state, SeasonalSnowStorage.Snapshot snapshot)
@@ -413,5 +448,10 @@ namespace Seasons
             state.SnapshotTime = snapshot.From;
             state.SnapshotEpoch = snapshot.Epoch;
         }
+
+        private static bool SnapshotUnchanged(SnowPiece state, SeasonalSnowStorage.Snapshot snapshot) =>
+            snapshot.Present == state.SnapshotPresent && snapshot.Epoch == state.SnapshotEpoch &&
+            snapshot.From == state.SnapshotTime && snapshot.Value.Equals(state.SnapshotValue) &&
+            snapshot.Baseline.Equals(state.SnapshotBaseline);
     }
 }

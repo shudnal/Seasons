@@ -5,14 +5,16 @@ using static Seasons.Seasons;
 
 namespace Seasons
 {
-    // Keep the existing saved/predicted calculation as the producer during the staged
-    // refactor. Select its explicit visual value without substituting a native field.
+    // Seasonal caps consume the singleton's value without substituting a native field.
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateSnowVisual))]
     internal static class WearNTear_UpdateSnowVisual_PooledCaps
     {
         [HarmonyPrefix, HarmonyPriority(Priority.Last)]
         private static bool Prefix(WearNTear __instance) =>
             !SeasonalSnowController.Instance.TryQueueCurrentVisual(__instance);
+
+        [HarmonyFinalizer]
+        private static void Finalizer(WearNTear __instance) => SeasonalSnowMeshSettings.Apply(__instance);
     }
 
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateWear))]
@@ -79,6 +81,7 @@ namespace Seasons
             // The native Update can return early while Harmony still runs postfixes.
             if (Game.IsPaused() || UnityEngine.Time.timeScale <= 0f)
                 return;
+            SeasonalSnowController.Instance.UpdateSnowSimulation(__instance);
             SeasonalSnowController.Instance.UpdateVisuals(__instance);
         }
     }
@@ -87,13 +90,21 @@ namespace Seasons
     internal static class ZNetScene_Shutdown_SnowVisuals
     {
         [HarmonyPrefix]
-        private static void Prefix(ZNetScene __instance) => SeasonalSnowController.Instance.StopVisuals(__instance);
+        private static void Prefix(ZNetScene __instance)
+        {
+            SeasonalSnowController.Instance.StopSnowScene(__instance);
+            SeasonalSnowController.Instance.StopVisuals(__instance);
+        }
     }
 
     [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.OnDestroy))]
     internal static class ZNetScene_OnDestroy_SnowVisuals
     {
         [HarmonyPrefix]
-        private static void Prefix(ZNetScene __instance) => SeasonalSnowController.Instance.StopVisuals(__instance);
+        private static void Prefix(ZNetScene __instance)
+        {
+            SeasonalSnowController.Instance.StopSnowScene(__instance);
+            SeasonalSnowController.Instance.StopVisuals(__instance);
+        }
     }
 }

@@ -472,6 +472,13 @@ namespace Seasons
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.OnDestroy))]
     public static class ZoneSystem_OnDestroy_DisableConfigWatcher
     {
+        [HarmonyPrefix]
+        private static void Prefix()
+        {
+            // Persist while the season calendar is still available to the snow runtime.
+            SeasonalSnowController.Instance.StopSnowScene(ZNetScene.instance);
+        }
+
         private static void Postfix()
         {
             SeasonSettings.SetupConfigWatcher(enabled: false);

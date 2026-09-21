@@ -41,10 +41,13 @@ namespace Seasons
             internal int RegionIndex;
             internal int BucketIndex = -1;
             internal SnowBucket Bucket;
+            internal Heightmap.Biome BucketBiome;
             internal SnowRefresh Refresh;
             internal bool RefreshQueued;
             internal bool PublishQueued;
             internal bool ForcePublish;
+            internal bool VisualQueued;
+            internal bool ForceVisual;
             internal bool Retired;
             internal bool Confirmed;
             internal bool Construction;
@@ -52,12 +55,14 @@ namespace Seasons
             internal bool AppearanceChosen;
             internal bool MayPublish;
             internal bool AllowOwnerlessPublication;
+            internal bool AllowInitialPublication;
             internal bool Covered;
             internal bool Shielded;
             internal bool Roof;
             internal bool Leaky;
             internal bool HaveOrigin;
             internal bool GeometryCaptured;
+            internal int GeometryRevision = -1;
             internal bool Simulates;
             internal bool Melting;
             internal Vector3 LocalOrigin;
@@ -70,7 +75,6 @@ namespace Seasons
             internal float SnapshotBaseline;
             internal bool SnapshotPresent;
             internal float Snow;
-            internal float VisualSnow = float.NaN;
             internal float Minimum;
             internal float Maximum;
             internal float HeatRate;
@@ -79,6 +83,7 @@ namespace Seasons
             internal float NextUseSignal;
             internal double LastHeatTime;
             internal double WeatherTime;
+            internal float WeatherGain;
             internal double CatchUpFrom = double.NaN;
             internal int ReadyGeneration;
             internal readonly Dictionary<HeatSource, HeatLink> HeatLinks = new Dictionary<HeatSource, HeatLink>();
@@ -102,10 +107,10 @@ namespace Seasons
             internal readonly Vector2s Zone;
             internal readonly Vector3 Center;
             internal readonly List<SnowPiece> Pieces = new List<SnowPiece>();
-            internal readonly List<SnowPiece>[] Buckets =
+            internal readonly Dictionary<Heightmap.Biome, List<SnowPiece>>[] Buckets =
             {
-                new List<SnowPiece>(), new List<SnowPiece>(),
-                new List<SnowPiece>(), new List<SnowPiece>()
+                new Dictionary<Heightmap.Biome, List<SnowPiece>>(), new Dictionary<Heightmap.Biome, List<SnowPiece>>(),
+                new Dictionary<Heightmap.Biome, List<SnowPiece>>(), new Dictionary<Heightmap.Biome, List<SnowPiece>>()
             };
             internal bool Ready;
             internal bool ReadinessDirty = true;
@@ -114,6 +119,7 @@ namespace Seasons
             internal SnowRefresh Pending;
             internal SnowRefresh Scanning;
             internal int ReadyGeneration;
+            internal int GeometryRevision;
             internal double LastReadyWorld;
             internal double LastReadyTime;
             internal double ResumeFromWorld;
@@ -137,6 +143,7 @@ namespace Seasons
         private readonly Queue<SnowPiece> pieceRefreshes = new Queue<SnowPiece>();
         private readonly Queue<SnowPiece> geometryRefreshes = new Queue<SnowPiece>();
         private readonly Queue<SnowPiece> snowPublications = new Queue<SnowPiece>();
+        private readonly Queue<SnowPiece> snowVisualChanges = new Queue<SnowPiece>();
         private readonly HashSet<SnowPiece> interactingPieces = new HashSet<SnowPiece>();
         private readonly List<SnowPiece> expiredInteractions = new List<SnowPiece>();
 
@@ -144,7 +151,7 @@ namespace Seasons
         {
             if (state.BucketIndex < 0)
                 return;
-            List<SnowPiece> list = state.Region.Buckets[(int)state.Bucket];
+            List<SnowPiece> list = state.Region.Buckets[(int)state.Bucket][state.BucketBiome];
             int last = list.Count - 1;
             SnowPiece moved = list[last];
             list[state.BucketIndex] = moved;
@@ -158,11 +165,26 @@ namespace Seasons
             SnowBucket bucket = state.Melting
                 ? (state.Snow <= 0f ? SnowBucket.MeltingEmpty : SnowBucket.MeltingSnow)
                 : (state.Snow >= state.Maximum ? SnowBucket.AccumulationFull : SnowBucket.AccumulationOpen);
-            if (state.BucketIndex >= 0 && state.Bucket == bucket)
+            if (state.BucketIndex >= 0 && state.Bucket == bucket && state.BucketBiome == state.Biome)
                 return;
+            bool newMembership = state.BucketIndex < 0 || state.BucketBiome != state.Biome;
             RemoveFromBucket(state);
             state.Bucket = bucket;
-            List<SnowPiece> list = state.Region.Buckets[(int)bucket];
+            state.BucketBiome = state.Biome;
+            Dictionary<Heightmap.Biome, List<SnowPiece>> groups = state.Region.Buckets[(int)bucket];
+            if (newMembership)
+            {
+                // Allocate all terminal destinations on registration/biome changes,
+                // never when ordinary arithmetic first reaches a numeric bound.
+                foreach (Dictionary<Heightmap.Biome, List<SnowPiece>> group in state.Region.Buckets)
+                {
+                    if (!group.TryGetValue(state.Biome, out List<SnowPiece> destination))
+                        group.Add(state.Biome, destination = new List<SnowPiece>());
+                    if (destination.Capacity < state.Region.Pieces.Count)
+                        destination.Capacity = Math.Max(state.Region.Pieces.Count, Math.Max(4, destination.Capacity * 2));
+                }
+            }
+            List<SnowPiece> list = groups[state.Biome];
             state.BucketIndex = list.Count;
             list.Add(state);
         }
@@ -181,6 +203,8 @@ namespace Seasons
         private void QueueRegion(SnowRegion region, SnowRefresh reason)
         {
             region.Pending |= reason;
+            if ((reason & SnowRefresh.Geometry) != 0)
+                region.GeometryRevision++;
             if ((reason & SnowRefresh.Area) != 0)
                 region.ReadinessDirty = true;
             if (region.Queued)

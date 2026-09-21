@@ -106,6 +106,7 @@ namespace Seasons
         public static ConfigEntry<float> seasonalSnowInteractiveObjectMeltMultiplier;
         public static ConfigEntry<float> seasonalSnowLeakyPieceMeltMultiplier;
         public static ConfigEntry<float> seasonalSnowRoofPieceMeltMultiplier;
+        public static ConfigEntry<float> seasonalSnowCoveredPieceMeltMultiplier;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -403,6 +404,7 @@ namespace Seasons
 
         private void OnDestroy()
         {
+            SeasonalSnowController.Instance.StopSnowScene(ZNetScene.instance);
             Compatibility.MarketplaceCompat.ReleaseMap();
             SeasonalPlayerCapeSnow.Reset();
             SeasonalEnemySnow.Reset();
@@ -560,12 +562,12 @@ namespace Seasons
 
             enableSeasonalSnow = serverConfig("Season - Winter snow", "Enable seasonal snow", defaultValue: true,
                 "Enable seasonal snow buildup on supported pieces outside Deep North. Per-piece rules and creature/cape material ranges are configured in Seasonal snow.json.");
-            seasonalSnowBuildup = serverConfig("Season - Winter snow", "Snow buildup limits", defaultValue: new Vector2(0.51f, 0.99f),
-                "Minimum and maximum seasonal snow buildup for supported pieces outside Deep North. Values are clamped to 0..1 and the smaller value is used as minimum. The applied maximum is limited to 0.99 to prevent vanilla heavy snow damage.");
+            seasonalSnowBuildup = serverConfig("Season - Winter snow", "Snow buildup limits", defaultValue: new Vector2(0.51f, 1f),
+                "Discovery seed and maximum seasonal snow buildup for supported pieces outside Deep North. Values are clamped to 0..1 and the smaller value is used as the one-time seed. Construction and subsequent growth start from their current level.");
             reducedSeasonalSnowBuildup = serverConfig("Season - Winter snow", "Reduced snow buildup limits", defaultValue: new Vector2(0.3f, 0.6f),
                 "Alternative minimum and maximum seasonal snow buildup intended for flat pieces where a thick snow mesh looks unnatural.");
             seasonalSnowAccumulationSpeed = serverConfig("Season - Winter snow", "Snow accumulation speed", defaultValue: 1f,
-                "Multiplier for seasonal snow accumulation from weather. 1 is the default rate, 0 disables accumulation above the configured minimum.");
+                "Multiplier for seasonal snow accumulation from weather. 1 is the default rate, 0 disables weather accumulation. The minimum is applied only when discovering an existing exposed piece.");
             seasonalSnowHeatSourceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - all heat sources", defaultValue: 1f,
                 "Global multiplier for seasonal snow melting from active heat sources. 1 uses the balanced default rate, 0 disables heat-based melting.");
             seasonalSnowHeatDistanceMultipliers = serverConfig("Season - Winter snow", "Snow melt speed multiplier - heat distance scaling", defaultValue: new Vector2(2f, 0.5f),
@@ -580,11 +582,21 @@ namespace Seasons
                 "Additional heat-melting speed for pieces that let rain through, such as open floors and similar building parts.");
             seasonalSnowRoofPieceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - roof pieces", defaultValue: 0f,
                 "Controls heat-based melting on roof pieces. 0 keeps snow on roofs even when a fire is nearby.");
+            seasonalSnowCoveredPieceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - covered pieces", defaultValue: 2f,
+                "Melts existing snow under a newly added roof at 0.0018 buildup per active second times this value. Independent of fireplace and roof-piece multipliers. Zero stops covered melting but still blocks snowfall.");
 
             enableSeasonalSnow.SettingChanged += (sender, args) => SeasonalSnow.OnEnabledConfigChanged();
             seasonalSnowBuildup.SettingChanged += (sender, args) => SeasonalSnow.OnSnowRangeConfigChanged();
             reducedSeasonalSnowBuildup.SettingChanged += (sender, args) => SeasonalSnow.OnSnowRangeConfigChanged();
             seasonalSnowAccumulationSpeed.SettingChanged += (sender, args) => SeasonalSnow.OnAccumulationSpeedConfigChanged();
+            seasonalSnowHeatSourceMeltMultiplier.SettingChanged += (sender, args) => SeasonalSnow.OnHeatConfigChanged();
+            seasonalSnowHeatDistanceMultipliers.SettingChanged += (sender, args) => SeasonalSnow.OnHeatConfigChanged(rebuildLinks: true);
+            seasonalSnowHeatSourceCheckDistance.SettingChanged += (sender, args) => SeasonalSnow.OnHeatConfigChanged(rebuildLinks: true, reindexSources: true);
+            seasonalSnowSelfHeatMultiplier.SettingChanged += (sender, args) => SeasonalSnow.OnHeatConfigChanged(rebuildLinks: true);
+            seasonalSnowInteractiveObjectMeltMultiplier.SettingChanged += (sender, args) => SeasonalSnow.OnHeatConfigChanged();
+            seasonalSnowLeakyPieceMeltMultiplier.SettingChanged += (sender, args) => SeasonalSnow.OnHeatConfigChanged();
+            seasonalSnowRoofPieceMeltMultiplier.SettingChanged += (sender, args) => SeasonalSnow.OnHeatConfigChanged();
+            seasonalSnowCoveredPieceMeltMultiplier.SettingChanged += (sender, args) => SeasonalSnow.OnHeatConfigChanged();
 
             enableFrozenWater = serverConfig("Season - Winter ocean", "Enable frozen water", defaultValue: true, "Enable frozen water in winter");
             waterFreezesInWinterDays = serverConfig("Season - Winter ocean", "Freeze the water at given days from to", defaultValue: new Vector2(6f, 9f), "Water will freeze in the first set day of winter and will be unfrozen after second set day");

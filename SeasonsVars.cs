@@ -25,6 +25,8 @@ namespace Seasons
 
         public static int s_seasonalSnowValue = "Seasons_SeasonalSnowValue".GetStableHashCode();
         public static int s_seasonalSnowEpoch = "Seasons_SeasonalSnowEpoch".GetStableHashCode();
+        public static int s_seasonalSnowPlacedEpoch = "Seasons_SeasonalSnowPlacedEpoch".GetStableHashCode();
+        public static int s_seasonalSnowPlacedAt = "Seasons_SeasonalSnowPlacedAt".GetStableHashCode();
         public static int s_seasonalSnowWatermark = "Seasons_SeasonalSnow".GetStableHashCode();
         public static int s_seasonalSnowWinter = "Seasons_SeasonalSnowWinter".GetStableHashCode();
         public static int s_seasonalSnowFrom = "Seasons_SeasonalSnowFrom".GetStableHashCode();

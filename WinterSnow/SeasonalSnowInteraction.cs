@@ -1,4 +1,4 @@
-using System;
+using System.Collections.Generic;
 using UnityEngine;
 using static Seasons.Seasons;
 
@@ -10,11 +10,12 @@ namespace Seasons
         private WearNTear stationSnowPiece;
         private Transform observedAttachment;
         private WearNTear attachedSnowPiece;
+        private readonly Dictionary<SnowPiece, float> nextReceivedSnowUse = new Dictionary<SnowPiece, float>();
 
         internal void StationUsed(CraftingStation station)
         {
             Player player = Player.m_localPlayer;
-            if (!player || player.GetCurrentCraftingStation() != station || !SeasonalSnow.WinterReady)
+            if (!station || !player || player.GetCurrentCraftingStation() != station || !SeasonalSnow.WinterReady)
                 return;
             if (observedStation != station)
             {
@@ -84,14 +85,16 @@ namespace Seasons
 
         private void ReceiveUse(SnowPiece state, long sender)
         {
-            if (!state.Valid || !state.View.IsOwner() || !state.Confirmed || !state.Region.Ready ||
+            if (sender == 0L || !state.Valid || !state.View.IsOwner() || !state.Confirmed || !state.Region.Ready ||
                 !SeasonalSnow.WinterReady || seasonalSnowInteractiveObjectMeltMultiplier.Value <= 0f ||
                 ZNetScene.instance.OutsideActiveArea(state.Position))
+                return;
+            if (nextReceivedSnowUse.TryGetValue(state, out float next) && Time.time < next)
                 return;
             bool near = false;
             foreach (Player player in Player.GetAllPlayers())
             {
-                if (!player || !player.m_nview || !player.m_nview.IsValid() ||
+                if (!player || player.IsDead() || !player.m_nview || !player.m_nview.IsValid() ||
                     player.m_nview.GetZDO().GetOwner() != sender)
                     continue;
                 if ((player.transform.position - state.Position).sqrMagnitude <= 100f)
@@ -102,6 +105,7 @@ namespace Seasons
             }
             if (!near)
                 return;
+            nextReceivedSnowUse[state] = Time.time + 0.2f;
             bool starting = state.InteractiveUntil <= Time.time;
             state.InteractiveUntil = Time.time + 1f;
             interactingPieces.Add(state);
@@ -113,16 +117,29 @@ namespace Seasons
         {
             expiredInteractions.Clear();
             foreach (SnowPiece state in interactingPieces)
-                if (state.Retired || !state.Region.Ready || state.InteractiveUntil <= Time.time ||
+                if (!state.Valid || !state.Region.Ready || state.InteractiveUntil <= Time.time ||
                     ZNetScene.instance.OutsideActiveArea(state.Position))
                     expiredInteractions.Add(state);
             foreach (SnowPiece state in expiredInteractions)
             {
                 state.InteractiveUntil = 0f;
                 interactingPieces.Remove(state);
+                nextReceivedSnowUse.Remove(state);
                 QueueRefresh(state, SnowRefresh.Heat);
             }
             expiredInteractions.Clear();
+        }
+
+        private void ForgetSnowInteraction(SnowPiece state)
+        {
+            interactingPieces.Remove(state);
+            nextReceivedSnowUse.Remove(state);
+        }
+
+        private void ResetSnowInteractions()
+        {
+            interactingPieces.Clear();
+            nextReceivedSnowUse.Clear();
         }
     }
 }

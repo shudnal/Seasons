@@ -11,6 +11,26 @@ namespace Seasons
         private const float UnitMeltRate = 0.0018f;
         private const float InteractiveMeltRate = 0.002f;
 
+        private readonly struct SnowHeatCell : IEquatable<SnowHeatCell>
+        {
+            private readonly ZoneSystem.SectorIndex sector;
+            private readonly int local;
+
+            internal SnowHeatCell(Vector3 position)
+            {
+                Vector2s zone = ZoneSystem.GetZone(position);
+                Vector3 center = ZoneSystem.GetZonePos(zone);
+                sector = ZoneSystem.GetSectorIndex(position);
+                int x = Mathf.Clamp(Mathf.FloorToInt((position.x - center.x + 32f) / HeatCellSize), 0, 7);
+                int z = Mathf.Clamp(Mathf.FloorToInt((position.z - center.z + 32f) / HeatCellSize), 0, 7);
+                local = x + z * 8;
+            }
+
+            public bool Equals(SnowHeatCell other) => sector == other.sector && local == other.local;
+            public override bool Equals(object other) => other is SnowHeatCell cell && Equals(cell);
+            public override int GetHashCode() => unchecked(sector.GetHashCode() * 397 ^ local);
+        }
+
         private sealed class HeatArea
         {
             internal EffectArea Area;
@@ -107,8 +127,10 @@ namespace Seasons
             internal WearNTear Piece;
             internal readonly List<HeatArea> Areas = new List<HeatArea>();
             internal readonly List<HeatLink> Links = new List<HeatLink>();
-            internal readonly List<Vector2Int> Cells = new List<Vector2Int>();
+            internal readonly List<SnowHeatCell> Cells = new List<SnowHeatCell>();
             internal Bounds Bounds;
+            internal bool HasBounds;
+            internal bool GeometryQueued;
             internal bool Wide;
             internal bool Queued;
             internal bool Pending;
@@ -139,16 +161,18 @@ namespace Seasons
 
         private readonly Dictionary<EffectArea, HeatSource> heatAreas = new Dictionary<EffectArea, HeatSource>();
         private readonly Dictionary<UnityEngine.Object, HeatSource> heatOwners = new Dictionary<UnityEngine.Object, HeatSource>();
-        private readonly Dictionary<Vector2Int, HashSet<HeatSource>> heatCells = new Dictionary<Vector2Int, HashSet<HeatSource>>();
+        private readonly Dictionary<SnowHeatCell, HashSet<HeatSource>> heatCells = new Dictionary<SnowHeatCell, HashSet<HeatSource>>();
         private readonly Dictionary<WearNTear, HashSet<HeatSource>> selfHeaters = new Dictionary<WearNTear, HashSet<HeatSource>>();
         private readonly List<HeatSource> heatSources = new List<HeatSource>();
         private readonly HashSet<HeatSource> wideHeaters = new HashSet<HeatSource>();
         private readonly Queue<HeatSource> changedHeaters = new Queue<HeatSource>();
+        private readonly Queue<HeatSource> heatGeometry = new Queue<HeatSource>();
         private readonly HashSet<HeatSource> heatCandidates = new HashSet<HeatSource>();
         private int heatPollCursor;
 
-        private static Vector2Int HeatCell(Vector3 p) => new Vector2Int(
-            Mathf.FloorToInt(p.x / HeatCellSize), Mathf.FloorToInt(p.z / HeatCellSize));
+        private bool HasPendingHeatGeometry => heatGeometry.Count != 0;
+
+        private static SnowHeatCell HeatCell(Vector3 p) => new SnowHeatCell(p);
 
         internal void RegisterHeatArea(EffectArea area)
         {
@@ -156,13 +180,22 @@ namespace Seasons
                 (area.m_type & EffectArea.Type.Heat) == 0 || !area.gameObject.scene.IsValid() || !area.m_collider)
                 return;
             WearNTear piece = area.GetComponentInParent<WearNTear>();
+            ZSyncTransform motion = area.GetComponentInParent<ZSyncTransform>();
             if ((piece && !piece.m_staticPosition) || area.GetComponentInParent<Character>() ||
                 area.GetComponentInParent<Ship>() || area.GetComponentInParent<Vagon>() ||
-                area.GetComponentInParent<ItemDrop>() || area.GetComponentInParent<Rigidbody>())
+                area.GetComponentInParent<ItemDrop>() ||
+                (motion && (motion.m_syncPosition || motion.m_syncRotation || motion.m_characterParentSync)))
+                return;
+            // A static building piece is an explicit stationary anchor. An otherwise
+            // unclassified physics hierarchy stays mobile even while asleep/kinematic.
+            Rigidbody body = area.GetComponentInParent<Rigidbody>();
+            if (body && (!piece || body.transform != piece.transform))
                 return;
             Fireplace fireplace = area.GetComponentInParent<Fireplace>();
             Smelter smelter = area.GetComponentInParent<Smelter>();
-            UnityEngine.Object owner = fireplace ? (UnityEngine.Object)fireplace : smelter ? smelter : area;
+            ZNetView view = area.GetComponentInParent<ZNetView>();
+            UnityEngine.Object owner = fireplace ? (UnityEngine.Object)fireplace :
+                smelter ? smelter : piece ? piece : view ? view : area.transform.root;
             if (!heatOwners.TryGetValue(owner, out HeatSource source))
             {
                 source = new HeatSource { Owner = owner, Fireplace = fireplace, Smelter = smelter, Piece = piece };
@@ -176,7 +209,6 @@ namespace Seasons
                 }
             }
             HeatArea shape = new HeatArea { Area = area, Collider = area.m_collider, Transform = area.transform };
-            shape.Capture();
             source.Areas.Add(shape);
             heatAreas.Add(area, source);
             ReindexHeatSource(source);
@@ -234,7 +266,15 @@ namespace Seasons
 
         private void ReindexHeatSource(HeatSource source)
         {
-            foreach (Vector2Int cell in source.Cells)
+            if (source.GeometryQueued)
+                return;
+            source.GeometryQueued = true;
+            heatGeometry.Enqueue(source);
+        }
+
+        private void ReindexHeatSourceNow(HeatSource source)
+        {
+            foreach (SnowHeatCell cell in source.Cells)
                 if (heatCells.TryGetValue(cell, out HashSet<HeatSource> sources))
                 {
                     sources.Remove(source);
@@ -244,6 +284,7 @@ namespace Seasons
             source.Cells.Clear();
             wideHeaters.Remove(source);
             Bounds old = source.Bounds;
+            bool hadBounds = source.HasBounds;
             bool initialized = false;
             float distance = Mathf.Max(1f, seasonalSnowHeatSourceCheckDistance.Value);
             foreach (HeatArea area in source.Areas)
@@ -261,28 +302,53 @@ namespace Seasons
             }
             if (initialized && !source.Retired)
             {
-                Vector2Int min = HeatCell(source.Bounds.min);
-                Vector2Int max = HeatCell(source.Bounds.max);
+                Vector2Int min = new Vector2Int(Mathf.FloorToInt(source.Bounds.min.x / HeatCellSize),
+                    Mathf.FloorToInt(source.Bounds.min.z / HeatCellSize));
+                Vector2Int max = new Vector2Int(Mathf.FloorToInt(source.Bounds.max.x / HeatCellSize),
+                    Mathf.FloorToInt(source.Bounds.max.z / HeatCellSize));
                 long count = ((long)max.x - min.x + 1L) * ((long)max.y - min.y + 1L);
-                source.Wide = count > 4096L;
+                // Keep a single topology item small even for a huge modded source.
+                source.Wide = count > 256L || count <= 0L;
                 if (source.Wide)
                     wideHeaters.Add(source);
                 else
                     for (int x = min.x; x <= max.x; ++x)
                         for (int y = min.y; y <= max.y; ++y)
                         {
-                            Vector2Int cell = new Vector2Int(x, y);
+                            SnowHeatCell cell = HeatCell(new Vector3((x + 0.5f) * HeatCellSize, 0f, (y + 0.5f) * HeatCellSize));
                             if (!heatCells.TryGetValue(cell, out HashSet<HeatSource> sources))
                                 heatCells.Add(cell, sources = new HashSet<HeatSource>());
                             sources.Add(source);
                             source.Cells.Add(cell);
                         }
             }
-            foreach (SnowRegion region in snowRegions.Values)
-                if (RegionTouches(region, old) || (initialized && RegionTouches(region, source.Bounds)))
-                    QueueRegion(region, SnowRefresh.Heat | SnowRefresh.Links);
+            source.HasBounds = initialized && !source.Retired;
+            if (hadBounds)
+                QueueHeatRegions(old);
+            if (source.HasBounds)
+                QueueHeatRegions(source.Bounds);
             if (source.Piece && snowPieces.TryGetValue(source.Piece, out SnowPiece self))
                 QueueRefresh(self, SnowRefresh.Heat | SnowRefresh.Links);
+        }
+
+        private void QueueHeatRegions(Bounds bounds)
+        {
+            Vector2s min = ZoneSystem.GetZone(bounds.min);
+            Vector2s max = ZoneSystem.GetZone(bounds.max);
+            long count = ((long)max.x - min.x + 1L) * ((long)max.y - min.y + 1L);
+            if (count > 4096L || count <= 0L)
+            {
+                // A giant modded volume can cover more cells than there are loaded
+                // regions. The fallback scans region metadata, never all receivers.
+                foreach (SnowRegion region in regionList)
+                    if (RegionTouches(region, bounds))
+                        QueueRegion(region, SnowRefresh.Heat | SnowRefresh.Links);
+                return;
+            }
+            for (int x = min.x; x <= max.x; ++x)
+                for (int z = min.y; z <= max.y; ++z)
+                    if (snowRegions.TryGetValue(new Vector2s(x, z), out SnowRegion region))
+                        QueueRegion(region, SnowRefresh.Heat | SnowRefresh.Links);
         }
 
         private static bool RegionTouches(SnowRegion region, Bounds bounds) =>
@@ -319,6 +385,16 @@ namespace Seasons
 
         private void UpdateHeatSources()
         {
+            long geometryStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            int geometryLeft = 4;
+            while (geometryLeft-- > 0 && heatGeometry.Count != 0 &&
+                (System.Diagnostics.Stopwatch.GetTimestamp() - geometryStart) /
+                    (double)System.Diagnostics.Stopwatch.Frequency < 0.0005d)
+            {
+                HeatSource source = heatGeometry.Dequeue();
+                source.GeometryQueued = false;
+                ReindexHeatSourceNow(source);
+            }
             int polls = Math.Min(8, heatSources.Count);
             while (polls-- > 0 && heatSources.Count != 0)
             {
@@ -390,7 +466,7 @@ namespace Seasons
                     if (!self && distance > maximum && !area.Contains(state.Position))
                         continue;
                     link.Weights[i] = DistanceWeight(Mathf.Min(distance, maximum)) *
-                        (self ? Mathf.Max(1f, seasonalSnowSelfHeatMultiplier.Value) : 1f);
+                        (self ? Mathf.Max(0f, seasonalSnowSelfHeatMultiplier.Value) : 1f);
                     any |= link.Weights[i] > 0f;
                 }
                 if (!any)
@@ -439,6 +515,7 @@ namespace Seasons
             heatSources.Clear();
             wideHeaters.Clear();
             changedHeaters.Clear();
+            heatGeometry.Clear();
             heatCandidates.Clear();
             heatPollCursor = 0;
         }

@@ -140,8 +140,7 @@ namespace Seasons
         internal int MaterialPoolCount => materials.PoolCount;
         internal int CreatedMaterialCount => materials.CreatedMaterialCount;
 
-        // The legacy simulation remains the producer until the four-list replacement.
-        // Read its selected value explicitly, without changing the native runtime field.
+        // Native visual callbacks only request the latest singleton-owned target.
         internal bool TryQueueCurrentVisual(WearNTear piece)
         {
             if (!piece)
@@ -153,17 +152,14 @@ namespace Seasons
             }
             if (!SeasonalSnow.IsSeasonalSnowPosition(piece))
             {
+                SeasonalSnow.ClearInactiveLoadedSnow(piece);
                 ReleaseVisual(piece, hide: true, restoreNative: true);
                 return false;
             }
             if (ZNet.instance && ZNet.instance.IsDedicated())
                 return true;
 
-            float snow = SeasonalSnow.GetVisualSnow(piece);
-            if (float.IsNaN(snow) || float.IsInfinity(snow))
-                snow = 0f;
-            QueueVisual(piece, snow, disabled: false,
-                force: snow <= 0f || snow >= SeasonalSnow.GetSnowBuildupRange(piece).y);
+            RequestSnowVisual(piece, force: false);
             return true;
         }
 
@@ -224,6 +220,17 @@ namespace Seasons
                 RemoveNativeSnowProperty(piece);
             }
 
+            bool prioritizeHide = SetVisualTarget(state, snow, disabled);
+
+            if (!state.HasApplied || state.Target != state.Applied ||
+                Mathf.Abs(state.TargetLevel - state.AppliedLevel) + 0.000001f >= VisualStep ||
+                (force && !state.TargetLevel.Equals(state.AppliedLevel)))
+                EnqueueVisual(state, prioritizeHide);
+        }
+
+        private static bool SetVisualTarget(VisualState state, float snow, bool disabled)
+        {
+            WearNTear piece = state.Piece;
             MeshRenderer target = null;
             if (!disabled && state.Normal && snow > VisibilityThreshold)
             {
@@ -237,10 +244,7 @@ namespace Seasons
             state.TargetSnow = snow;
             state.TargetLevel = level;
 
-            if (!state.HasApplied || target != state.Applied ||
-                Mathf.Abs(level - state.AppliedLevel) + 0.000001f >= VisualStep ||
-                (force && !level.Equals(state.AppliedLevel)))
-                EnqueueVisual(state, prioritizeHide);
+            return prioritizeHide;
         }
 
         private void BindCap(VisualState state, MeshRenderer renderer)
@@ -374,6 +378,11 @@ namespace Seasons
                     QueueVisual(state.Piece, state.TargetSnow, state.Disabled, force: true);
                     continue;
                 }
+
+                // Arithmetic and preparation may have advanced while this handle waited.
+                // Always render its current value, never a captured intermediate target.
+                if (!state.Disabled && TryGetRuntimeSnow(state.Piece, out float snow))
+                    SetVisualTarget(state, snow, disabled: false);
 
                 int index = state.Target ? Mathf.Clamp(Mathf.FloorToInt(state.TargetLevel * 100f + 0.00001f), 1, 100) : 0;
                 // Hide old roots first, update every LOD/child material, then reveal

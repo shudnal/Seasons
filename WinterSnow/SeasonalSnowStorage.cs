@@ -1,8 +1,4 @@
-using HarmonyLib;
 using System;
-using System.Collections.Generic;
-using System.Reflection;
-using System.Reflection.Emit;
 using UnityEngine;
 using static Seasons.Seasons;
 
@@ -157,19 +153,21 @@ namespace Seasons
                 zdo.Set(ZDOVars.s_preSnow, false);
         }
 
-        // Transitional routing for the existing native producer. Its simulation will be
-        // replaced separately; no global ZDOVars constant or ZDO method is patched.
-        internal static int GetKey(WearNTear piece)
+        // Placement survives unload and snow cleanup, but only applies to its winter.
+        internal static void RecordPlacement(ZDO zdo)
         {
-            if (!SeasonalSnow.IsSeasonalSnowPosition(piece))
-                return ZDOVars.s_snow;
-            MigrateLoaded(piece);
-            ZDO zdo = piece.m_nview.GetZDO();
-            if (!HasSavedValue(zdo) && HasLegacyState(zdo) && !CanWrite(piece.m_nview, zdo))
-                return ZDOVars.s_snow;
-            return SeasonsVars.s_seasonalSnowValue;
+            if (zdo == null || !SeasonState.IsActive || !ZNet.instance ||
+                seasonState.GetCurrentDay() <= 0 || seasonState.GetCurrentSeason() != Season.Winter)
+                return;
+            zdo.Set(SeasonsVars.s_seasonalSnowPlacedEpoch, CurrentWinterEpoch);
+            zdo.Set(SeasonsVars.s_seasonalSnowPlacedAt, ToTimestamp(ZNet.instance.GetTimeSeconds()));
         }
 
+        internal static bool IsCurrentWinterPlacement(ZDO zdo) => zdo != null &&
+            zdo.GetLong(SeasonsVars.s_seasonalSnowPlacedEpoch, MissingEpoch) == CurrentWinterEpoch;
+
+        internal static double PlacementTime(ZDO zdo) =>
+            FromTimestamp(zdo.GetLong(SeasonsVars.s_seasonalSnowPlacedAt, 0L));
         internal static bool RemoveSavedValue(ZDO zdo)
         {
             bool changed = zdo.RemoveFloat(SeasonsVars.s_seasonalSnowValue);
@@ -178,38 +176,4 @@ namespace Seasons
         }
     }
 
-    [HarmonyPatch]
-    internal static class WearNTear_SeasonalSnowStorage
-    {
-        private static IEnumerable<MethodBase> TargetMethods()
-        {
-            yield return AccessTools.Method(typeof(WearNTear), nameof(WearNTear.Awake));
-            yield return AccessTools.Method(typeof(WearNTear), nameof(WearNTear.UpdateWear));
-            yield return AccessTools.Method(typeof(WearNTear), nameof(WearNTear.RPC_SetSnow));
-        }
-
-        [HarmonyTranspiler]
-        private static IEnumerable<CodeInstruction> Transpiler(
-            IEnumerable<CodeInstruction> instructions, MethodBase original)
-        {
-            FieldInfo snowKey = AccessTools.Field(typeof(ZDOVars), nameof(ZDOVars.s_snow));
-            MethodInfo getKey = AccessTools.Method(typeof(SeasonalSnowStorage), nameof(SeasonalSnowStorage.GetKey));
-            bool found = false;
-            foreach (CodeInstruction instruction in instructions)
-            {
-                if (instruction.LoadsField(snowKey))
-                {
-                    instruction.opcode = OpCodes.Ldarg_0;
-                    instruction.operand = null;
-                    yield return instruction;
-                    yield return new CodeInstruction(OpCodes.Call, getKey);
-                    found = true;
-                }
-                else
-                    yield return instruction;
-            }
-            if (!found)
-                LogWarning($"Failed to route seasonal snow storage in WearNTear.{original.Name}.");
-        }
-    }
 }
