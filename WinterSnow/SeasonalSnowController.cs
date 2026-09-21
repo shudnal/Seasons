@@ -17,13 +17,36 @@ namespace Seasons
         {
             internal readonly MeshRenderer Renderer;
             internal readonly GameObject Object;
+            internal readonly int Mask;
+            internal bool Supported;
+
+            internal CapBinding(MeshRenderer renderer, int mask)
+            {
+                Renderer = renderer;
+                Object = renderer.gameObject;
+                Mask = mask;
+            }
+
+            internal void SetVisible(bool visible)
+            {
+                // Toggle the cap root only. Child activity and LOD selection belong to Unity.
+                if (Object && Object.activeSelf != visible)
+                    Object.SetActive(visible);
+            }
+        }
+
+        private sealed class SnowRendererBinding
+        {
+            internal readonly Renderer Renderer;
+            internal readonly GameObject Object;
+            internal int CapMask;
             private readonly Material[] originals;
             private readonly Material[] assigned;
             private readonly SeasonalSnowMaterials.Levels[] levels;
             private int appliedIndex = -1;
             internal readonly bool Supported;
 
-            internal CapBinding(MeshRenderer renderer, SeasonalSnowMaterials materials)
+            internal SnowRendererBinding(Renderer renderer, SeasonalSnowMaterials materials)
             {
                 Renderer = renderer;
                 Object = renderer.gameObject;
@@ -35,16 +58,14 @@ namespace Seasons
                     levels[i] = materials.GetLevels(originals[i]);
                     Supported |= levels[i] != null;
                 }
+                // Leave unrelated child renderers entirely outside snow ownership.
+                if (!Supported)
+                    return;
+
                 // Seasons owns both renderer-wide and per-slot overrides on its caps.
                 renderer.SetPropertyBlock(null);
                 for (int i = 0; i < originals.Length; ++i)
                     renderer.SetPropertyBlock(null, i);
-            }
-
-            internal void SetVisible(bool visible)
-            {
-                if (Object && Object.activeSelf != visible)
-                    Object.SetActive(visible);
             }
 
             internal void ApplyMaterial(int index)
@@ -79,6 +100,7 @@ namespace Seasons
             internal readonly MeshRenderer Worn;
             internal readonly MeshRenderer Broken;
             internal readonly List<CapBinding> Caps = new List<CapBinding>(3);
+            internal readonly List<SnowRendererBinding> Renderers = new List<SnowRendererBinding>(3);
             internal MeshRenderer Target;
             internal MeshRenderer Applied;
             internal float TargetLevel;
@@ -155,6 +177,9 @@ namespace Seasons
                 for (int i = 0; i < state.Caps.Count; ++i)
                     if (state.Caps[i].Object == wet)
                         return null;
+                for (int i = 0; i < state.Renderers.Count; ++i)
+                    if (state.Renderers[i].Object == wet)
+                        return null;
             }
             return wet;
         }
@@ -226,16 +251,60 @@ namespace Seasons
                 if (existing.Renderer == renderer)
                     return;
 
-            CapBinding binding = new CapBinding(renderer, materials);
-            state.Caps.Add(binding);
-            ownedRenderers.Add(renderer);
-            DetachFromMaterialMan(renderer);
-            if (!binding.Supported)
+            CapBinding cap = new CapBinding(renderer, 1 << state.Caps.Count);
+            state.Caps.Add(cap);
+            BindCapRenderer(state, cap, renderer);
+
+            // Resolve dependencies once, including inactive LODs. Never rediscover them
+            // when only the snow percentage changes, and never scan the whole piece.
+            if (renderer.TryGetComponent(out LODGroup group))
+            {
+                foreach (LOD lod in group.GetLODs())
+                {
+                    if (lod.renderers == null)
+                        continue;
+                    foreach (Renderer child in lod.renderers)
+                        BindCapRenderer(state, cap, child);
+                }
+            }
+            else
+            {
+                foreach (Renderer child in renderer.GetComponentsInChildren<Renderer>(true))
+                    BindCapRenderer(state, cap, child);
+            }
+
+            if (!cap.Supported)
             {
                 string key = Utils.GetPrefabName(state.Piece.gameObject) + "/" + renderer.name;
                 if (unsupportedCaps.Add(key))
-                    LogWarning($"Unsupported snow cap material on '{key}'; the cap will remain hidden.");
+                    LogWarning($"No supported snow cap materials on '{key}'; the cap will remain hidden.");
             }
+        }
+
+        private void BindCapRenderer(VisualState state, CapBinding cap, Renderer renderer)
+        {
+            // A malformed LOD list must not take control of another part of the piece.
+            if (!renderer || !renderer.transform.IsChildOf(cap.Object.transform))
+                return;
+
+            foreach (SnowRendererBinding existing in state.Renderers)
+            {
+                if (existing.Renderer != renderer)
+                    continue;
+                existing.CapMask |= cap.Mask;
+                cap.Supported = true;
+                return;
+            }
+
+            SnowRendererBinding binding = new SnowRendererBinding(renderer, materials);
+            if (!binding.Supported)
+                return;
+
+            binding.CapMask = cap.Mask;
+            state.Renderers.Add(binding);
+            cap.Supported = true;
+            ownedRenderers.Add(renderer);
+            DetachFromMaterialMan(renderer);
         }
 
         private void EnqueueVisual(VisualState state, bool prioritize = false)
@@ -307,19 +376,20 @@ namespace Seasons
                 }
 
                 int index = state.Target ? Mathf.Clamp(Mathf.FloorToInt(state.TargetLevel * 100f + 0.00001f), 1, 100) : 0;
-                // Hide old variants first; never expose a new cap with the previous material.
+                // Hide old roots first, update every LOD/child material, then reveal
+                // the selected root. A shared renderer is assigned only once.
+                CapBinding targetCap = null;
                 foreach (CapBinding cap in state.Caps)
-                    if (cap.Renderer != state.Target || !cap.Supported)
-                    {
-                        cap.SetVisible(false);
-                        cap.ApplyMaterial(0);
-                    }
-                foreach (CapBinding cap in state.Caps)
+                {
                     if (state.Target && cap.Renderer == state.Target && cap.Supported)
-                    {
-                        cap.ApplyMaterial(index);
-                        cap.SetVisible(true);
-                    }
+                        targetCap = cap;
+                    else
+                        cap.SetVisible(false);
+                }
+                int targetMask = targetCap != null ? targetCap.Mask : 0;
+                foreach (SnowRendererBinding binding in state.Renderers)
+                    binding.ApplyMaterial((binding.CapMask & targetMask) != 0 ? index : 0);
+                targetCap?.SetVisible(true);
                 state.HasApplied = true;
                 state.Applied = state.Target;
                 state.AppliedLevel = state.TargetLevel;
@@ -341,14 +411,15 @@ namespace Seasons
                 return;
             RemoveQueuedVisual(state);
             visuals.Remove(piece);
-            foreach (CapBinding cap in state.Caps)
-            {
-                ownedRenderers.Remove(cap.Renderer);
-                if (hide)
+            if (hide)
+                foreach (CapBinding cap in state.Caps)
                     cap.SetVisible(false);
-                cap.ApplyMaterial(0);
-                if (restoreNative && cap.Renderer)
-                    RestoreToMaterialMan(cap.Renderer);
+            foreach (SnowRendererBinding binding in state.Renderers)
+            {
+                ownedRenderers.Remove(binding.Renderer);
+                binding.ApplyMaterial(0);
+                if (restoreNative && binding.Renderer)
+                    RestoreToMaterialMan(binding.Renderer);
             }
         }
 
@@ -364,13 +435,16 @@ namespace Seasons
         {
             // Restore bindings before disposing their pooled materials.
             foreach (VisualState state in visuals.Values)
+            {
                 foreach (CapBinding cap in state.Caps)
-                {
                     cap.SetVisible(false);
-                    cap.ApplyMaterial(0);
-                    if (cap.Renderer)
-                        RestoreToMaterialMan(cap.Renderer);
+                foreach (SnowRendererBinding binding in state.Renderers)
+                {
+                    binding.ApplyMaterial(0);
+                    if (binding.Renderer)
+                        RestoreToMaterialMan(binding.Renderer);
                 }
+            }
             visuals.Clear();
             ownedRenderers.Clear();
             unsupportedCaps.Clear();
