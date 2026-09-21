@@ -55,6 +55,7 @@
     <Compile Include="SummerHeat\SummerHeatController.cs" />
     <Compile Include="SummerHeat\SummerHeatState.cs" />
     <Compile Include="SummerHeat\SummerHeatVisuals.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowStorage.cs" />
     <Compile Include="WinterSnow\SeasonalSnowMaterials.cs" />
     <Compile Include="WinterSnow\SeasonalSnowController.cs" />
     <Compile Include="WinterSnow\SeasonalSnowVisualPatches.cs" />
@@ -306,3 +307,4 @@
     </PostBuildEvent>
   </PropertyGroup>
 </Project>
+
