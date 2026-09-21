@@ -21,68 +21,81 @@ namespace Seasons
             internal Vector3 Position;
             internal Bounds Bounds;
             internal bool Active;
+            private byte shape;
+            private Vector3 center;
+            private Vector3 half;
+            private Vector3 direction;
+            private float radius;
+            private float segmentHalf;
+
+            internal bool NeedsActiveGeometry => shape == 0;
 
             internal void Capture()
             {
                 Matrix = Transform.localToWorldMatrix;
                 Inverse = Transform.worldToLocalMatrix;
                 Position = Transform.position;
-                Bounds local;
+                Vector3 scale = Transform.lossyScale;
+                scale = new Vector3(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z));
                 if (Collider is BoxCollider box)
-                    local = new Bounds(box.center, box.size);
+                {
+                    shape = 1;
+                    center = box.center;
+                    half = box.size * 0.5f;
+                    Vector3 x = Matrix.MultiplyVector(new Vector3(half.x, 0f, 0f));
+                    Vector3 y = Matrix.MultiplyVector(new Vector3(0f, half.y, 0f));
+                    Vector3 z = Matrix.MultiplyVector(new Vector3(0f, 0f, half.z));
+                    Bounds = new Bounds(Matrix.MultiplyPoint3x4(center), 2f * new Vector3(
+                        Mathf.Abs(x.x) + Mathf.Abs(y.x) + Mathf.Abs(z.x),
+                        Mathf.Abs(x.y) + Mathf.Abs(y.y) + Mathf.Abs(z.y),
+                        Mathf.Abs(x.z) + Mathf.Abs(y.z) + Mathf.Abs(z.z)));
+                }
                 else if (Collider is SphereCollider sphere)
-                    local = new Bounds(sphere.center, Vector3.one * sphere.radius * 2f);
+                {
+                    shape = 2;
+                    center = Matrix.MultiplyPoint3x4(sphere.center);
+                    radius = sphere.radius * Mathf.Max(scale.x, Mathf.Max(scale.y, scale.z));
+                    // Unity scales a sphere by the largest axis, not into an ellipsoid.
+                    Bounds = new Bounds(center, Vector3.one * radius * 2f);
+                }
                 else if (Collider is CapsuleCollider capsule)
                 {
-                    Vector3 size = Vector3.one * capsule.radius * 2f;
-                    size[capsule.direction] = Mathf.Max(capsule.height, capsule.radius * 2f);
-                    local = new Bounds(capsule.center, size);
+                    shape = 3;
+                    int axis = capsule.direction;
+                    radius = capsule.radius * Mathf.Max(scale[(axis + 1) % 3], scale[(axis + 2) % 3]);
+                    segmentHalf = Mathf.Max(0f, capsule.height * scale[axis] * 0.5f - radius);
+                    direction = Vector3.zero;
+                    direction[axis] = 1f;
+                    direction = Matrix.MultiplyVector(direction).normalized;
+                    center = Matrix.MultiplyPoint3x4(capsule.center);
+                    Bounds = new Bounds(center, 2f * (Vector3.one * radius + segmentHalf *
+                        new Vector3(Mathf.Abs(direction.x), Mathf.Abs(direction.y), Mathf.Abs(direction.z))));
                 }
-                else if (Collider is MeshCollider mesh && mesh.sharedMesh)
-                    local = mesh.sharedMesh.bounds;
                 else
                 {
+                    shape = 0;
                     Bounds = Collider.bounds;
-                    return;
                 }
-                Vector3 x = Matrix.MultiplyVector(new Vector3(local.extents.x, 0f, 0f));
-                Vector3 y = Matrix.MultiplyVector(new Vector3(0f, local.extents.y, 0f));
-                Vector3 z = Matrix.MultiplyVector(new Vector3(0f, 0f, local.extents.z));
-                Bounds = new Bounds(Matrix.MultiplyPoint3x4(local.center), 2f * new Vector3(
-                    Mathf.Abs(x.x) + Mathf.Abs(y.x) + Mathf.Abs(z.x),
-                    Mathf.Abs(x.y) + Mathf.Abs(y.y) + Mathf.Abs(z.y),
-                    Mathf.Abs(x.z) + Mathf.Abs(y.z) + Mathf.Abs(z.z)));
             }
 
             internal bool Contains(Vector3 point)
             {
-                if (Collider is BoxCollider box)
+                if (shape == 1)
                 {
-                    Vector3 p = Inverse.MultiplyPoint3x4(point) - box.center;
-                    Vector3 half = box.size * 0.5f;
+                    Vector3 p = Inverse.MultiplyPoint3x4(point) - center;
                     return Mathf.Abs(p.x) <= half.x && Mathf.Abs(p.y) <= half.y && Mathf.Abs(p.z) <= half.z;
                 }
-                Vector3 scale = Transform.lossyScale;
-                scale = new Vector3(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z));
-                if (Collider is SphereCollider sphere)
+                if (shape == 2)
+                    return (point - center).sqrMagnitude <= radius * radius;
+                if (shape == 3)
                 {
-                    float radius = sphere.radius * Mathf.Max(scale.x, Mathf.Max(scale.y, scale.z));
-                    return (point - Matrix.MultiplyPoint3x4(sphere.center)).sqrMagnitude <= radius * radius;
-                }
-                if (Collider is CapsuleCollider capsule)
-                {
-                    int axis = capsule.direction;
-                    float radius = capsule.radius * Mathf.Max(scale[(axis + 1) % 3], scale[(axis + 2) % 3]);
-                    float half = Mathf.Max(0f, capsule.height * scale[axis] * 0.5f - radius);
-                    Vector3 direction = Vector3.zero;
-                    direction[axis] = 1f;
-                    direction = Matrix.MultiplyVector(direction).normalized;
-                    Vector3 offset = point - Matrix.MultiplyPoint3x4(capsule.center);
-                    Vector3 nearest = direction * Mathf.Clamp(Vector3.Dot(offset, direction), -half, half);
+                    Vector3 offset = point - center;
+                    Vector3 nearest = direction * Mathf.Clamp(Vector3.Dot(offset, direction), -segmentHalf, segmentHalf);
                     return (offset - nearest).sqrMagnitude <= radius * radius;
                 }
-                // Uncommon shapes use one narrow query while links are rebuilt, not per tick.
-                return Active && Bounds.Contains(point) && (Collider.ClosestPoint(point) - point).sqrMagnitude < 0.000001f;
+                // Uncommon shapes use a narrow query only while links are rebuilt.
+                return Active && Collider && Bounds.Contains(point) &&
+                    (Collider.ClosestPoint(point) - point).sqrMagnitude < 0.000001f;
             }
         }
 
@@ -98,6 +111,7 @@ namespace Seasons
             internal Bounds Bounds;
             internal bool Wide;
             internal bool Queued;
+            internal bool Pending;
             internal bool Retired;
             internal int Cursor;
             internal float NextPoll;
@@ -138,10 +152,9 @@ namespace Seasons
 
         internal void RegisterHeatArea(EffectArea area)
         {
-            if (!area || heatAreas.ContainsKey(area) || (area.m_type & EffectArea.Type.Heat) == 0 ||
-                !area.gameObject.scene.IsValid() || !area.m_collider)
+            if (!area || !EnsureSnowScene() || heatAreas.ContainsKey(area) ||
+                (area.m_type & EffectArea.Type.Heat) == 0 || !area.gameObject.scene.IsValid() || !area.m_collider)
                 return;
-            // Classification and component discovery happen only when a source appears.
             WearNTear piece = area.GetComponentInParent<WearNTear>();
             if ((piece && !piece.m_staticPosition) || area.GetComponentInParent<Character>() ||
                 area.GetComponentInParent<Ship>() || area.GetComponentInParent<Vagon>() ||
@@ -175,11 +188,9 @@ namespace Seasons
             if (!area)
                 return;
             if (!heatAreas.TryGetValue(area, out HeatSource source))
-            {
                 RegisterHeatArea(area);
-                return;
-            }
-            source.NextPoll = 0f;
+            else
+                source.NextPoll = 0f;
         }
 
         internal void RemoveHeatArea(EffectArea area)
@@ -211,7 +222,11 @@ namespace Seasons
         private void QueueHeater(HeatSource source)
         {
             if (source.Queued)
+            {
+                // Receivers already visited by this pass must see a later toggle too.
+                source.Pending = true;
                 return;
+            }
             source.Queued = true;
             source.Cursor = 0;
             changedHeaters.Enqueue(source);
@@ -233,6 +248,8 @@ namespace Seasons
             float distance = Mathf.Max(1f, seasonalSnowHeatSourceCheckDistance.Value);
             foreach (HeatArea area in source.Areas)
             {
+                if (!area.Area || !area.Collider || !area.Transform)
+                    continue;
                 area.Capture();
                 Bounds bounds = area.Bounds;
                 bounds.Encapsulate(new Bounds(area.Position, Vector3.one * distance * 2f));
@@ -261,12 +278,11 @@ namespace Seasons
                             source.Cells.Add(cell);
                         }
             }
-            // A topology change is rare and touches regions, never a full piece scan here.
             foreach (SnowRegion region in snowRegions.Values)
                 if (RegionTouches(region, old) || (initialized && RegionTouches(region, source.Bounds)))
-                    QueueRegion(region, SnowRefresh.Heat | SnowRefresh.Rules);
+                    QueueRegion(region, SnowRefresh.Heat | SnowRefresh.Links);
             if (source.Piece && snowPieces.TryGetValue(source.Piece, out SnowPiece self))
-                QueueRefresh(self, SnowRefresh.Heat | SnowRefresh.Rules);
+                QueueRefresh(self, SnowRefresh.Heat | SnowRefresh.Links);
         }
 
         private static bool RegionTouches(SnowRegion region, Bounds bounds) =>
@@ -278,20 +294,22 @@ namespace Seasons
             if (source.Retired || (!force && Time.time < source.NextPoll))
                 return;
             source.NextPoll = Time.time + 0.5f;
-            bool burning = source.Fireplace
+            bool burning = source.Owner && (source.Fireplace
                 ? source.Fireplace.m_nview && source.Fireplace.m_nview.IsValid() && source.Fireplace.IsBurning()
                 : source.Smelter
                     ? source.Smelter.m_nview && source.Smelter.m_nview.IsValid() && source.Smelter.IsActive()
-                    : true;
+                    : true);
             bool changed = force;
             bool moved = false;
             foreach (HeatArea shape in source.Areas)
             {
                 bool active = burning && shape.Area && shape.Area.isActiveAndEnabled &&
                     shape.Collider && shape.Collider.enabled && shape.Collider.gameObject.activeInHierarchy;
-                changed |= shape.Active != active;
+                bool activityChanged = shape.Active != active;
+                changed |= activityChanged;
                 shape.Active = active;
                 moved |= shape.Transform && shape.Transform.localToWorldMatrix != shape.Matrix;
+                moved |= activityChanged && shape.NeedsActiveGeometry;
             }
             if (moved)
                 ReindexHeatSource(source);
@@ -325,6 +343,11 @@ namespace Seasons
                 {
                     changedHeaters.Dequeue();
                     source.Queued = false;
+                    if (source.Pending)
+                    {
+                        source.Pending = false;
+                        QueueHeater(source);
+                    }
                     continue;
                 }
                 QueueRefresh(source.Links[source.Cursor++].Piece, SnowRefresh.Heat);
@@ -402,8 +425,9 @@ namespace Seasons
                 weight += link.Contribution();
             float piece = state.Roof ? seasonalSnowRoofPieceMeltMultiplier.Value :
                 state.Leaky ? seasonalSnowLeakyPieceMeltMultiplier.Value : 1f;
-            state.HeatRate = UnitMeltRate * Mathf.Max(0f, seasonalSnowHeatSourceMeltMultiplier.Value) *
+            float rate = UnitMeltRate * Mathf.Max(0f, seasonalSnowHeatSourceMeltMultiplier.Value) *
                 Mathf.Max(0f, piece) * weight;
+            state.HeatRate = float.IsNaN(rate) || float.IsInfinity(rate) ? 0f : rate;
         }
 
         private void ResetHeatSources()
