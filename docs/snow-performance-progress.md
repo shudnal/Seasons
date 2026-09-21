@@ -1,96 +1,98 @@
 # Snow performance implementation progress
 
 Design reference: [snow-performance.md](snow-performance.md).
-Baseline: `f77249d625dadf5e5262cb969a9a8455e3c7ccbc` on `perf/snow-performance`.
+Implementation baseline inspected: `af8765f446a0a100db110dc43d9259d4631f18d3` on `perf/snow-performance`.
+Updated: 2026-09-22. This describes source integration and static review; build and gameplay acceptance remain with the maintainer.
 
-## Current boundary
+## Current integration
 
-Cap rendering, Seasons-owned float persistence, and saved-first ready-area confirmation are connected. The four-list simulation replacement is **not** connected yet. This branch is an incremental implementation, not the completed optimization or a release candidate.
+The new simulation is included in `Seasons.csproj` and connected to game callbacks. All seven prepared files now have Compile entries: `SeasonalSnowState`, `SeasonalSnowRuntime`, `SeasonalSnowSimulation`, `SeasonalSnowHeat`, `SeasonalSnowInteraction`, `SeasonalSnowGeometry`, and `SeasonalSnowSimulationPatches`.
 
-The existing `SeasonalSnow` calculation remains the producer. Its geometry, active-area heat/interaction rules, and wear-driven calculation cadence remain in place. Native `WearNTear.Awake`, `UpdateWear`, and `RPC_SetSnow` select the private snow key only for eligible seasonal pieces. This is a transitional storage adapter, not the final simulation scheduler. Neither global ZDO methods nor Seasons' own methods are patched.
+The ordinary `SeasonalSnowController` singleton owns both the simulation and the existing visual layer. The `ZNetScene.Update` postfix runs simulation before visual application. `WearNTear.Awake`/Start/OnPlaced register or initialize pieces; destruction, ZNetView reset, scene shutdown, and zone teardown flush or retire them. Save preparation flushes coherent owned snapshots while the season clock is available. No simulation component is added to a piece or heater.
 
-The visual controller reads `SeasonalSnow.GetVisualSnow()` explicitly. The previous prefix/finalizer substitution of `m_snowBuildup` for provisional drawing has been removed. The runtime field still carries the old producer's real value until the next calculation stage; do not confuse that remaining dependency with positive writes to the vanilla save key.
+`SeasonalSnow.cs` now provides eligibility, configuration, and deterministic per-biome weather history. Its old wear-driven arithmetic, heat lookup, interaction calculations, and provisional native-field adapters are removed. The transitional native-key storage transpiler is removed too. Seasonal visuals read the singleton's working state. Native snow fields remain neutral for managed seasonal pieces; ordinary Deep North snow retains the native path. Disabled caps retain explicit suppression, including in Deep North.
 
-## Landed slices
+## Implementation history
 
-| Commit | Scope |
+| Commit or slice | Scope |
 | --- | --- |
-| `69d848c` | Immutable material pools, one original and up to 100 lazy variants per source material. |
-| `4a65dde` | Singleton-owned renderer bindings, latest-target visual queue, 0.01 visual change gate, and at most 50 applications per frame. |
-| `ff9f85d` | Disabled and copied caps use the same ownership/cleanup path. Remove MaterialMan calls from `SeasonalSnowMeshSettings`. |
-| `3d3a21a` | Scope the queue to its scene, reject stopped-scene work, prioritize hides, restore native Ignore visuals once, and bound unsupported-material warnings. |
-| `4bb9775` | Prevent native wet visuals from toggling an aliased managed snow cap. |
-| `bf1880f` | Pause ordinary visual queue processing with the game. |
-| `376d000` | Record maintainer visual-parity and qualitative frame-stability feedback. |
-| `605ef4c` | Disable seasonal stat modifiers in Ashlands and Deep North; maintainer confirmed this separate fix works. |
-| `3a9bddd` | Add private float/epoch keys and storage primitives without connecting them yet. |
-| `fad274c` | Connect private persistence, explicit visual selection, and one complete ready-area confirmation; remove the automatic minimum top-up and whole-world ZDO cleanup. |
-| `5b83bd8` | Cache and update complete snow cap renderer groups, preferring root LODGroup membership over descendant discovery. |
+| `69d848c`, `4a65dde`, `ff9f85d`, `3d3a21a` | Material pools, complete cap ownership, coalesced visual work, and cleanup. |
+| `4bb9775`, `bf1880f`, `376d000` | Wet-visual alias protection, pause handling, and recorded maintainer visual feedback. |
+| `605ef4c` | Separate seasonal stat-modifier fix for Ashlands and Deep North. |
+| `3a9bddd`, `fad274c` | Private persistence and saved-first confirmation groundwork. |
+| `5b83bd8` | Complete child/LOD renderer groups. |
+| `889b596`, `ac09c19` | Server-side floe generation and distant streaming groundwork. |
+| Prepared runtime through `af8765f` | Unconnected simulation files audited as unfinished implementation, despite earlier completion-oriented commit titles. |
+| `97f3f24` | Harden server floe readiness, location clear areas, retry handling, and remote-owned zone marker cleanup. |
+| `9d94630` | Include and wire the prepared runtime, correct lifecycle/authority/weather handling, remove the old producer, and connect covered-piece melting. |
 
-No version, gameplay configuration default, snow JSON schema, or release changelog has changed.
+No version bump or packaging change is part of this integration. The ordinary snow default becomes `0.51..1.0`; reduced defaults remain `0.3..0.6`. Explicit stored config values remain user choices.
 
-## Implemented rendering behavior
+## Simulation and work boundaries
 
-- Capture each distinct normal/worn/broken cap root and its supported renderer dependencies once, preserving source materials and non-snow material slots.
-- Preserve the native 0.25 visibility threshold and damaged-cap fallback order.
-- Clear renderer-wide and per-slot property blocks when taking ownership. Exclude managed caps from existing MaterialMan assignments and future renderer refreshes, without filtering unrelated piece renderers.
-- Reuse `sharedMaterial` variants; do not mutate originals, use `renderer.material`, or involve `PrefabVariantController`.
-- Deduplicate pending visuals. A later value replaces the target rather than appending another percentage to replay.
-- Restore original materials before destroying pooled clones. Release copied renderers before removing their objects. No additional MonoBehaviour is attached to a piece or heater.
-- Drive visual application from the existing scene Update callback, once per frame for the current scene. Reject shutdown callbacks from a different scene.
-- Do not create material variants on a dedicated server.
+Each registered seasonal piece has one of four buckets: `AccumulationFull`, `AccumulationOpen`, `MeltingEmpty`, or `MeltingSnow`. Regions hold dense per-biome groups with stored indices and swap removal. Clear biomes skip their accumulation groups; full and empty bounds sleep until a relevant transition. Cached per-biome weather gain feeds arithmetic independently of the visual budget.
 
-## Private persistence and single confirmation
+Effective static heat, active interaction, or shelter selects melting. That branch subtracts the cached melt rate and receives no snowfall term. Distinct logical sources add; multiple child heat areas of one fireplace/smelter/source contribute its strongest applicable influence once. Interaction replaces static heat while active; cover melting remains additive and independent.
 
-`Seasons_SeasonalSnowValue` holds a float, including an explicit zero. `Seasons_SeasonalSnowEpoch` identifies the winter in the existing season calendar. The existing from/baseline fields remain the weather-history cursor and now store the full confirmed buildup. Legacy pre-winter baselines are interpreted under their old convention only before receiving the epoch.
+The server-controlled setting `Snow melt speed multiplier - covered pieces` defaults to `2`. The selected reference rate remains `0.0018` buildup units per active second at 1x; the covered default therefore contributes `0.0036` per second. The interaction reference is `0.002`. These are implementation coefficients requiring balance acceptance, not measured equivalents of the old frame-dependent behavior.
 
-On activation, a current saved value takes priority over prediction, including saved zero. If there is no applicable saved state, the existing distant prediction remains available before `IsAreaReady`. No new LOD/distance cutoff or owner requirement is imposed on that visual path. `owner == 0` remains eligible for the existing initialization policy; a foreign owner is never claimed or overwritten for this purpose.
+Arithmetic, cheap refreshes, expensive geometry/source topology, visual application, and ZDO publication have separate work paths. Piece geometry is limited to 20 inspections per frame with a 1 ms elapsed-time guard; source topology has a separate four-job/0.5 ms guard. A single inspection cannot be interrupted, so these guards are scheduling targets rather than hard frame-time guarantees. Visual application still changes at most 50 pieces per frame, coalescing to the latest value; all cached cap renderers for one piece move together. Ordinary publication uses an independent 0.01 buildup change gate and a separate queue of up to 50 snapshots per frame, with exact terminal/confirmation snapshots. Neither threshold resets the precise working value after sub-threshold deltas. Pure rate configuration changes use cheap refreshes; link weights or source distance changes request the necessary topology work.
 
-When the area is ready, calculate the complete cover/shield/history result before clearing the provisional flag or requesting a new visual. Publish the final private value and its baseline context, then request one visual target. The queue retains only the latest target, not an intermediate zero or minimum. Ownership transitions without a complete current epoch return to pending confirmation rather than silently accepting missing state.
+The custom highest-collider roof probe and upward sphere cast remain the cover rule. Geometry notifications invalidate the center sector and eight neighbors, including placement/removal, scene objects, terrain, doors, health-visual changes, and tree/rock/destructible lifecycle. Heat activity wakes linked pieces without forcing roof casts. Newly sheltered real snow melts gradually; a first-discovery provisional cap disproved by existing shelter is corrected directly.
 
-A discovered eligible exposed piece without saved state receives the configured minimum plus timeline snowfall. A piece placed during winter records a current zero snapshot before reconciliation and receives only later gain. The native growth postfix no longer lifts a new or melted piece back to the minimum; new confirmed baselines never add that minimum again.
+The verified material pools, native 0.25 visibility threshold/remap, 0.01 material step, child/LOD support, MaterialMan exclusion, and `m_wet` alias protection remain in place. `PrefabVariantController` does not drive cap rendering.
 
-Legacy migration is idempotent and limited to loaded managed pieces with existing Seasons metadata. Copy the native level only when the private value is absent, then clear native snow/pre-snow; also finish cleanup when a private value was already copied. Do not migrate ordinary Deep North snow or an arbitrary unmarked third-party value. A non-owner waits for the owner's migration while retaining a read-only legacy view. Ownerless initialization follows the existing policy without claiming ownership.
+## Initialization, persistence, and authority
 
-`ClearServerSeasonalSnowZDOs` and its whole-world scans have been removed. Loaded pieces are cleared on season exit, and an epoch mismatch prevents a previously unloaded winter value from becoming current. After a piece has been processed by this version and the world has been saved, removing Seasons leaves the vanilla snow key at zero. This does not clean an untouched legacy area, promise recovery of unsaved changes after a crash, or remove native Deep North snow.
+At the first valid registration, an applicable private or recognized legacy snapshot takes precedence over prediction, including explicit zero. Without such a snapshot, the existing qualifying local-owner/ownerless distant preview remains available before area readiness. Ready-area confirmation computes placement, saved history, cover/shield, and initial mode before choosing one final visual target. A foreign owner is never claimed or overwritten.
 
-### Deliberately still transitional
+An existing newly discovered exposed piece receives the minimum plus winter timeline snowfall once. New construction records placement and starts clean; later gain begins at placement. A current saved zero is never interpreted as missing state, and raising the maximum permits future growth without adding snow.
 
-- The old native producer and `m_snowBuildup` remain, as does the existing interactive `RPC_SetSnow` route with its private-key adapter. Remove these dependencies when the four-list replacement is connected, not by running a second simulation alongside them.
-- The maximum remains 0.99 and configuration defaults remain unchanged while native calculation is still present. A full 1.0 maximum belongs to the next producer replacement.
-- The 0.01 gate currently limits visuals, not all ZDO publication. Publication throttling requires a separate precise runtime value and coherent history cursor; it is not implemented by merely rounding the save value.
-- Current heat still uses the old lookup, active-area conditions, and rates. During saved-state reconciliation, an active heater keeps the saved value and rebases under the old rule instead of reconstructing past fuel usage. Additive static links, inactive-area heat reconciliation, and the final missed-weather bookkeeping remain for the heat/list stage.
-- The custom roof algorithm is unchanged, including collider-derived origin and self exclusion. Real snow under newly added cover is still cleared by the old path; gradual covered melting and sector-triggered invalidation are not connected yet.
+The private float `Seasons_SeasonalSnowValue` and winter epoch describe the saved level. From/baseline fields describe the weather interval already accounted for. `Seasons_SeasonalSnowPlacedEpoch` and `Seasons_SeasonalSnowPlacedAt` retain construction identity across unload and ordinary snow cleanup, applying only to that winter.
 
-## Still required by the approved plan
+Active melting accounts for excluded snowfall even when it reaches zero. Mode changes and controlled deactivation settle dormant cursors without per-frame writes to sleeping pieces. Reactivation adds genuine unprocessed weather once, using current shelter to exclude unseen accumulation. It does not reconstruct historical fuel, roof changes, interaction, or melting.
 
-1. Four region-partitioned simulation buckets and region-filtered state-refresh work, replacing seasonal calculations in UpdateWear and the transitional native runtime field.
-2. Cached stationary heat links, additive independent sources, preserved live interactions, and the covered-piece melt setting.
-3. Event-driven custom roof invalidation and separate geometry/publication budgets, with precise simulation independent of saved/visual steps.
-4. Complete weather-cursor bookkeeping across unload, ownership changes, and dormant heated pieces; finalize network wake-up paths without reducing distant visualization.
-5. Full 1.0 maximum after removing the native snow producer, and gradual melting of real snow under newly added cover.
-6. Maintainer-side functional and performance acceptance. No quantitative FPS improvement is claimed from static inspection or qualitative feedback.
+Area readiness, local calculation, active-area live use/publication, and visual presence remain separate. Ready ownerless ambient/static-heat calculation can continue locally; its initial permitted snapshot does not grant ongoing authority. Gaining legitimate ownership preserves compatible local work. Incoming changes to tracked snow/owner data enqueue refreshes; unchanged snow or unrelated ZDO revisions do not repeatedly restore stale levels.
 
-## Verification performed
+Legacy migration is limited to loaded managed seasonal pieces carrying Seasons metadata. It prefers private data, retries native cleanup after interrupted migration, and never transfers ordinary Deep North snow or arbitrary unmarked foreign snow. Loading a marked legacy piece outside winter clears its stale seasonal appearance instead of reviving the native cap. End-of-winter or feature shutdown stops seasonal arithmetic and drains prioritized cap hides and cleanup. Epoch checks reject unloaded old-winter data.
 
-Static review of native target signatures, project XML/source inclusion, duplicate includes, changed-file scope, lexical delimiter balance, and accidental Cyrillic outside localization. Remote content hashes are compared with the reviewed local files. The custom cover probe/cast methods were compared with the pre-change source and are unchanged.
+## Server ice floes
 
-No compilation, mod execution, automated gameplay tests, or in-game profiling was performed by the assistant.
+Only the server generates seasonal floes. Both the water-volume entry and public placement helper reject independent client generation; owner zero is not client generation permission. A bounded server scan follows ready peer reference regions using the game's synced simulation-distance policy, and the native zone-control placement callback covers new zones.
 
-### Next maintainer checks
+Generation checks the zone marker and existing watermarked floe ZDOs before placing objects. Previously generated ghost sectors load temporary terrain in client terrain mode, preserving the native generation boundary. Persisted location clear areas are restored when no location-placement pass supplies them. Existing ocean/altitude/depth, world-edge, block/clearance, configured count, scale, and health rules remain in the placement helper.
 
-Use a copy of the world and restart the game after rebuilding. In multiplayer, all participating peers need this branch build: the package version alone does not distinguish its private storage format from earlier incremental builds.
+Floe ZDOs carry distant visibility and initial scale through normal replication. The ZNetView Awake prefix preserves the distant flag when a replicated seasonal floe is instantiated. Cleanup removes watermarked floes and clears zone markers on the server, including remotely owned zone controls, so a later winter can generate again.
 
-| Scenario | Check |
+## Static verification and limits
+
+Static inspection covers project XML/source inclusion, call reachability, old-producer removal, changed-file scope, syntax structure, and native Harmony targets/signatures against the available game-source mirror at `d1374bfd9175ac8f733ae483b0a06e5c8b75906e`. Roslyn C# 10 syntax parsing found no errors in the 76 project source files; this did not compile or emit the mod. The project has no missing or duplicate Compile entries. Diff whitespace checks passed, and the text-source scan found no Cyrillic outside localization/resources. Relevant native source paths include `WearNTear`, `ZNetScene`, `ZNetView`, `ZDO`, `ZDOMan`, `ZoneSystem`, `EffectArea`, interaction objects, and geometry lifecycle objects. Review findings were fixed in code instead of treating file presence as completion.
+
+No mod build, automated tests, game execution, or profiling was performed. The maintainer observations in the historical appendices below concern the earlier visual layer; they are not acceptance of the newly connected simulation or floes.
+
+Known boundaries remain: untouched legacy areas are not swept globally; an uninstrumented external collider/heat hierarchy edit needs an invalidation adapter; an oversized blocker beyond the nine-sector cover neighborhood needs explicit broader invalidation. Moving heat sources remain excluded. Unloaded catch-up deliberately omits historical heat and geometry. Source observation and queued refreshes have bounded latency. Material sharing and fewer updates do not establish a measured GPU/CPU or FPS improvement.
+
+## Maintainer verification
+
+Rebuild locally, restart all participating peers with this branch, and use a copy of the world. The unchanged package version alone does not distinguish this private snapshot format from earlier incremental builds.
+
+| Scenario | Expected result |
 | --- | --- |
-| Existing snowy base | Caps retain the verified appearance, native `s_snow` becomes zero on processed seasonal pieces, and `Seasons_SeasonalSnowValue` contains the level. |
-| Saved zero, then reload in clear winter weather | Saved zero is used instead of the minimum; test a naturally melted/new piece so its history cursor is coherent. |
-| Approach from distant rendering into a ready and then active area | Saved/predicted visual changes directly to the final confirmation; no intermediate hide, minimum, or duplicate weather gain. |
-| New construction during winter | Starts clean; later snowfall grows from zero without jumping to the configured minimum. |
-| Legacy save and ownership transition | Migration retains existing snow and clears native storage without taking ownership. |
-| Season override, normal season change, reload in a later winter | Old winter data is not reused as a current snapshot; season exit removes added caps. |
-| Processed world copy saved, then loaded without Seasons | Added seasonal caps do not return; native Deep North remains native. |
-| Existing interactive/heat behavior, Ignore/Disabled, copied caps | No regression from storage routing; future heat/cover mechanics are not expected yet. |
+| Saved positive and explicit-zero snapshots, then distant approach | Saved-first appearance; one direct confirmation; no intermediate hide/minimum and no readiness/owner cutoff for allowed distant caps. |
+| Existing exposed versus already sheltered discovery; new winter construction | Exposed discovery seeds once; existing shelter corrects provisional snow; construction starts clean and gains only post-placement weather. |
+| Snowfall with one/two heaters and duplicated heat areas | Only melting while heat is effective; independent sources add; one source's area variants do not multiply its influence. |
+| Fire out during snowfall, roof added/removed, covered multiplier zero | Continuous growth below minimum; gradual sheltered melting; no weather gain under cover even at zero cover rate. |
+| Crafting station, chair/bed attachment, multiple users, remote owner | Existing use scope and precedence; one interaction contribution; owner-directed activity and timeout. |
+| Zero/full sleeping pieces, heater/roof/config changes, clear biome beside snowing biome | Correct wake-up with no accumulated weather debt or minimum reset; clear-biome accumulation groups remain idle. |
+| Unload/reload, sleep/time skip, ownership transfer, unrelated incoming ZDO changes | Coherent float/time snapshots, weather catch-up once, no historical fuel replay or stale-snapshot reset. |
+| Ownerless ready snow, active-area exit/reentry, remote snapshots | Local visual continuity, narrow publication/use gates, and coherent publication when authority permits. |
+| Maximum decrease/increase, feature off, winter exit, later winter, Ignore/Disabled/Deep North | Clamp only downward; immediate seasonal shutdown; correct native handoff and continued native Deep North behavior. |
+| Doors, destroyed roof/tree/rock, terrain edits, sector-boundary blockers | Custom cover rechecks affected neighbors and reacts to changed geometry. |
+| Multiple cap renderers/LODs, normal/worn/broken, copied caps, wet roofs | Preserve established material/remap/LOD appearance and alias protection. |
+| Save processed world, then remove Seasons; repeated world changes; dedicated host | No added native seasonal buildup, no retained world runtime, and no headless material allocation. |
+| Dedicated/listen server, two clients, remote-owned and ownerless ocean zones | Server-only floe creation with no duplicate sets or client-generated competing ZDOs. |
+| Existing/new ghost sectors, location clearance, distant floe approach, winter/config cleanup | Correct terrain/placement boundaries, replicated scale and visibility, removed floes, reset markers, and successful next-winter generation. |
+| Original weak-PC scene in calm/snowfall/melting plus large geometry/visual backlogs | Profile arithmetic, geometry, source work, visual setters, MaterialMan, network, allocations, and GPU/shadow work separately; report measured results. |
 
 ## Roof wet-visual alias regression
 

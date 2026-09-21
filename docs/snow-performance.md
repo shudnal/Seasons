@@ -1,6 +1,6 @@
 # Snow performance
 
-Status: planning only. No runtime code, version change, build, or game execution is included.
+Status: approved design. Runtime integration and verification status are tracked in [snow-performance-progress.md](snow-performance-progress.md). The prospective requirements below remain the design contract; they do not claim completed build or gameplay acceptance.
 
 Branch: `perf/snow-performance`.
 Baseline: `shudnal/Seasons` at `988e98c514ce49369a92cbaf934a7aca384fe6e1`.
