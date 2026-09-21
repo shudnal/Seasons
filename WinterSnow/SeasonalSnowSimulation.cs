@@ -15,9 +15,9 @@ namespace Seasons
                 return;
             simulationFrame = Time.frameCount;
             double now = ZNet.instance.GetTimeSeconds();
-            if (!SeasonalSnow.WinterReady)
+            if (endingSnowWinter || !SeasonalSnow.WinterReady)
             {
-                if (winterRunning || snowPieces.Count != 0)
+                if (winterRunning || endingSnowWinter || snowPieces.Count != 0)
                     EndSnowWinter();
                 lastWorldSeconds = now;
                 return;
@@ -36,6 +36,7 @@ namespace Seasons
             snowClock += Math.Max(0f, Time.deltaTime);
             DiscoverSnowInstances();
             UpdateHeatSources();
+            UpdateSnowDoors();
             ExpireSnowInteractions();
             if (observedShieldRevision != ShieldGenerator.m_instanceChangeID)
             {
@@ -178,6 +179,13 @@ namespace Seasons
                 return;
             }
             double now = ZNet.instance.GetTimeSeconds();
+            Vector3 position = state.Transform.position;
+            if (position != state.Position)
+            {
+                IntegratePiece(state, now, snowClock);
+                MoveSnowPiece(state, position);
+                reasons |= SnowRefresh.Geometry | SnowRefresh.Links | SnowRefresh.Rules;
+            }
             if ((reasons & SnowRefresh.Rules) != 0 && !SeasonalSnow.IsSeasonalSnowPosition(state.Piece))
             {
                 if (SeasonalSnowStorage.CanWrite(state.View, state.Zdo))
@@ -192,11 +200,20 @@ namespace Seasons
             {
                 state.Epoch = epoch;
                 state.Confirmed = state.Construction = state.Saved = state.Simulates = state.AppearanceChosen = false;
+                state.AllowOwnerlessPublication = false;
                 state.CatchUpFrom = double.NaN;
             }
             bool resumed = state.ReadyGeneration != state.Region.ReadyGeneration;
             if (state.Confirmed && !resumed && !newEpoch && double.IsNaN(state.CatchUpFrom))
                 IntegratePiece(state, now, snowClock);
+            if ((reasons & SnowRefresh.Rules) != 0 || newEpoch)
+            {
+                Vector2 range = SeasonalSnow.GetSnowBuildupRange(state.Piece);
+                state.Minimum = range.x;
+                state.Maximum = range.y;
+                state.Snow = Mathf.Min(state.Maximum, state.Snow);
+                state.Biome = SeasonalSnow.GetBiome(state.Piece);
+            }
 
             long previousOwner = state.Owner;
             long owner = state.Zdo.GetOwner();
@@ -221,19 +238,11 @@ namespace Seasons
                 }
                 RememberSnapshot(state, snapshot);
             }
-            if ((reasons & SnowRefresh.Rules) != 0 || newEpoch)
-            {
-                Vector2 range = SeasonalSnow.GetSnowBuildupRange(state.Piece);
-                state.Minimum = range.x;
-                state.Maximum = range.y;
-                state.Snow = Mathf.Min(state.Maximum, state.Snow);
-                state.Biome = SeasonalSnow.GetBiome(state.Piece);
-            }
             state.MayPublish = owner != 0L && state.View.IsOwner();
             if (!state.Region.Ready || !SeasonalSnow.WeatherReady)
             {
                 state.Simulates = false;
-                // Saved-first rendering remains available while surrounding geometry is absent.
+                // Keep saved-first appearance before surrounding geometry is ready.
                 if (!state.Confirmed && state.Saved)
                     QueueRuntimeVisual(state, force: true);
                 else if (!state.Confirmed && !state.AppearanceChosen && !state.Construction &&
@@ -246,11 +255,11 @@ namespace Seasons
                 Classify(state);
                 return;
             }
-
             if (!state.Confirmed && owner != 0L && !state.MayPublish && !state.Saved)
                 return;
 
-            if (!state.GeometryCaptured || (reasons & SnowRefresh.Geometry) != 0 || resumed)
+            bool geometryChanged = !state.GeometryCaptured || (reasons & SnowRefresh.Geometry) != 0 || resumed;
+            if (geometryChanged)
             {
                 CaptureSnowGeometry(state);
                 state.GeometryCaptured = true;
@@ -259,10 +268,11 @@ namespace Seasons
             state.Shielded = ShieldGenerator.IsInsideShieldCached(state.Position, ref state.Piece.m_shieldChangeID);
             if (!state.Confirmed || resumed || (reasons & (SnowRefresh.Links | SnowRefresh.Rules)) != 0)
                 RebuildHeatLinks(state);
-            else if ((reasons & SnowRefresh.Heat) != 0)
+            else if (geometryChanged || (reasons & SnowRefresh.Heat) != 0)
                 RecalculateHeat(state);
 
             bool confirmation = !state.Confirmed;
+            bool accountedGap = false;
             if (confirmation)
             {
                 float target = state.Snow;
@@ -282,6 +292,7 @@ namespace Seasons
                 state.AllowOwnerlessPublication = owner == 0L;
                 state.WeatherTime = now;
                 state.LastHeatTime = snowClock;
+                accountedGap = true;
             }
             else if (resumed || !double.IsNaN(state.CatchUpFrom))
             {
@@ -291,8 +302,11 @@ namespace Seasons
                     state.Snow = Mathf.Min(state.Maximum, state.Snow + SeasonalSnow.GainBetween(state.Biome, from, now));
                 state.WeatherTime = now;
                 state.LastHeatTime = snowClock;
+                accountedGap = true;
             }
-            if (!confirmation && ownershipChanged && previousOwner != 0L && state.MayPublish &&
+            // A true foreign owner supplied snapshots while we did not simulate. A local
+            // ownerless calculation, in contrast, must continue without replaying its gap.
+            if (!accountedGap && ownershipChanged && previousOwner != 0L && state.MayPublish &&
                 state.Saved && snapshot.From > 0L && !state.Covered && !state.Shielded)
             {
                 state.Snow = Mathf.Min(state.Maximum, Mathf.Max(state.Snow, snapshot.Baseline +
@@ -345,7 +359,7 @@ namespace Seasons
             while (index < list.Count)
             {
                 SnowPiece state = list[index];
-                if (!onlySnowing || (frameWeather.TryGetValue(state.Biome, out float gain) && gain > 0f))
+                if (onlySnowing ? frameWeather.TryGetValue(state.Biome, out float gain) && gain > 0f : state.MeltRate > 0f)
                     IntegratePiece(state, now, snowClock);
                 if (index < list.Count && ReferenceEquals(list[index], state))
                     index++;
@@ -377,6 +391,8 @@ namespace Seasons
 
         private void QueueRuntimeVisual(SnowPiece state, bool force)
         {
+            if (ZNet.instance && ZNet.instance.IsDedicated())
+                return;
             float previous = state.VisualSnow;
             bool visible = state.Snow > VisibilityThreshold;
             if (!force && !float.IsNaN(previous) && visible == (previous > VisibilityThreshold) &&
@@ -396,12 +412,11 @@ namespace Seasons
                 bool force = state.ForcePublish;
                 state.ForcePublish = false;
                 if (!state.Valid || !state.Confirmed || !state.Region.Ready || state.Epoch != winterEpoch ||
-                    state.ReadyGeneration != state.Region.ReadyGeneration ||
+                    state.ReadyGeneration != state.Region.ReadyGeneration || !double.IsNaN(state.CatchUpFrom) ||
                     (!state.View.IsOwner() && !(state.AllowOwnerlessPublication && state.Zdo.GetOwner() == 0L)))
                     continue;
                 if (!force && Mathf.Abs(state.Snow - state.SnapshotValue) < PublicationStep)
                     continue;
-                // Publish an exact value and its consumed weather cursor together.
                 double consumed = Math.Max(state.WeatherTime, state.Region.LastReadyWorld);
                 SeasonalSnowStorage.Write(state.Zdo, state.Snow, state.Epoch, consumed);
                 state.AllowOwnerlessPublication = false;
@@ -411,7 +426,13 @@ namespace Seasons
 
         private void EndSnowWinter()
         {
-            while (regionList.Count != 0)
+            // Stop arithmetic immediately, but spread persistence and retirement over
+            // frames independently of the high-priority visual hide queue.
+            winterRunning = false;
+            endingSnowWinter = true;
+            discoveryCursor = sourceDiscoveryCursor = -1;
+            int remaining = RefreshesPerFrame;
+            while (remaining-- > 0 && regionList.Count != 0)
             {
                 SnowRegion region = regionList[regionList.Count - 1];
                 SnowPiece state = region.Pieces[region.Pieces.Count - 1];
@@ -421,12 +442,15 @@ namespace Seasons
                     QueueVisual(state.Piece, 0f, disabled: false, force: true);
                 RetireSnow(state, releaseVisual: false);
             }
+            if (regionList.Count != 0)
+                return;
             regionRefreshes.Clear();
             pieceRefreshes.Clear();
             geometryRefreshes.Clear();
             snowPublications.Clear();
-            winterRunning = false;
-            discoveryCursor = sourceDiscoveryCursor = -1;
+            movingSnowDoors.Clear();
+            completedSnowDoors.Clear();
+            endingSnowWinter = false;
         }
     }
 }
