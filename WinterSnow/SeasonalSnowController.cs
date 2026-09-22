@@ -238,7 +238,9 @@ namespace Seasons
                     piece.m_healthPercentage <= 0.75f && state.Worn ? state.Worn : state.Normal;
             }
             float level = target ? Mathf.Clamp01((snow - VisibilityThreshold) / (1f - VisibilityThreshold)) : 0f;
-            bool prioritizeHide = !target && (state.Target || (disabled && !state.Disabled));
+            // Preparation can update Target more than once before rendering. Keep a
+            // hide urgent while the previously applied cap is still visible.
+            bool prioritizeHide = !target && (state.Target || state.Applied || (disabled && !state.Disabled));
             state.Disabled = disabled;
             state.Target = target;
             state.TargetSnow = snow;
@@ -381,8 +383,14 @@ namespace Seasons
 
                 // Arithmetic and preparation may have advanced while this handle waited.
                 // Always render its current value, never a captured intermediate target.
-                if (!state.Disabled && TryGetRuntimeSnow(state.Piece, out float snow))
-                    SetVisualTarget(state, snow, disabled: false);
+                if (!state.Disabled)
+                {
+                    if (TryGetRuntimeSnow(state.Piece, out float snow))
+                        SetVisualTarget(state, snow, disabled: false);
+                    else if (!SeasonalSnow.WinterReady)
+                        // Cleanup may have retired the runtime before this queued visual.
+                        SetVisualTarget(state, 0f, disabled: false);
+                }
 
                 int index = state.Target ? Mathf.Clamp(Mathf.FloorToInt(state.TargetLevel * 100f + 0.00001f), 1, 100) : 0;
                 // Hide old roots first, update every LOD/child material, then reveal
