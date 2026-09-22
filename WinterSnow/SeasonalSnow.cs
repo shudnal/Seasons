@@ -563,19 +563,32 @@ namespace Seasons
 
         internal static void ClearInactiveLoadedSnow(WearNTear instance)
         {
-            // A legacy area may first be visited outside winter. Retire only marked
-            // Seasons data instead of allowing native Awake to revive its old cap.
+            // Check stored metadata before eligibility and biome lookup: most summer
+            // instances have no seasonal data and must not initialize any snow state.
             if (!SeasonState.IsActive || seasonState.GetCurrentDay() <= 0 || WinterReady ||
-                !SupportsSeasonalSnow(instance) || GetBiome(instance) == Heightmap.Biome.DeepNorth)
+                !instance || !instance.m_nview || !instance.m_nview.IsValid())
                 return;
             ZDO zdo = instance.m_nview.GetZDO();
             if (!SeasonalSnowStorage.HasSavedValue(zdo) && !SeasonalSnowStorage.HasLegacyState(zdo))
+                return;
+            if (!SupportsSeasonalSnow(instance) || GetBiome(instance) == Heightmap.Biome.DeepNorth)
                 return;
             SeasonalSnowController.Instance.ClearSnow(instance,
                 SeasonalSnowStorage.CanWrite(instance.m_nview, zdo) ? zdo : null);
             instance.m_snowBuildup = 0f;
             instance.m_addPreSnow = false;
             instance.m_heavySnow = false;
+            // Start may run after native Awake already displayed legacy snow. Hide
+            // the existing roots without binding renderers or allocating materials.
+            HideInactiveSnowRoot(instance.m_snow);
+            HideInactiveSnowRoot(instance.m_snowWorn);
+            HideInactiveSnowRoot(instance.m_snowBroken);
+        }
+
+        private static void HideInactiveSnowRoot(MeshRenderer renderer)
+        {
+            if (renderer && renderer.gameObject.activeSelf)
+                renderer.gameObject.SetActive(false);
         }
 
         internal static void ClearInstanceSnowState(WearNTear instance, ZDO ownedZdo) =>
