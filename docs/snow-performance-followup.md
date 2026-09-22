@@ -11,8 +11,31 @@ This follow-up supersedes the door, snapshot layout and non-winter activity desc
 - `d12a7e7`: compact persisted snapshots and one revision update per changed snapshot.
 - `6b44976`: remove door tracking, suspend non-winter runtime work, filter geometry notifications, preserve release migration semantics and checkpoint departing ownership.
 - `07de449`: restrict incoming interaction signals to actual station or attachment targets.
+- `436c527`: honor failed-readiness retry intervals, bound readiness work separately, and gate visual preparation before queue insertion.
+- `5e5b3ef`: reject unmarked summer pieces before eligibility/biome work and hide loaded legacy cap roots directly.
+- `04f41b0`: reuse registrations, avoid a whole-region refresh for each new piece, and reject unrelated incoming ZDO changes before queueing snow work.
+- `9f2a1c9`: preserve hide priority across target coalescing and prevent a retired runtime's queued target from restoring summer snow.
+- `a0c11e3`: bypass rule lookup for already neutral native fields and avoid non-winter geometry-position reads on destruction.
 
 The screenshots from the public-build report contain the old nested `Seasons.SeasonalSnow+...` patches. They must not be attributed to the newly connected controller just because both versions use the same package version.
+
+## Current acceptance boundary
+
+The implementation is connected. These follow-up commits tighten the existing runtime rather than add another producer, a new snow format or a new configuration option. There are no deliberately unconnected files in this slice. No further broad rewrite is required before maintainer gameplay verification; measured regressions or independent review findings may require targeted fixes.
+
+The latest reduced-mod screenshot still shows Summer and the old nested snow handlers. It strengthens the public-build regression report, but does not measure this branch. The high call count of per-piece handlers makes repeated work important even when a single invocation is much shorter than the recorded multi-second freeze. Individual-call maxima must not be added as though they were one frame.
+
+### Streaming guards added after e70bca8
+
+- A failed region readiness check retries no sooner than 0.5 game seconds later. Repeated creation notifications no longer bypass that deadline. A previously ready region dirtied by an actual event still gets prompt validation. Native `IsAreaReady` semantics are retained.
+- Readiness has its own limit of two native checks per frame and a 1 ms elapsed-time guard. A deferred candidate retains its dirty state and retry time. One native check is indivisible and can itself exceed the scheduling guard.
+- Publishing a readiness result to pieces no longer immediately dirties the same readiness result again.
+- Registration queues the new piece and marks region readiness, instead of requesting a full region pass for every new piece. Actual geometry notifications still invalidate neighbors.
+- Existing valid registrations return before eligibility work. Ordinary native visual requests do not call registration again.
+- The existing 0.01 remapped visual-level gate is checked before adding a prepared visual to the runtime queue. Sub-threshold arithmetic remains exact. Existing renderer-queue entries consume the newest runtime value without another preparation entry. Root/health-variant changes and forced terminal states remain eligible.
+- A hide stays high priority until the previously applied root has actually been hidden. A queued visual whose runtime was retired during non-winter cleanup cannot resurrect its old positive target.
+- Incoming ZDO changes with the same owner and snow snapshot do not wake snow buckets. Health geometry and heat activity retain their separate notification paths. The persistence schema, publication thresholds and ownership checkpoint semantics are unchanged by this slice.
+- Summer metadata checks happen before prefab eligibility and biome lookup. Clean native fields return before rule lookup in the wear boundary hooks. Marked legacy cleanup can hide the three existing cap roots without discovering renderers or allocating material pools.
 
 ## User-supplied video evidence
 
@@ -80,8 +103,19 @@ Vanilla does not replicate the exact currently open crafting station through Pla
 
 ## Verification still required
 
-Source checks for this follow-up cover changed-file diffs, native API and Harmony signatures, matching uploaded Git blob hashes, delimiter balance and accidental Cyrillic. They are not compilation, runtime tests or profiler measurements. No version, material/remap, snow JSON schema, packaging, master branch or blood-moon branch changes are included.
+Source checks for this follow-up cover changed-file diffs, call paths and native API signatures. They are not compilation, runtime tests or profiler measurements. No version, snow JSON schema, packaging, master branch or blood-moon branch changes are included. The latest slice does not change material pools, remap, LOD bindings, weather integration or snapshot layout.
 
-The most useful next checks are a fresh summer base approach, winter-to-summer cleanup followed by another approach, public/master positive and zero saves imported once, winter construction, heater/roof transitions, local-area exit and forced remote ownership transfer, and station/chair use by a non-owner. Re-profile this exact build: old nested snow patch names should not appear as active handlers.
+Rebuild locally and restart every participating peer with the same branch revision. Keep the old public-build profile as the baseline, not as an acceptance result for this implementation.
 
-Independent Codex review is still pending. No PR was opened. The available connected review actions require a PR; no authorized local Codex CLI is available in the assistant environment. Review the diff from `2ffa4ad` to this branch in the maintainer's local Codex worktree, prioritizing lifecycle, release-format import, summer idle behavior, ownership cursor handoff and interaction compatibility. Do not build the mod or run tests during that review.
+| Check | Expected boundary |
+| --- | --- |
+| Fresh summer approach to the reported base, then a second approach | No seasonal registration, readiness scans, heat polling or cover casts; only applicable legacy cleanup. Old nested producer patch names are absent. |
+| Winter, then switch to summer with pending work | Accumulation/melting stops; all cap roots hide without a later queued positive target; subsequent streaming remains idle. |
+| Winter approach during gradual object streaming | Saved-first distant appearance remains; ready-area confirmation completes; failed readiness probes respect the retry interval rather than object count. |
+| Snowfall, one/two heaters, added/removed roof, normal/worn/broken and child/LOD caps | Exact simulation with coalesced visual changes; no lost final hide, health-variant change or terminal level. |
+| Import master positive/zero states, construction, save/reload and owner changes | Release-format import and weather cursor rules remain intact; unrelated ZDO changes do not reset or wake snow. |
+| Dedicated server and multiple clients, including remote-owned stations/chairs and ice floes | Validate interaction delivery, ownership transitions, floe uniqueness/distance/cleanup and network queues separately. |
+
+For performance comparison, keep route, weather, camera, mod list and profiler settings comparable. Separate first-time legacy cleanup from repeated steady-state loading. Compare frame-time spikes and per-frame totals as well as individual-call percentiles. The fixed retry/queue guards do not establish a measured FPS gain or prove that every reported freeze was caused by snow.
+
+Independent Codex review is still pending. No PR was opened. The available connected review actions require a PR; no authorized local Codex CLI is available in the assistant environment. Review the branch in the maintainer's local Codex worktree, prioritizing lifecycle, release-format import, summer idle behavior, ownership cursor handoff and interaction compatibility. Do not build the mod or run tests during that review.
