@@ -263,7 +263,9 @@ namespace Seasons
         private static void Prefix(ZDO __instance, out TransformState __state)
         {
             __state = default;
-            if (!SeasonalSnowController.Instance.ShouldObserveSnowTransform(__instance))
+            // Initial network deserialization happens before ZNetScene creates the
+            // instance. AddInstance performs the one necessary geometry notification.
+            if (!__instance.Created || !SeasonalSnowController.Instance.ShouldObserveSnowTransform(__instance))
                 return;
             __state.Observed = true;
             __state.Position = __instance.GetPosition();
