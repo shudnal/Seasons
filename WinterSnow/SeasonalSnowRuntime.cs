@@ -33,6 +33,7 @@ namespace Seasons
         internal int SnowPieceCount => snowPieces.Count;
         internal int SnowRegionCount => snowRegions.Count;
         internal bool HasSnowRuntime(WearNTear piece) => piece && snowPieces.ContainsKey(piece);
+        internal bool HasSnowVisual(WearNTear piece) => piece && visuals.ContainsKey(piece);
 
         private bool EnsureSnowScene()
         {
@@ -52,7 +53,7 @@ namespace Seasons
 
         internal void RegisterSnow(WearNTear piece)
         {
-            if (!piece || !EnsureSnowScene() || endingSnowWinter || !SeasonalSnow.WinterReady ||
+            if (!SeasonalSnow.WinterReady || !piece || endingSnowWinter || !EnsureSnowScene() ||
                 !SeasonalSnow.IsSeasonalSnowPosition(piece) || !piece.m_nview || piece.m_nview.m_ghost ||
                 ZNetView.m_forceDisableInit || !piece.gameObject.scene.IsValid())
                 return;
@@ -180,7 +181,8 @@ namespace Seasons
 
         internal void SnowPlaced(WearNTear piece)
         {
-            if (!piece || !piece.m_nview || !piece.m_nview.IsValid())
+            if (!SeasonalSnow.WinterReady || !piece || !piece.m_nview || !piece.m_nview.IsValid() ||
+                !SeasonalSnow.IsSeasonalSnowPosition(piece))
                 return;
             ZDO zdo = piece.m_nview.GetZDO();
             if (SeasonalSnowStorage.CanWrite(piece.m_nview, zdo))
@@ -212,6 +214,7 @@ namespace Seasons
             ReleaseVisual(piece, hide: true, restoreNative: false);
             if (snowPieces.TryGetValue(piece, out SnowPiece state))
             {
+                state.GeometryCaptured = false;
                 QueueRefresh(state, SnowRefresh.Rules | SnowRefresh.Geometry | SnowRefresh.Links);
                 if (SeasonalSnow.IsSeasonalSnowPosition(piece))
                     QueueRuntimeVisual(state, force: true);
@@ -272,7 +275,7 @@ namespace Seasons
 
         internal void RequestSnowRefresh(bool rules)
         {
-            if (!EnsureSnowScene())
+            if (!SeasonalSnow.WinterReady || !EnsureSnowScene())
                 return;
             discoveryCursor = 0;
             foreach (SnowRegion region in regionList)
@@ -281,7 +284,7 @@ namespace Seasons
 
         internal void RequestHeatRefresh(bool rebuildLinks = false, bool reindexSources = false)
         {
-            if (!EnsureSnowScene())
+            if (!SeasonalSnow.WinterReady || !EnsureSnowScene())
                 return;
             if (reindexSources)
                 foreach (HeatSource source in heatSources)
@@ -302,7 +305,7 @@ namespace Seasons
 
         internal void WeatherTimelineChanged()
         {
-            if (!EnsureSnowScene())
+            if (!SeasonalSnow.WinterReady || !EnsureSnowScene())
                 return;
             foreach (SnowPiece state in snowPieces.Values)
                 state.WeatherGain = SeasonalSnow.GetCumulativeSnowGainAt(state.Biome, state.WeatherTime);
@@ -312,7 +315,7 @@ namespace Seasons
 
         internal void RequestSnowCatchUp()
         {
-            if (!simulationScene || !ZNet.instance || catchingUp)
+            if (!SeasonalSnow.WinterReady || !simulationScene || !ZNet.instance || catchingUp)
                 return;
             foreach (SnowRegion region in regionList)
             {
@@ -336,14 +339,14 @@ namespace Seasons
 
         internal void SnowSnapshotReceived(ZDO zdo)
         {
-            if (zdo == null || !snowIds.TryGetValue(zdo.m_uid, out SnowPiece state) || !ReferenceEquals(state.Zdo, zdo))
+            if (!SeasonalSnow.WinterReady || zdo == null || !snowIds.TryGetValue(zdo.m_uid, out SnowPiece state) || !ReferenceEquals(state.Zdo, zdo))
                 return;
             QueueRefresh(state, SnowRefresh.Snapshot);
         }
 
         internal void SnowPositionChanged(ZDO zdo)
         {
-            if (zdo != null && snowIds.TryGetValue(zdo.m_uid, out SnowPiece state) &&
+            if (SeasonalSnow.WinterReady && zdo != null && snowIds.TryGetValue(zdo.m_uid, out SnowPiece state) &&
                 ReferenceEquals(state.Zdo, zdo) && zdo.GetPosition() != state.Position)
                 QueueRefresh(state, SnowRefresh.Geometry | SnowRefresh.Links | SnowRefresh.Area);
         }
@@ -418,13 +421,7 @@ namespace Seasons
             ResetSnowInteractions();
             frameWeather.Clear();
             snowingBiomes.Clear();
-            movingSnowDoors.Clear();
-            completedSnowDoors.Clear();
-            nextDoorCheck = 0f;
-            observedSnowGeometryScene = null;
-            observedSnowReferenceZone = default;
-            observedSnowSimulationDistance = default;
-            observedSnowZoneSize = 0f;
+            ResetSnowGeometry();
             ResetHeatSources();
             observedStation = null;
             stationSnowPiece = null;

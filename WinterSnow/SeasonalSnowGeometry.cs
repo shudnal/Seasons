@@ -6,17 +6,17 @@ namespace Seasons
 {
     internal sealed partial class SeasonalSnowController
     {
-        private readonly Dictionary<Door, float> movingSnowDoors = new Dictionary<Door, float>();
-        private readonly List<Door> completedSnowDoors = new List<Door>();
-        private float nextDoorCheck;
+        private readonly Dictionary<int, bool> snowCoverPrefabs = new Dictionary<int, bool>();
         private ZNetScene observedSnowGeometryScene;
         private Vector2s observedSnowReferenceZone;
         private SimulationDistance observedSnowSimulationDistance;
         private float observedSnowZoneSize;
 
+        internal bool ObservesSnowGeometry => SeasonalSnow.WinterReady && snowRegions.Count != 0;
+
         internal void InvalidateSnowArea(Vector3 position, bool geometry)
         {
-            if (snowRegions.Count == 0 || Character.InInterior(position))
+            if (!ObservesSnowGeometry || Character.InInterior(position))
                 return;
             Vector2s center = ZoneSystem.GetZone(position);
             SnowRefresh reason = SnowRefresh.Area | (geometry ? SnowRefresh.Geometry : SnowRefresh.None);
@@ -28,19 +28,24 @@ namespace Seasons
                     if (zx < short.MinValue || zx > short.MaxValue || zy < short.MinValue || zy > short.MaxValue)
                         continue;
                     if (snowRegions.TryGetValue(new Vector2s(zx, zy), out SnowRegion region))
-                        QueueRegion(region, reason);
+                    {
+                        if (geometry)
+                            QueueRegion(region, reason);
+                        else
+                            region.ReadinessDirty = true;
+                    }
                 }
         }
 
         internal void SnowCoverHintChanged(WearNTear piece)
         {
-            if (piece && snowPieces.TryGetValue(piece, out SnowPiece state))
+            if (ObservesSnowGeometry && piece && snowPieces.TryGetValue(piece, out SnowPiece state))
                 QueueRefresh(state, SnowRefresh.Geometry);
         }
 
         internal void SnowSceneObjectsChanged()
         {
-            if (!ZNet.instance || !ZoneSystem.instance || snowRegions.Count == 0)
+            if (!ObservesSnowGeometry || !ZNet.instance || !ZoneSystem.instance)
                 return;
             Vector2s reference = ZoneSystem.GetZone(ZNet.instance.GetReferencePosition());
             SimulationDistance distance = ZNet.instance.GetSyncedSimulationDistance();
@@ -52,8 +57,7 @@ namespace Seasons
                 (observedSnowSimulationDistance.NearSimulationDistance == 1 ? 2f : 3f) * observedSnowZoneSize);
             Bounds current = new Bounds(ZoneSystem.GetZonePos(reference), Vector3.one *
                 (distance.NearSimulationDistance == 1 ? 2f : 3f) * zoneSize);
-            // Add/reset notifications invalidate ready regions too. The creation pass
-            // retries pending regions without periodically recasting stable geometry.
+            // Readiness notifications do not imply that a cover collider changed.
             foreach (SnowRegion region in regionList)
             {
                 if (!region.Ready)
@@ -67,13 +71,50 @@ namespace Seasons
             observedSnowZoneSize = zoneSize;
         }
 
+        internal bool CanAffectSnowCover(ZDO zdo)
+        {
+            if (!ObservesSnowGeometry || zdo == null)
+                return false;
+            int hash = zdo.GetPrefab();
+            if (snowCoverPrefabs.TryGetValue(hash, out bool result))
+                return result;
+            GameObject prefab = ZNetScene.instance ? ZNetScene.instance.GetPrefab(hash) : null;
+            // Do not cache a missing prefab during scene initialization.
+            if (!prefab)
+                return zdo.Type == ZDO.ObjectType.Solid || zdo.Type == ZDO.ObjectType.Terrain;
+            ZSyncTransform motion = prefab.GetComponent<ZSyncTransform>();
+            bool isDynamic = prefab.GetComponent<Character>() || prefab.GetComponent<ItemDrop>() ||
+                prefab.GetComponent<Ship>() || prefab.GetComponent<Vagon>() || prefab.GetComponent<Projectile>() ||
+                (motion && (motion.m_syncPosition || motion.m_characterParentSync));
+            if (!isDynamic)
+            {
+                if (WearNTear.s_rayMask == 0)
+                    WearNTear.s_rayMask = LayerMask.GetMask("piece", "Default", "static_solid", "Default_small", "terrain");
+                foreach (Collider collider in prefab.GetComponentsInChildren<Collider>(true))
+                    if (collider && !collider.isTrigger &&
+                        (WearNTear.s_rayMask & (1 << collider.gameObject.layer)) != 0)
+                    {
+                        result = true;
+                        break;
+                    }
+            }
+            snowCoverPrefabs[hash] = result;
+            return result;
+        }
+
+        internal void SnowObjectAdded(ZDO zdo)
+        {
+            if (!ObservesSnowGeometry || zdo == null)
+                return;
+            InvalidateSnowArea(zdo.GetPosition(), geometry: CanAffectSnowCover(zdo));
+        }
+
         private static void CaptureSnowGeometry(SnowPiece state)
         {
             Piece piece = state.Piece.m_piece;
             if (!piece)
                 piece = state.Piece.GetComponent<Piece>();
-            // StaticTarget.GetAllColliders caches only colliders active on its first
-            // call. A health/hierarchy revision must also discover newly enabled ones.
+            // StaticTarget.GetAllColliders omits initially inactive health variants.
             state.Colliders = piece ? piece.GetComponentsInChildren<Collider>(true) : Array.Empty<Collider>();
             state.HaveOrigin = false;
             state.Roof = state.Leaky = false;
@@ -81,9 +122,7 @@ namespace Seasons
             float top = float.NegativeInfinity;
             foreach (Collider collider in state.Colliders)
             {
-                if (!collider)
-                    continue;
-                if (!collider.enabled || !collider.gameObject.activeInHierarchy || collider.isTrigger)
+                if (!collider || !collider.enabled || !collider.gameObject.activeInHierarchy || collider.isTrigger)
                     continue;
                 state.Roof |= collider.CompareTag("roof");
                 state.Leaky |= collider.CompareTag("leaky");
@@ -106,9 +145,7 @@ namespace Seasons
 
         private static bool HasSnowCover(SnowPiece state)
         {
-            // A dirty geometry request invalidates positive roof caches too: an opened
-            // door can keep the same GameObject reference while moving its collider away.
-            // Preserve the Seasons cast and its leaky/self rules, not vanilla HaveRoof.
+            // Preserve the Seasons cast and self-filter, not vanilla HaveRoof.
             if (WearNTear.s_rayMask == 0)
                 WearNTear.s_rayMask = LayerMask.GetMask("piece", "Default", "static_solid", "Default_small", "terrain");
             Vector3 origin = state.HaveOrigin
@@ -134,15 +171,19 @@ namespace Seasons
             (piece.m_worn && piece.m_worn.activeSelf ? 2 : 0) |
             (piece.m_broken && piece.m_broken.activeSelf ? 4 : 0);
 
-        internal void SnowObjectTransformChanged(ZDO zdo, Vector3 previousPosition, Quaternion previousRotation)
+        internal void SnowObjectTransformChanged(ZDO zdo, Vector3 previousPosition, Vector3 previousRotation)
         {
-            if (zdo == null || (zdo.GetPosition() == previousPosition && zdo.GetRotation() == previousRotation))
+            if (!ObservesSnowGeometry || zdo == null ||
+                (zdo.GetPosition() == previousPosition && zdo.m_rotation == previousRotation))
                 return;
             SnowPositionChanged(zdo);
             bool tracked = snowIds.TryGetValue(zdo.m_uid, out SnowPiece state) && ReferenceEquals(state.Zdo, zdo);
             if (tracked)
+            {
+                state.GeometryCaptured = false;
                 QueueRefresh(state, SnowRefresh.Geometry | SnowRefresh.Links | SnowRefresh.Area);
-            if (!tracked && zdo.Type != ZDO.ObjectType.Solid && zdo.Type != ZDO.ObjectType.Terrain)
+            }
+            if (!tracked && !CanAffectSnowCover(zdo))
                 return;
             InvalidateSnowArea(previousPosition, geometry: true);
             InvalidateSnowArea(zdo.GetPosition(), geometry: true);
@@ -150,44 +191,48 @@ namespace Seasons
 
         internal void HealthGeometryChanged(WearNTear piece, int previous)
         {
-            if (!piece || previous == HealthGeometryMask(piece))
+            if (!ObservesSnowGeometry || !piece || previous == HealthGeometryMask(piece))
                 return;
             InvalidateSnowArea(piece.transform.position, geometry: true);
             if (snowPieces.TryGetValue(piece, out SnowPiece state))
             {
+                state.GeometryCaptured = false;
                 QueueRefresh(state, SnowRefresh.Geometry);
                 QueueRuntimeVisual(state, force: true);
             }
         }
 
-        internal void SnowDoorChanged(Door door)
+        internal void BeforeSnowReferencePositionChanged(Vector3 position)
         {
-            if (!door || snowRegions.Count == 0)
+            if (!ObservesSnowGeometry || !ZNet.instance || !simulationScene)
                 return;
-            InvalidateSnowArea(door.transform.position, geometry: true);
-            movingSnowDoors[door] = Time.time + 8f;
+            Vector2s previous = ZoneSystem.GetZone(ZNet.instance.GetReferencePosition());
+            Vector2s next = ZoneSystem.GetZone(position);
+            if (previous == next)
+                return;
+            // Persist terminal buckets while still owning the departing area. They
+            // intentionally do not receive per-frame timestamp updates.
+            foreach (SnowPiece state in snowPieces.Values)
+                if (state.Valid && state.Confirmed && state.View.IsOwner() &&
+                    ZNetScene.InActiveArea(state.Position, previous) && !ZNetScene.InActiveArea(state.Position, next))
+                    FlushSnowPiece(state);
         }
 
-        private void UpdateSnowDoors()
+        internal void BeforeSnowOwnerChanged(ZDO zdo, long owner)
         {
-            if (movingSnowDoors.Count == 0 || Time.time < nextDoorCheck)
+            if (!ObservesSnowGeometry || zdo == null || !zdo.IsOwner() || zdo.GetOwner() == owner)
                 return;
-            nextDoorCheck = Time.time + 0.25f;
-            completedSnowDoors.Clear();
-            foreach (KeyValuePair<Door, float> entry in movingSnowDoors)
-            {
-                Door door = entry.Key;
-                if (!door || !door.m_animator || Time.time >= entry.Value ||
-                    (!door.m_animator.IsInTransition(0) && door.m_animator.GetCurrentAnimatorStateInfo(0).normalizedTime >= 1f))
-                    completedSnowDoors.Add(door);
-            }
-            foreach (Door door in completedSnowDoors)
-            {
-                if (door)
-                    InvalidateSnowArea(door.transform.position, geometry: true);
-                movingSnowDoors.Remove(door);
-            }
-            completedSnowDoors.Clear();
+            if (snowIds.TryGetValue(zdo.m_uid, out SnowPiece state) && ReferenceEquals(state.Zdo, zdo))
+                FlushSnowPiece(state);
+        }
+
+        private void ResetSnowGeometry()
+        {
+            snowCoverPrefabs.Clear();
+            observedSnowGeometryScene = null;
+            observedSnowReferenceZone = default;
+            observedSnowSimulationDistance = default;
+            observedSnowZoneSize = 0f;
         }
     }
 }

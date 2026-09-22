@@ -10,11 +10,28 @@ namespace Seasons
     internal static class WearNTear_UpdateSnowVisual_PooledCaps
     {
         [HarmonyPrefix, HarmonyPriority(Priority.Last)]
-        private static bool Prefix(WearNTear __instance) =>
-            !SeasonalSnowController.Instance.TryQueueCurrentVisual(__instance);
+        private static bool Prefix(WearNTear __instance)
+        {
+            SeasonalSnowController controller = SeasonalSnowController.Instance;
+            if (!SeasonalSnow.WinterReady && !SeasonalSnowMeshSettings.IsSnowDisabled(__instance) &&
+                !controller.HasSnowRuntime(__instance) && !controller.HasSnowVisual(__instance))
+            {
+                // Awake/Start check persisted metadata once. Ordinary summer updates
+                // only retry cleanup when native snow actually arrives on the instance.
+                if (__instance.m_snowBuildup > 0f || __instance.m_addPreSnow)
+                    SeasonalSnow.ClearInactiveLoadedSnow(__instance);
+                return true;
+            }
+            return !controller.TryQueueCurrentVisual(__instance);
+        }
 
         [HarmonyFinalizer]
-        private static void Finalizer(WearNTear __instance) => SeasonalSnowMeshSettings.Apply(__instance);
+        private static void Finalizer(WearNTear __instance)
+        {
+            if (SeasonalSnow.WinterReady || SeasonalSnowMeshSettings.IsSnowDisabled(__instance) ||
+                SeasonalSnowMeshSettings.IsSnowIgnored(__instance))
+                SeasonalSnowMeshSettings.Apply(__instance);
+        }
     }
 
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateWear))]
@@ -49,6 +66,10 @@ namespace Seasons
         [HarmonyPostfix, HarmonyPriority(Priority.Last)]
         private static void Postfix(WearNTear __instance)
         {
+            // Cleanup does not require area readiness, roof casts or a winter runtime.
+            SeasonalSnow.ClearInactiveLoadedSnow(__instance);
+            if (!SeasonalSnow.WinterReady)
+                return;
             // Native Awake hides caps after UpdateVisual and expands their bounds.
             // Select saved data (including zero) before any prediction or ready-area work.
             SeasonalSnow.CaptureInitialSnowVisual(__instance);

@@ -10,6 +10,10 @@ namespace Seasons
     {
         internal void UpdateSnowSimulation(ZNetScene scene)
         {
+            // A summer load must not initialize registries, discover heat, inspect
+            // area readiness or touch ZDOs. Only an unfinished winter cleanup runs.
+            if (!SeasonalSnow.WinterReady && !winterRunning && !endingSnowWinter && snowPieces.Count == 0)
+                return;
             if (!EnsureSnowScene() || scene != simulationScene || simulationFrame == Time.frameCount ||
                 Game.IsPaused() || Time.timeScale <= 0f)
                 return;
@@ -46,7 +50,6 @@ namespace Seasons
             snowClock += Math.Max(0f, Time.deltaTime);
             DiscoverSnowInstances();
             UpdateHeatSources();
-            UpdateSnowDoors();
             ExpireSnowInteractions();
             if (observedShieldRevision != ShieldGenerator.m_instanceChangeID)
             {
@@ -280,8 +283,13 @@ namespace Seasons
                 (reasons & SnowRefresh.Geometry) != 0;
             if (geometryChanged)
             {
-                CaptureSnowGeometry(state);
-                state.GeometryCaptured = true;
+                // A neighboring collider invalidates the cover result, not this
+                // piece's cached colliders and local ray origin.
+                if (!state.GeometryCaptured || (reasons & SnowRefresh.Rules) != 0)
+                {
+                    CaptureSnowGeometry(state);
+                    state.GeometryCaptured = true;
+                }
                 state.Covered = HasSnowCover(state);
                 state.GeometryRevision = state.Region.GeometryRevision;
             }
@@ -308,9 +316,14 @@ namespace Seasons
                 }
                 else if (localCalculation && !state.Covered && snapshot.From > 0L)
                 {
-                    // Legacy baselines may predate a larger saved value. Never reinsert
-                    // the discovery minimum, including when the saved value is zero.
-                    target = Mathf.Max(target, snapshot.Baseline + SeasonalSnow.GainBetween(state.Biome, from, now));
+                    // Master stored an initial baseline of zero; the initial minimum
+                    // was implicit in GetSnowTarget, not included in that baseline.
+                    // Preserve an explicit zero and never apply this rule to new snapshots.
+                    float baseline = snapshot.Baseline;
+                    if (snapshot.Epoch == SeasonalSnowStorage.MissingEpoch && snapshot.CurrentWinter &&
+                        snapshot.From <= SeasonalSnowStorage.ToTimestamp(SeasonalSnow.TimelineStartSeconds) && target > 0f)
+                        baseline = Mathf.Max(baseline, state.Minimum);
+                    target = Mathf.Max(target, baseline + SeasonalSnow.GainBetween(state.Biome, from, now));
                 }
                 state.Confirmed = state.AppearanceChosen = true;
                 state.AllowOwnerlessPublication = owner == 0L;
@@ -343,6 +356,7 @@ namespace Seasons
                 (reasons & (SnowRefresh.Rules | SnowRefresh.CatchUp)) != 0)
                 QueuePublication(state, force: true);
         }
+
         private void IntegrateSnow(double now)
         {
             frameWeather.Clear();
@@ -505,8 +519,11 @@ namespace Seasons
             geometryRefreshes.Clear();
             snowPublications.Clear();
             snowVisualChanges.Clear();
-            movingSnowDoors.Clear();
-            completedSnowDoors.Clear();
+            ResetSnowInteractions();
+            ResetHeatSources();
+            ResetSnowGeometry();
+            frameWeather.Clear();
+            snowingBiomes.Clear();
             endingSnowWinter = false;
         }
     }

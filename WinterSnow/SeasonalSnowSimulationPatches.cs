@@ -11,6 +11,9 @@ namespace Seasons
         [HarmonyPostfix]
         private static void Postfix(WearNTear __instance)
         {
+            SeasonalSnow.ClearInactiveLoadedSnow(__instance);
+            if (!SeasonalSnow.WinterReady)
+                return;
             SeasonalSnowMeshSettings.Apply(__instance);
             SeasonalSnowController.Instance.RegisterSnow(__instance);
         }
@@ -22,6 +25,8 @@ namespace Seasons
         [HarmonyPostfix]
         private static void Postfix(WearNTear __instance)
         {
+            if (!SeasonalSnow.WinterReady)
+                return;
             SeasonalSnowController.Instance.SnowPlaced(__instance);
             SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true);
         }
@@ -47,7 +52,7 @@ namespace Seasons
         [HarmonyPostfix]
         private static void Postfix(WearNTear __instance, bool __state)
         {
-            if (__state != __instance.m_haveRoof)
+            if (SeasonalSnow.WinterReady && __state != __instance.m_haveRoof)
                 SeasonalSnowController.Instance.SnowCoverHintChanged(__instance);
         }
     }
@@ -57,10 +62,14 @@ namespace Seasons
     {
         [HarmonyPrefix]
         private static void Prefix(WearNTear __instance, out int __state) =>
-            __state = SeasonalSnowController.HealthGeometryMask(__instance);
+            __state = SeasonalSnowController.Instance.ObservesSnowGeometry
+                ? SeasonalSnowController.HealthGeometryMask(__instance) : -1;
         [HarmonyPostfix]
-        private static void Postfix(WearNTear __instance, int __state) =>
-            SeasonalSnowController.Instance.HealthGeometryChanged(__instance, __state);
+        private static void Postfix(WearNTear __instance, int __state)
+        {
+            if (__state >= 0)
+                SeasonalSnowController.Instance.HealthGeometryChanged(__instance, __state);
+        }
     }
 
     [HarmonyPatch]
@@ -111,7 +120,11 @@ namespace Seasons
     internal static class EffectArea_Awake_SnowHeat
     {
         [HarmonyPostfix]
-        private static void Postfix(EffectArea __instance) => SeasonalSnowController.Instance.RegisterHeatArea(__instance);
+        private static void Postfix(EffectArea __instance)
+        {
+            if (SeasonalSnow.WinterReady)
+                SeasonalSnowController.Instance.RegisterHeatArea(__instance);
+        }
     }
 
     [HarmonyPatch]
@@ -123,7 +136,11 @@ namespace Seasons
             yield return AccessTools.Method(typeof(EffectArea), nameof(EffectArea.OnDisable));
         }
         [HarmonyPostfix]
-        private static void Postfix(EffectArea __instance) => SeasonalSnowController.Instance.HeatAreaChanged(__instance);
+        private static void Postfix(EffectArea __instance)
+        {
+            if (SeasonalSnow.WinterReady)
+                SeasonalSnowController.Instance.HeatAreaChanged(__instance);
+        }
     }
 
     [HarmonyPatch(typeof(EffectArea), nameof(EffectArea.OnDestroy))]
@@ -137,33 +154,40 @@ namespace Seasons
     internal static class CraftingStation_PokeInUse_SnowRuntime
     {
         [HarmonyPostfix]
-        private static void Postfix(CraftingStation __instance) => SeasonalSnowController.Instance.StationUsed(__instance);
+        private static void Postfix(CraftingStation __instance)
+        {
+            if (SeasonalSnow.WinterReady)
+                SeasonalSnowController.Instance.StationUsed(__instance);
+        }
     }
 
     [HarmonyPatch(typeof(Player), nameof(Player.UpdateAttach))]
     internal static class Player_UpdateAttach_SnowRuntime
     {
         [HarmonyPostfix]
-        private static void Postfix(Player __instance) => SeasonalSnowController.Instance.AttachedObjectUsed(__instance);
+        private static void Postfix(Player __instance)
+        {
+            if (SeasonalSnow.WinterReady)
+                SeasonalSnowController.Instance.AttachedObjectUsed(__instance);
+        }
     }
 
     [HarmonyPatch(typeof(Player), nameof(Player.AttachStop))]
     internal static class Player_AttachStop_SnowRuntime
     {
         [HarmonyPrefix]
-        private static void Prefix(Player __instance) => SeasonalSnowController.Instance.StopAttachedSnowUse(__instance);
+        private static void Prefix(Player __instance)
+        {
+            if (SeasonalSnow.WinterReady)
+                SeasonalSnowController.Instance.StopAttachedSnowUse(__instance);
+        }
     }
 
     [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.AddInstance))]
     internal static class ZNetScene_AddInstance_SnowRegion
     {
         [HarmonyPostfix]
-        private static void Postfix(ZDO zdo)
-        {
-            if (zdo != null)
-                // Default-type objects may contain tree/rock/destructible colliders too.
-                SeasonalSnowController.Instance.InvalidateSnowArea(zdo.GetPosition(), geometry: true);
-        }
+        private static void Postfix(ZDO zdo) => SeasonalSnowController.Instance.SnowObjectAdded(zdo);
     }
 
     [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.CreateDestroyObjects))]
@@ -179,11 +203,15 @@ namespace Seasons
         [HarmonyPrefix]
         private static void Prefix(ZNetView __instance)
         {
+            SeasonalSnowController controller = SeasonalSnowController.Instance;
+            if (controller.SnowPieceCount == 0)
+                return;
             ZDO zdo = __instance.GetZDO();
             if (zdo == null)
                 return;
-            SeasonalSnowController.Instance.BeforeSnowViewReset(__instance);
-            SeasonalSnowController.Instance.InvalidateSnowArea(zdo.GetPosition(), geometry: true);
+            bool geometry = controller.CanAffectSnowCover(zdo);
+            controller.BeforeSnowViewReset(__instance);
+            controller.InvalidateSnowArea(zdo.GetPosition(), geometry);
         }
     }
 
@@ -202,6 +230,13 @@ namespace Seasons
     [HarmonyPatch]
     internal static class ZDO_Transform_SnowGeometry
     {
+        private struct TransformState
+        {
+            internal bool Observed;
+            internal Vector3 Position;
+            internal Vector3 Rotation;
+        }
+
         private static IEnumerable<MethodBase> TargetMethods()
         {
             yield return AccessTools.Method(typeof(ZDO), nameof(ZDO.InternalSetPosition));
@@ -210,12 +245,39 @@ namespace Seasons
         }
 
         [HarmonyPrefix]
-        private static void Prefix(ZDO __instance, out KeyValuePair<Vector3, Quaternion> __state) =>
-            __state = new KeyValuePair<Vector3, Quaternion>(__instance.GetPosition(), __instance.GetRotation());
+        private static void Prefix(ZDO __instance, out TransformState __state)
+        {
+            __state = default;
+            if (!SeasonalSnowController.Instance.ObservesSnowGeometry)
+                return;
+            __state.Observed = true;
+            __state.Position = __instance.GetPosition();
+            // Compare stored Euler vectors without constructing a Quaternion per ZDO.
+            __state.Rotation = __instance.m_rotation;
+        }
 
         [HarmonyPostfix]
-        private static void Postfix(ZDO __instance, KeyValuePair<Vector3, Quaternion> __state) =>
-            SeasonalSnowController.Instance.SnowObjectTransformChanged(__instance, __state.Key, __state.Value);
+        private static void Postfix(ZDO __instance, TransformState __state)
+        {
+            if (__state.Observed)
+                SeasonalSnowController.Instance.SnowObjectTransformChanged(__instance, __state.Position, __state.Rotation);
+        }
+    }
+
+    [HarmonyPatch(typeof(ZNet), nameof(ZNet.SetReferencePosition))]
+    internal static class ZNet_ReferencePosition_SnowCheckpoint
+    {
+        [HarmonyPrefix]
+        private static void Prefix(Vector3 pos) => SeasonalSnowController.Instance.BeforeSnowReferencePositionChanged(pos);
+    }
+
+    [HarmonyPatch(typeof(ZDO), nameof(ZDO.SetOwner))]
+    internal static class ZDO_SetOwner_SnowCheckpoint
+    {
+        // Never write from SetOwnerInternal: RPC_ZDOData has already assigned the
+        // incoming DataRevision there and will deserialize the incoming snapshot next.
+        [HarmonyPrefix]
+        private static void Prefix(ZDO __instance, long uid) => SeasonalSnowController.Instance.BeforeSnowOwnerChanged(__instance, uid);
     }
 
     [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.PrepareSave))]
@@ -223,20 +285,6 @@ namespace Seasons
     {
         [HarmonyPrefix]
         private static void Prefix() => SeasonalSnowController.Instance.FlushSnow();
-    }
-
-    [HarmonyPatch(typeof(Door), nameof(Door.SetState))]
-    internal static class Door_SetState_SnowCover
-    {
-        [HarmonyPrefix]
-        private static void Prefix(Door __instance, out int __state) =>
-            __state = __instance.m_animator ? __instance.m_animator.GetInteger("state") : int.MinValue;
-        [HarmonyPostfix]
-        private static void Postfix(Door __instance, int state, int __state)
-        {
-            if (state != __state)
-                SeasonalSnowController.Instance.SnowDoorChanged(__instance);
-        }
     }
 
     [HarmonyPatch]
@@ -250,7 +298,7 @@ namespace Seasons
         [HarmonyPostfix]
         private static void Postfix(Heightmap __instance)
         {
-            if (!__instance.IsDistantLod)
+            if (SeasonalSnowController.Instance.ObservesSnowGeometry && !__instance.IsDistantLod)
                 SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true);
         }
     }
@@ -261,6 +309,9 @@ namespace Seasons
         [HarmonyPrefix]
         private static void Prefix(MineRock __instance, int index, out bool __state)
         {
+            __state = false;
+            if (!SeasonalSnowController.Instance.ObservesSnowGeometry)
+                return;
             Collider area = __instance.GetHitArea(index);
             __state = area && area.gameObject.activeSelf;
         }
@@ -280,7 +331,8 @@ namespace Seasons
         private static void Prefix(MineRock __instance, out bool __state)
         {
             __state = false;
-            if (!__instance.m_nview || !__instance.m_nview.IsValid() || __instance.m_hitAreas == null)
+            if (!SeasonalSnowController.Instance.ObservesSnowGeometry ||
+                !__instance.m_nview || !__instance.m_nview.IsValid() || __instance.m_hitAreas == null)
                 return;
             ZDO zdo = __instance.m_nview.GetZDO();
             for (int i = 0; i < __instance.m_hitAreas.Length; ++i)
@@ -309,7 +361,7 @@ namespace Seasons
         private static void Prefix(MineRock5 __instance, out bool __state)
         {
             __state = false;
-            if (__instance.m_hitAreas == null)
+            if (!SeasonalSnowController.Instance.ObservesSnowGeometry || __instance.m_hitAreas == null)
                 return;
             foreach (MineRock5.HitArea area in __instance.m_hitAreas)
                 if (area.m_collider && area.m_collider.gameObject.activeSelf != (area.m_health > 0f))
@@ -326,5 +378,4 @@ namespace Seasons
                 SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true);
         }
     }
-
 }
