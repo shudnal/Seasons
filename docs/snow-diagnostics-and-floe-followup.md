@@ -2,7 +2,7 @@
 
 Date: 2026-09-22. Branch: `perf/snow-performance`.
 Implementation baseline reviewed: `396be7d9a3aa3fa01cbcc2a11cec46ce28f50346`.
-Status: corrective implementation in progress; actual work and remaining checks are recorded in section 12.
+Status: sections 3-8 implemented and statically reviewed; unexecuted gameplay acceptance is recorded in sections 10 and 12.
 
 ## 1. Authority, history, and scope
 
@@ -320,3 +320,7 @@ Only `OnDayChange`'s unconditional snow geometry refresh was removed. Normal sno
 ### Remaining work and verification
 
 Sections 3-8 are implemented. No build, tests or Valheim execution has been performed. The maintainer's prior gameplay observations in section 2 are preserved as reported evidence, separate from acceptance of the corrective implementation. All gameplay checks in section 10, including the problematic large base and a new skiptime profile, remain for the maintainer.
+
+Static validation completed: project XML parses and all 80 Compile entries exist without duplicates; Roslyn C# 10 syntax-only parsing reports no syntax errors (no compilation, semantic binding, emit or tests). `git diff --check` passes. Touched Harmony targets/fields were checked against game source 1.0.15, with frozen-ship and maintenance APIs also inspected in matching assembly metadata. Independent source reviews covered explicit weather, ship transitions and maintenance cursors; floe review found and corrected acquisition ordering and neighboring-water-volume handling before publication. No retired proxy/motion references, forced `SpawnZone`, manual `OutsideZones`, world-sized ZDO snapshot, newly added Cyrillic, timeline logging, version/package/dependency change or snow storage schema change remains in this corrective diff. The `ruleBiome` and wet-Fireplace fixes, inspectable records, texture retirement and existing cap pipeline are preserved.
+
+Uncertainty remains about the reported disabled floe collider's exact native/prefab cause, runtime Harmony compatibility with other mods, boundary motion/ownership behavior, final large-base performance and the measured share of the skiptime peak. Source/syntax checks do not establish any of these runtime results. Compilation and the concrete gameplay matrix in section 10 remain maintainer work.
