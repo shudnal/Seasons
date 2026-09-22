@@ -217,8 +217,9 @@ namespace Seasons
             }
             long epoch = SeasonalSnowStorage.CurrentWinterEpoch;
             bool newEpoch = state.Epoch != epoch;
+            Heightmap.Biome ruleBiome = Heightmap.Biome.None;
             if (((reasons & SnowRefresh.Rules) != 0 || newEpoch) &&
-                !TryGetSeasonalSnowBiome(state.Piece, out Heightmap.Biome ruleBiome))
+                !TryGetSeasonalSnowBiome(state.Piece, out ruleBiome))
             {
                 RetireInvalidSnowRule(state);
                 return;
