@@ -309,6 +309,14 @@ The shared distance and squared distance use exactly `NearSimulationDistance * m
 
 Source tracing confirms the rejected `Freeze()` did not directly disable colliders. Native `Ledge.Changed` controls its collider, and rock health variants control collider-bearing child activation; the source mirror alone does not establish which caused the reported `ice1` state. `GetFloeSize` restores its temporary collider flag in `finally`. The exact reported disabled-collider cause and all motion behavior remain gameplay checks, not claimed diagnoses.
 
+### Completed: isolated world-maintenance slicing (section 8)
+
+`CheckZDODatabase` now coalesces a maintenance request. Discovery resumes a reverse cursor over the native sector lists, including sector zero, with no whole-world copy or Dictionary enumerator across frames. The lists append/remove natively; reverse traversal can repeat an ID after removal without skipping the surviving initial entries. An active-pass sector-add hook catches existing marked floes moving behind the cursor. Server-only seasonal cleanup rechecks the current season, and stale deletion/marker queues are cancelled when the floe window resumes.
+
+Discovery is limited to 1,024 sector slots and 128 object reads per frame with a 1.0 ms guard. Terrain has a separate queue capped at 128 IDs, up to 8 validations and 1 operation per frame with a 0.5 ms guard. Full queues retain the discovery cursor; loaded terrain compilers retry their requests. Actual processing rechecks owner, season, day, world identity and readiness. Loaded terrain uses this same queue, retaining failed-attempt tracking. Pause/loading suspends service; world shutdown/reset cancels it. A single terrain decompress/paint/compress/native reload operation remains indivisible and can exceed the time guard.
+
+Only `OnDayChange`'s unconditional snow geometry refresh was removed. Normal snow integration, explicit time-skip catch-up, season-change and actual geometry notifications remain; the verified catch-up cursor algorithm was not redesigned. Source inspection supports removing the synchronous discovery work from the day trigger, but no new profiler measurement establishes the size of the improvement or removal of the entire reported peak.
+
 ### Remaining work and verification
 
-Sections 4-8 are in progress. No build, tests or Valheim execution has been performed. The maintainer's prior gameplay observations in section 2 are preserved as reported evidence, separate from acceptance of the corrective implementation.
+Sections 3-8 are implemented. No build, tests or Valheim execution has been performed. The maintainer's prior gameplay observations in section 2 are preserved as reported evidence, separate from acceptance of the corrective implementation. All gameplay checks in section 10, including the problematic large base and a new skiptime profile, remain for the maintainer.

@@ -188,21 +188,32 @@ namespace Seasons
 
         private static void ScheduleCleanup(Vector2s zone)
         {
-            if (ServerReady() && cleanupSet.Add(zone))
+            if (ServerReady() && !(SeasonState.IsActive && IsTimeForIceFloes()) && cleanupSet.Add(zone))
                 cleanupZones.Enqueue(zone);
         }
 
         // The existing world-cleanup pass supplies its established scope; this service adds no world scan.
         internal static void ScheduleRemoval(ZDO zdo)
         {
-            if (zdo != null && ServerReady() && removalSet.Add(zdo.m_uid))
+            if (zdo != null && ServerReady() && !(SeasonState.IsActive && IsTimeForIceFloes()) && removalSet.Add(zdo.m_uid))
                 removals.Enqueue(zdo.m_uid);
         }
 
         internal static void ScheduleMarkerReset(ZDO zdo)
         {
-            if (zdo != null && ServerReady() && markerSet.Add(zdo.m_uid))
+            if (zdo != null && ServerReady() && !(SeasonState.IsActive && IsTimeForIceFloes()) && markerSet.Add(zdo.m_uid))
                 markerResets.Enqueue(zdo.m_uid);
+        }
+
+        private static void CancelCleanup()
+        {
+            cleanup = null;
+            cleanupZones.Clear();
+            cleanupSet.Clear();
+            removals.Clear();
+            removalSet.Clear();
+            markerResets.Clear();
+            markerSet.Clear();
         }
 
         private static void Observe(long peer, Vector3 position, int nearRadius, int radius)
@@ -256,6 +267,8 @@ namespace Seasons
                     requestSet.Clear();
                     initialExclusions.Clear();
                 }
+                else
+                    CancelCleanup();
                 work.Clear();
                 settled.Clear();
                 foreach (RegionScan scan in scans)
@@ -459,6 +472,8 @@ namespace Seasons
 
         private static void ServiceCleanup(ref int objectBudget, long deadline)
         {
+            if (!ServerReady() || (SeasonState.IsActive && IsTimeForIceFloes()))
+                return;
             int zones = DiscoveryBudget;
             while (zones-- > 0 && objectBudget > 0 && BeforeDeadline(deadline))
             {
@@ -477,6 +492,9 @@ namespace Seasons
 
         private static void ServiceRemovals(long deadline)
         {
+            // Season/day overrides can invalidate queues between request and service.
+            if (!ServerReady() || (SeasonState.IsActive && IsTimeForIceFloes()))
+                return;
             for (int i = 0; i < RemovalBudget && removals.Count != 0 && BeforeDeadline(deadline); ++i)
             {
                 ZDOID id = removals.Dequeue();

@@ -1816,7 +1816,6 @@ namespace Seasons
             seasonState.UpdateGlobalKeys();
             seasonState.UpdateWinterBloomEffect();
             UpdateCurrentEnvironment();
-            SeasonalSnow.UpdateLoadedSnowCover();
         }
 
         internal static bool TorchHeatInBiome(Heightmap.Biome biome) => biome != Heightmap.Biome.Mountain && biome != Heightmap.Biome.DeepNorth && biome != Heightmap.Biome.AshLands;

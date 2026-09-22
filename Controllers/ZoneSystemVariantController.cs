@@ -959,58 +959,7 @@ namespace Seasons
 
         public static void CheckZDODatabase()
         {
-            if (ZNet.instance == null || !ZNet.instance.IsServer() || ZDOMan.instance == null)
-                return;
-
-            if (s_zoneCtrlPrefab == 0)
-                s_zoneCtrlPrefab = (ZoneSystem.instance == null ? "_ZoneCtrl" : Utils.GetPrefabName(ZoneSystem.instance.m_zoneCtrlPrefab)).GetStableHashCode();
-
-            if (s_terrainCompilerPrefab == 0)
-                s_terrainCompilerPrefab = "_TerrainCompiler".GetStableHashCode();
-
-            bool removeIceFloes = !IsTimeForIceFloes();
-            bool removeCultivatedGround = IsTimeToDecultivateGround();
-
-            if (!removeIceFloes && !removeCultivatedGround)
-                return;
-
-            int yearLength = seasonState.GetYearLengthInDays();
-            int worldDay = seasonState.GetCurrentWorldDay();
-
-            int floes = 0; int zones = 0; int terrains = 0;
-            foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values.ToArray())
-            {
-                if (removeIceFloes)
-                {
-                    if (zdo.GetPrefab() == s_iceFloePrefab && zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
-                    {
-                        SeasonalIceFloes.ScheduleRemoval(zdo);
-                        floes++;
-                    }
-
-                    if (zdo.GetPrefab() == s_zoneCtrlPrefab && zdo.GetBool(SeasonsVars.s_iceFloesSpawned))
-                    {
-                        SeasonalIceFloes.ScheduleMarkerReset(zdo);
-                        zones++;
-                    }
-                }
-
-                if (removeCultivatedGround)
-                {
-                    if (zdo.GetPrefab() == s_terrainCompilerPrefab && TerrainDecultivation.IsDecultivationDue(zdo, worldDay, yearLength))
-                    {
-                        if (TerrainDecultivation.TryDecultivateGround(zdo, out bool changed))
-                        {
-                            zdo.Set(SeasonsVars.s_terrainDecultivated, worldDay);
-                            if (changed)
-                                terrains++;
-                        }
-                    }
-                }
-            }
-
-            LogFloeState($"Queued overworld floe removals:{floes}, Zone marker resets:{zones}");
-            LogInfo($"Terrains decultivated:{terrains}");
+            SeasonalWorldMaintenance.RequestWorldScan();
         }
 
         public bool CheckWaterVolumeForIceFloes(WaterVolume waterVolume) =>
