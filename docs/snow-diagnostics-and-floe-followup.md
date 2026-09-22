@@ -1,269 +1,276 @@
-# Snow diagnostics, environment cleanup, and ice floes
+# Snow and ice floes: corrective follow-up
 
 Date: 2026-09-22. Branch: `perf/snow-performance`.
-Status: accepted decisions; implementation progress and remaining verification are recorded in section 10.
+Implementation baseline reviewed: `396be7d9a3aa3fa01cbcc2a11cec46ce28f50346`.
+Status: agreed corrective work for Codex; this update changes documentation only.
 
-This is the authoritative follow-up to [the initialization review](snow-performance-deep-review.md), [the previous follow-up](snow-performance-followup.md), and [the implementation history](snow-performance-progress.md) for the topics below. It supersedes earlier proposals to generate floes in unloaded distant zones, load temporary terrain for them, or log the weather timeline. Unrelated snow behavior and previously accepted optimizations remain unchanged.
+## 1. Authority, history, and scope
 
-## 1. Baseline and evidence
+This document is the current implementation brief. It supersedes the earlier version of this document for the topics below, especially server-only floe generation, universal visual proxies, the one-zone floe physics radius, and the unresolved MyLittleUI forecast explanation. The previous implementation report remains available in Git history at `396be7d`. Earlier snow plans are background, not authority to reintroduce rejected architecture.
 
-The remote implementation baseline checked for this decision record is `1c38ab1cba31f713edfe7335725abd0aabf4bac9`.
+The maintainer will implement through Codex and perform compilation/gameplay checks locally. This planning change does not alter source code, defaults, saves, or runtime behavior.
 
-- `fb87d0f5df5217642449a540ff86b4ff4cfe13d2` explicitly initializes `ruleBiome` before the short-circuit condition. Preserve it: the rules path assigns the output biome or retires the piece, and the other path reuses `state.Biome`.
-- `1c38ab1` adds `!source.Fireplace.m_wet` to the valid-view / `IsBurning()` heat condition. This is already committed, not outstanding work. Smelter still uses `IsActive()`.
-- The maintainer reports successful gameplay checks of cap initialization at distance, nearby confirmation, heat melting, snowfall accumulation, summer removal, winter activation, skiptime, sleep, and season overrides. These observations are not an independent automated or multiplayer acceptance result.
-- The maintainer also observed growth during apparently clear weather, with MyLittleUI predicting precipitation several hours later. Snow and SnowStorm particle systems are configured together with snow buildup; no other weather-changing mod was reported. The specific growth remains unexplained. Do not dismiss it as a UI classification mismatch or declare it correct merely because a timeline exists.
-- Floe problems were reproduced in singleplayer: `Object fell out of world:ice1(Clone)`, nearby motion but stationary distant floes, and substantial loading spikes at large simulation distances. A dedicated-server-only explanation is insufficient.
-- One supplied profiler capture shows a 64.898 ms maximum in `SeasonalIceFloes.ZoneSystem_Update_Floes.Postfix`, with the next two maxima around 0.127 and 0.090 ms. This identifies a large isolated service call, not a constant 65 ms per frame or a measured breakdown of terrain, placement, and physics costs.
+Preserve the completed snow runtime: four regional buckets, custom cover detection, heat topology, saved zero, construction starting at zero, discovery seed, distant prediction followed by confirmation, owner-zero visibility, exact buildup arithmetic, pooled cap materials, child/LOD bindings, and bounded visual work. Preserve the compact existing ZDO snapshot and summer idle behavior. Do not return seasonal snow to native `WearNTear.m_snowBuildup`, `ZDOVars.s_snow`, or MaterialMan ownership.
 
-### Confirmed source findings versus unresolved causes
+Preserve these completed changes:
 
-| Finding | Evidence and limit |
-| --- | --- |
-| Timeline construction selects a registered environment separately for each absolute weather period and biome, then reads its `m_snowBuildup`. | `WinterSnow/SeasonalSnow.cs`: `RefreshWeatherTimeline`, `GetPredictedSnowGain`, `GetCumulativeSnowGainAt`. It does not seed all periods from the currently interpolated `EnvMan.m_currentEnv.m_snowBuildup`. |
-| Season/day overrides can change the reconstructed winter start and the historical interval. | `SeasonState.GetStartOfCurrentSeason` and timeline start calculation. This is a possible source of catch-up, not proof of the reported sustained growth. |
-| Environment cleanup runs in the warm-status `FixedUpdate` postfix. | `SeasonState/EnvManPatches.cs` and `SeasonState.ReleaseUnusedEnvironmentTextures`: `ToArray()` over generated textures plus repeated `m_environments.Any(...)`. Live textures remain in the collection, so the scan repeats in steady state. |
-| Floe service limits one zone per step, but its `Process` can do a whole expensive placement operation. | `Controllers/SeasonalIceFloes.cs`: temporary `SpawnZone(..., Client, ...)`, `PlaceIceFloes`, and destruction of temporary objects. A delay between steps does not bound one step's cost. |
-| Extra wave force accepts a missing-water sentinel as a real surface height. | `AddWaveForce` subtracts `Floating.GetLiquidLevel(position)` without checking its missing result, `-10000f`. This permits a large downward impulse. It is not yet proven to be the exact cause of the reported fall. |
-| Missing liquid can also leave an owner body without buoyancy while gravity is restored by sync. | `Floating` and `ZSyncTransform.OwnerSync`. Full-body stability must be handled separately from rejecting an invalid force probe. |
-| The old material distance is not the renderer's effective distance. | `Water.ApplySettings` writes `NearSimulationDistance * zoneSize` into a property block; Seasons reads `sharedMaterial` once. |
-| `OutsideZones` is sector bookkeeping, not permission for distant physics. | `ZDO.SetSector` uses it to choose the previous sector, removes/adds sector membership, and updates the flag. Do not set it manually. |
+- `fb87d0f`: explicit `Heightmap.Biome ruleBiome = Heightmap.Biome.None` fixes definite assignment. The rules path assigns it or retires the piece; the other path reuses the cached biome.
+- `1c38ab1`: a Fireplace supplies heat only with a valid view, `IsBurning()`, and `!m_wet`. Smelter continues to use `IsActive()`.
+- `SnowPeriod[]` replaces parallel timeline arrays and stores environment name, buildup, and cumulative gain. Keep its inspectability and `ToString()`; do not add timeline logging.
+- The client-only diagnostic hover is already implemented. Improve its presentation, not its ownership or read-only nature.
+- Environment texture retirement is already lifecycle-driven. Do not restore the full texture scan in the warm-status `FixedUpdate` postfix.
 
-## 2. Accepted change: inspectable weather period records
+## 2. Gameplay evidence and limits
 
-Replace the parallel `BiomeSnowTimeline.snowBuildup` and `cumulativeSnowGain` arrays with one array of value-type period records, for example `SnowPeriod[]`.
+### Snow acceptance observations
 
-Keep the per-biome timeline dictionary and the separate environment lists used as prediction input. Only merge the two parallel period arrays; do not merge unrelated registries.
+The maintainer reports that ordinary accumulation, clearing, heat melting, cover detection, distant cap prediction, nearby confirmation, season changes, sleep, skiptime, and season/day overrides behave predictably. A flight toward a base produced no conspicuous freezes. These are user-run checks, not assistant-run tests, and not yet the final test on the reporting user's problematic large base.
 
-Each record contains:
+The apparent mismatch between ordinary snow accumulation and MyLittleUI's precipitation countdown has been resolved by the maintainer: the forecast was configured to recognize only SnowStorm. Do not reopen this as an unexplained spontaneous-snow bug or change natural accumulation. A separate explicit `env` override discrepancy is confirmed below.
 
-| Field | Meaning |
-| --- | --- |
-| `EnvironmentName` (`string`) | Name of the environment actually selected while constructing this period. Store dry-period names too; use a clear missing marker such as `<none>` when selection returns null. |
-| `SnowBuildup` (`float`) | The nonnegative environment buildup actually used by the existing calculation. |
-| `CumulativeSnowGain` (`float`) | Potential accumulated weather gain from the winter timeline start through the end of this period, clipped to the winter end. |
+### Floe regression
 
-The cumulative field excludes the initial cap minimum, per-piece heat, and per-piece maximum. Preserve partial first/last periods and the calculation for a time inside a period: previous record's cumulative value plus the current partial-period gain.
+On `396be7d`, the maintainer reports floes remaining stationary even at close range, no visible physical simulation, and a disabled collider. The new mode controller freezes registered bodies before granting physical mode. The exact source of the reported collider disable is not established; do not state that `Freeze()` directly disables colliders without evidence.
 
-Add `ToString()` returning the stored name, buildup, and cumulative gain with invariant numeric formatting and enough precision to reveal small differences. Example format, with illustrative values only:
+The accepted response is a scoped rollback toward the original floe approach, not another redesign of the new proxy/motion framework. The original prefab is simple; distant motion only needs modest vertical bobbing, not precise tilt or a generalized renderer abstraction.
+
+### Profiler observations
+
+The ordinary loading capture and the synthetic skiptime capture must not be conflated. In the latter, `EnvMan_UpdateTriggers_SeasonStateUpdate.Postfix` has maxima 53.071 / 36.808 / 34.825 ms but p99 about 0.003 ms and p95 about 0.002 ms. `ZNetScene_Update_SnowVisuals` has a maximum around 1.083 ms in that capture. These are individual samples, not aggregate per-frame totals or a measured breakdown of the trigger's callees.
+
+Source inspection identifies synchronous world maintenance under day/season notifications, particularly the whole-world ZDO snapshot/scan and eligible terrain decultivation. It does not establish that all 53 ms is roof computation or identify the exact share of each child operation.
+
+## 3. Kiln self-heat: verified formula and one default change
+
+### Reported case
+
+A full `charcoal_kiln` and an attached beehive both start at buildup 0.6. During kiln operation, the kiln reaches zero while the hive reaches approximately 0.57. Reported melt rates are 0.018 and 0.0009 per active second, a ratio of 20.
+
+### Source finding
+
+`SeasonalSnowHeat.cs` currently computes:
 
 ```text
-Rain Winter | buildup=0.4 | cumulative=0.23712
-Clear Winter | buildup=0 | cumulative=0.23712
+area weight = DistanceWeight(piece position, area position) * (self ? selfMultiplier : 1)
+source contribution = maximum weight among that source's active areas
+HeatRate = 0.0018 * globalHeatMultiplier * pieceTypeMultiplier * sum(source contributions)
 ```
 
-Store the name and numbers when building the record. Do not retain an `EnvSetup` reference as the diagnostic source or rerun prediction from `ToString()`. The maintainer will inspect the collection in RuntimeUnityEditor (RUE). Do not add timeline dumps, periodic timeline logging, a new logging option, or a new persisted/networked timeline format.
+`RebuildHeatLinks` applies `seasonalSnowSelfHeatMultiplier` once, only when `source.Piece == state.Piece`. `RecalculateHeat` does not apply it again. Areas belonging to the same logical source use a maximum; independent sources are summed. Interactive melting has a separate path and must not be conflated with kiln self-heat.
 
-This is a representation/diagnostics change, not a balance change. Preserve period seeds, weighted selection order, timeline boundaries, accumulation coefficients, partial-period arithmetic, catch-up behavior, and existing snapshot semantics. Update every reader of the old arrays. Do not add unconditional accumulation, adjust the rate, or automatically refill the minimum.
+Defaults at the reviewed revision:
 
-The diagnostic invariant is: with the same timeline, a flat cumulative gain, no unapplied history, and no snapshot/reinitialization transition, ordinary accumulation must not increase exact `Snow`. Distinguish a changing `Snow` from delayed application of an unchanged target visual. Investigate any contrary evidence, but report a newly proven gameplay discrepancy before changing its behavior outside this agreed task.
+- Global heat multiplier: 1.
+- Distance weights: 2 at 1 meter or less, linearly decreasing to 0.5 at the maximum check distance of 3 meters. A point inside an area can retain the far contribution beyond that center distance.
+- Self multiplier: 5.
+- Ordinary non-roof/non-leaky piece multiplier: 1.
 
-## 3. Accepted change: client-only diagnostic piece hover
+The reported rates match these coefficients exactly:
 
-Add `WinterSnow/SeasonalSnowDiagnostics.cs` (or an equally focused file) and bind the config in the existing central configuration method, not in the diagnostic class:
+```text
+kiln: 0.0018 * 1 * 1 * 2 * 5 = 0.018
+hive: 0.0018 * 1 * 1 * 0.5   = 0.0009
+ratio: 5 * (2 / 0.5) = 20
+```
 
-- Section: `Season - Winter snow`.
-- Name: `Show snow diagnostics on hover`.
-- Default: `false`.
-- Description: `Shows technical seasonal snow runtime information while hovering a building piece.`
-- Use the existing `AlwaysClientControlled` mechanism; this debug preference is not server-synchronized.
+At constant rates, removing 0.6 from the kiln takes about 33.3 seconds; the hive loses 0.03 in that time and reaches 0.57. This is consistent with the report, not evidence that self-heat is squared. The supplied hover was captured after kiln heat stopped, so the active hive distance/flags were not independently captured; do not present inferred link weights as measured values.
 
-The attached reference is Azumatt-AzuHoverStats v1.1.11, `HoverTextPatches.HudUpdateCrosshairPatch`: its `Hud.UpdateCrosshair` postfix gets the hovered piece/object and appends to `m_hoverName.text`, respecting TextViewer. Reuse that integration idea only. Do not import its other statistics, UI construction, dependencies, or source dump. If the attachment is unavailable in the Codex worktree, this description supplies the intended behavior; verify the native Hud signature from game sources.
+### Accepted change
 
-Append a clearly separated Seasons diagnostic block to the current hover. Preserve other mods' and vanilla text, do not append duplicates over successive frames, and handle absent HUD/player/piece/TextViewer safely. Show own snow stats, not a general object inspector.
+Change only the central config default for:
 
-Read already existing state through a narrow read-only controller method. Do not make internal dictionaries public just for this feature. Useful grouped fields are:
+```text
+Section: Season - Winter snow
+Key: Snow melt speed multiplier - self-heating pieces
+Field: seasonalSnowSelfHeatMultiplier
+Default: 5f -> 2f
+```
 
-| Group | Diagnostic values |
+Keep the current formula, distance weights, ordinary heat, roof/leaky/covered multipliers, interactive multiplier, and maximum/seed values. Do not rename this key or migrate/overwrite an existing saved configuration. A user with a stored value of 5 must reset or change it manually to evaluate the new default.
+
+With otherwise identical coefficients, the kiln rate becomes 0.0072, the hive remains at 0.0009, and their ratio becomes 8. This is a calculated expectation, not a gameplay result. The current documentation-only commit must not change the binding itself; Codex will make that small source change.
+
+## 4. Explicit weather override must affect live accumulation
+
+### Confirmed reproduction
+
+The supplied `2026-09-22_21-08-22.png` shows an exposed, ready, locally owned kiln in winter:
+
+```text
+registered=True, confirmed=True, simulates=True
+bucket=AccumulationOpen, Snow=0, limits approximately [0.30, 0.60]
+covered=False, roof=False, leaky=False, shield=False
+melting=False, heat=0, melt=0, catch-up=none
+period=2482, timeline environment=Clear Winter, timeline buildup=0
+cumulative gain now=consumed WeatherGain, approximately 0.399600029
+current environment=SnowStorm Winter, current buildup approximately 0.4
+native environment period=-1, force=none, debug=SnowStorm Winter
+```
+
+Thus this is not residual heat or a roof suppressing accumulation. `EnvMan.UpdateEnvironment` gives the debug override precedence and sets the native period to -1. The snow runtime still gates accumulation with natural `GainBetween` and integrates natural cumulative gain. In a dry natural period, the accumulation bucket is not visited just because the debug weather is snowing. Diagnostics correctly expose the disagreement but do not change the producer.
+
+### Accepted behavior
+
+Support the explicit vanilla `env` / `resetenv` debug-weather path in live seasonal snow calculation. An active, valid snowy override must grow eligible, currently simulated exposed caps even when the natural timeline period is dry. A dry override must suppress natural live snowfall for the interval it replaces. Returning to ordinary weather resumes the existing deterministic timeline without a jump or double accumulation.
+
+Keep the natural `SnowPeriod[]` prediction as the default historical model. Do not rewrite the entire winter timeline using whatever weather happens to be active now. Do not retrospectively apply a new override before its activation or assume it was active throughout an unobserved/unloaded interval. Do not add a persisted override journal, new ZDO schema, new synchronized weather command, or a generic event-sourcing subsystem.
+
+Implementation requirements:
+
+- Resolve override applicability once for the relevant update/boundary, not through repeated component searches per piece. Use the existing accumulation coefficients and world-time units.
+- Update both the scheduling/gating of accumulation buckets and the actual arithmetic; changing only `IntegratePiece` will not wake a bucket skipped during a dry natural period.
+- Replace the natural increment for the observed overridden interval; do not add both increments.
+- Keep consumed world-time/natural-gain bookkeeping coherent even during a dry override, so `resetenv`, a mode change, refresh, or save/reload does not re-add weather already deliberately replaced.
+- Settle or delimit the previous source at override start/change/end. Preserve pending catch-up and snapshot boundaries; never mark an unprocessed interval as consumed.
+- Honor current eligibility, winter-only execution, cover, heat/interactive melting, shields, caps at maximum, and the no-automatic-minimum-refill rule. Heat mode still melts rather than accumulating snow concurrently.
+- Respect pause, time reversal, skiptime/sleep boundaries, timeline rebuild, and world shutdown. Define the live-override interval at these boundaries; never extrapolate the newly selected weather into earlier time.
+- Preserve existing ownership/publication rules. Do not apply a local console override to a foreign owner's authoritative snapshot or broadcast it as global server weather. Singleplayer is the reported required scenario; document the behavior for owner-zero prediction and locally owned multiplayer pieces without adding authority.
+- Limit this correction to the explicit debug override. Do not silently turn raid, intro, dungeon, persistent-event, or every local EnvZone override into new world-wide seasonal snowfall.
+- Keep diagnostics able to show natural period data and effective live accumulation source separately. Use the existing hover, not timeline log spam. A concise source/rate indication is sufficient.
+
+## 5. Diagnostic formatting only
+
+Keep the existing read-only hover, central client config, 0.2-second target/block cache, and immediate disabled return. No state registration, heat/roof queries, material work or publications may be triggered by reading it.
+
+Use invariant display formatting:
+
+| Value | Display precision |
 | --- | --- |
-| Identity/authority | Prefab, instance ID, ZDOID, owner/local-owner, cached biome, publication eligibility. |
-| Runtime | Registered/valid/confirmed/simulates, bucket, exact `Snow`, minimum/maximum, saved/construction, refresh flags and queued states. |
-| Cover/heat | Region readiness, ready/geometry generations, covered/roof/leaky/shielded, melting, heat/melt rates, interactive activity, independent heat-link count. |
-| Weather | Period number and stored period record, timeline bounds, current environment and buildup, cumulative gain now, consumed `WeatherGain`/`WeatherTime`, catch-up interval or none, current world time and relevant override state. |
-| Persistence/visual | Stored snapshot presence/value/epoch/from, native snow fields for comparison, visual state/binding existence, target/applied cap names and remapped levels, queue state. |
+| World/calendar/clock time, WeatherTime, timeline start/end, catch-up boundaries | 1 decimal (`F1`) |
+| Snow minimum/maximum from config | 2 decimals (`F2`) |
+| Piece Snow, snapshot/baseline snow, target/applied snow or visual level | 5 decimals (`F5`) |
+| WeatherGain, cumulative/consumed weather gain | 3 decimals (`F3`) |
+| Environment buildup intensity | 2 decimals (`F2`) |
+| HeatRate, MeltRate and effective live accumulation rate | 5 decimals (`F5`) |
 
-Keep the text compact with grouped lines and invariant numbers. Cache the currently hovered target and formatted diagnostic block; refresh immediately on target change and periodically while held (about 0.2 seconds is sufficient). Clear caches on target/world loss or disable. Ordinary per-frame hover assembly may still append the cached string; do not promise zero allocation while the feature is enabled.
+Display time-valued snapshot `From` in seconds with one decimal and an explicit unit; do not present millisecond timestamps as seconds. Owner IDs, ZDOID, period numbers, revisions, and epoch identifiers remain exact integers when shown as identifiers. Format the period fields explicitly inside the hover rather than inserting a `G9` `SnowPeriod.ToString()` block that defeats the display rule. Keep precise stored values and the RUE-oriented record unchanged; this is not rounding simulation or persistence.
 
-When disabled, return at the config check before allocations, component lookup, ZDO access, or formatting. When enabled, do not call `RegisterSnow`, force readiness, perform roof casts/heat queries, bind materials, settle catch-up, publish snapshots, or otherwise change what is being diagnosed. A piece with no runtime must remain unregistered and show `Seasonal snow: not registered`, `WinterReady`, available saved/native state, and cap-field presence rather than initiating it.
+## 6. Floes: restore the original narrow approach
 
-## 4. Accepted change: environment texture lifecycle cleanup
+### 6.1 Producer and cleanup ownership
 
-Remove the unconditional `ReleaseUnusedEnvironmentTextures()` scan from `EnvMan_FixedUpdate_UpdateWarmStatus`. Keep the cold-state/overheat behavior of that patch intact.
+The earlier server-only producer requirement was incorrect and is withdrawn. The original released/master implementation at `988e98c514ce49369a92cbaf934a7aca384fe6e1` created floes on the peer that owned the loaded zone's `SpawnSystem` / zone-controller view. It did not require `ZNet.IsServer()` before placement. This allows a normal client to use its loaded placement physics. The server performs global seasonal cleanup.
 
-Use lifecycle-driven retirement of owned generated textures rather than a continuous garbage-collector-like scan:
+Restore this division:
 
-1. When seasonal environments are replaced/removed or control is released, collect only Seasons-owned retired texture candidates.
-2. After the environment registry change is complete, identify still-live references in a single pass rather than scanning every environment separately for every texture.
-3. Keep candidates referenced by current/previous/next environments or an active shader transition until that transition completes or is superseded. A cheap pending/transition check is acceptable; a recurring full scan over live textures is not.
-4. Reevaluate pending candidates at relevant transition/registry lifecycle boundaries. Handle interrupted transitions and external environment rebuilds, not only normal completion.
-5. On world shutdown, release remaining owned resources once safe and clear tracking. Do not destroy native, restored-default, or other mods' textures.
+- Generate on the client/host that has the ordinarily loaded zone, valid placement data, and ownership of the zone control view. Do not grant generation to every client or claim the zone for convenience.
+- No temporary `SpawnZone`, forced terrain loading, or proactive placement in ghost-only/unloaded zones. Generation remains approach-only.
+- Preserve completion markers and existing marked-floe checks. A skipped/unavailable zone is not completed. Recheck ownership, season, and loaded state before continuing a sliced placement job; abandon stale authority without duplicate production.
+- Retain useful small placement slices, private RNG/exclusion state, candidate/instantiation budgets, and queue coalescing. Restoring the original producer/physics does not require restoring monolithic whole-zone placement.
+- Global removal and marker reset remain server responsibilities and must not require client terrain or water. Do not introduce cross-client deletion authority.
+- Already created seasonal floes remain distant network objects. Preserve marks, scale/mass/health, placement exclusions, and climb behavior. Never set `OutsideZones` manually.
 
-Reuse existing environment-control boundaries and game patches where possible; do not Harmony-patch this mod's own methods. No `Resources.UnloadUnusedAssets`, forced managed GC, or broad periodic resource sweep. Preserve safe aurora blending and environment restoration. Stable environments with no retired candidates require no collection iteration or temporary arrays for cleanup.
+### 6.2 Scoped rollback, not a blanket Git revert
 
-## 5. Accepted change: generation only on approach
+Use the original `Floating_CustomFixedUpdate_IceFloeRotation` and the original client-owner placement path in `Controllers/ZoneSystemVariantController.cs` at `988e98c` as reference. Do not revert the entire file or the entire Codex commit range: that would lose unrelated verified snow, water restoration, diagnostics, and texture lifecycle work.
 
-**This is the latest explicit scope decision.** Generate new seasonal floes only as players approach and the required terrain/water becomes available through the game's normal loading. Remove temporary `SpawnZone` calls made solely for floes. Do not replace them with a new distant terrain-data sampler in this iteration.
+Remove the new universal proxy-renderer/LOD replacement system and the broad freeze/mode/sampling framework that currently prevents normal nearby motion. Remove unused files/project entries/calls when their code is retired. Git history is sufficient to retain the experiment; do not leave a disabled parallel framework in the runtime.
 
-Generation, rendering, movement, and cleanup have different eligibility:
+Do not copy MeshRenderers, materials, property blocks or LOD arrays per floe. Lazy initialization is for the few references and original values actually required by the simple seasonal path, not for deferring a generic proxy constructor. Leave native collider enablement, health variants, and collision behavior intact. Trace the reported disabled collider instead of unconditionally enabling every descendant collider.
 
-- New generation waits for an ordinarily loaded near zone and usable placement data. Being generated as a world zone, being within a large distant radius, or having a distant ZDO is not enough.
-- Do not proactively place floes in ghost-only/unloaded zones. Do not alter the game's own zone spawning. Normal generation callbacks may enqueue eligible work but must not force terrain loading for this subsystem.
-- Already generated floes retain `ZNetView.m_distant` / `ZDO.SetDistant(true)` and can remain visible at distance. Do not delete or hide them merely because new generation is proximity-only.
-- Cleanup of existing marked floes and zone markers must not require a WaterVolume or terrain load. Preserve the existing seasonal cleanup scope without adding a global world scan.
+### 6.3 Near wave forces and safety
 
-Keep the server as the only producer, including in singleplayer. In multiplayer, use the server's ordinarily loaded zones around any relevant player, not only a local camera and not a rule allowing every client to generate. Generation must not require stealing an existing object's ownership.
+Keep normal `Floating.CustomFixedUpdate` as the buoyancy/update driver. For an eligible, locally authoritative seasonal floe with valid water, add the original four extra forces at points along/across the wind, using the original `ClosestPoint` and force formula. Preserve their fixed-step timing and scale/mass behavior. Do not replace this with a new global multi-phase physics engine or an arbitrary one-zone physical radius.
 
-If terrain/water is unavailable, leave the zone uncompleted, drop/defer the generation work until an appropriate normal load/approach event, and avoid a busy retry queue over distant zones. Do not mark a skipped zone as successfully spawned. Existing spawn watermarks and marked floes remain the duplicate-prevention inputs; do not respawn deliberately removed floes on every approach.
+Validate every water probe independently. Missing/nonfinite water contributes zero extra impulse for that point. Do not substitute absolute liquid height 0 or keep the -10000 sentinel in the depth calculation. A valid submerged point retains its legitimate upward force.
 
-Retain placement exclusions, water/depth/biome checks, scale/mass/health, world-edge handling, and climb interaction where applicable. Use available near-zone data; do not silently remove placement checks for speed.
+Handle whole-body loss of buoyancy with a minimal, scoped safeguard coordinated with the actual `ZSyncTransform` gravity behavior. It must not leave a nearby floe permanently kinematic when water becomes available. Preserve/restore the original fields actually modified, handle ownership transitions and a camera-less server, and never steal ownership. Only marked seasonal floes are affected. Do not suppress out-of-world warnings as a fix.
 
-Bound remaining work: coalesce repeated requests, prioritize newly eligible zones rather than repeatedly scanning completed inner rings, and avoid synchronous whole-zone placement in callbacks. Separate discovery/placement/cleanup from movement. Limit repeated candidates, instantiations, and removals per frame, with an elapsed-time scheduling guard. Preserve the per-zone random sequence across resumed work and restore Unity's random state before yielding/returning. Handle a zone unloading, season changing, or partial generation being cancelled without duplicates or prematurely completed markers. Do not hold shared vanilla temporary lists across frames.
+Avoid redundant steady-state policy writes. Guard velocity assignments for kinematic bodies. A verified invalid saved height may need one bounded owner-authorized recovery; do not snap healthy roots or write their position every frame.
 
-An elapsed-time guard cannot interrupt a single Unity call. Reducing frequency alone is not an acceptable substitute for removing avoidable monolithic work. The exact numeric budgets are implementation constants to document, not a new gameplay configuration family or an asserted FPS result.
+### 6.4 Correct water distance and cheap distant bobbing
 
-The maintainer will evaluate whether proximity-only generation is visually sufficient. Distant generation without loaded terrain is deliberately deferred; do not implement it preemptively.
-
-## 6. Accepted change: safe and bounded floe motion
-
-### Invalid water probes
-
-A missing water sample must contribute **zero additional impulse**. Do not replace a missing absolute surface height with `0f` and then subtract it from the probe's world Y; that still creates an artificial downward force. Skip the extra force for that invalid probe, equivalently use a zero depth delta for that probe only. Preserve legitimate upward and downward forces from valid samples. Do not change the global meaning of `Floating.GetLiquidLevel` for other objects.
-
-Validate all extra force probes independently; `HaveLiquidLevel()` for the center does not prove that every edge probe has water. Also protect a whole owner body that loses liquid availability from free fall. Do not suppress the out-of-world log as a substitute for fixing the state.
-
-### Distance source
-
-Stop reading `_VisibleMaxDistance` from the water material. Use exactly the `Water.ApplySettings` calculation:
+Use one shared cache of the `Water.ApplySettings` calculation and its square:
 
 ```csharp
 (float)ZNet.instance.GetSyncedSimulationDistance().NearSimulationDistance
     * ZoneSystem.instance.m_zoneSize
 ```
 
-Cache the distance and its square centrally. Refresh on world initialization and synchronized simulation-distance changes, using the existing Water settings lifecycle where appropriate. Do not read materials/property blocks or recalculate settings per floe per tick. Do not substitute `TotalSimulationDistance` or the old constant material value. Preserve unrelated `_WaterEdge` handling.
+Refresh at initialization and synchronized distance changes. Do not read `_VisibleMaxDistance` from shared material, substitute TotalSimulationDistance, retain constant 120, or impose the new min(distance, one zone) physical policy. Keep `_WaterEdge` handling separate.
 
-This distance aligns the motion policy with the game's effective water setting; it does not make absent water valid and must not blindly expand expensive physics to every distant instance.
+Beyond real wave-physics range, use only modest vertical center bobbing relative to a stable baseline. Exact remote wave tilt/phase is not required. No four distant collision/liquid queries, no nonuniform-scale tilt machinery, no copied renderers, and no published cosmetic motion. Prefer the narrow original far path with corrected distance and safety. Do not accumulate offsets on top of earlier cosmetic offsets; restore alignment before near interaction and before resuming pose publication.
 
-### Runtime modes
+Keep optional distant work cheap and staggered as needed. Do not run expensive wave sampling across all visible floes at maximum draw distance. Existing scheduler infrastructure may be retained only where it actually limits placement or lightweight work; remove complexity whose sole purpose was proxy tilt or broad physics-mode ownership.
 
-Retire the obsolete pre-release distance/sync workaround and implement coherent modes:
+## 7. Frozen ships: eliminate unsupported velocity writes
 
-- Near physical mode: valid water and appropriate gameplay proximity; authoritative Floating/Rigidbody physics, normal collisions and climb interaction, safe extra wave forces, normal required synchronization.
-- Remote stable mode: authoritative root/collision remain stable at a valid baseline, with no unsupported gravity-driven fall or repeated cosmetic transform publications. Ownership is not claimed for convenience.
-- Remote visual motion: on clients only, cached visual transforms bob/tilt using compatible water time/wind/wave sampling without requiring a WaterVolume trigger at every distant point. Root, colliders, ZDO position/rotation/velocities are not animated by the cosmetic layer. No visual work on dedicated servers or outside the relevant visible range.
+The maintainer reports both linear- and angular-velocity warnings while freezing/thawing ships.
 
-Use the corrected water distance, actual liquid availability, and gameplay relevance as separate inputs. Preserve smooth entry/exit and use hysteresis so the mode does not chatter on a boundary. Restore visible/collision alignment before interaction. Do not invent an additional configurable physics radius; keep the policy explicit in implementation and document it.
+At the reviewed baseline, `PlaceShip` first changes `isKinematic`; its Karve correction can subsequently assign `linearVelocity`. Native `Ship.CustomFixedUpdate` also contains buoyancy/damping assignments to both velocity fields without an `isKinematic` guard. These are concrete reachable write paths; a warning without its stack does not establish the exact share of each path.
 
-Cache references and original modified Rigidbody/ZSyncTransform/visual properties once. Restore modified settings and local visual transforms on mode exit, ownership changes, disable, unload, destruction, and world shutdown as appropriate. Reconcile the ordering of `ZSyncTransform` and `Floating`: disabling gravity once is insufficient if the next native sync restores it. Handle host owner, remote owner, owner zero, and a camera-less server. Do not rely on camera existence for stability or overwrite a newer owner's authoritative position with a local cosmetic offset.
+Fix the local frozen-ship integration. Clear necessary velocities while the body is still dynamic, skip unsupported assignments after it becomes kinematic, and prevent only the physical force/damping portion from running for a Seasons-frozen kinematic ship. Preserve control, sail/rudder visuals, and other required nonphysics behavior. Restore dynamic/sync policy before the first thawed physical calculation; a coroutine delay must not leave a bad intermediate tick. No global Rigidbody setter patch, blanket warning filter, or indiscriminate skip of the whole ship update.
 
-Use a centralized bounded motion scheduler with staggered wave targets, distance-based refresh where useful, and smooth interpolation. Bound both sampling and transform work; replacing many callbacks with one unbounded full-list callback is not the objective. No steady-state component hierarchy scans, per-frame temporary arrays, blanket `Physics.SyncTransforms`, or per-frame cosmetic ZDO revisions. Keep changes scoped to Seasons-marked floes; leave native unrelated ice untouched. Never manually set `OutsideZones`.
+## 8. Skiptime peak: isolated world-maintenance follow-up
 
-## 7. Codex execution contract
+Keep this separate from floe physics and from the verified snow integration formula.
 
-Implement sections 2-6; preserve the already committed corrections in section 1. This document records requirements, not completed code.
+`EnvMan_UpdateTriggers_SeasonStateUpdate` can synchronously call `UpdateState`, notify a changed season/day, and reach `UpdateWaterState -> CheckZDODatabase`. `CustomSyncedValuesSynchronizer` applies immediately when not waiting for caching. `CheckZDODatabase` copies `m_objectsByID.Values.ToArray()` and scans the world, while eligible terrain decultivation can decompress, allocate grids, inspect paint/biomes and recompress in that same call. Queueing floe deletion did not remove the cost of this discovery pass.
 
-1. Work in `shudnal/Seasons`, branch `perf/snow-performance`. The maintainer previously used `D:/work/codex/Seasons/.worktrees/snow-performance`; verify the actual worktree, HEAD, and `git status` first. Read applicable `AGENTS.md`. Preserve local and newer remote work. No reset, clean, forced push, history rewrite, or automatic overwrite of conflicts.
-2. Read this document before older plans. In particular, do not resurrect temporary terrain, distant generation, separate timeline logging, or an assumption that the observed clear-weather growth is already diagnosed.
-3. Read game sources first from `shudnal/assemblies_combined`. The source baseline used in the analysis is `d1374bfd9175ac8f733ae483b0a06e5c8b75906e` (1.0.15 in that analysis). Verify Harmony targets and the revision matching the current project; do not guess API signatures.
-4. Do not build the mod, run Valheim, or execute tests. Static source inspection, diff/XML checks, call-path review, and manual arithmetic reasoning are allowed. The maintainer compiles and tests in-game.
-5. All repository content, technical comments, config descriptions, and commit messages are English. Check accidental Cyrillic outside intentional localization. Final report to the maintainer is Russian.
-6. Make small logically complete commits. Do not open a PR. Do not modify `master` or `feat/blood-moon`, bump the version, change packaging/dependencies/publication automation, alter snow JSON or ZDO schemas, or change accumulation/melting balance.
-7. Preserve four-bucket snow simulation, cold/heat gameplay, custom roof casts, native Deep North, saved zero, master-format import, ownerless distant caps, frame budgets, material pools, child/LOD caps, and 0.01 visual thresholds. No second producer or new per-WNT MonoBehaviour.
-8. Include new source files in the project and remove replaced floe paths rather than leaving duplicate producers/updaters. Update implementation status and verification notes in the existing documentation after each completed work item.
-9. If new evidence requires a gameplay decision outside these boundaries, report it without silently broadening scope. Do not stop at another plan for the work already agreed here.
+As a final isolated optimization, change the trigger into a request for bounded maintenance. Coalesce repeated requests, resume safe portions of discovery/processing, revalidate current season/ownership before writes, and cancel on world shutdown. Avoid a full-world `ToArray()` up front, restarting a full scan every frame, or retaining an invalidatable Dictionary enumerator across frames. Use existing suitable sector/iteration facilities where practical; do not add a broad permanent indexing framework solely for this task. Give terrain work its own small budget. A time guard cannot interrupt a single native call.
 
-Suggested commits: inspectable timeline records; read-only snow hover; lifecycle environment texture retirement; proximity-only budgeted floe generation; safe floe physics/distance transitions; bounded distant cosmetic motion; final status documentation. Combine tightly coupled safety changes rather than leaving an unsafe intermediate runtime, and do not create empty commits for `m_wet` or `ruleBiome`.
+The day-change path also queues geometry refresh for every snow region despite no demonstrated roof change. Separate time catch-up from unnecessary daily geometry invalidation where safe. Do not remove required geometry notifications or rewrite `RequestSnowCatchUp` / saved-cursor logic speculatively. Preserve the boundary arithmetic already verified by gameplay. If a safe limited change cannot be established, report it separately rather than turning this into another snow-runtime rewrite.
 
-## 8. Acceptance and owner verification
+Do not claim the entire profiler peak was removed without a new measurement. Full terrain/WaterVolume rewrites are outside this corrective scope.
 
-Static completion checks: all old timeline-array readers converted; no numerical rule changes; no timeline logging; hover disabled path trivial and enabled path read-only; no unconditional environment cleanup scan; no subsystem-forced temporary `SpawnZone`; no invalid sample force; no manual `OutsideZones`; corrected distance invalidation; restored runtime fields; no cosmetic ZDO writes; new files included; no duplicate patch paths or accidental Cyrillic. Inspect all changed call paths without claiming compilation or gameplay acceptance.
+## 9. Codex execution brief
 
-Owner gameplay checks:
+Implement sections 3-8 of this document on `perf/snow-performance`, preserving sections 1-2 and all newer maintainer work. This document, not the superseded server/proxy plan, is the source of current decisions.
 
-| Scenario | Expected result |
+Before editing, read applicable AGENTS.md, inspect the actual HEAD, git status and local diff, and preserve uncommitted work. The remotely reviewed code is `396be7d`; the documentation commit containing this revision follows it. Do not reset, clean, force-push, rewrite history, or overwrite a newer change. Work in the existing worktree; do not modify master or feat/blood-moon.
+
+Read game code first from `shudnal/assemblies_combined`; the baseline used for this review is `d1374bfd9175ac8f733ae483b0a06e5c8b75906e` (1.0.15). Verify the revision appropriate to the worktree before relying on fields or Harmony targets.
+
+All repository content, comments, documentation, config descriptions, logs and commit messages must be English. Do not build the mod, run Valheim, or execute tests. Static source/API/diff/project-inclusion review is allowed. Do not open a PR or start a separate cloud task. Do not bump the version, change packaging/dependencies, or modify snow JSON/ZDO schemas. The only accepted heat balance change is self-heat default 5 -> 2. No config migration, timeline logs, native snow ownership, or reinstated door tracking.
+
+Suggested small commit boundaries:
+
+1. `fix: restore client-owned floe generation on loaded zones`
+2. `fix: restore simple floe wave physics and water-distance handling`
+3. `fix: guard frozen ship physics and velocity transitions`
+4. `fix: honor explicit debug weather in live snow accumulation`
+5. `fix: lower the default self-heat multiplier`
+6. `style: format seasonal snow hover values by meaning`
+7. `perf: slice seasonal world maintenance at day boundaries`
+8. `docs: record corrective implementation and remaining gameplay checks`
+
+Keep each intermediate commit internally coherent. Adjust grouping if a removal and its replacements must be atomic; do not manufacture empty commits. Preserve simple behavior and avoid adding a replacement generalized motion framework. Record any unresolved engine constraint rather than silently weakening collision, ownership, duplicate prevention, or catch-up correctness.
+
+Static review must cover all touched call sites, Harmony signatures, project includes, removal of dead proxy/motion calls, no unintended Cyrillic outside localization, correct velocity-write ordering, and no cosmetic pose publications. Inspect per-frame paths for accidental allocation or hierarchy scans. Do not label syntax/source checks as successful compilation or runtime acceptance.
+
+## 10. Maintainer gameplay checks and final report
+
+| Scenario | Acceptance target |
 | --- | --- |
-| RUE timeline, including dry periods and partial boundaries | Each entry exposes its selected name and both numbers through `ToString`; period math matches the prior behavior. No additional timeline logs. |
-| Reported clear-weather growth, same piece before/after | Timeline records, exact snow, consumed gain, snapshots, and applied visual level distinguish new weather gain from catch-up/reinitialization/visual delay. The cause is documented only if demonstrated. |
-| Hover off/on, target changes, no runtime, summer | No diagnostic work when off; no text accumulation or side-effect registration when on; normal hover remains usable. |
-| Wet/dry Fireplace transitions | Existing `!m_wet` heat behavior remains; Smelter and independent-source summation are unchanged. |
-| Environment reload/disable and repeated/interrupted transitions | No missing aurora textures, premature destruction, or unbounded retired-texture growth; no steady-state scan in warm-status updates. |
-| Singleplayer approach at default and maximum distances | New floes wait for normal nearby loading; no temporary terrain peak; placement remains valid and duplicate-free. Assess whether this generation distance is sufficient. |
-| Existing floes after retreat or season change | Distant visibility and bounded cosmetic motion work without falling; cleanup does not require loading terrain. |
-| Water trigger boundary, camera movement, setting changes, missing probes | Invalid probes add no force, no out-of-world fall, smooth mode transitions, correct live distance updates. |
-| Host/client/dedicated, owner zero and ownership transfer | One producer, stable remote bodies, intact nearby interaction, and no cosmetic position/velocity revision stream. |
-| Winter/summer cap regression checks | Previously working cap behavior and initialization/idle performance remain intact. |
+| Kiln + beehive, self=5 | Existing formula still explains 0.018 / 0.0009 under the same geometry; no second application of self multiplier. |
+| Same setup, self=2 | Calculated target 0.0072 for the kiln, unchanged surrounding heat under identical conditions; stored custom config is not overwritten. |
+| Natural weather, no env override | Existing timeline, catch-up, melting, roof and summer behavior remain unchanged. The MyLittleUI SnowStorm-only filter is not treated as a Seasons defect. |
+| Natural dry period + snowy env | An exposed eligible simulated cap grows from its current value; hover distinguishes natural record and effective live source. |
+| Natural snowy period + dry env, then resetenv | Live snowfall is replaced, not added; no delayed replay of suppressed snowfall or jump on reset. |
+| Env start/change/end, pause, sleep/skiptime, save/reload and ownership changes | No retroactive override before activation, double gain, lost pending catch-up, wrong-owner publication, or false minimum refill. No weather log spam. |
+| Diagnostic hover | Requested decimal precision, explicit time units, exact identifiers, readable period fields; no mutation of diagnosed state. |
+| Floes in singleplayer and an ordinary client far from the host | Zone-owner generation on loaded terrain; no server-only terrain dependency, forced SpawnZone, duplicates, or stale completion marker. |
+| Floes nearby / far / water-volume boundary / max distance | Working collider and climb, original four-point near physics, missing probe gives no impulse, no free-fall or permanent freeze, cheap center-only far bobbing. |
+| Floe unload, scale variants, transfer, disconnect, winter end | Correct restoration and server cleanup; no proxy artifacts, cosmetic ZDO stream, or ownership stealing. |
+| Frozen/thawed ships including Karve | No unsupported velocity warnings, required visuals/controls preserved, no intermediate kinematic force tick. |
+| Large-base approach and synthetic skiptime | Preserve validated cap responsiveness; world maintenance is distributed without replacing it with another full-list spike. Final problematic-user-base measurement remains outstanding. |
 
-Codex's final report must separate implemented changes, static checks, user-reported prior observations, and unexecuted gameplay checks. Include starting HEAD/dirty-state handling, commit IDs, modified files, remaining uncertainty about clear-weather growth, chosen scheduling constants, and any out-of-scope findings. No invented FPS, memory, traffic, or build results.
+The final Russian report must identify actual starting HEAD/dirty-state handling, commits and files, source-confirmed findings versus user observations, numerical heat expectations, explicit-env scope/limitations, how client generation and original physics were restored, maintenance budgets, static checks, and the exact checks still unexecuted. No invented FPS, memory, network, build, or gameplay result.
 
-## 9. Source anchors
+## 11. Source anchors
 
-Repository findings above refer to the implementation at `1c38ab1` unless noted:
+At `396be7d` in `shudnal/Seasons`:
 
-- [Snow timeline](https://github.com/shudnal/Seasons/blob/1c38ab1cba31f713edfe7335725abd0aabf4bac9/WinterSnow/SeasonalSnow.cs) and [simulation](https://github.com/shudnal/Seasons/blob/1c38ab1cba31f713edfe7335725abd0aabf4bac9/WinterSnow/SeasonalSnowSimulation.cs).
-- [Environment patches](https://github.com/shudnal/Seasons/blob/1c38ab1cba31f713edfe7335725abd0aabf4bac9/SeasonState/EnvManPatches.cs) and [texture lifecycle](https://github.com/shudnal/Seasons/blob/1c38ab1cba31f713edfe7335725abd0aabf4bac9/SeasonState/SeasonState.cs).
-- [Floe service](https://github.com/shudnal/Seasons/blob/1c38ab1cba31f713edfe7335725abd0aabf4bac9/Controllers/SeasonalIceFloes.cs) and [old floe motion/distance path](https://github.com/shudnal/Seasons/blob/1c38ab1cba31f713edfe7335725abd0aabf4bac9/Controllers/ZoneSystemVariantController.cs).
-- Game sources: [Water](https://github.com/shudnal/assemblies_combined/blob/d1374bfd9175ac8f733ae483b0a06e5c8b75906e/assembly_valheim/Water.cs), [Floating](https://github.com/shudnal/assemblies_combined/blob/d1374bfd9175ac8f733ae483b0a06e5c8b75906e/assembly_valheim/Floating.cs), [ZSyncTransform](https://github.com/shudnal/assemblies_combined/blob/d1374bfd9175ac8f733ae483b0a06e5c8b75906e/assembly_valheim/ZSyncTransform.cs), [ZDO](https://github.com/shudnal/assemblies_combined/blob/d1374bfd9175ac8f733ae483b0a06e5c8b75906e/assembly_valheim/ZDO.cs), and [EnvMan](https://github.com/shudnal/assemblies_combined/blob/d1374bfd9175ac8f733ae483b0a06e5c8b75906e/assembly_valheim/EnvMan.cs).
-- Attached Azumatt-AzuHoverStats v1.1.11 decompilation: `HoverTextPatches.HudUpdateCrosshairPatch`, lines 293-312 in the supplied consolidated file. This is a reference attachment, not a repository dependency.
+- `WinterSnow/SeasonalSnowHeat.cs`: UnitMeltRate, DistanceWeight, RebuildHeatLinks, HeatLink.Contribution, RecalculateHeat, wet Fireplace polling.
+- `Seasons.cs`: central defaults and client diagnostic binding.
+- `WinterSnow/SeasonalSnowSimulation.cs`: IntegrateSnow, IntegrateBucket, IntegratePiece, heat/interactive mode selection.
+- `WinterSnow/SeasonalSnowDiagnostics.cs` and `SeasonalSnow.cs`: display formats and inspectable period records.
+- `Controllers/SeasonalIceFloes.cs`, `SeasonalIceFloeMotion.cs`, `SeasonalIceFloeVisual.cs`, `Utils/IceFloeClimb.cs`: the implementation being corrected, not the architecture to preserve wholesale.
+- `Controllers/ZoneSystemVariantController.cs`: PlaceShip, frozen state restoration, UpdateWaterState, CheckZDODatabase.
+- `SeasonState/EnvManPatches.cs`, `SeasonState.cs`, `TerrainDecultivation.cs`, `Utils/CustomSyncedValuesSynchronizer.cs`: trigger and maintenance call chain.
 
-Screenshots and gameplay reports are supplied conversation evidence, not repository benchmark artifacts. No runtime source changes accompany this decision-record commit.
+Original narrow floe reference: `Controllers/ZoneSystemVariantController.cs` at `988e98c514ce49369a92cbaf934a7aca384fe6e1`. Prior complete implementation record: this document at `396be7d9a3aa3fa01cbcc2a11cec46ce28f50346`.
 
-## 10. Implementation status
+Game-source mirror at `d1374bfd`: `assembly_valheim/EnvMan.cs`, `Terminal.cs`, `Water.cs`, `Floating.cs`, `ZSyncTransform.cs`, `Ship.cs`, `ZoneSystem.cs`, `ZDO.cs`, and `ZDOMan.cs`.
 
-Implementation started from a clean `perf/snow-performance` worktree at `2ffa4ad7eea1c083711c4eb538285b0d97cd23b0`, fast-forwarded to the requested documentation commit `8229b43146071eb8589731a9058d2eef9a0f31d9`. No local work was discarded. The `master` and `feat/blood-moon` branches are unchanged. No applicable `AGENTS.md` was found. The clean game-source mirror is at the specified `d1374bfd9175ac8f733ae483b0a06e5c8b75906e` revision, also recorded by the existing project implementation notes; API checks use that source rather than a newer guessed signature.
-
-### Completed: inspectable timeline records (section 2)
-
-`WinterSnow/SeasonalSnow.cs` now stores one array of readonly `SnowPeriod` values per biome. Each period stores the selected environment name (including dry periods, or `<none>`), nonnegative buildup, and cumulative gain. `ToString()` uses invariant `G9` float formatting for RUE. All former parallel-array readers use these records. The random seed, selection order, winter boundaries, arithmetic and snapshot behavior are unchanged; no timeline logging was added.
-
-Static review compared every changed arithmetic expression and reader with the baseline. RUE inspection and the clear-weather gameplay investigation remain unexecuted. A flat cumulative record alone does not prove the cause of the reported growth: consumed history, initialization/snapshots, exact snow and delayed visuals still need to be compared on the same piece. No balance change is included.
-
-### Completed: read-only snow hover (section 3)
-
-`WinterSnow/SeasonalSnowDiagnostics.cs` appends a marker-delimited diagnostic block from the native `Hud.UpdateCrosshair(Player, float)` postfix. The existing central `clientConfig` binding uses `AlwaysClientControlled`, the specified text, and a default of false. The disabled path returns before HUD, component, ZDO or formatting work. The current target/block are cached for 0.2 unscaled seconds and cleared on config changes, world reset or target loss. Marker removal also handles text retained by another HUD patch across cache resets.
-
-The narrow controller reader reports existing runtime/region/heat/weather/snapshot/visual caches and native save fields. Unregistered pieces remain unregistered. Static call-path review found no registration, readiness/cast, material binding, simulation or publication call; native signatures and fields were checked against the source baseline. Project inclusion and XML were inspected. Hover layout, coexistence with HUD mods, summer/unregistered targets and the reported clear-weather growth still require gameplay checks.
-
-### Completed: environment texture retirement (section 4)
-
-`SeasonState/SeasonState.cs` and `SeasonState/EnvManPatches.cs` retire only tracked Seasons-generated textures at registry replacement/restoration boundaries. Nested native initialization/append calls are batched; the completed registry is traversed once to identify live references. Pending candidates retain current/previous/next environments and active aurora shader references. Native queue/interpolation boundaries compare cached texture identities and do no collection work when nothing retired is pending or the references are unchanged. Shutdown unbinds only owned shader textures and clears owned resources/tracking.
-
-The old texture scan is removed from the warm-status `FixedUpdate`; its cold/overheat behavior is unchanged. Static inspection covered native `AppendEnvironment`, `InitializeEnvironment`, `QueueEnvironment(EnvSetup)`, `InterpolateEnvironment(float)` and `OnDestroy`, including interrupted transition shader ordering, external rebuilds and restoration. Repeated/interrupted transitions, control disable and external environment reloads still need in-game aurora/resource checks.
-
-### Completed: incremental approach-only generation (section 5)
-
-`Controllers/SeasonalIceFloes.cs` now queues normal full-load/approach events and resumes individual placement candidates using private per-zone RNG state and exclusions. It requires `IsZoneLoaded`, a near-player scope, ground data and finite water before placement. No floe path calls `SpawnZone`, creates ghost terrain or samples unloaded terrain. Every yield/return restores Unity's RNG; unavailable data retains the unconsumed candidate without a busy distant retry. Native full-load exclusion lists are copied rather than held across frames.
-
-Existing markers and marked floes suppress duplicates; only a finished candidate sequence writes a completion marker. Unloading retains partial work for a subsequent normal event, and seasonal cancellation queues its zone for cleanup. Native placement exclusions, altitude/biome/area/depth, scale, health, mass, world edge and climb behavior are retained. Marked restored floes retain distant flags through `ZNetView.Awake`; unrelated native ice is not made distant. Prefab/climb initialization uses the native zone lifecycle on every peer, independently of graphics texture-controller initialization.
-
-Cleanup has its own queues and does not depend on terrain, water or placement readiness. The existing world cleanup pass supplies its existing scope and now queues floe removals/marker resets; no new global world scan was added. Constants per rendered frame: 8 discovery, request and cleanup-zone advances per respective phase; 64 inspected ZDOs shared by placement/cleanup; 4 candidates; 1 instantiation; 4 removals; 4 marker resets; 1.5 ms service guard. Peer scopes refresh every 0.5 seconds. These are upper scheduling budgets, not measured frame-time results; one native object lookup/raycast/Instantiate/Destroy call cannot be preempted. Newly approached rings are discovered first after movement, normal load events take priority, and settled zones skip repeated placement work.
-
-Static review covered callback signatures, state/RNG restoration, missing-data/unload/cancellation, duplicate prevention, negative spawn-count behavior and queue fairness. **Source-confirmed multiplayer limitation:** `ZoneSystem.Update` normally loads terrain around the server reference; remote peers are passed to `CreateGhostZones`. The service considers every ready player's scope but still requires a zone actually loaded on the server. Dedicated/remote-only approaches can therefore have no new floes. This implementation deliberately does not force server terrain loads, use ghost-only placement, delegate production to clients or broaden the agreed scope. The maintainer must evaluate this limitation and the visual sufficiency of approach-only generation.
-
-### Completed: safe physical and bounded cosmetic motion (section 6)
-
-`Controllers/SeasonalIceFloeMotion.cs` replaces the old floe `Floating.CustomFixedUpdate` distance/sync workaround. Each additional force probe rejects missing/nonfinite water before calculating its depth delta, while valid samples retain both force directions. Whole-body loss of water switches marked floes to a kinematic, gravity-free stable mode; both Rigidbody settings and the cached `ZSyncTransform` policy are controlled so native synchronization cannot re-enable gravity. Normal authoritative synchronization remains enabled, with no ownership claim and no cosmetic root or ZDO writes. Owner zero, nonowners and ownership changes share the same safety path; native handoff still loads the new authoritative pose.
-
-Water distance and its square are cached from exactly `NearSimulationDistance * m_zoneSize`, initialized at `ZoneSystem.Start` and refreshed through `Water.ApplySettings` / `ApplySettingsOnAll` (including the no-Water-instance case). `_VisibleMaxDistance` material reads are gone; `_WaterEdge` handling remains. Physical entry requires valid liquid and an actual player/server-peer position within `min(water distance, one zone size)`. Exit adds one-eighth of a zone for hysteresis: with 64 m zones this is 64 m entry / 72 m exit at the currently supported distances. Larger simulation settings do not expand this gameplay physics radius. A cached live water source must also have an enabled volume containing the root; each extra edge probe still validates independently.
-
-`Controllers/SeasonalIceFloeVisual.cs` caches client-only collider-free mesh proxies, renderer properties and LOD slots once. It uses the native `WaterVolume.CalcWave` calculation on a cached prefab sampler with native wrapped water time, wind blending and Deep North wave fade. Wave depth is the last available local water depth, or full-depth ocean (1) until observed; this is a cosmetic approximation, not distant terrain sampling. Bob is damped and tilt is scaled to 0.35. The original root, collider hierarchy and ZDO remain authoritative. Visibility requires a cached renderer visible inside the camera far clip; dedicated servers create no visual helper. Losing visibility restores proxies incrementally. Approaching gameplay range first blends to the physical baseline and restores LOD/render settings, while explicit climb interaction and ownership changes restore alignment immediately.
-
-The native `MonoUpdaters` lifecycle runs the scheduler independently of texture controllers or cameras. Scheduling limits per rendered frame are 64 state visits, 16 visual wave targets (3 native wave samples each), 8 floes receiving extra forces (4 independently checked probes each), and 64 visual binding operations, including incremental restoration. State/sample, force and visual phases each have a 0.75 ms elapsed guard. Force work runs at most once per rendered frame, scales its elapsed interval up to 0.1 s, and leaves native near buoyancy authoritative. Player/mode refresh is 0.2 s; wave targets refresh at 0.1 s inside the corrected water distance and 0.25 s beyond it, initially staggered in eight 0.025 s slots. Per-binding interpolation uses elapsed time between actual visits, smoothing at 6/s with a 0.25 s step cap and alignment tolerances of 0.001 m / 0.05 degrees. These limits bound optional work, not native near physics or the duration of a single engine call.
-
-Rigidbody/sync policy and original rendering are restored on handoff, disable, unload, destruction, plugin shutdown and world shutdown. Re-enabling only `Floating` re-registers after native initialization. Same-frame disable/re-enable excludes deferred-destroy proxies from recapture. No steady-state component hierarchy scans, temporary transform arrays, blanket `Physics.SyncTransforms`, manual `OutsideZones`, or cosmetic network writes were introduced. The existing explicit climb teleport retains its native transform synchronization.
-
-### Static completion and remaining gameplay verification
-
-Sections 2-6 are implemented. Static verification includes C# 10 syntax parsing of all 79 project source files with no syntax errors, XML inclusion checks with no missing/duplicate Compile entries, diff whitespace, source API/Harmony signature checks against the specified 1.0.15 revision, and separate peer reviews of hover/lifecycle/generation/motion control flow. Less-common Unity renderer and transform members were also checked in the local stable CoreModule PE metadata. This is not semantic compilation. The project retains its existing assembly paths and dependencies.
-
-Source searches confirm removal of the parallel timeline readers, recurring environment cleanup call, old floe updater, and all floe `SpawnZone` calls/material distance reads. The committed `ruleBiome` and `!source.Fireplace.m_wet` fixes remain. No snow balance/schema, version, package, dependency, master or blood-moon change is included, and no timeline logging was added. Changed non-localization content is English.
-
-No mod build, tests or Valheim run has been performed. No FPS, memory or traffic result is asserted. The maintainer's previously reported cap/season observations in section 1 are not acceptance of this implementation. The section 8 gameplay checklist remains open, especially:
-
-- Compare the same clear-weather piece's exact snow, current stored weather record, cumulative/consumed gain and time, catch-up, snapshot epoch/from and applied cap level before/after growth. The cause is still unknown; do not change accumulation/melting balance without evidence.
-- Exercise hover off/on and target/world changes with ordinary, summer and unregistered pieces and HUD mods; inspect dry/partial weather periods in RUE.
-- Reload/disable environments during repeated and interrupted aurora transitions; verify restoration and bounded owned-resource retirement.
-- Approach/retreat at default and maximum distances, including partial placement unload/reload and winter/summer changes; verify exclusions, no duplicates, distant visibility and cleanup without terrain.
-- Check missing center/individual edge water, live distance changes, LOD crossover, nonuniform floe scales, smooth approach alignment and climbing. Check no out-of-world falls or recurring cosmetic ZDO position/velocity revisions.
-- Repeat on host/client/dedicated with owner zero, transfers, disconnects, no camera, component disable/re-enable and world reload. Evaluate the source-confirmed server-terrain availability limit above before deciding any further multiplayer generation scope.
-
-The cosmetic full-depth fallback, nonuniform-scale proxy appearance, scheduling constants under real load, and sufficiency of approach-only generation require maintainer observation. They are implementation choices awaiting gameplay acceptance, not proven visual/performance results.
+The attached AzuHoverStats decompilation remains only the historical reference for appending to Hud.UpdateCrosshair, not a new dependency. The screenshots are conversation evidence, not checked-in benchmark data. This revision records planned corrections; implementation status must be updated by Codex rather than inferred from this document's existence.
