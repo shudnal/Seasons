@@ -8,7 +8,7 @@ using static Seasons.ZoneSystemVariantController;
 
 namespace Seasons
 {
-    /// <summary>Server-only placement in normally loaded near zones, with terrain-independent cleanup.</summary>
+    /// <summary>Zone-owner placement in normally loaded zones, with server-only global cleanup.</summary>
     internal static class SeasonalIceFloes
     {
         // These bound service work, not an individual Unity call such as Instantiate or a terrain raycast.
@@ -62,6 +62,7 @@ namespace Seasons
             internal readonly List<ZoneSystem.ClearArea> Exclusions = new List<ZoneSystem.ClearArea>();
             internal int ObjectIndex;
             internal ZDOID Control;
+            internal SpawnSystem SpawnSystem;
             internal bool ExistingFloe;
             internal bool RandomReady;
             internal int Remaining;
@@ -138,9 +139,9 @@ namespace Seasons
             s_iceFloe = null;
         }
 
-        private static bool ServerReady()
+        private static bool PeerReady()
         {
-            if (!ZoneSystem.instance || !ZNet.instance || !ZNet.instance.IsServer() ||
+            if (!ZoneSystem.instance || !ZNet.instance ||
                 !ZNetScene.instance || ZDOMan.instance == null ||
                 ZNet.GetConnectionStatus() != ZNet.ConnectionStatus.Connected)
                 return false;
@@ -153,20 +154,22 @@ namespace Seasons
             return true;
         }
 
+        private static bool ServerReady() => PeerReady() && ZNet.instance.IsServer();
+
         private static bool PlacementReady()
         {
             if (!prefabChecked && world.m_vegetation.Count != 0)
                 InitializePrefab(world);
-            return WorldGenerator.instance != null && world.LocationsGenerated &&
+            return WorldGenerator.instance != null && (!ZNet.instance.IsServer() || world.LocationsGenerated) &&
                 waterStateInitialized && s_waterEdge > 100f && s_iceFloe?.m_prefab != null;
         }
 
-        // Clients consume replicated ZDOs; a normal water/load event only queues server work.
+        // A normal water/load event only queues work; placement stays outside the callback.
         internal static bool CheckWaterVolume(WaterVolume water)
         {
-            if (!water || !water.m_heightmap || !ZNet.instance || !ZNet.instance.IsServer())
+            if (!water || !water.m_heightmap)
                 return true;
-            if (!ServerReady() || !PlacementReady())
+            if (!PeerReady() || !PlacementReady())
                 return false;
             ScheduleZone(ZoneSystem.GetZone(water.transform.position));
             return true;
@@ -185,7 +188,7 @@ namespace Seasons
 
         private static void ScheduleCleanup(Vector2s zone)
         {
-            if (cleanupSet.Add(zone))
+            if (ServerReady() && cleanupSet.Add(zone))
                 cleanupZones.Enqueue(zone);
         }
 
@@ -238,7 +241,7 @@ namespace Seasons
 
         internal static void Update()
         {
-            if (!ServerReady() || Game.IsPaused() || Time.timeScale <= 0f)
+            if (!PeerReady() || Game.IsPaused() || Time.timeScale <= 0f)
                 return;
             long deadline = Stopwatch.GetTimestamp() + (long)(Stopwatch.Frequency * ServiceMilliseconds / 1000.0);
             bool nowWanted = SeasonState.IsActive && IsTimeForIceFloes();
@@ -271,14 +274,19 @@ namespace Seasons
                 scans.RemoveAll(scan => scan.Peer != 0L && !peers.Exists(peer => peer.m_uid == scan.Peer && peer.IsReady()));
                 if (!ZNet.instance.IsDedicated())
                     Observe(0L, ZNet.instance.GetReferencePosition(), distance.NearSimulationDistance, radius);
+                if (wanted)
+                    scans.RemoveAll(scan => scan.Peer != 0L);
                 foreach (ZNetPeer peer in peers)
-                    if (peer.IsReady())
+                    if (!wanted && ZNet.instance.IsServer() && peer.IsReady())
                         Observe(peer.m_uid, peer.GetRefPos(), distance.NearSimulationDistance, radius);
             }
 
             int objectBudget = ObjectBudget;
-            ServiceCleanup(ref objectBudget, deadline);
-            ServiceRemovals(deadline);
+            if (ZNet.instance.IsServer())
+            {
+                ServiceCleanup(ref objectBudget, deadline);
+                ServiceRemovals(deadline);
+            }
 
             // Normal load events already queued their zones. Discovery never runs placement in callbacks.
             for (int i = 0; i < DiscoveryBudget && BeforeDeadline(deadline); ++i)
@@ -296,7 +304,8 @@ namespace Seasons
                 }
                 if (!found)
                     break;
-                if ((wanted && settled.Contains(zone)) || !InScope(zone, wanted) || !world.IsZoneGenerated(zone))
+                if ((wanted && settled.Contains(zone)) || !InScope(zone, wanted) ||
+                    (!wanted && !world.IsZoneGenerated(zone)))
                     continue;
                 if (!wanted || world.IsZoneLoaded(zone))
                     ScheduleZone(zone);
@@ -314,7 +323,10 @@ namespace Seasons
                 Vector2s zone = requests.Dequeue();
                 requestSet.Remove(zone);
                 if (settled.Contains(zone) || !world.IsZoneLoaded(zone) || !InScope(zone, near: true))
+                {
+                    work.Remove(zone);
                     continue;
+                }
                 if (!work.TryGetValue(zone, out ZoneWork current))
                 {
                     if (WorldGenerator.instance.GetBiome(ZoneSystem.GetZonePos(zone)) != Heightmap.Biome.Ocean)
@@ -323,8 +335,18 @@ namespace Seasons
                         initialExclusions.Remove(zone);
                         continue;
                     }
+                    SpawnSystem spawn = FindOwnedSpawnSystem(zone);
+                    if (!spawn)
+                        continue; // An ordinary loaded zone owner is the only producer.
                     current = BeginZone(zone);
+                    current.SpawnSystem = spawn;
+                    current.Control = spawn.m_nview.GetZDO().m_uid;
                     work.Add(zone, current);
+                }
+                if (!OwnsLoadedZone(current))
+                {
+                    work.Remove(zone);
+                    continue; // Discard stale authority and RNG state; a new owner checks existing floes.
                 }
                 if (!InspectZone(current, false, ref objectBudget, deadline))
                 {
@@ -348,7 +370,7 @@ namespace Seasons
                     InitializeRandom(current);
                 if (current.Remaining <= 0)
                 {
-                    control.Set(SeasonsVars.s_iceFloesSpawned, 1, okForNotOwner: true);
+                    control.Set(SeasonsVars.s_iceFloesSpawned, 1);
                     Complete(zone);
                     continue;
                 }
@@ -362,6 +384,20 @@ namespace Seasons
                 ScheduleZone(zone);
             }
         }
+
+        private static SpawnSystem FindOwnedSpawnSystem(Vector2s zone)
+        {
+            foreach (SpawnSystem spawn in SpawnSystem.m_instances)
+                if (spawn && spawn.m_heightmap && spawn.m_nview && spawn.m_nview.IsValid() &&
+                    spawn.m_nview.IsOwner() && ZoneSystem.GetZone(spawn.transform.position) == zone)
+                    return spawn;
+            return null;
+        }
+
+        private static bool OwnsLoadedZone(ZoneWork current) => SeasonState.IsActive && IsTimeForIceFloes() &&
+            world.IsZoneLoaded(current.Zone) && current.SpawnSystem && current.SpawnSystem.m_heightmap &&
+            current.SpawnSystem.m_nview && current.SpawnSystem.m_nview.IsValid() &&
+            current.SpawnSystem.m_nview.IsOwner() && current.SpawnSystem.m_nview.GetZDO().m_uid == current.Control;
 
         private static ZoneWork BeginZone(Vector2s zone)
         {
@@ -390,7 +426,8 @@ namespace Seasons
                     continue;
                 if (zdo.GetPrefab() == zonePrefab)
                 {
-                    current.Control = zdo.m_uid;
+                    if (remove)
+                        current.Control = zdo.m_uid;
                     if (remove)
                         ScheduleMarkerReset(zdo);
                 }
@@ -401,7 +438,8 @@ namespace Seasons
                     else
                     {
                         current.ExistingFloe = true;
-                        zdo.SetDistant(true);
+                        if (zdo.IsOwner())
+                            zdo.SetDistant(true);
                     }
                 }
             }
@@ -552,7 +590,7 @@ namespace Seasons
         {
             private static void Postfix(Vector2s zoneID, ZoneSystem.SpawnMode mode)
             {
-                if (mode != ZoneSystem.SpawnMode.Full || !ServerReady() || !SeasonState.IsActive || !IsTimeForIceFloes())
+                if (mode != ZoneSystem.SpawnMode.Full || !PeerReady() || !SeasonState.IsActive || !IsTimeForIceFloes())
                     return;
                 // Copy only the normal full-load exclusions; never retain the shared vanilla list.
                 initialExclusions[zoneID] = new List<ZoneSystem.ClearArea>(world.m_tempClearAreas);
@@ -571,7 +609,7 @@ namespace Seasons
         {
             private static void Postfix(Vector2s zoneID, bool __result)
             {
-                if (__result && ServerReady())
+                if (__result && PeerReady())
                     ScheduleZone(zoneID);
             }
         }
@@ -581,8 +619,19 @@ namespace Seasons
         {
             private static void Postfix(ZDO zdo)
             {
-                if (ServerReady() && world.IsZoneLoaded(zdo.GetSector()))
+                if (PeerReady() && world.IsZoneLoaded(zdo.GetSector()))
                     ScheduleZone(zdo.GetSector());
+            }
+        }
+
+        // Ownership can arrive after the load callback. Native spawning already retries once a second.
+        [HarmonyPatch(typeof(SpawnSystem), nameof(SpawnSystem.UpdateSpawning))]
+        private static class SpawnSystem_UpdateSpawning_Floes
+        {
+            private static void Postfix(SpawnSystem __instance)
+            {
+                if (PeerReady() && __instance.m_nview && __instance.m_nview.IsValid() && __instance.m_nview.IsOwner())
+                    ScheduleZone(ZoneSystem.GetZone(__instance.transform.position));
             }
         }
 

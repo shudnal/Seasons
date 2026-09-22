@@ -283,6 +283,10 @@ Work started in the existing `perf/snow-performance` worktree at `396be7d9a3aa3f
 
 Only the existing central `seasonalSnowSelfHeatMultiplier` binding default changed from `5f` to `2f`. Its key, description, formula, heat-link weighting and saved configuration are unchanged; no migration was added. Static arithmetic gives kiln `0.0072` and hive `0.0009` per active second under the specified identical coefficients (ratio 8). With an existing saved self value of 5, the calculated `0.018` / `0.0009` and ratio 20 remain. These are calculations, not new gameplay observations.
 
+### Completed: zone-owner generation (section 6.1)
+
+The ordinarily loaded zone's owned `SpawnSystem.m_nview` is again the producer on a client or host. Every placement slice checks loaded state, current season and that same ownership; it never claims ownership. Native spawning callbacks retry ownership arriving after zone loading. Server-only global removal and marker reset remain separate. Placement retains private RNG, exclusions, completion/existing-floe checks and the previous budgets: 8 discovery/request steps, 64 inspected objects, 4 candidates, 1 instantiation, 4 removals and 4 marker resets per service, a 1.5 ms guard, and 0.5 s scope refresh. No forced `SpawnZone` or unloaded placement was added. These are source checks; multiplayer placement remains a gameplay check.
+
 ### Remaining work and verification
 
 Sections 4-8 are in progress. No build, tests or Valheim execution has been performed. The maintainer's prior gameplay observations in section 2 are preserved as reported evidence, separate from acceptance of the corrective implementation.
