@@ -53,19 +53,22 @@ namespace Seasons
 
         internal void RegisterSnow(WearNTear piece)
         {
-            if (!SeasonalSnow.WinterReady || !piece || endingSnowWinter || !EnsureSnowScene() ||
-                !SeasonalSnow.IsSeasonalSnowPosition(piece) || !piece.m_nview || piece.m_nview.m_ghost ||
+            if (!SeasonalSnow.WinterReady || !piece || endingSnowWinter || !EnsureSnowScene())
+                return;
+            if (snowPieces.TryGetValue(piece, out SnowPiece existing))
+            {
+                // Awake, Start, discovery and native visual callbacks can meet the
+                // same instance. Rule changes have their own queued refresh path.
+                if (existing.Valid)
+                    return;
+                RetireSnow(existing, releaseVisual: true);
+            }
+            if (!SeasonalSnow.IsSeasonalSnowPosition(piece) || !piece.m_nview || piece.m_nview.m_ghost ||
                 ZNetView.m_forceDisableInit || !piece.gameObject.scene.IsValid())
                 return;
             ZDO zdo = piece.m_nview.GetZDO();
             if (zdo == null || !zdo.IsValid())
                 return;
-            if (snowPieces.TryGetValue(piece, out SnowPiece existing))
-            {
-                if (existing.Valid)
-                    return;
-                RetireSnow(existing, releaseVisual: true);
-            }
             if (snowIds.TryGetValue(zdo.m_uid, out SnowPiece replaced))
                 RetireSnow(replaced, releaseVisual: true);
 
@@ -111,7 +114,9 @@ namespace Seasons
             state.View.Register(UseSnowRpc, sender => ReceiveUse(state, sender));
             QueueRuntimeVisual(state, force: true);
             QueueRefresh(state, SnowRefresh.All);
-            QueueRegion(state.Region, SnowRefresh.Area);
+            // Registration already queued this piece. Do not rescan every existing
+            // piece in its region for each object in a streaming batch.
+            state.Region.ReadinessDirty = true;
         }
 
         private void AddSnowRegion(SnowPiece state)
@@ -340,6 +345,10 @@ namespace Seasons
         internal void SnowSnapshotReceived(ZDO zdo)
         {
             if (!SeasonalSnow.WinterReady || zdo == null || !snowIds.TryGetValue(zdo.m_uid, out SnowPiece state) || !ReferenceEquals(state.Zdo, zdo))
+                return;
+            // Health, fuel and other fields share the same ZDO revision. They do not
+            // wake snow buckets when ownership and the snow snapshot are unchanged.
+            if (state.Owner == zdo.GetOwner() && SnapshotUnchanged(state, new SeasonalSnowStorage.Snapshot(zdo)))
                 return;
             QueueRefresh(state, SnowRefresh.Snapshot);
         }
