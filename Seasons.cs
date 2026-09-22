@@ -405,7 +405,7 @@ namespace Seasons
 
         private void OnDestroy()
         {
-            SeasonalIceFloeMotion.Reset();
+            SeasonalIceFloeWaves.Reset();
             SeasonalIceFloes.Reset();
             SeasonalSnowController.Instance.StopSnowScene(ZNetScene.instance);
             Compatibility.MarketplaceCompat.ReleaseMap();

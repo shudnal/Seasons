@@ -109,8 +109,7 @@
     <Compile Include="Controllers\PrefabVariantController.cs" />
     <Compile Include="Controllers\ZoneSystemVariantController.cs" />
     <Compile Include="Controllers\SeasonalIceFloes.cs" />
-    <Compile Include="Controllers\SeasonalIceFloeMotion.cs" />
-    <Compile Include="Controllers\SeasonalIceFloeVisual.cs" />
+    <Compile Include="Controllers\SeasonalIceFloeWaves.cs" />
     <Compile Include="Utils\ItemNameTokens.cs" />
     <Compile Include="Utils\LocalizationManager.cs" />
     <Compile Include="Utils\StatusEffectHud.cs" />

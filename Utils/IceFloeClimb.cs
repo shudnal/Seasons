@@ -22,18 +22,18 @@ namespace Seasons
                 if (mass != 0f)
                     m_view.m_body.mass = mass;
             }
-            SeasonalIceFloeMotion.Track(m_floating);
+            SeasonalIceFloeWaves.Track(m_floating);
         }
 
         private void OnEnable()
         {
             if (m_started)
-                SeasonalIceFloeMotion.Track(m_floating);
+                SeasonalIceFloeWaves.Track(m_floating);
         }
 
-        private void OnDisable() => SeasonalIceFloeMotion.Untrack(m_floating);
+        private void OnDisable() => SeasonalIceFloeWaves.Untrack(m_floating);
 
-        private void OnDestroy() => SeasonalIceFloeMotion.Untrack(m_floating);
+        private void OnDestroy() => SeasonalIceFloeWaves.Untrack(m_floating);
 
         public bool Interact(Humanoid character, bool hold, bool alt)
         {
@@ -43,7 +43,7 @@ namespace Seasons
             if (!InUseDistance(character))
                 return false;
 
-            SeasonalIceFloeMotion.PrepareInteraction(m_floating);
+            SeasonalIceFloeWaves.PrepareInteraction(m_floating);
             character.transform.position = Vector3.Lerp(character.transform.position, base.transform.position, 0.35f) + Vector3.up;
             Physics.SyncTransforms();
             return false;

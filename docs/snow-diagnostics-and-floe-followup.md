@@ -301,6 +301,14 @@ Only a valid `EnvMan.m_debugEnv` selects an override. One observed in-memory int
 
 Pause, discontinuous time, catch-up, timeline rebuild and shutdown delimit/reset observation. Unobserved, unloaded and skipped intervals retain natural history; an override is never backdated into them. Owner-zero prediction remains natural, and foreign-owner snapshots are not changed by a local console override. Raids, intro, dungeon/event and local EnvZone weather are outside this feature. The existing read-only hover separately shows the natural record and effective live source/rate. Boundary correctness has been reviewed statically; the env/resetenv scenarios in section 10 still require gameplay checks.
 
+### Completed: narrow floe physics (sections 6.2-6.4)
+
+`SeasonalIceFloeWaves.cs` replaces the rejected `SeasonalIceFloeMotion.cs` / `SeasonalIceFloeVisual.cs`, including their project entries and callers. Nearby locally owned marked floes retain native `Floating.CustomFixedUpdate` and the original four `ClosestPoint` wave-force formulas/timing. Every extra Water probe rejects missing/nonfinite heights independently. Missing center water temporarily holds gravity and sleeps a dynamic body; native `ZSyncTransform.m_useGravity` is coordinated and restored, without making floes kinematic. A missing/neighbor-volume callback permits one near-owner center fallback probe per 0.5 s, covering scaled floes at water boundaries and reappearing water. Ownership acquisition is checked around native saved pose/velocity adoption. A verified invalid height permits one owner-authorized recovery after valid water, retried at most every 0.5 s until possible.
+
+The shared distance and squared distance use exactly `NearSimulationDistance * m_zoneSize`, refreshed at initialization/settings changes. Distant motion is only a 0.35 m vertical sine offset from a stable baseline: round-robin 16 cheap visits per late frame, no more than once per 0.25 s per floe. Far bobbing performs no liquid probes or copied renderer/LOD work and disables position/body-velocity publication; baseline and synchronization are restored before near interaction or ownership transfer. No healthy root snapping or collider enablement override was added.
+
+Source tracing confirms the rejected `Freeze()` did not directly disable colliders. Native `Ledge.Changed` controls its collider, and rock health variants control collider-bearing child activation; the source mirror alone does not establish which caused the reported `ice1` state. `GetFloeSize` restores its temporary collider flag in `finally`. The exact reported disabled-collider cause and all motion behavior remain gameplay checks, not claimed diagnoses.
+
 ### Remaining work and verification
 
 Sections 4-8 are in progress. No build, tests or Valheim execution has been performed. The maintainer's prior gameplay observations in section 2 are preserved as reported evidence, separate from acceptance of the corrective implementation.
