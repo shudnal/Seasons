@@ -100,20 +100,25 @@ namespace Seasons
         {
             int candidates = Math.Min(16, regionList.Count);
             int checks = 2;
+            long start = Stopwatch.GetTimestamp();
             while (candidates-- > 0 && regionList.Count != 0)
             {
                 readinessCursor %= regionList.Count;
                 SnowRegion region = regionList[readinessCursor++];
-                if (!region.ReadinessDirty && (region.Ready || Time.time < region.NextReadinessCheck))
+                if (region.Ready ? !region.ReadinessDirty : Time.time < region.NextReadinessCheck)
                     continue;
-                region.NextReadinessCheck = Time.time + 0.5f;
+                // Creation notifications must not bypass the retry interval after a
+                // failed check. A previously ready dirty region still gets prompt validation.
                 bool ready = false;
                 if (ZoneSystem.instance.IsZoneLoaded(region.Zone))
                 {
-                    if (checks-- <= 0)
+                    if (checks <= 0 || (Stopwatch.GetTimestamp() - start) / (double)Stopwatch.Frequency >= 0.001d)
                         break;
+                    checks--;
                     ready = simulationScene.IsAreaReady(region.Center);
                 }
+                // Only a completed check advances the retry clock or consumes dirtiness.
+                region.NextReadinessCheck = Time.time + 0.5f;
                 region.ReadinessDirty = false;
                 if (region.Ready == ready)
                     continue;
@@ -127,7 +132,9 @@ namespace Seasons
                     region.ResumeFromWorld = region.PauseAtWorld;
                 region.Ready = ready;
                 region.ReadyGeneration++;
-                QueueRegion(region, SnowRefresh.Geometry | SnowRefresh.Links | SnowRefresh.Area);
+                // The check just established readiness. Do not dirty it again merely
+                // to notify pieces about that result.
+                QueueRegion(region, SnowRefresh.Geometry | SnowRefresh.Links);
             }
         }
 
@@ -425,15 +432,40 @@ namespace Seasons
             state.ForceVisual |= force;
             if (state.VisualQueued)
                 return;
+            if (visuals.TryGetValue(state.Piece, out VisualState visual) && !visual.Disabled && visual.Matches(state.Piece))
+            {
+                bool prioritizeHide = SetVisualTarget(visual, state.Snow, disabled: false);
+                if (visual.Queued)
+                {
+                    // The renderer queue already reads the latest runtime value.
+                    // Do not spend a second preparation slot on the same piece.
+                    if (prioritizeHide)
+                        EnqueueVisual(visual, prioritize: true);
+                    state.ForceVisual = false;
+                    return;
+                }
+                if (visual.HasApplied && visual.Target == visual.Applied &&
+                    Mathf.Abs(visual.TargetLevel - visual.AppliedLevel) + 0.000001f < VisualStep &&
+                    (!state.ForceVisual || visual.TargetLevel.Equals(visual.AppliedLevel)))
+                {
+                    state.ForceVisual = false;
+                    return;
+                }
+            }
             state.VisualQueued = true;
             snowVisualChanges.Enqueue(state);
         }
 
         internal bool RequestSnowVisual(WearNTear piece, bool force)
         {
-            RegisterSnow(piece);
-            if (!snowPieces.TryGetValue(piece, out SnowPiece state))
+            if (!piece)
                 return false;
+            if (!snowPieces.TryGetValue(piece, out SnowPiece state) || !state.Valid)
+            {
+                RegisterSnow(piece);
+                if (!snowPieces.TryGetValue(piece, out state) || !state.Valid)
+                    return false;
+            }
             QueueRuntimeVisual(state, force);
             return true;
         }
