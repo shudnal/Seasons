@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using UnityEngine;
 using static Seasons.Seasons;
@@ -16,15 +17,30 @@ namespace Seasons
         private const float WeatherGainPerSecond = 0.01f;
         private static float timelineAccumulationSpeed;
         private static float timelineBuildupSpeed;
+        public readonly struct SnowPeriod
+        {
+            public readonly string EnvironmentName;
+            public readonly float SnowBuildup;
+            public readonly float CumulativeSnowGain;
+
+            public SnowPeriod(string environmentName, float snowBuildup, float cumulativeSnowGain)
+            {
+                EnvironmentName = environmentName ?? "<none>";
+                SnowBuildup = snowBuildup;
+                CumulativeSnowGain = cumulativeSnowGain;
+            }
+
+            public override string ToString() => String.Format(CultureInfo.InvariantCulture,
+                "{0} | buildup={1:G9} | cumulative={2:G9}", EnvironmentName, SnowBuildup, CumulativeSnowGain);
+        }
+
         public sealed class BiomeSnowTimeline
         {
-            public readonly float[] snowBuildup;
-            public readonly float[] cumulativeSnowGain;
+            public readonly SnowPeriod[] Periods;
 
             public BiomeSnowTimeline(int periods)
             {
-                snowBuildup = new float[periods];
-                cumulativeSnowGain = new float[periods];
+                Periods = new SnowPeriod[periods];
             }
         }
 
@@ -416,7 +432,6 @@ namespace Seasons
                             UnityEngine.Random.InitState((int)environmentPeriod);
                             EnvSetup environment = EnvMan.instance.SelectWeightedEnvironment(environments);
                             float snowBuildup = Mathf.Max(0f, environment?.m_snowBuildup ?? 0f);
-                            timeline.snowBuildup[i] = snowBuildup;
 
                             double periodStart = environmentPeriod * (double)seasonalSnowEnvironmentDuration;
                             double periodEnd = periodStart + seasonalSnowEnvironmentDuration;
@@ -426,7 +441,7 @@ namespace Seasons
                             cumulativeGain += GetPredictedSnowGain(
                                 snowBuildup, Math.Max(0d, overlapEnd - overlapStart));
 
-                            timeline.cumulativeSnowGain[i] = Mathf.Max(0f, cumulativeGain);
+                            timeline.Periods[i] = new SnowPeriod(environment?.m_name, snowBuildup, Mathf.Max(0f, cumulativeGain));
                         }
                     }
                     finally
@@ -464,8 +479,8 @@ namespace Seasons
 
             if (environmentDuration == seasonalSnowEnvironmentDuration &&
                 SeasonalSnowTimelines.TryGetValue(biome, out BiomeSnowTimeline timeline) &&
-                indexLong >= 0L && indexLong < timeline.snowBuildup.Length)
-                return timeline.snowBuildup[(int)indexLong];
+                indexLong >= 0L && indexLong < timeline.Periods.Length)
+                return timeline.Periods[(int)indexLong].SnowBuildup;
 
             return PredictSnowBuildup(biome, environmentPeriod);
         }
@@ -476,7 +491,7 @@ namespace Seasons
                 return 0f;
 
             if (!SeasonalSnowTimelines.TryGetValue(biome, out BiomeSnowTimeline timeline) ||
-                timeline.cumulativeSnowGain.Length == 0)
+                timeline.Periods.Length == 0)
                 return 0f;
 
             double seconds = ZNet.instance.GetTimeSeconds();
@@ -484,23 +499,23 @@ namespace Seasons
                 return 0f;
 
             if (seconds >= seasonalSnowTimelineEndSeconds)
-                return timeline.cumulativeSnowGain[timeline.cumulativeSnowGain.Length - 1];
+                return timeline.Periods[timeline.Periods.Length - 1].CumulativeSnowGain;
 
             long environmentPeriod = (long)seconds / seasonalSnowEnvironmentDuration;
             long indexLong = environmentPeriod - seasonalSnowFirstEnvironmentPeriod;
             if (indexLong < 0L)
                 return 0f;
 
-            if (indexLong >= timeline.cumulativeSnowGain.Length)
-                return timeline.cumulativeSnowGain[timeline.cumulativeSnowGain.Length - 1];
+            if (indexLong >= timeline.Periods.Length)
+                return timeline.Periods[timeline.Periods.Length - 1].CumulativeSnowGain;
 
             int index = (int)indexLong;
-            float previousGain = index > 0 ? timeline.cumulativeSnowGain[index - 1] : 0f;
+            float previousGain = index > 0 ? timeline.Periods[index - 1].CumulativeSnowGain : 0f;
             double periodStart = environmentPeriod * (double)seasonalSnowEnvironmentDuration;
             double overlapStart = Math.Max(periodStart, seasonalSnowTimelineStartSeconds);
             double overlapEnd = Math.Min(seconds, seasonalSnowTimelineEndSeconds);
             float partial = GetPredictedSnowGain(
-                timeline.snowBuildup[index],
+                timeline.Periods[index].SnowBuildup,
                 Math.Max(0d, overlapEnd - overlapStart));
 
             return Mathf.Max(0f, previousGain + partial);
@@ -525,14 +540,14 @@ namespace Seasons
         internal static float GetCumulativeSnowGainAt(Heightmap.Biome biome, double seconds)
         {
             if (!SeasonalSnowTimelines.TryGetValue(biome, out BiomeSnowTimeline timeline) ||
-                timeline.cumulativeSnowGain.Length == 0)
+                timeline.Periods.Length == 0)
                 return 0f;
 
             if (seconds <= seasonalSnowTimelineStartSeconds)
                 return 0f;
 
             if (seconds >= seasonalSnowTimelineEndSeconds)
-                return timeline.cumulativeSnowGain[timeline.cumulativeSnowGain.Length - 1];
+                return timeline.Periods[timeline.Periods.Length - 1].CumulativeSnowGain;
 
             long duration = Math.Max(1L, seasonalSnowEnvironmentDuration);
             long environmentPeriod = (long)Math.Floor(seconds / duration);
@@ -540,16 +555,16 @@ namespace Seasons
             if (indexLong < 0L)
                 return 0f;
 
-            if (indexLong >= timeline.cumulativeSnowGain.Length)
-                return timeline.cumulativeSnowGain[timeline.cumulativeSnowGain.Length - 1];
+            if (indexLong >= timeline.Periods.Length)
+                return timeline.Periods[timeline.Periods.Length - 1].CumulativeSnowGain;
 
             int index = (int)indexLong;
-            float previousGain = index > 0 ? timeline.cumulativeSnowGain[index - 1] : 0f;
+            float previousGain = index > 0 ? timeline.Periods[index - 1].CumulativeSnowGain : 0f;
             double periodStart = environmentPeriod * (double)duration;
             double overlapStart = Math.Max(periodStart, seasonalSnowTimelineStartSeconds);
             double overlapEnd = Math.Min(seconds, seasonalSnowTimelineEndSeconds);
             float partial = GetPredictedSnowGain(
-                timeline.snowBuildup[index],
+                timeline.Periods[index].SnowBuildup,
                 Math.Max(0d, overlapEnd - overlapStart));
 
             return Mathf.Max(0f, previousGain + partial);

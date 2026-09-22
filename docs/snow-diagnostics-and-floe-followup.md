@@ -1,7 +1,7 @@
 # Snow diagnostics, environment cleanup, and ice floes
 
 Date: 2026-09-22. Branch: `perf/snow-performance`.
-Status: accepted decisions and Codex implementation task; this document does not implement the changes below.
+Status: accepted decisions; implementation progress and remaining verification are recorded in section 10.
 
 This is the authoritative follow-up to [the initialization review](snow-performance-deep-review.md), [the previous follow-up](snow-performance-followup.md), and [the implementation history](snow-performance-progress.md) for the topics below. It supersedes earlier proposals to generate floes in unloaded distant zones, load temporary terrain for them, or log the weather timeline. Unrelated snow behavior and previously accepted optimizations remain unchanged.
 
@@ -206,3 +206,17 @@ Repository findings above refer to the implementation at `1c38ab1` unless noted:
 - Attached Azumatt-AzuHoverStats v1.1.11 decompilation: `HoverTextPatches.HudUpdateCrosshairPatch`, lines 293-312 in the supplied consolidated file. This is a reference attachment, not a repository dependency.
 
 Screenshots and gameplay reports are supplied conversation evidence, not repository benchmark artifacts. No runtime source changes accompany this decision-record commit.
+
+## 10. Implementation status
+
+Implementation started from a clean `perf/snow-performance` worktree at `2ffa4ad7eea1c083711c4eb538285b0d97cd23b0`, fast-forwarded to the requested documentation commit `8229b43146071eb8589731a9058d2eef9a0f31d9`. No local work was discarded. The `master` and `feat/blood-moon` branches are unchanged. No applicable `AGENTS.md` was found. The clean game-source mirror is at the specified `d1374bfd9175ac8f733ae483b0a06e5c8b75906e` revision, also recorded by the existing project implementation notes; API checks use that source rather than a newer guessed signature.
+
+### Completed: inspectable timeline records (section 2)
+
+`WinterSnow/SeasonalSnow.cs` now stores one array of readonly `SnowPeriod` values per biome. Each period stores the selected environment name (including dry periods, or `<none>`), nonnegative buildup, and cumulative gain. `ToString()` uses invariant `G9` float formatting for RUE. All former parallel-array readers use these records. The random seed, selection order, winter boundaries, arithmetic and snapshot behavior are unchanged; no timeline logging was added.
+
+Static review compared every changed arithmetic expression and reader with the baseline. RUE inspection and the clear-weather gameplay investigation remain unexecuted. A flat cumulative record alone does not prove the cause of the reported growth: consumed history, initialization/snapshots, exact snow and delayed visuals still need to be compared on the same piece. No balance change is included.
+
+### Remaining implementation and verification
+
+Sections 3-6 are in progress. No mod build, tests or Valheim run has been performed. The maintainer's previously reported observations in section 1 remain separate from acceptance of these changes.
