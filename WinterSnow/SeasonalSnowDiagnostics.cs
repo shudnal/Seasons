@@ -148,6 +148,8 @@ namespace Seasons
                     entry.EnvironmentName, entry.SnowBuildup, entry.CumulativeSnowGain);
             }
             DiagnosticLine(text, "Weather: period={0} | {1}", period, record);
+            string liveSource = ReadLiveAccumulationSource(state, now, out float liveRate);
+            DiagnosticLine(text, "Live accumulation: {0} | rate={1:F5}/s", liveSource, liveRate);
             DiagnosticLine(text, "Timeline: {0:F1} -> {1:F1} s | gain now={2:F3} ready={3}",
                 SeasonalSnow.TimelineStartSeconds, SeasonalSnow.TimelineEndSeconds,
                 SeasonalSnow.GetCumulativeSnowGainAt(biome, now), SeasonalSnow.WeatherReady);

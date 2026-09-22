@@ -331,22 +331,29 @@ namespace Seasons
             if (!simulationScene || !ZNet.instance || !winterRunning || !SeasonalSnow.WeatherReady)
                 return;
             double now = ZNet.instance.GetTimeSeconds();
-            if (now >= lastWorldSeconds && now - lastWorldSeconds < 5d)
+            if (ContinuousSnowTime(now) && !Game.IsPaused() && Time.timeScale > 0f)
+            {
+                ObserveLiveWeather(now);
                 IntegrateSnow(now);
+            }
+            ResetLiveWeather();
         }
 
         internal void WeatherTimelineChanged()
         {
+            ResetLiveWeather();
             if (!SeasonalSnow.WinterReady || !EnsureSnowScene())
                 return;
             foreach (SnowPiece state in snowPieces.Values)
                 state.WeatherGain = SeasonalSnow.GetCumulativeSnowGainAt(state.Biome, state.WeatherTime);
             foreach (SnowRegion region in regionList)
                 QueueRegion(region, SnowRefresh.Area | SnowRefresh.Heat);
+            ObserveLiveWeather(ZNet.instance.GetTimeSeconds());
         }
 
         internal void RequestSnowCatchUp()
         {
+            ResetLiveWeather();
             if (!SeasonalSnow.WinterReady || !simulationScene || !ZNet.instance || catchingUp)
                 return;
             foreach (SnowRegion region in regionList)
@@ -398,6 +405,12 @@ namespace Seasons
 
         internal void FlushSnow()
         {
+            if (ZNet.instance)
+            {
+                double now = ZNet.instance.GetTimeSeconds();
+                if (ContinuousSnowTime(now))
+                    ObserveLiveWeather(now);
+            }
             foreach (SnowPiece state in snowPieces.Values)
                 FlushSnowPiece(state);
         }
@@ -418,10 +431,12 @@ namespace Seasons
                 return;
             // Never mark an unprocessed catch-up interval as consumed just because an
             // object unloads or the save callback runs before its queued refresh.
+            double now = ZNet.instance.GetTimeSeconds();
             bool settled = state.Region.Ready && state.ReadyGeneration == state.Region.ReadyGeneration &&
-                double.IsNaN(state.CatchUpFrom) && SeasonalSnow.WeatherReady;
+                double.IsNaN(state.CatchUpFrom) && SeasonalSnow.WeatherReady && ContinuousSnowTime(now) &&
+                !Game.IsPaused() && Time.timeScale > 0f;
             if (settled)
-                IntegratePiece(state, ZNet.instance.GetTimeSeconds(), snowClock);
+                IntegratePiece(state, now, snowClock);
             double consumed = double.IsNaN(state.CatchUpFrom) ? state.WeatherTime : state.CatchUpFrom;
             if (!NeedsSnowPublication(state, consumed, exactValue: true))
                 return;
@@ -441,6 +456,7 @@ namespace Seasons
         internal void ResetSnowRuntime()
         {
             SeasonalSnowDiagnostics.ClearCache();
+            ResetLiveWeather();
             foreach (SnowPiece state in snowPieces.Values)
             {
                 state.Retired = true;

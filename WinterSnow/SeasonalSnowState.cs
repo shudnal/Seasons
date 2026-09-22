@@ -84,6 +84,7 @@ namespace Seasons
             internal double LastHeatTime;
             internal double WeatherTime;
             internal float WeatherGain;
+            internal double ReplacedWeatherUntil;
             internal double CatchUpFrom = double.NaN;
             internal int ReadyGeneration;
             internal List<HeatLink> HeatLinks;

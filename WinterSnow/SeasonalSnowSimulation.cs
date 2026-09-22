@@ -14,9 +14,13 @@ namespace Seasons
             // area readiness or touch ZDOs. Only an unfinished winter cleanup runs.
             if (!SeasonalSnow.WinterReady && !winterRunning && !endingSnowWinter && snowPieces.Count == 0)
                 return;
-            if (!EnsureSnowScene() || scene != simulationScene || simulationFrame == Time.frameCount ||
-                Game.IsPaused() || Time.timeScale <= 0f)
+            if (!EnsureSnowScene() || scene != simulationScene || simulationFrame == Time.frameCount)
                 return;
+            if (Game.IsPaused() || Time.timeScale <= 0f)
+            {
+                ResetLiveWeather();
+                return;
+            }
             simulationFrame = Time.frameCount;
             double now = ZNet.instance.GetTimeSeconds();
             if (endingSnowWinter || !SeasonalSnow.WinterReady)
@@ -35,7 +39,7 @@ namespace Seasons
                 foreach (SnowRegion region in regionList)
                     QueueRegion(region, SnowRefresh.All);
             }
-            if (now < lastWorldSeconds || now - lastWorldSeconds > Math.Max(5d, Time.deltaTime * 10d))
+            if (!ContinuousSnowTime(now))
                 RequestSnowCatchUp();
             bool weatherReady = SeasonalSnow.WeatherReady;
             if (snowWeatherReady != weatherReady)
@@ -47,6 +51,7 @@ namespace Seasons
                         QueueRegion(region, SnowRefresh.Area | SnowRefresh.CatchUp);
                 snowWeatherReady = weatherReady;
             }
+            ObserveLiveWeather(now);
             snowClock += Math.Max(0f, Time.deltaTime);
             DiscoverSnowInstances();
             UpdateHeatSources();
@@ -237,6 +242,7 @@ namespace Seasons
                 state.Construction = SeasonalSnowStorage.IsCurrentWinterPlacement(state.Zdo);
                 state.AllowOwnerlessPublication = state.AllowInitialPublication = false;
                 state.CatchUpFrom = double.NaN;
+                state.ReplacedWeatherUntil = 0d;
             }
             if ((reasons & SnowRefresh.Rules) != 0 || newEpoch)
             {
@@ -257,6 +263,8 @@ namespace Seasons
             SeasonalSnowStorage.Snapshot snapshot = new SeasonalSnowStorage.Snapshot(state.Zdo);
             bool snapshotChanged = !SnapshotUnchanged(state, snapshot);
             bool acceptSnapshot = (newEpoch || !state.Confirmed || snapshotChanged) && snapshot.AppliesTo(epoch);
+            if (acceptSnapshot || ownershipChanged)
+                state.ReplacedWeatherUntil = 0d;
             float target = newEpoch ? 0f : state.Snow;
             if (acceptSnapshot)
             {
@@ -380,7 +388,7 @@ namespace Seasons
             foreach (Heightmap.Biome biome in SeasonalSnow.SeasonalSnowTimelines.Keys)
             {
                 frameWeather[biome] = SeasonalSnow.GetCumulativeSnowGainAt(biome, now);
-                if (SeasonalSnow.GainBetween(biome, lastWorldSeconds, now) > 0f)
+                if (liveWeatherEnvironment != null || SeasonalSnow.GainBetween(biome, lastWorldSeconds, now) > 0f)
                     snowingBiomes.Add(biome);
             }
             foreach (SnowRegion region in regionList)
@@ -408,7 +416,7 @@ namespace Seasons
             while (index < list.Count)
             {
                 SnowPiece state = list[index];
-                if (onlySnowing ? gain > state.WeatherGain : state.MeltRate > 0f)
+                if (onlySnowing ? gain > state.WeatherGain || LiveWeatherApplies(state, now) : state.MeltRate > 0f)
                     IntegratePiece(state, now, snowClock, gain);
                 if (index < list.Count && ReferenceEquals(list[index], state))
                     index++;
@@ -417,19 +425,25 @@ namespace Seasons
 
         private void IntegratePiece(SnowPiece state, double now, double clock, float? cumulativeGain = null)
         {
-            if (!state.Confirmed || !state.Simulates || !state.Region.Ready ||
+            if (!state.Valid || !state.Confirmed || !state.Simulates || !state.Region.Ready ||
                 state.ReadyGeneration != state.Region.ReadyGeneration || state.Epoch != winterEpoch ||
-                !double.IsNaN(state.CatchUpFrom))
+                !double.IsNaN(state.CatchUpFrom) || state.Zdo.GetOwner() != state.Owner ||
+                (state.Owner != 0L && !state.View.IsOwner()))
                 return;
             float previous = state.Snow;
             float gain = cumulativeGain ?? SeasonalSnow.GetCumulativeSnowGainAt(state.Biome, now);
             if (state.Melting)
                 state.Snow = Mathf.Max(0f, state.Snow - state.MeltRate * (float)Math.Max(0d, clock - state.LastHeatTime));
             else
-                state.Snow = Mathf.Min(state.Maximum, state.Snow + Mathf.Max(0f, gain - state.WeatherGain));
+                state.Snow = Mathf.Min(state.Maximum, state.Snow + LiveAccumulationGain(state, now, gain));
             state.LastHeatTime = clock;
             state.WeatherTime = now;
             state.WeatherGain = gain;
+            // A dry override can consume weather without changing Snow. Checkpoint
+            // that deliberate replacement at the existing gain publication scale.
+            if (state.MayPublish && state.ReplacedWeatherUntil > SeasonalSnowStorage.FromTimestamp(state.SnapshotTime) &&
+                SeasonalSnow.GainBetween(state.Biome, SeasonalSnowStorage.FromTimestamp(state.SnapshotTime), now) >= PublicationStep)
+                QueuePublication(state);
             if (previous.Equals(state.Snow))
                 return;
             Classify(state);
@@ -526,6 +540,8 @@ namespace Seasons
                 return true;
 
             double persisted = SeasonalSnowStorage.FromTimestamp(state.SnapshotTime);
+            if (consumed > persisted && state.ReplacedWeatherUntil > persisted)
+                return true;
             return consumed > persisted && (state.Melting || state.Shielded || state.Snow >= state.Maximum) &&
                 SeasonalSnow.GainBetween(state.Biome, persisted, consumed) > 0f;
         }
@@ -538,6 +554,8 @@ namespace Seasons
             state.SnapshotBaseline = value;
             state.SnapshotTime = SeasonalSnowStorage.ToTimestamp(consumed);
             state.SnapshotEpoch = state.Epoch;
+            if (state.ReplacedWeatherUntil <= consumed)
+                state.ReplacedWeatherUntil = 0d;
         }
 
         private void PublishSnowChanges()
@@ -573,6 +591,7 @@ namespace Seasons
 
         private void EndSnowWinter()
         {
+            ResetLiveWeather();
             // Stop arithmetic immediately, but spread persistence and retirement over
             // frames independently of the high-priority visual hide queue.
             if (!endingSnowWinter)

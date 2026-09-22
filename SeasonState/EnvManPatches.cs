@@ -186,9 +186,11 @@ namespace Seasons
                 if (secondUpdated != (secondUpdated = DateTime.Now.Second) || timeForSeasonToChange || forceSeasonChange)
                 {
                     totalSecondsCached = (int)seasonState.GetTotalSeconds();
-                    seasonState.UpdateState(timeForSeasonToChange, forceSeasonChange);
+                    // Delimit the observed live weather interval before UpdateState
+                    // can rebuild the timeline, including small explicit time skips.
                     if (updateLoadedSeasonalSnow)
                         SeasonalSnow.ReconcileLoadedSnowAfterTimeSkip();
+                    seasonState.UpdateState(timeForSeasonToChange, forceSeasonChange);
                 }
             }
         }

@@ -367,6 +367,9 @@ namespace Seasons
             return snowBuildup * elapsed * WeatherGainPerSecond * timelineBuildupSpeed * timelineAccumulationSpeed;
         }
 
+        internal static float GetLiveSnowGain(float snowBuildup, double seconds) =>
+            GetPredictedSnowGain(snowBuildup, seconds);
+
         public static void RefreshWeatherTimeline()
         {
             SeasonalSnowController.Instance.SettleBeforeWeatherChange();

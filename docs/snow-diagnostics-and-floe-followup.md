@@ -295,6 +295,12 @@ The ordinarily loaded zone's owned `SpawnSystem.m_nview` is again the producer o
 
 The read-only hover uses invariant `F1` seconds, `F2` limits/intensity, `F3` cumulative gain and `F5` snow/visual/heat values. Snapshot timestamps are converted from milliseconds to seconds and labeled. IDs and epochs remain exact integers, and period fields are formatted explicitly in the hover. Stored values and the precise RUE `SnowPeriod.ToString()` are unchanged. The effective live-source line belongs to the explicit-weather correction below.
 
+### Completed: explicit live weather (section 4)
+
+Only a valid `EnvMan.m_debugEnv` selects an override. One observed in-memory interval replaces the natural gain for currently simulated locally owned pieces, using the same buildup coefficients and world-time units. Both bucket eligibility and arithmetic use the live interval, including dry overrides. Consumed natural gain/time advance together; existing snapshots checkpoint intentionally replaced weather even when Snow does not change. Start/change/end settle the previous source without consuming pending catch-up. No natural timeline records, storage schema or synchronized weather command changed.
+
+Pause, discontinuous time, catch-up, timeline rebuild and shutdown delimit/reset observation. Unobserved, unloaded and skipped intervals retain natural history; an override is never backdated into them. Owner-zero prediction remains natural, and foreign-owner snapshots are not changed by a local console override. Raids, intro, dungeon/event and local EnvZone weather are outside this feature. The existing read-only hover separately shows the natural record and effective live source/rate. Boundary correctness has been reviewed statically; the env/resetenv scenarios in section 10 still require gameplay checks.
+
 ### Remaining work and verification
 
 Sections 4-8 are in progress. No build, tests or Valheim execution has been performed. The maintainer's prior gameplay observations in section 2 are preserved as reported evidence, separate from acceptance of the corrective implementation.
