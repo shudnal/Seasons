@@ -223,6 +223,12 @@ Static review compared every changed arithmetic expression and reader with the b
 
 The narrow controller reader reports existing runtime/region/heat/weather/snapshot/visual caches and native save fields. Unregistered pieces remain unregistered. Static call-path review found no registration, readiness/cast, material binding, simulation or publication call; native signatures and fields were checked against the source baseline. Project inclusion and XML were inspected. Hover layout, coexistence with HUD mods, summer/unregistered targets and the reported clear-weather growth still require gameplay checks.
 
+### Completed: environment texture retirement (section 4)
+
+`SeasonState/SeasonState.cs` and `SeasonState/EnvManPatches.cs` retire only tracked Seasons-generated textures at registry replacement/restoration boundaries. Nested native initialization/append calls are batched; the completed registry is traversed once to identify live references. Pending candidates retain current/previous/next environments and active aurora shader references. Native queue/interpolation boundaries compare cached texture identities and do no collection work when nothing retired is pending or the references are unchanged. Shutdown unbinds only owned shader textures and clears owned resources/tracking.
+
+The old texture scan is removed from the warm-status `FixedUpdate`; its cold/overheat behavior is unchanged. Static inspection covered native `AppendEnvironment`, `InitializeEnvironment`, `QueueEnvironment(EnvSetup)`, `InterpolateEnvironment(float)` and `OnDestroy`, including interrupted transition shader ordering, external rebuilds and restoration. Repeated/interrupted transitions, control disable and external environment reloads still need in-game aurora/resource checks.
+
 ### Remaining implementation and verification
 
-Sections 4-6 are in progress. No mod build, tests or Valheim run has been performed. The maintainer's previously reported observations in section 1 remain separate from acceptance of these changes.
+Sections 5-6 are in progress. No mod build, tests or Valheim run has been performed. The maintainer's previously reported observations in section 1 remain separate from acceptance of these changes.

@@ -38,6 +38,15 @@ namespace Seasons
         private static readonly Dictionary<string, EnvSetup> replacedEnvironmentDefaults = new Dictionary<string, EnvSetup>(StringComparer.Ordinal);
         private static readonly Dictionary<string, EnvSetup> appliedSeasonEnvironmentObjects = new Dictionary<string, EnvSetup>(StringComparer.Ordinal);
         private static readonly HashSet<Texture2D> generatedEnvironmentTextures = new HashSet<Texture2D>();
+        private static readonly HashSet<Texture2D> retiredEnvironmentTextures = new HashSet<Texture2D>();
+        private static readonly HashSet<Texture> liveEnvironmentTextures = new HashSet<Texture>();
+        private static readonly List<Texture2D> releasedEnvironmentTextures = new List<Texture2D>();
+        private static int environmentTextureUpdateDepth;
+        private static Texture previousCurrentEnvironmentTexture;
+        private static Texture previousPreviousEnvironmentTexture;
+        private static Texture previousNextEnvironmentTexture;
+        private static Texture previousCurrentAuroraTexture;
+        private static Texture previousNextAuroraTexture;
         private static readonly List<ItemDrop.ItemData> _itemDataList = new List<ItemDrop.ItemData>();
         private static readonly HashSet<string> _coolingFoodNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static int _pendingSeasonChange = 0;
@@ -468,6 +477,19 @@ namespace Seasons
                 return;
             }
 
+            BeginEnvironmentTextureUpdate();
+            try
+            {
+                ApplySeasonEnvironments(rebuildBiomeSetup);
+            }
+            finally
+            {
+                EndEnvironmentTextureUpdate();
+            }
+        }
+
+        private static void ApplySeasonEnvironments(bool rebuildBiomeSetup)
+        {
             RemoveAppliedSeasonEnvironments();
 
             CustomMusic.CheckMusicList();
@@ -554,6 +576,8 @@ namespace Seasons
 
         public static void ResetEnvironmentStateTracking()
         {
+            foreach (EnvSetup environment in appliedSeasonEnvironmentObjects.Values)
+                RetireEnvironmentTexture(environment?.m_auroraGradientTexture);
             replacedEnvironmentDefaults.Clear();
             appliedSeasonEnvironmentObjects.Clear();
         }
@@ -561,8 +585,16 @@ namespace Seasons
         private static void RestoreEnvironmentControlState()
         {
             unresolvedSeasonEnvironmentRules.Clear();
-            RemoveAppliedSeasonEnvironments();
-            seasonState.UpdateBiomesSetup();
+            BeginEnvironmentTextureUpdate();
+            try
+            {
+                RemoveAppliedSeasonEnvironments();
+                seasonState.UpdateBiomesSetup();
+            }
+            finally
+            {
+                EndEnvironmentTextureUpdate();
+            }
         }
 
         private static void RemoveAppliedSeasonEnvironments()
@@ -589,25 +621,137 @@ namespace Seasons
             ResetEnvironmentStateTracking();
         }
 
-        internal static void ReleaseUnusedEnvironmentTextures()
+        internal static void BeginEnvironmentTextureUpdate()
         {
-            if (generatedEnvironmentTextures.Count == 0)
+            environmentTextureUpdateDepth++;
+        }
+
+        internal static void EndEnvironmentTextureUpdate()
+        {
+            if (--environmentTextureUpdateDepth == 0)
+                OnEnvironmentTextureRegistryChanged();
+        }
+
+        internal static void RetireEnvironmentTexture(Texture2D texture)
+        {
+            // A native initializer or another mod may replace one of our environment objects.
+            // Only textures actually created for Seasons are eligible for retirement.
+            if (!ReferenceEquals(texture, null) && generatedEnvironmentTextures.Contains(texture))
+                retiredEnvironmentTextures.Add(texture);
+        }
+
+        private static void OnEnvironmentTextureRegistryChanged()
+        {
+            if (generatedEnvironmentTextures.Count == 0 || EnvMan.instance == null)
                 return;
 
-            EnvMan environmentManager = EnvMan.instance;
-            foreach (Texture2D texture in generatedEnvironmentTextures.ToArray())
+            CollectRegisteredEnvironmentTextures(EnvMan.instance);
+            foreach (Texture2D texture in generatedEnvironmentTextures)
+                if (liveEnvironmentTextures.Contains(texture))
+                    // Clone initialization can replace a borrowed texture that is still
+                    // registered by its source environment; that texture is not retired.
+                    retiredEnvironmentTextures.Remove(texture);
+                else
+                    retiredEnvironmentTextures.Add(texture);
+
+            ReleaseRetiredEnvironmentTextures(EnvMan.instance, registryCollected: true);
+        }
+
+        private static void CollectRegisteredEnvironmentTextures(EnvMan environmentManager)
+        {
+            liveEnvironmentTextures.Clear();
+            foreach (EnvSetup environment in environmentManager.m_environments)
+                if (environment?.m_auroraGradientTexture != null)
+                    liveEnvironmentTextures.Add(environment.m_auroraGradientTexture);
+            foreach (EnvSetup environment in replacedEnvironmentDefaults.Values)
+                if (environment?.m_auroraGradientTexture != null)
+                    liveEnvironmentTextures.Add(environment.m_auroraGradientTexture);
+        }
+
+        internal static void CheckEnvironmentTextureTransition(EnvMan environmentManager)
+        {
+            // Interpolation clones m_currentEnv every tick, so compare texture identities,
+            // not environment identities. Stable transitions do no collection work.
+            if (retiredEnvironmentTextures.Count == 0 || environmentTextureUpdateDepth != 0)
+                return;
+
+            Texture current = environmentManager.m_currentEnv?.m_auroraGradientTexture;
+            Texture previous = environmentManager.m_prevEnv?.m_auroraGradientTexture;
+            Texture next = environmentManager.m_nextEnv?.m_auroraGradientTexture;
+            Texture shaderCurrent = Shader.GetGlobalTexture(EnvMan.s_auroraGradientCurrent);
+            Texture shaderNext = Shader.GetGlobalFloat(EnvMan.s_auroraGradientBlend) > 0f
+                ? Shader.GetGlobalTexture(EnvMan.s_auroraGradientNext) : null;
+            if (ReferenceEquals(current, previousCurrentEnvironmentTexture)
+                && ReferenceEquals(previous, previousPreviousEnvironmentTexture)
+                && ReferenceEquals(next, previousNextEnvironmentTexture)
+                && ReferenceEquals(shaderCurrent, previousCurrentAuroraTexture)
+                && ReferenceEquals(shaderNext, previousNextAuroraTexture))
+                return;
+
+            ReleaseRetiredEnvironmentTextures(environmentManager, registryCollected: false);
+        }
+
+        private static void ReleaseRetiredEnvironmentTextures(EnvMan environmentManager, bool registryCollected)
+        {
+            if (retiredEnvironmentTextures.Count == 0)
+                return;
+            if (!registryCollected)
+                CollectRegisteredEnvironmentTextures(environmentManager);
+
+            previousCurrentEnvironmentTexture = environmentManager.m_currentEnv?.m_auroraGradientTexture;
+            previousPreviousEnvironmentTexture = environmentManager.m_prevEnv?.m_auroraGradientTexture;
+            previousNextEnvironmentTexture = environmentManager.m_nextEnv?.m_auroraGradientTexture;
+            previousCurrentAuroraTexture = Shader.GetGlobalTexture(EnvMan.s_auroraGradientCurrent);
+            previousNextAuroraTexture = Shader.GetGlobalFloat(EnvMan.s_auroraGradientBlend) > 0f
+                ? Shader.GetGlobalTexture(EnvMan.s_auroraGradientNext) : null;
+            liveEnvironmentTextures.Add(previousCurrentEnvironmentTexture);
+            liveEnvironmentTextures.Add(previousPreviousEnvironmentTexture);
+            liveEnvironmentTextures.Add(previousNextEnvironmentTexture);
+            liveEnvironmentTextures.Add(previousCurrentAuroraTexture);
+            liveEnvironmentTextures.Add(previousNextAuroraTexture);
+
+            releasedEnvironmentTextures.Clear();
+            foreach (Texture2D texture in retiredEnvironmentTextures)
             {
-                if (texture && environmentManager != null
-                    && (environmentManager.m_currentEnv?.m_auroraGradientTexture == texture
-                        || environmentManager.m_prevEnv?.m_auroraGradientTexture == texture
-                        || environmentManager.m_nextEnv?.m_auroraGradientTexture == texture
-                        || environmentManager.m_environments.Any(environment => environment.m_auroraGradientTexture == texture)))
+                if (texture && liveEnvironmentTextures.Contains(texture))
                     continue;
 
                 if (texture)
                     UnityEngine.Object.Destroy(texture);
+                releasedEnvironmentTextures.Add(texture);
+            }
+            foreach (Texture2D texture in releasedEnvironmentTextures)
+            {
+                retiredEnvironmentTextures.Remove(texture);
                 generatedEnvironmentTextures.Remove(texture);
             }
+            releasedEnvironmentTextures.Clear();
+        }
+
+        internal static void ReleaseEnvironmentTexturesOnWorldShutdown()
+        {
+            // Globals can outlive EnvMan. Unbind only our textures before releasing them.
+            if (Shader.GetGlobalTexture(EnvMan.s_auroraGradientCurrent) is Texture2D current
+                && generatedEnvironmentTextures.Contains(current))
+                Shader.SetGlobalTexture(EnvMan.s_auroraGradientCurrent, null);
+            if (Shader.GetGlobalTexture(EnvMan.s_auroraGradientNext) is Texture2D next
+                && generatedEnvironmentTextures.Contains(next))
+                Shader.SetGlobalTexture(EnvMan.s_auroraGradientNext, null);
+
+            foreach (Texture2D texture in generatedEnvironmentTextures)
+                if (texture)
+                    UnityEngine.Object.Destroy(texture);
+            generatedEnvironmentTextures.Clear();
+            retiredEnvironmentTextures.Clear();
+            liveEnvironmentTextures.Clear();
+            releasedEnvironmentTextures.Clear();
+            previousCurrentEnvironmentTexture = null;
+            previousPreviousEnvironmentTexture = null;
+            previousNextEnvironmentTexture = null;
+            previousCurrentAuroraTexture = null;
+            previousNextAuroraTexture = null;
+            environmentTextureUpdateDepth = 0;
+            ResetEnvironmentStateTracking();
         }
 
         private static void RefreshBiomeEnvironmentReferences()
