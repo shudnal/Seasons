@@ -49,11 +49,13 @@ namespace Seasons
     internal static class WearNTear_UpdateCover_SnowHint
     {
         [HarmonyPrefix]
-        private static void Prefix(WearNTear __instance, out bool __state) => __state = __instance.m_haveRoof;
+        private static void Prefix(WearNTear __instance, out int __state) =>
+            __state = SeasonalSnow.WinterReady ? (__instance.m_haveRoof ? 1 : 0) : -1;
+
         [HarmonyPostfix]
-        private static void Postfix(WearNTear __instance, bool __state)
+        private static void Postfix(WearNTear __instance, int __state)
         {
-            if (SeasonalSnow.WinterReady && __state != __instance.m_haveRoof)
+            if (__state >= 0 && (__state != 0) != __instance.m_haveRoof)
                 SeasonalSnowController.Instance.SnowCoverHintChanged(__instance);
         }
     }
@@ -152,7 +154,11 @@ namespace Seasons
     internal static class EffectArea_OnDestroy_SnowHeat
     {
         [HarmonyPrefix]
-        private static void Prefix(EffectArea __instance) => SeasonalSnowController.Instance.RemoveHeatArea(__instance);
+        private static void Prefix(EffectArea __instance)
+        {
+            if (SeasonalSnowController.Instance.SnowPieceCount != 0)
+                SeasonalSnowController.Instance.RemoveHeatArea(__instance);
+        }
     }
 
     [HarmonyPatch(typeof(CraftingStation), nameof(CraftingStation.PokeInUse))]
@@ -216,7 +222,8 @@ namespace Seasons
                 return;
             bool geometry = controller.CanAffectSnowCover(zdo);
             controller.BeforeSnowViewReset(__instance);
-            controller.InvalidateSnowArea(zdo.GetPosition(), geometry);
+            if (geometry)
+                controller.InvalidateSnowArea(zdo.GetPosition(), geometry: true, readyOnly: true);
         }
     }
 
@@ -253,7 +260,7 @@ namespace Seasons
         private static void Prefix(ZDO __instance, out TransformState __state)
         {
             __state = default;
-            if (!SeasonalSnowController.Instance.ObservesSnowGeometry)
+            if (!SeasonalSnowController.Instance.ShouldObserveSnowTransform(__instance))
                 return;
             __state.Observed = true;
             __state.Position = __instance.GetPosition();
@@ -304,7 +311,7 @@ namespace Seasons
         private static void Postfix(Heightmap __instance)
         {
             if (SeasonalSnowController.Instance.ObservesSnowGeometry && !__instance.IsDistantLod)
-                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true);
+                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true, readyOnly: true);
         }
     }
 

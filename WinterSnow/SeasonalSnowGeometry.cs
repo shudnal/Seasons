@@ -14,7 +14,7 @@ namespace Seasons
 
         internal bool ObservesSnowGeometry => SeasonalSnow.WinterReady && snowRegions.Count != 0;
 
-        internal void InvalidateSnowArea(Vector3 position, bool geometry)
+        internal void InvalidateSnowArea(Vector3 position, bool geometry, bool readyOnly = false)
         {
             if (!ObservesSnowGeometry || Character.InInterior(position))
                 return;
@@ -30,7 +30,12 @@ namespace Seasons
                     if (snowRegions.TryGetValue(new Vector2s(zx, zy), out SnowRegion region))
                     {
                         if (geometry)
-                            QueueRegion(region, reason);
+                        {
+                            // Streaming objects that arrive before area readiness are
+                            // covered by the single confirmation pass after readiness.
+                            if (!readyOnly || region.Ready)
+                                QueueRegion(region, reason);
+                        }
                         else
                             region.ReadinessDirty = true;
                     }
@@ -53,18 +58,17 @@ namespace Seasons
             bool sameScene = observedSnowGeometryScene == ZNetScene.instance;
             bool activityChanged = !sameScene || reference != observedSnowReferenceZone ||
                 !distance.Equals(observedSnowSimulationDistance) || zoneSize != observedSnowZoneSize;
+            if (!activityChanged)
+                return;
+
             Bounds previous = new Bounds(ZoneSystem.GetZonePos(observedSnowReferenceZone), Vector3.one *
                 (observedSnowSimulationDistance.NearSimulationDistance == 1 ? 2f : 3f) * observedSnowZoneSize);
             Bounds current = new Bounds(ZoneSystem.GetZonePos(reference), Vector3.one *
                 (distance.NearSimulationDistance == 1 ? 2f : 3f) * zoneSize);
-            // Readiness notifications do not imply that a cover collider changed.
             foreach (SnowRegion region in regionList)
-            {
-                if (!region.Ready)
-                    region.ReadinessDirty = true;
-                if (activityChanged && (!sameScene || RegionTouches(region, previous) || RegionTouches(region, current)))
+                if (!sameScene || RegionTouches(region, previous) || RegionTouches(region, current))
                     QueueRegion(region, SnowRefresh.Area | SnowRefresh.Heat);
-            }
+
             observedSnowGeometryScene = ZNetScene.instance;
             observedSnowReferenceZone = reference;
             observedSnowSimulationDistance = distance;
@@ -102,25 +106,39 @@ namespace Seasons
             return result;
         }
 
-        internal void SnowObjectAdded(ZDO zdo)
+        internal bool ShouldObserveSnowTransform(ZDO zdo)
         {
             if (!ObservesSnowGeometry || zdo == null)
-                return;
-            InvalidateSnowArea(zdo.GetPosition(), geometry: CanAffectSnowCover(zdo));
+                return false;
+            if (snowIds.TryGetValue(zdo.m_uid, out SnowPiece state) && ReferenceEquals(state.Zdo, zdo))
+                return true;
+            return snowCoverPrefabs.TryGetValue(zdo.GetPrefab(), out bool result)
+                ? result
+                : CanAffectSnowCover(zdo);
+        }
+
+        internal void SnowObjectAdded(ZDO zdo)
+        {
+            if (CanAffectSnowCover(zdo))
+                InvalidateSnowArea(zdo.GetPosition(), geometry: true, readyOnly: true);
         }
 
         private static void CaptureSnowGeometry(SnowPiece state)
         {
-            Piece piece = state.Piece.m_piece;
-            if (!piece)
-                piece = state.Piece.GetComponent<Piece>();
-            // StaticTarget.GetAllColliders omits initially inactive health variants.
-            state.Colliders = piece ? piece.GetComponentsInChildren<Collider>(true) : Array.Empty<Collider>();
+            Collider[] colliders = state.Colliders;
+            if (colliders == null)
+            {
+                // WearNTear may already have collected the complete inactive-inclusive
+                // hierarchy for support. Otherwise perform this discovery once and
+                // retain the references across cover invalidations.
+                colliders = state.Piece.m_colliders ?? state.Piece.GetComponentsInChildren<Collider>(true);
+                state.Colliders = colliders;
+            }
             state.HaveOrigin = false;
             state.Roof = state.Leaky = false;
             Collider highest = null;
             float top = float.NegativeInfinity;
-            foreach (Collider collider in state.Colliders)
+            foreach (Collider collider in colliders)
             {
                 if (!collider || !collider.enabled || !collider.gameObject.activeInHierarchy || collider.isTrigger)
                     continue;
@@ -185,8 +203,8 @@ namespace Seasons
             }
             if (!tracked && !CanAffectSnowCover(zdo))
                 return;
-            InvalidateSnowArea(previousPosition, geometry: true);
-            InvalidateSnowArea(zdo.GetPosition(), geometry: true);
+            InvalidateSnowArea(previousPosition, geometry: true, readyOnly: true);
+            InvalidateSnowArea(zdo.GetPosition(), geometry: true, readyOnly: true);
         }
 
         internal void HealthGeometryChanged(WearNTear piece, int previous)
@@ -204,18 +222,28 @@ namespace Seasons
 
         internal void BeforeSnowReferencePositionChanged(Vector3 position)
         {
-            if (!ObservesSnowGeometry || !ZNet.instance || !simulationScene)
+            if (!ObservesSnowGeometry || !ZNet.instance || !simulationScene || !ZoneSystem.instance)
                 return;
             Vector2s previous = ZoneSystem.GetZone(ZNet.instance.GetReferencePosition());
             Vector2s next = ZoneSystem.GetZone(position);
             if (previous == next)
                 return;
-            // Persist terminal buckets while still owning the departing area. They
-            // intentionally do not receive per-frame timestamp updates.
-            foreach (SnowPiece state in snowPieces.Values)
-                if (state.Valid && state.Confirmed && state.View.IsOwner() &&
-                    ZNetScene.InActiveArea(state.Position, previous) && !ZNetScene.InActiveArea(state.Position, next))
-                    FlushSnowPiece(state);
+
+            SimulationDistance distance = ZNet.instance.GetSyncedSimulationDistance();
+            float zoneSize = ZoneSystem.instance.m_zoneSize;
+            Bounds previousArea = new Bounds(ZoneSystem.GetZonePos(previous), Vector3.one *
+                (distance.NearSimulationDistance == 1 ? 2f : 3f) * zoneSize);
+            // Persist terminal buckets while still owning the departing area. Restrict
+            // exact per-piece checks to regions that could overlap the previous area.
+            foreach (SnowRegion region in regionList)
+            {
+                if (!RegionTouches(region, previousArea))
+                    continue;
+                foreach (SnowPiece state in region.Pieces)
+                    if (state.Valid && state.Confirmed && state.View.IsOwner() &&
+                        ZNetScene.InActiveArea(state.Position, previous) && !ZNetScene.InActiveArea(state.Position, next))
+                        FlushSnowPiece(state);
+            }
         }
 
         internal void BeforeSnowOwnerChanged(ZDO zdo, long owner)

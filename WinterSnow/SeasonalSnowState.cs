@@ -202,9 +202,18 @@ namespace Seasons
 
         private void QueueRegion(SnowRegion region, SnowRefresh reason)
         {
+            bool geometry = (reason & SnowRefresh.Geometry) != 0;
+            if (geometry)
+            {
+                // One generation is enough for every geometry event coalesced into the
+                // same current or pending regional pass. Events arriving during an
+                // active geometry scan schedule exactly one follow-up generation so
+                // receivers already visited by that scan are refreshed again.
+                bool pendingGeometry = (region.Pending & SnowRefresh.Geometry) != 0;
+                if (!region.Queued || !pendingGeometry)
+                    region.GeometryRevision++;
+            }
             region.Pending |= reason;
-            if ((reason & SnowRefresh.Geometry) != 0)
-                region.GeometryRevision++;
             if ((reason & SnowRefresh.Area) != 0)
                 region.ReadinessDirty = true;
             if (region.Queued)
