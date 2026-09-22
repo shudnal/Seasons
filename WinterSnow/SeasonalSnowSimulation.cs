@@ -59,7 +59,7 @@ namespace Seasons
             }
             ObserveSnowReadiness();
             ExpandRegionRefreshes();
-            ProcessSnowRefreshes();
+            ProcessSnowRefreshes(now);
             if (SeasonalSnow.WeatherReady)
                 IntegrateSnow(now);
             PublishSnowChanges();
@@ -158,7 +158,7 @@ namespace Seasons
             }
         }
 
-        private void ProcessSnowRefreshes()
+        private void ProcessSnowRefreshes(double now)
         {
             int cheap = RefreshesPerFrame;
             while (cheap-- > 0 && pieceRefreshes.Count != 0)
@@ -173,7 +173,7 @@ namespace Seasons
                     geometryRefreshes.Enqueue(state);
                     continue;
                 }
-                RefreshSnowPiece(state);
+                RefreshSnowPiece(state, now);
             }
             if (sourceDiscoveryCursor >= 0 || HasPendingHeatGeometry)
                 return;
@@ -183,13 +183,22 @@ namespace Seasons
             {
                 SnowPiece state = geometryRefreshes.Dequeue();
                 if (!state.Retired)
-                    RefreshSnowPiece(state);
+                    RefreshSnowPiece(state, now);
                 if ((Stopwatch.GetTimestamp() - start) / (double)Stopwatch.Frequency >= 0.001d)
                     break;
             }
         }
 
-        private void RefreshSnowPiece(SnowPiece state)
+        private void RetireInvalidSnowRule(SnowPiece state)
+        {
+            if (SeasonalSnowStorage.CanWrite(state.View, state.Zdo))
+                SeasonalSnowStorage.Clear(state.Zdo, clearNative: true);
+            if (visuals.ContainsKey(state.Piece))
+                QueueVisual(state.Piece, 0f, disabled: false, force: true);
+            RetireSnow(state, releaseVisual: false);
+        }
+
+        private void RefreshSnowPiece(SnowPiece state, double now)
         {
             SnowRefresh reasons = state.Refresh;
             state.Refresh = SnowRefresh.None;
@@ -199,7 +208,6 @@ namespace Seasons
                 RetireSnow(state, releaseVisual: true);
                 return;
             }
-            double now = ZNet.instance.GetTimeSeconds();
             Vector3 position = state.Transform.position;
             if (position != state.Position)
             {
@@ -207,17 +215,17 @@ namespace Seasons
                 MoveSnowPiece(state, position);
                 reasons |= SnowRefresh.Geometry | SnowRefresh.Links | SnowRefresh.Rules;
             }
-            if ((reasons & SnowRefresh.Rules) != 0 && !SeasonalSnow.IsSeasonalSnowPosition(state.Piece))
-            {
-                if (SeasonalSnowStorage.CanWrite(state.View, state.Zdo))
-                    SeasonalSnowStorage.Clear(state.Zdo, clearNative: true);
-                if (visuals.ContainsKey(state.Piece))
-                    QueueVisual(state.Piece, 0f, disabled: false, force: true);
-                RetireSnow(state, releaseVisual: false);
-                return;
-            }
             long epoch = SeasonalSnowStorage.CurrentWinterEpoch;
             bool newEpoch = state.Epoch != epoch;
+            if (((reasons & SnowRefresh.Rules) != 0 || newEpoch) &&
+                !TryGetSeasonalSnowBiome(state.Piece, out Heightmap.Biome ruleBiome))
+            {
+                RetireInvalidSnowRule(state);
+                return;
+            }
+            else if ((reasons & SnowRefresh.Rules) == 0 && !newEpoch)
+                ruleBiome = state.Biome;
+
             bool resumed = state.ReadyGeneration != state.Region.ReadyGeneration;
             if (state.Confirmed && !resumed && !newEpoch && double.IsNaN(state.CatchUpFrom) && SeasonalSnow.WeatherReady)
                 IntegratePiece(state, now, snowClock);
@@ -234,7 +242,7 @@ namespace Seasons
                 Vector2 range = SeasonalSnow.GetSnowBuildupRange(state.Piece);
                 state.Minimum = range.x;
                 state.Maximum = range.y;
-                state.Biome = SeasonalSnow.GetBiome(state.Piece);
+                state.Biome = ruleBiome;
             }
 
             long previousOwner = state.Owner;
@@ -378,22 +386,27 @@ namespace Seasons
             {
                 if (!region.Ready)
                     continue;
-                foreach (List<SnowPiece> group in region.Buckets[(int)SnowBucket.MeltingSnow].Values)
-                    IntegrateBucket(group, now, onlySnowing: false);
+                foreach (KeyValuePair<Heightmap.Biome, List<SnowPiece>> group in region.Buckets[(int)SnowBucket.MeltingSnow])
+                {
+                    frameWeather.TryGetValue(group.Key, out float gain);
+                    IntegrateBucket(group.Value, now, gain, onlySnowing: false);
+                }
                 if (snowingBiomes.Count != 0)
                     foreach (KeyValuePair<Heightmap.Biome, List<SnowPiece>> group in region.Buckets[(int)SnowBucket.AccumulationOpen])
                         if (snowingBiomes.Contains(group.Key))
-                            IntegrateBucket(group.Value, now, onlySnowing: true);
+                        {
+                            frameWeather.TryGetValue(group.Key, out float gain);
+                            IntegrateBucket(group.Value, now, gain, onlySnowing: true);
+                        }
             }
         }
 
-        private void IntegrateBucket(List<SnowPiece> list, double now, bool onlySnowing)
+        private void IntegrateBucket(List<SnowPiece> list, double now, float gain, bool onlySnowing)
         {
             int index = 0;
             while (index < list.Count)
             {
                 SnowPiece state = list[index];
-                frameWeather.TryGetValue(state.Biome, out float gain);
                 if (onlySnowing ? gain > state.WeatherGain : state.MeltRate > 0f)
                     IntegratePiece(state, now, snowClock, gain);
                 if (index < list.Count && ReferenceEquals(list[index], state))
@@ -432,6 +445,12 @@ namespace Seasons
             state.ForceVisual |= force;
             if (state.VisualQueued)
                 return;
+            if (!visuals.ContainsKey(state.Piece) && state.Snow <= VisibilityThreshold)
+            {
+                state.ForceVisual = false;
+                HideCapRoots(state.Piece);
+                return;
+            }
             if (visuals.TryGetValue(state.Piece, out VisualState visual) && !visual.Disabled && visual.Matches(state.Piece))
             {
                 bool prioritizeHide = SetVisualTarget(visual, state.Snow, disabled: false);

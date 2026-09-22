@@ -51,6 +51,32 @@ namespace Seasons
             return true;
         }
 
+        private static Heightmap.Biome GetSnowBiome(Vector3 position)
+        {
+            Heightmap.Biome biome = Heightmap.FindBiome(position);
+            if (biome == Heightmap.Biome.None && WorldGenerator.instance != null)
+                biome = WorldGenerator.instance.GetBiome(position);
+            return biome;
+        }
+
+        private static bool TryGetSeasonalSnowBiome(WearNTear piece, out Heightmap.Biome biome)
+        {
+            biome = Heightmap.Biome.None;
+            if (!SeasonalSnow.WinterReady || !SeasonalSnow.SupportsSeasonalSnow(piece) ||
+                WorldGenerator.instance == null)
+                return false;
+
+            Vector3 position = piece.transform.position;
+            if (Character.InInterior(position))
+                return false;
+            biome = GetSnowBiome(position);
+            if (biome == Heightmap.Biome.AshLands || biome == Heightmap.Biome.DeepNorth)
+                return false;
+            return biome != Heightmap.Biome.Mountain ||
+                WorldGenerator.instance.GetBaseHeight(position.x, position.z, menuTerrain: false) <=
+                WorldGenerator.mountainBaseHeightMin + 0.05f;
+        }
+
         internal void RegisterSnow(WearNTear piece)
         {
             if (!SeasonalSnow.WinterReady || !piece || endingSnowWinter || !EnsureSnowScene())
@@ -63,8 +89,8 @@ namespace Seasons
                     return;
                 RetireSnow(existing, releaseVisual: true);
             }
-            if (!SeasonalSnow.IsSeasonalSnowPosition(piece) || !piece.m_nview || piece.m_nview.m_ghost ||
-                ZNetView.m_forceDisableInit || !piece.gameObject.scene.IsValid())
+            if (!piece.m_nview || piece.m_nview.m_ghost || ZNetView.m_forceDisableInit ||
+                !piece.gameObject.scene.IsValid() || !TryGetSeasonalSnowBiome(piece, out Heightmap.Biome biome))
                 return;
             ZDO zdo = piece.m_nview.GetZDO();
             if (zdo == null || !zdo.IsValid())
@@ -83,7 +109,7 @@ namespace Seasons
             Vector2 range = SeasonalSnow.GetSnowBuildupRange(piece);
             state.Minimum = range.x;
             state.Maximum = range.y;
-            state.Biome = SeasonalSnow.GetBiome(piece);
+            state.Biome = biome;
             state.Epoch = SeasonalSnowStorage.CurrentWinterEpoch;
             state.Construction = SeasonalSnowStorage.IsCurrentWinterPlacement(zdo);
             state.LastHeatTime = snowClock;
@@ -104,7 +130,7 @@ namespace Seasons
             }
             else if (SeasonalSnow.WeatherReady && (state.Owner == 0L || state.View.IsOwner()))
             {
-                state.Snow = SeasonalSnow.GetPassiveSeasonalSnowTarget(piece);
+                state.Snow = Mathf.Min(state.Maximum, state.Minimum + state.WeatherGain);
                 state.AppearanceChosen = true;
             }
             if (ShieldGenerator.IsInsideShieldCached(state.Position, ref piece.m_shieldChangeID))
@@ -166,7 +192,7 @@ namespace Seasons
                 Classify(state);
                 QueueRegion(state.Region, SnowRefresh.Area);
             }
-            state.Biome = WorldGenerator.instance != null ? WorldGenerator.instance.GetBiome(position) : state.Biome;
+            state.Biome = GetSnowBiome(position);
             state.GeometryCaptured = false;
             InvalidateSnowArea(old, geometry: true);
             InvalidateSnowArea(position, geometry: true);
@@ -186,8 +212,8 @@ namespace Seasons
 
         internal void SnowPlaced(WearNTear piece)
         {
-            if (!SeasonalSnow.WinterReady || !piece || !piece.m_nview || !piece.m_nview.IsValid() ||
-                !SeasonalSnow.IsSeasonalSnowPosition(piece))
+            if (!piece || !piece.m_nview || !piece.m_nview.IsValid() ||
+                !TryGetSeasonalSnowBiome(piece, out _))
                 return;
             ZDO zdo = piece.m_nview.GetZDO();
             if (SeasonalSnowStorage.CanWrite(piece.m_nview, zdo))
@@ -221,7 +247,7 @@ namespace Seasons
             {
                 state.GeometryCaptured = false;
                 QueueRefresh(state, SnowRefresh.Rules | SnowRefresh.Geometry | SnowRefresh.Links);
-                if (SeasonalSnow.IsSeasonalSnowPosition(piece))
+                if (TryGetSeasonalSnowBiome(piece, out _))
                     QueueRuntimeVisual(state, force: true);
             }
             else
@@ -244,7 +270,7 @@ namespace Seasons
             ZDO zdo = view && view.IsValid() ? view.GetZDO() : null;
             bool tracked = zdo != null && (SeasonalSnowStorage.HasSavedValue(zdo) || SeasonalSnowStorage.HasLegacyState(zdo));
             if (tracked && SeasonalSnowStorage.CanWrite(view, zdo))
-                SeasonalSnowStorage.Clear(zdo, clearNative: SeasonalSnow.GetBiome(piece) != Heightmap.Biome.DeepNorth);
+                SeasonalSnowStorage.Clear(zdo, clearNative: GetSnowBiome(piece.transform.position) != Heightmap.Biome.DeepNorth);
             if (snowPieces.TryGetValue(piece, out SnowPiece state))
                 RetireSnow(state, releaseVisual: false);
             piece.m_snowBuildup = zdo != null ? zdo.GetFloat(ZDOVars.s_snow) : 0f;
@@ -357,7 +383,7 @@ namespace Seasons
         {
             if (SeasonalSnow.WinterReady && zdo != null && snowIds.TryGetValue(zdo.m_uid, out SnowPiece state) &&
                 ReferenceEquals(state.Zdo, zdo) && zdo.GetPosition() != state.Position)
-                QueueRefresh(state, SnowRefresh.Geometry | SnowRefresh.Links | SnowRefresh.Area);
+                QueueRefresh(state, SnowRefresh.Geometry | SnowRefresh.Links | SnowRefresh.Area | SnowRefresh.Rules);
         }
 
         internal void BeforeSnowViewReset(ZNetView view)
@@ -367,7 +393,7 @@ namespace Seasons
                 return;
             FlushSnowPiece(state);
             RetireSnow(state, releaseVisual: false);
-            InvalidateSnowArea(state.Position, geometry: true);
+            InvalidateSnowArea(state.Position, geometry: true, readyOnly: true);
         }
 
         internal void FlushSnow()
