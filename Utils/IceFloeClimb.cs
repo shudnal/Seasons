@@ -6,17 +6,34 @@ namespace Seasons
     {
         public float m_useDistance = 3f;
         public float m_radius = 4f;
+        private Floating m_floating;
+        private ZNetView m_view;
+        private bool m_started;
+        internal bool Started => m_started;
 
         public void Start()
         {
-            ZNetView m_nview = GetComponent<ZNetView>();
-            if (m_nview != null && m_nview.IsValid() && m_nview.m_body != null)
+            m_started = true;
+            m_floating = GetComponent<Floating>();
+            m_view = GetComponent<ZNetView>();
+            if (m_view != null && m_view.IsValid() && m_view.m_body != null)
             {
-                float mass = m_nview.GetZDO().GetFloat(SeasonsVars.s_iceFloeMass);
+                float mass = m_view.GetZDO().GetFloat(SeasonsVars.s_iceFloeMass);
                 if (mass != 0f)
-                    m_nview.m_body.mass = mass;
+                    m_view.m_body.mass = mass;
             }
+            SeasonalIceFloeMotion.Track(m_floating);
         }
+
+        private void OnEnable()
+        {
+            if (m_started)
+                SeasonalIceFloeMotion.Track(m_floating);
+        }
+
+        private void OnDisable() => SeasonalIceFloeMotion.Untrack(m_floating);
+
+        private void OnDestroy() => SeasonalIceFloeMotion.Untrack(m_floating);
 
         public bool Interact(Humanoid character, bool hold, bool alt)
         {
@@ -26,6 +43,7 @@ namespace Seasons
             if (!InUseDistance(character))
                 return false;
 
+            SeasonalIceFloeMotion.PrepareInteraction(m_floating);
             character.transform.position = Vector3.Lerp(character.transform.position, base.transform.position, 0.35f) + Vector3.up;
             Physics.SyncTransforms();
             return false;
@@ -56,8 +74,7 @@ namespace Seasons
             if (human == null)
                 return false;
 
-            ZNetView view = GetComponent<ZNetView>();
-            if (view == null || !view.IsValid() || !view.GetZDO().GetBool(SeasonsVars.s_iceFloeWatermark))
+            if (m_view == null || !m_view.IsValid() || !m_view.GetZDO().GetBool(SeasonsVars.s_iceFloeWatermark))
                 return false;
 
             if (base.transform.position.y - human.transform.position.y < 0.5f)

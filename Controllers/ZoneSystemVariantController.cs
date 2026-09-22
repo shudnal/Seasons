@@ -184,7 +184,6 @@ namespace Seasons
         private static WaterState s_waterPlaneState;
         public static float s_waterEdge;
         public static bool s_waterEdgeLocalPlayerState;
-        public static float s_waterDistance;
 
         public static readonly Dictionary<WaterVolume, WaterState> waterStates = new Dictionary<WaterVolume, WaterState>();
         
@@ -1671,102 +1670,6 @@ namespace Seasons
         }
     }
 
-    [HarmonyPatch(typeof(Floating), nameof(Floating.CustomFixedUpdate))]
-    public static class Floating_CustomFixedUpdate_IceFloeRotation
-    {
-        private class FloeSyncState : MonoBehaviour
-        {
-            public ZSyncTransform Sync;
-            public bool SyncPosition;
-            public bool SyncVelocity;
-            public bool AppliedPosition;
-            public bool AppliedVelocity;
-            public bool Applied;
-
-            public void Restore()
-            {
-                if (!Applied || Sync == null)
-                    return;
-                if (Sync.m_syncPosition == AppliedPosition)
-                    Sync.m_syncPosition = SyncPosition;
-                if (Sync.m_syncBodyVelocity == AppliedVelocity)
-                    Sync.m_syncBodyVelocity = SyncVelocity;
-                Applied = false;
-            }
-        }
-
-        private static readonly Vector3[] positions = new Vector3[4];
-        private static void AddWaveForce(Floating floating, float fixedDeltaTime)
-        {
-            floating.m_body.WakeUp();
-
-            foreach (Vector3 position in positions)
-            {
-                float depthDelta = position.y - Floating.GetLiquidLevel(position);
-                float forceAmount = 0.5f * Mathf.Clamp01(Mathf.Abs(depthDelta / 4f)) * (fixedDeltaTime * 50f) * Mathf.Abs(depthDelta);
-                Vector3 force = depthDelta < 0f ? Vector3.up * (forceAmount * 0.6f) : Vector3.down * forceAmount;
-                floating.m_body.AddForceAtPosition(force * 0.02f * floating.m_body.mass * 0.25f, position, ForceMode.Impulse);
-            }
-        }
-
-        private static float Dampen(float value) => value / (1f + Mathf.Abs(value));
-
-        private static bool Prefix(Floating __instance, float fixedDeltaTime)
-        {
-            FloeSyncState state = __instance.GetComponent<FloeSyncState>();
-            bool wasSyncPosition = state == null || state.Sync == null || state.Sync.m_syncPosition;
-            state?.Restore();
-            if (!GameCamera.instance || __instance.m_nview is not ZNetView nview || !nview.IsValid() || nview.GetZDO()?.GetPrefab() != s_iceFloePrefab || !__instance.m_body)
-                return true;
-
-            if (!nview.GetZDO().GetBool(SeasonsVars.s_iceFloeWatermark) || !nview.IsOwner())
-                return true;
-
-            ZSyncTransform syncTransform = __instance.GetComponent<ZSyncTransform>();
-            if (syncTransform == null || __instance.m_collider == null)
-                return true;
-            state ??= __instance.gameObject.AddComponent<FloeSyncState>();
-            state.Sync = syncTransform;
-            state.SyncPosition = syncTransform.m_syncPosition;
-            state.SyncVelocity = syncTransform.m_syncBodyVelocity;
-            state.Applied = true;
-            bool inActiveWaterDistance = Utils.DistanceXZ(GameCamera.instance.transform.position, __instance.transform.position) < s_waterDistance;
-            syncTransform.m_syncBodyVelocity = inActiveWaterDistance || !__instance.HaveLiquidLevel();
-
-            syncTransform.m_syncPosition = syncTransform.m_syncBodyVelocity;
-            state.AppliedPosition = syncTransform.m_syncPosition;
-            state.AppliedVelocity = syncTransform.m_syncBodyVelocity;
-            if (!wasSyncPosition && syncTransform.m_syncPosition)
-                syncTransform.SyncNow();
-
-            if (!syncTransform.m_syncPosition && __instance.HaveLiquidLevel() && !inActiveWaterDistance)
-            {
-                __instance.m_body.Sleep();
-                __instance.transform.position = new Vector3(__instance.transform.position.x, WaterLevel + __instance.m_waterLevelOffset + Dampen(__instance.m_waterLevel - WaterLevel), __instance.transform.position.z);
-                return false;
-            }
-
-            if (!nview.IsOwner() || !__instance.HaveLiquidLevel())
-                return true;
-
-            Vector3 wind = WaterVolume.s_globalWindAlpha == 0f
-                ? WaterVolume.s_globalWind1
-                : Vector4.Lerp(WaterVolume.s_globalWind1, WaterVolume.s_globalWind2, WaterVolume.s_globalWindAlpha);
-
-            Vector3 windSide = Vector3.Cross(wind, __instance.transform.up);
-            Vector3 center = __instance.m_body.worldCenterOfMass;
-
-            positions[0] = __instance.m_collider.ClosestPoint(center + wind * 100f);
-            positions[1] = __instance.m_collider.ClosestPoint(center - wind * 100f);
-            positions[2] = __instance.m_collider.ClosestPoint(center + windSide * 100f);
-            positions[3] = __instance.m_collider.ClosestPoint(center - windSide * 100f);
-
-            AddWaveForce(__instance, fixedDeltaTime);
-
-            return true;
-        }
-    }
-
     [HarmonyPatch(typeof(Ship), nameof(Ship.CustomFixedUpdate))]
     public static class Ship_CustomFixedUpdate_FrozenShip
     {
@@ -1898,7 +1801,6 @@ namespace Seasons
         {
             var water = __instance.transform.Find("WaterPlane").Find("watersurface");
             Material waterMaterial = water.GetComponent<MeshRenderer>().sharedMaterial;
-            s_waterDistance = waterMaterial.GetFloat("_VisibleMaxDistance");
             s_waterEdge = waterMaterial.GetFloat("_WaterEdge");
             s_waterEdgeLocalPlayerState = false;
         }
