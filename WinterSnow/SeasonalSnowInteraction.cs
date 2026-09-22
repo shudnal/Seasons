@@ -11,11 +11,12 @@ namespace Seasons
         private Transform observedAttachment;
         private WearNTear attachedSnowPiece;
         private readonly Dictionary<SnowPiece, float> nextReceivedSnowUse = new Dictionary<SnowPiece, float>();
+        private readonly Dictionary<SnowPiece, CraftingStation[]> snowUseStations = new Dictionary<SnowPiece, CraftingStation[]>();
 
         internal void StationUsed(CraftingStation station)
         {
             Player player = Player.m_localPlayer;
-            if (!station || !player || player.GetCurrentCraftingStation() != station || !SeasonalSnow.WinterReady)
+            if (!SeasonalSnow.WinterReady || !station || !player || player.GetCurrentCraftingStation() != station)
                 return;
             if (observedStation != station)
             {
@@ -31,7 +32,7 @@ namespace Seasons
 
         internal void AttachedObjectUsed(Player player)
         {
-            if (!player || player != Player.m_localPlayer || !player.m_attached || !player.m_attachPoint || !SeasonalSnow.WinterReady)
+            if (!SeasonalSnow.WinterReady || !player || player != Player.m_localPlayer || !player.m_attached || !player.m_attachPoint)
                 return;
             if (observedAttachment != player.m_attachPoint)
             {
@@ -83,27 +84,55 @@ namespace Seasons
             }
         }
 
+        private bool CanReceiveSnowUse(SnowPiece state, Player player)
+        {
+            // Attachment is replicated through the player's sync-transform connection;
+            // owner-only Player.m_attached/GetCurrentCraftingStation are not remote evidence.
+            if (player.m_nview.GetZDO().GetConnectionZDOID(ZDOExtraData.ConnectionType.SyncTransform) == state.Id)
+                return true;
+            if (!snowUseStations.TryGetValue(state, out CraftingStation[] stations))
+            {
+                var found = new List<CraftingStation>(state.Piece.GetComponentsInChildren<CraftingStation>(true));
+                CraftingStation parent = state.Piece.GetComponentInParent<CraftingStation>();
+                if (parent && !found.Contains(parent))
+                    found.Add(parent);
+                stations = found.ToArray();
+                snowUseStations.Add(state, stations);
+            }
+            // Vanilla does not replicate the currently open crafting station. Accept
+            // that activity signal only for an actual nearby station, never any cap.
+            foreach (CraftingStation station in stations)
+            {
+                if (!station || !station.isActiveAndEnabled)
+                    continue;
+                float distance = Mathf.Max(0f, station.m_useDistance) + 1f;
+                if ((player.transform.position - station.transform.position).sqrMagnitude <= distance * distance)
+                    return true;
+            }
+            return false;
+        }
+
         private void ReceiveUse(SnowPiece state, long sender)
         {
-            if (sender == 0L || !state.Valid || !state.View.IsOwner() || !state.Confirmed || !state.Region.Ready ||
-                !SeasonalSnow.WinterReady || seasonalSnowInteractiveObjectMeltMultiplier.Value <= 0f ||
+            if (!SeasonalSnow.WinterReady || sender == 0L || !state.Valid || !state.View.IsOwner() ||
+                !state.Confirmed || !state.Region.Ready || seasonalSnowInteractiveObjectMeltMultiplier.Value <= 0f ||
                 ZNetScene.instance.OutsideActiveArea(state.Position))
                 return;
             if (nextReceivedSnowUse.TryGetValue(state, out float next) && Time.time < next)
                 return;
-            bool near = false;
+            bool validUse = false;
             foreach (Player player in Player.GetAllPlayers())
             {
                 if (!player || player.IsDead() || !player.m_nview || !player.m_nview.IsValid() ||
                     player.m_nview.GetZDO().GetOwner() != sender)
                     continue;
-                if ((player.transform.position - state.Position).sqrMagnitude <= 100f)
+                if ((player.transform.position - state.Position).sqrMagnitude <= 100f && CanReceiveSnowUse(state, player))
                 {
-                    near = true;
+                    validUse = true;
                     break;
                 }
             }
-            if (!near)
+            if (!validUse)
                 return;
             nextReceivedSnowUse[state] = Time.time + 0.2f;
             bool starting = state.InteractiveUntil <= Time.time;
@@ -134,12 +163,14 @@ namespace Seasons
         {
             interactingPieces.Remove(state);
             nextReceivedSnowUse.Remove(state);
+            snowUseStations.Remove(state);
         }
 
         private void ResetSnowInteractions()
         {
             interactingPieces.Clear();
             nextReceivedSnowUse.Clear();
+            snowUseStations.Clear();
         }
     }
 }
