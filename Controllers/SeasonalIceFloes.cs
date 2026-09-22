@@ -345,6 +345,15 @@ namespace Seasons
                     SpawnSystem spawn = FindOwnedSpawnSystem(zone);
                     if (!spawn)
                         continue; // An ordinary loaded zone owner is the only producer.
+                    Heightmap heightmap = spawn.m_heightmap;
+                    // Native candidate GetBiome selects from these four loaded corner biomes.
+                    // This excludes pure land without rejecting mixed coastal zones or copying their ZDOs.
+                    if (!heightmap.m_isDistantLod && heightmap.m_buildData != null &&
+                        ZoneSystem.GetZone(heightmap.transform.position) == zone && !heightmap.HaveBiome(Heightmap.Biome.Ocean))
+                    {
+                        Complete(zone);
+                        continue;
+                    }
                     current = BeginZone(zone);
                     current.SpawnSystem = spawn;
                     current.Control = spawn.m_nview.GetZDO().m_uid;

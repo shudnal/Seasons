@@ -328,3 +328,5 @@ Uncertainty remains about the reported disabled floe collider's exact native/pre
 ### External review follow-up
 
 Codex review on PR #45 identified that the old center-biome shortcut prematurely settled mixed coastal zones whose centers were land. It was removed: loaded-zone ownership and bounded candidate work remain, and each placement point still checks its actual terrain biome, biome area, altitude, water and exclusions. Include a coastal zone with a land center and Ocean candidates in the maintainer placement checks. This correction was source/syntax reviewed without build or gameplay execution.
+
+A conservative loaded-Heightmap prefilter avoids copying dense pure-land sector lists: only an initialized, ordinary heightmap belonging to the zone with no Ocean in any of its four corners can settle early. In the matching game source, candidate `GetGroundData` calls ordinary `Heightmap.GetBiome`, which can select only those corner biomes. Mixed coastal heightmaps continue to candidate processing; unavailable or distant heightmaps are not rejected by this shortcut. No terrain generation or new sampling was added.
