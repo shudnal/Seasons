@@ -24,8 +24,11 @@ namespace Seasons
                 Value = value;
                 Epoch = zdo != null ? zdo.GetLong(SeasonsVars.s_seasonalSnowEpoch, MissingEpoch) : MissingEpoch;
                 From = zdo != null ? zdo.GetLong(SeasonsVars.s_seasonalSnowFrom, 0L) : 0L;
-                Baseline = zdo != null ? Sanitize(zdo.GetFloat(SeasonsVars.s_seasonalSnowBaseline, value)) : 0f;
-                CurrentWinter = zdo != null && zdo.GetBool(SeasonsVars.s_seasonalSnowWinter);
+                // Only old snapshots can have a baseline different from their value.
+                Baseline = zdo != null && Epoch == MissingEpoch
+                    ? Sanitize(zdo.GetFloat(SeasonsVars.s_seasonalSnowBaseline, value)) : value;
+                CurrentWinter = Present && (Epoch != MissingEpoch ||
+                    (zdo != null && zdo.GetBool(SeasonsVars.s_seasonalSnowWinter)));
             }
 
             internal bool AppliesTo(long epoch) => Present && (Epoch == MissingEpoch || Epoch == epoch);
@@ -58,7 +61,8 @@ namespace Seasons
             zdo != null && zdo.GetLong(SeasonsVars.s_seasonalSnowEpoch, MissingEpoch) != MissingEpoch;
 
         internal static bool HasCurrentWinterState(ZDO zdo) =>
-            zdo != null && zdo.GetBool(SeasonsVars.s_seasonalSnowWinter) && !IsPreviousWinter(zdo);
+            zdo != null && !IsPreviousWinter(zdo) &&
+                ((HasEpoch(zdo) && HasSavedValue(zdo)) || zdo.GetBool(SeasonsVars.s_seasonalSnowWinter));
 
         internal static bool HasLegacyState(ZDO zdo) =>
             zdo != null && (zdo.GetBool(SeasonsVars.s_seasonalSnowWatermark) ||
@@ -88,46 +92,48 @@ namespace Seasons
             view && view.IsValid() && zdo != null &&
                 (zdo.GetOwner() == 0L || view.IsOwner());
 
-        // Callers decide authority and cadence. Store the exact level and the weather
-        // interval already consumed by that level in the same main-thread operation.
+        // Publish one coherent snapshot and dirty the ZDO once. ZDO.Set performs
+        // the same ExtraData write/revision pair separately for every property.
         internal static void Write(ZDO zdo, float value, long epoch, double consumedUntil)
         {
             if (zdo == null)
                 return;
-            value = Sanitize(value);
-            zdo.Set(SeasonsVars.s_seasonalSnowValue, value);
-            zdo.Set(SeasonsVars.s_seasonalSnowEpoch, epoch);
-            zdo.Set(SeasonsVars.s_seasonalSnowFrom, ToTimestamp(consumedUntil));
-            zdo.Set(SeasonsVars.s_seasonalSnowBaseline, value);
-            zdo.Set(SeasonsVars.s_seasonalSnowWinter, 1, okForNotOwner: true);
-            zdo.Set(SeasonsVars.s_seasonalSnowWatermark, value > 0f ? 1 : 0, okForNotOwner: true);
-            bool removed = zdo.RemoveLong(SeasonsVars.s_seasonalSnowWinter);
-            removed |= zdo.RemoveInt(SeasonsVars.s_seasonalSnowMeltedBelowMinimum);
-            if (removed)
+            bool changed = ZDOExtraData.Set(zdo.m_uid, SeasonsVars.s_seasonalSnowValue, Sanitize(value));
+            changed |= ZDOExtraData.Set(zdo.m_uid, SeasonsVars.s_seasonalSnowEpoch, epoch);
+            changed |= ZDOExtraData.Set(zdo.m_uid, SeasonsVars.s_seasonalSnowFrom, ToTimestamp(consumedUntil));
+            // Epoch/value already express presence and winter identity; a confirmed
+            // snapshot's baseline is its value. Keep legacy fields read-only on import.
+            changed |= RemoveLegacyMetadata(zdo);
+            changed |= RemoveNativeData(zdo);
+            if (changed)
                 zdo.IncreaseDataRevision();
-            ClearNative(zdo);
+        }
+
+        private static bool RemoveLegacyMetadata(ZDO zdo)
+        {
+            bool changed = zdo.RemoveFloat(SeasonsVars.s_seasonalSnowBaseline);
+            changed |= zdo.RemoveInt(SeasonsVars.s_seasonalSnowWinter);
+            changed |= zdo.RemoveLong(SeasonsVars.s_seasonalSnowWinter);
+            changed |= zdo.RemoveInt(SeasonsVars.s_seasonalSnowWatermark);
+            changed |= zdo.RemoveInt(SeasonsVars.s_seasonalSnowMeltedBelowMinimum);
+            return changed;
         }
 
         internal static void Clear(ZDO zdo, bool clearNative)
         {
             if (zdo == null)
                 return;
-            bool removed = RemoveSavedValue(zdo);
-            removed |= zdo.RemoveInt(SeasonsVars.s_seasonalSnowWinter);
-            removed |= zdo.RemoveLong(SeasonsVars.s_seasonalSnowWinter);
-            removed |= zdo.RemoveInt(SeasonsVars.s_seasonalSnowWatermark);
-            removed |= zdo.RemoveLong(SeasonsVars.s_seasonalSnowFrom);
-            removed |= zdo.RemoveFloat(SeasonsVars.s_seasonalSnowBaseline);
-            removed |= zdo.RemoveInt(SeasonsVars.s_seasonalSnowMeltedBelowMinimum);
-            if (removed)
-                zdo.IncreaseDataRevision();
+            bool changed = RemoveSavedValue(zdo);
+            changed |= zdo.RemoveLong(SeasonsVars.s_seasonalSnowFrom);
+            changed |= RemoveLegacyMetadata(zdo);
             if (clearNative)
-                ClearNative(zdo);
+                changed |= RemoveNativeData(zdo);
+            if (changed)
+                zdo.IncreaseDataRevision();
         }
 
         internal static void MigrateLoaded(WearNTear piece)
         {
-            // The caller has already classified this as a managed seasonal surface.
             piece.m_addPreSnow = false;
             ZNetView view = piece.m_nview;
             ZDO zdo = view ? view.GetZDO() : null;
@@ -135,22 +141,31 @@ namespace Seasons
                 return;
             bool hasValue = zdo.GetFloat(SeasonsVars.s_seasonalSnowValue, out _);
             bool legacy = HasLegacyState(zdo);
+            bool changed = false;
             if (!hasValue && legacy && zdo.GetFloat(ZDOVars.s_snow, out float oldValue))
             {
-                zdo.Set(SeasonsVars.s_seasonalSnowValue, Sanitize(oldValue));
+                changed = ZDOExtraData.Set(zdo.m_uid, SeasonsVars.s_seasonalSnowValue, Sanitize(oldValue));
                 hasValue = true;
             }
-            // Also finish an interrupted migration whose custom value was already written.
+            // Do not remove the old baseline until ready-area confirmation consumes it.
             if (hasValue || legacy)
-                ClearNative(zdo);
+                changed |= RemoveNativeData(zdo);
+            if (changed)
+                zdo.IncreaseDataRevision();
+        }
+
+        private static bool RemoveNativeData(ZDO zdo)
+        {
+            // Native Awake reads absent snow/pre-snow as zero/false.
+            bool changed = zdo.RemoveFloat(ZDOVars.s_snow);
+            changed |= zdo.RemoveInt(ZDOVars.s_preSnow);
+            return changed;
         }
 
         internal static void ClearNative(ZDO zdo)
         {
-            if (zdo.GetFloat(ZDOVars.s_snow, 0f) != 0f)
-                zdo.Set(ZDOVars.s_snow, 0f);
-            if (zdo.GetBool(ZDOVars.s_preSnow))
-                zdo.Set(ZDOVars.s_preSnow, false);
+            if (zdo != null && RemoveNativeData(zdo))
+                zdo.IncreaseDataRevision();
         }
 
         // Placement survives unload and snow cleanup, but only applies to its winter.
@@ -159,8 +174,10 @@ namespace Seasons
             if (zdo == null || !SeasonState.IsActive || !ZNet.instance ||
                 seasonState.GetCurrentDay() <= 0 || seasonState.GetCurrentSeason() != Season.Winter)
                 return;
-            zdo.Set(SeasonsVars.s_seasonalSnowPlacedEpoch, CurrentWinterEpoch);
-            zdo.Set(SeasonsVars.s_seasonalSnowPlacedAt, ToTimestamp(ZNet.instance.GetTimeSeconds()));
+            bool changed = ZDOExtraData.Set(zdo.m_uid, SeasonsVars.s_seasonalSnowPlacedEpoch, CurrentWinterEpoch);
+            changed |= ZDOExtraData.Set(zdo.m_uid, SeasonsVars.s_seasonalSnowPlacedAt, ToTimestamp(ZNet.instance.GetTimeSeconds()));
+            if (changed)
+                zdo.IncreaseDataRevision();
         }
 
         internal static bool IsCurrentWinterPlacement(ZDO zdo) => zdo != null &&
@@ -168,6 +185,7 @@ namespace Seasons
 
         internal static double PlacementTime(ZDO zdo) =>
             FromTimestamp(zdo.GetLong(SeasonsVars.s_seasonalSnowPlacedAt, 0L));
+
         internal static bool RemoveSavedValue(ZDO zdo)
         {
             bool changed = zdo.RemoveFloat(SeasonsVars.s_seasonalSnowValue);
@@ -175,5 +193,4 @@ namespace Seasons
             return changed;
         }
     }
-
 }
