@@ -363,7 +363,7 @@ namespace Seasons
                 return;
             source.NextPoll = Time.time + 0.5f;
             bool burning = source.Owner && (source.Fireplace
-                ? source.Fireplace.m_nview && source.Fireplace.m_nview.IsValid() && source.Fireplace.IsBurning()
+                ? source.Fireplace.m_nview && source.Fireplace.m_nview.IsValid() && !source.Fireplace.m_wet && source.Fireplace.IsBurning() 
                 : source.Smelter
                     ? source.Smelter.m_nview && source.Smelter.m_nview.IsValid() && source.Smelter.IsActive()
                     : true);
