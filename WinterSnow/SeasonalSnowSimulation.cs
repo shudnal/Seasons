@@ -369,7 +369,7 @@ namespace Seasons
             QueueRuntimeVisual(state, force: confirmation || resumed || snapshotChanged || state.Shielded);
             if (confirmation || ownershipChanged || (!previouslyPublished && state.MayPublish) || wasMelting != state.Melting || resumed ||
                 (reasons & (SnowRefresh.Rules | SnowRefresh.CatchUp)) != 0)
-                QueuePublication(state, force: true);
+                QueuePublication(state, force: false);
         }
 
         private void IntegrateSnow(double now)
@@ -512,6 +512,33 @@ namespace Seasons
             }
         }
 
+        private static bool NeedsSnowPublication(SnowPiece state, double consumed, bool exactValue)
+        {
+            if (!state.SnapshotPresent || state.SnapshotEpoch != state.Epoch ||
+                state.SnapshotEpoch == SeasonalSnowStorage.MissingEpoch ||
+                !state.SnapshotBaseline.Equals(state.SnapshotValue))
+                return true;
+
+            float delta = Mathf.Abs(state.Snow - state.SnapshotValue);
+            if (delta > 0f && (exactValue || delta >= PublicationStep ||
+                state.Snow <= 0f || state.Snow >= state.Maximum))
+                return true;
+
+            double persisted = SeasonalSnowStorage.FromTimestamp(state.SnapshotTime);
+            return consumed > persisted && (state.Melting || state.Shielded || state.Snow >= state.Maximum) &&
+                SeasonalSnow.GainBetween(state.Biome, persisted, consumed) > 0f;
+        }
+
+        private static void RememberWrittenSnapshot(SnowPiece state, double consumed)
+        {
+            float value = SeasonalSnowStorage.Sanitize(state.Snow);
+            state.SnapshotPresent = true;
+            state.SnapshotValue = value;
+            state.SnapshotBaseline = value;
+            state.SnapshotTime = SeasonalSnowStorage.ToTimestamp(consumed);
+            state.SnapshotEpoch = state.Epoch;
+        }
+
         private void PublishSnowChanges()
         {
             int remaining = PublicationsPerFrame;
@@ -519,23 +546,27 @@ namespace Seasons
             {
                 SnowPiece state = snowPublications.Dequeue();
                 state.PublishQueued = false;
-                bool force = state.ForcePublish;
+                bool exactValue = state.ForcePublish;
                 state.ForcePublish = false;
                 if (!state.Valid || !state.Confirmed || !state.Region.Ready || state.Epoch != winterEpoch ||
                     state.ReadyGeneration != state.Region.ReadyGeneration || !double.IsNaN(state.CatchUpFrom) ||
                     (!state.View.IsOwner() && !(state.AllowOwnerlessPublication && state.Zdo.GetOwner() == 0L)) ||
                     (state.View.IsOwner() && !state.AllowInitialPublication && simulationScene.OutsideActiveArea(state.Position)))
                     continue;
-                if (!force && Mathf.Abs(state.Snow - state.SnapshotValue) < PublicationStep)
-                    continue;
-                if (!SnapshotUnchanged(state, new SeasonalSnowStorage.Snapshot(state.Zdo)))
+                SeasonalSnowStorage.Snapshot current = new SeasonalSnowStorage.Snapshot(state.Zdo);
+                if (!SnapshotUnchanged(state, current))
                 {
                     QueueRefresh(state, SnowRefresh.Snapshot);
                     continue;
                 }
+                if (!NeedsSnowPublication(state, state.WeatherTime, exactValue))
+                {
+                    state.AllowOwnerlessPublication = state.AllowInitialPublication = false;
+                    continue;
+                }
                 SeasonalSnowStorage.Write(state.Zdo, state.Snow, state.Epoch, state.WeatherTime);
                 state.AllowOwnerlessPublication = state.AllowInitialPublication = false;
-                RememberSnapshot(state, new SeasonalSnowStorage.Snapshot(state.Zdo));
+                RememberWrittenSnapshot(state, state.WeatherTime);
             }
         }
 

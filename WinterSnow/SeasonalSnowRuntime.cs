@@ -231,7 +231,7 @@ namespace Seasons
             if (SeasonalSnowStorage.CanWrite(state.View, state.Zdo))
             {
                 SeasonalSnowStorage.Write(state.Zdo, 0f, state.Epoch, state.WeatherTime);
-                RememberSnapshot(state, new SeasonalSnowStorage.Snapshot(state.Zdo));
+                RememberWrittenSnapshot(state, state.WeatherTime);
             }
             Classify(state);
             QueueRuntimeVisual(state, force: true);
@@ -423,8 +423,10 @@ namespace Seasons
             if (settled)
                 IntegratePiece(state, ZNet.instance.GetTimeSeconds(), snowClock);
             double consumed = double.IsNaN(state.CatchUpFrom) ? state.WeatherTime : state.CatchUpFrom;
+            if (!NeedsSnowPublication(state, consumed, exactValue: true))
+                return;
             SeasonalSnowStorage.Write(state.Zdo, state.Snow, state.Epoch, consumed);
-            RememberSnapshot(state, new SeasonalSnowStorage.Snapshot(state.Zdo));
+            RememberWrittenSnapshot(state, consumed);
         }
 
         internal void StopSnowScene(ZNetScene scene)
