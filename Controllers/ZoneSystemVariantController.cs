@@ -296,10 +296,8 @@ namespace Seasons
             s_waterPlane = null;
             s_waterPlaneState = null;
             s_iceSurface = null;
-            s_iceFloe = null;
             s_freezeStatus = 0f;
             s_colliderHeight = 0f;
-            SeasonalIceFloes.Reset();
             waterStates.Clear();
             waterVolumesCheckFloes.Clear();
             tempWaterVolumesList.Clear();
@@ -328,8 +326,6 @@ namespace Seasons
             Transform water = instance.m_zonePrefab.transform.Find("Water");
             if (water != null)
                 AddIceCollider(water);
-
-            SeasonalIceFloes.InitializePrefab(instance);
         }
 
         public static void UpdateTerrainColor(Heightmap heightmap)
@@ -955,13 +951,13 @@ namespace Seasons
                 {
                     if (zdo.GetPrefab() == s_iceFloePrefab && zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
                     {
-                        RemoveObject(zdo, true);
+                        SeasonalIceFloes.ScheduleRemoval(zdo);
                         floes++;
                     }
 
                     if (zdo.GetPrefab() == s_zoneCtrlPrefab && zdo.GetBool(SeasonsVars.s_iceFloesSpawned))
                     {
-                        zdo.Set(SeasonsVars.s_iceFloesSpawned, 0, okForNotOwner: true);
+                        SeasonalIceFloes.ScheduleMarkerReset(zdo);
                         zones++;
                     }
                 }
@@ -980,109 +976,12 @@ namespace Seasons
                 }
             }
 
-            LogFloeState($"Removed overworld floes:{floes}, Zones refreshed:{zones}");
+            LogFloeState($"Queued overworld floe removals:{floes}, Zone marker resets:{zones}");
             LogInfo($"Terrains decultivated:{terrains}");
         }
 
         public bool CheckWaterVolumeForIceFloes(WaterVolume waterVolume) =>
             SeasonalIceFloes.CheckWaterVolume(waterVolume);
-
-        public static void PlaceIceFloes(Vector2s zoneID, Vector3 zoneCenterPos, List<ZoneSystem.ClearArea> clearAreas, ZoneSystem.SpawnMode mode, List<GameObject> spawnedObjects)
-        {
-            if (!ZNet.instance || !ZNet.instance.IsServer() ||
-                (mode != ZoneSystem.SpawnMode.Full && mode != ZoneSystem.SpawnMode.Ghost))
-                return;
-            UnityEngine.Random.State state = UnityEngine.Random.state;
-            int seed = WorldGenerator.instance.GetSeed();
-            float num = ZoneSystem.instance.m_zoneSize / 2f;
-
-            UnityEngine.Random.InitState(seed + zoneID.x * 4271 + zoneID.y * 9187 + s_iceFloePrefab + (SeasonState.IsActive ? seasonState.GetCurrentWorldDay() : 0));
-            try
-            {
-                int spawnCount = UnityEngine.Random.Range((int)amountOfIceFloesInWinterDays.Value.x, (int)amountOfIceFloesInWinterDays.Value.y + 1);
-                for (int i = 0; i < spawnCount; i++)
-                {
-                    Vector3 p = new Vector3(UnityEngine.Random.Range(zoneCenterPos.x - num, zoneCenterPos.x + num), 0f, UnityEngine.Random.Range(zoneCenterPos.z - num, zoneCenterPos.z + num));
-                    if (IsBeyondWorldEdge(p, 100f))
-                        continue;
-
-                    if (ZoneSystem.instance.InsideClearArea(clearAreas, p))
-                        continue;
-
-                    if (s_iceFloe.m_blockCheck && ZoneSystem.instance.IsBlocked(p))
-                        continue;
-
-                    ZoneSystem.instance.GetGroundData(ref p, out _, out var biome, out var biomeArea, out var hmap2);
-                    if (!hmap2)
-                        continue;
-                    float num11 = p.y - ZoneSystem.instance.m_waterLevel;
-                    if (num11 < s_iceFloe.m_minAltitude || num11 > s_iceFloe.m_maxAltitude)
-                        continue;
-
-                    if ((s_iceFloe.m_biome & biome) == 0 || (s_iceFloe.m_biomeArea & biomeArea) == 0)
-                        continue;
-
-                    float oceanDepth = hmap2.GetOceanDepth(p);
-                    if (s_iceFloe.m_minOceanDepth != s_iceFloe.m_maxOceanDepth)
-                    {
-                        if (oceanDepth < s_iceFloe.m_minOceanDepth || oceanDepth > s_iceFloe.m_maxOceanDepth)
-                            continue;
-                    }
-
-                    float oceanDepthFactor = GetOceanDepthFactor(oceanDepth);
-
-                    float scaleX = UnityEngine.Random.Range(iceFloesScale.Value.x, iceFloesScale.Value.y) * oceanDepthFactor;
-                    float scaleY = PowSquash(UnityEngine.Random.Range(iceFloesScale.Value.x, iceFloesScale.Value.y), 0.6f); // Squash a bit to prevent extra thick or thin
-                    float scaleZ = UnityEngine.Random.Range(iceFloesScale.Value.x, iceFloesScale.Value.y) * oceanDepthFactor;
-
-                    float halfX = s_floeSize.x * scaleX / 2;
-                    float halfZ = s_floeSize.y * scaleZ / 2;
-                    float radius = Mathf.Sqrt(halfX * halfX + halfZ * halfZ) + 0.2f;
-
-                    if (clearAreas.Any(area => IsInside(area, p, radius)))
-                        continue;
-
-                    if (s_iceFloe.m_snapToWater)
-                        p.y = ZoneSystem.instance.m_waterLevel - _winterWaterSurfaceOffset;
-
-                    if (mode == ZoneSystem.SpawnMode.Ghost)
-                        ZNetView.StartGhostInit();
-
-                    GameObject gameObject;
-                    try
-                    {
-                        gameObject = Instantiate(s_iceFloe.m_prefab, p, Quaternion.Euler(0, UnityEngine.Random.Range(0, 360), 0));
-                    }
-                    finally
-                    {
-                        if (mode == ZoneSystem.SpawnMode.Ghost)
-                            ZNetView.FinishGhostInit();
-                    }
-
-                    if (mode == ZoneSystem.SpawnMode.Ghost)
-                        spawnedObjects.Add(gameObject);
-
-                    ZNetView netView = gameObject.GetComponent<ZNetView>();
-
-                    netView.SetLocalScale(new Vector3(scaleX, scaleY, scaleZ));
-
-                    float health = iceFloesHealth.Value * scaleX * scaleY * scaleZ;
-
-                    ZDO zdo = netView.GetZDO();
-                    zdo.Set(SeasonsVars.s_iceFloeWatermark, true);
-                    netView.m_distant = true;
-                    zdo.SetDistant(true);
-                    zdo.Set(SeasonsVars.s_iceFloeMass, netView.m_body.mass * PowSquash(Mathf.Sqrt(Mathf.Abs(scaleX * scaleY * scaleZ)), 0.6f));
-                    zdo.Set(ZDOVars.s_health, health + Game.m_worldLevel * health * Game.instance.m_worldLevelMineHPMultiplier);
-
-                    clearAreas.Add(new ZoneSystem.ClearArea(p, GetFloeSize(gameObject) + 0.5f));
-                }
-            }
-            finally
-            {
-                UnityEngine.Random.state = state;
-            }
-        }
 
         public static float PowSquash(float x, float gamma = 0.5f) => Mathf.Pow(Mathf.Max(0f, x), gamma);
 
