@@ -11,7 +11,6 @@ namespace Seasons
         [HarmonyPostfix]
         private static void Postfix(WearNTear __instance)
         {
-            SeasonalSnow.ClearInactiveLoadedSnow(__instance);
             if (SeasonalSnow.WinterReady)
                 SeasonalSnowController.Instance.RegisterSnow(__instance);
         }
@@ -36,9 +35,9 @@ namespace Seasons
         [HarmonyPrefix]
         private static void Prefix(WearNTear __instance)
         {
+            // ZNetView.ResetZDO already publishes and invalidates networked pieces.
+            // OnDestroy only releases instance-owned caches.
             SeasonalSnowController.Instance.ForgetSnow(__instance);
-            if (SeasonalSnowController.Instance.ObservesSnowGeometry)
-                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true);
             SeasonalSnowMeshSettings.Forget(__instance);
         }
     }
@@ -82,8 +81,13 @@ namespace Seasons
             yield return AccessTools.Method(typeof(WearNTear), nameof(WearNTear.RPC_SetSnow));
         }
         [HarmonyPrefix]
-        private static bool Prefix(WearNTear __instance) =>
-            !SeasonalSnowMeshSettings.TryApplyDisabledSnow(__instance) && !SeasonalSnow.IsSeasonalSnowPosition(__instance);
+        private static bool Prefix(WearNTear __instance)
+        {
+            if (SeasonalSnowController.Instance.HasSnowRuntime(__instance))
+                return false;
+            return !SeasonalSnowMeshSettings.TryApplyDisabledSnow(__instance) &&
+                !SeasonalSnow.IsSeasonalSnowPosition(__instance);
+        }
     }
 
     [HarmonyPatch]
@@ -101,7 +105,8 @@ namespace Seasons
             // prefab-name lookup nor seasonal eligibility/biome work.
             if (!piece || (piece.m_snowBuildup == 0f && !piece.m_addPreSnow && !piece.m_heavySnow))
                 return;
-            if (!SeasonalSnowMeshSettings.IsSnowDisabled(piece) && !SeasonalSnow.IsSeasonalSnowPosition(piece))
+            if (!SeasonalSnowController.Instance.HasSnowRuntime(piece) &&
+                !SeasonalSnowMeshSettings.IsSnowDisabled(piece) && !SeasonalSnow.IsSeasonalSnowPosition(piece))
                 return;
             // Legacy native ZDO values can still arrive from another owner during
             // migration. They must not become this instance's seasonal working state.

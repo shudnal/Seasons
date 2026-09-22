@@ -245,8 +245,9 @@ namespace Seasons
             ReleaseVisual(piece, hide: true, restoreNative: false);
             if (snowPieces.TryGetValue(piece, out SnowPiece state))
             {
-                state.GeometryCaptured = false;
-                QueueRefresh(state, SnowRefresh.Rules | SnowRefresh.Geometry | SnowRefresh.Links);
+                // Snow cap copy/transform changes affect eligibility and visual
+                // bindings, not the piece's roof probe or static heat topology.
+                QueueRefresh(state, SnowRefresh.Rules);
                 if (TryGetSeasonalSnowBiome(piece, out _))
                     QueueRuntimeVisual(state, force: true);
             }
@@ -393,7 +394,6 @@ namespace Seasons
                 return;
             FlushSnowPiece(state);
             RetireSnow(state, releaseVisual: false);
-            InvalidateSnowArea(state.Position, geometry: true, readyOnly: true);
         }
 
         internal void FlushSnow()
