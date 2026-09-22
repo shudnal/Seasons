@@ -171,11 +171,6 @@ namespace Seasons
         {
             if (!piece)
                 return false;
-            if (SeasonalSnowMeshSettings.IsSnowDisabled(piece))
-            {
-                DisableVisual(piece);
-                return true;
-            }
             if (TryGetRuntimeSnow(piece, out float runtimeSnow))
             {
                 if (ZNet.instance && ZNet.instance.IsDedicated())
@@ -188,17 +183,20 @@ namespace Seasons
                 RequestSnowVisual(piece, force: false);
                 return true;
             }
-            if (!SeasonalSnow.IsSeasonalSnowPosition(piece))
+            if (SeasonalSnowMeshSettings.IsSnowDisabled(piece))
+            {
+                DisableVisual(piece);
+                return true;
+            }
+            if (!SeasonalSnow.WinterReady)
             {
                 SeasonalSnow.ClearInactiveLoadedSnow(piece);
                 ReleaseVisual(piece, hide: true, restoreNative: true);
                 return false;
             }
-            if (ZNet.instance && ZNet.instance.IsDedicated())
-                return true;
-
-            RequestSnowVisual(piece, force: false);
-            return true;
+            // Registration performs the complete eligibility/biome check once. If the
+            // piece belongs to native Deep North or an ignored rule, native visuals run.
+            return RequestSnowVisual(piece, force: false);
         }
 
         // Some roof prefabs use the same object for wet effects and a snow cap.
@@ -229,6 +227,11 @@ namespace Seasons
         {
             if (!piece || (ZNet.instance && ZNet.instance.IsDedicated()))
                 return;
+            if (!visuals.ContainsKey(piece))
+            {
+                HideCapRoots(piece);
+                return;
+            }
             QueueVisual(piece, 0f, disabled: true, force: true);
         }
 
@@ -269,9 +272,8 @@ namespace Seasons
                 state = null;
             }
             // Do not discover renderer hierarchies or allocate material bindings for a
-            // cap that has never been visible. Runtime callbacks will create the state
-            // when its value actually crosses the native visibility threshold.
-            if (state == null && !disabled && snow <= VisibilityThreshold)
+            // cap that has never been visible.
+            if (state == null && snow <= VisibilityThreshold)
             {
                 HideCapRoots(piece);
                 return;
@@ -456,6 +458,14 @@ namespace Seasons
                 if (!state.Matches(state.Piece))
                 {
                     QueueVisual(state.Piece, state.TargetSnow, state.Disabled, force: true);
+                    continue;
+                }
+                if (!state.Bound && !state.Target)
+                {
+                    HideCapRoots(state.Piece);
+                    state.HasApplied = true;
+                    state.Applied = null;
+                    state.AppliedLevel = 0f;
                     continue;
                 }
                 if (!state.Bound)
