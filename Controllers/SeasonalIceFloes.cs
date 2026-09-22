@@ -342,12 +342,6 @@ namespace Seasons
                 }
                 if (!work.TryGetValue(zone, out ZoneWork current))
                 {
-                    if (WorldGenerator.instance.GetBiome(ZoneSystem.GetZonePos(zone)) != Heightmap.Biome.Ocean)
-                    {
-                        settled.Add(zone);
-                        initialExclusions.Remove(zone);
-                        continue;
-                    }
                     SpawnSystem spawn = FindOwnedSpawnSystem(zone);
                     if (!spawn)
                         continue; // An ordinary loaded zone owner is the only producer.
@@ -562,6 +556,8 @@ namespace Seasons
             world.GetGroundData(ref p, out _, out Heightmap.Biome biome, out Heightmap.BiomeArea biomeArea, out Heightmap hmap);
             if (!hmap)
                 return CandidateResult.Deferred;
+            // Coastal zones can have a land center and eligible Ocean candidates.
+            // Only the actual placement point determines biome eligibility.
             float altitude = p.y - world.m_waterLevel;
             if (altitude < s_iceFloe.m_minAltitude || altitude > s_iceFloe.m_maxAltitude ||
                 (s_iceFloe.m_biome & biome) == 0 || (s_iceFloe.m_biomeArea & biomeArea) == 0)
