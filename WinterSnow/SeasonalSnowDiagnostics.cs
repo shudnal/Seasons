@@ -115,7 +115,7 @@ namespace Seasons
 
             if (state != null)
             {
-                DiagnosticLine(text, "Runtime: valid={0} confirmed={1} simulates={2} bucket={3} | Snow={4:G9} [{5:G9}, {6:G9}]",
+                DiagnosticLine(text, "Runtime: valid={0} confirmed={1} simulates={2} bucket={3} | Snow={4:F5} [{5:F2}, {6:F2}]",
                     state.Valid, state.Confirmed, state.Simulates, state.Bucket, state.Snow, state.Minimum, state.Maximum);
                 DiagnosticLine(text, "State: saved={0} construction={1} epoch={2} | publish={3} initial={4} ownerless={5}",
                     state.Saved, state.Construction, state.Epoch, state.MayPublish, state.AllowInitialPublication, state.AllowOwnerlessPublication);
@@ -126,14 +126,15 @@ namespace Seasons
                     region != null && region.Ready, region != null && region.ReadinessDirty,
                     state.ReadyGeneration, region?.ReadyGeneration ?? -1, state.GeometryRevision, region?.GeometryRevision ?? -1,
                     region != null && region.Queued, region?.Scanning ?? SnowRefresh.None, region?.Pending ?? SnowRefresh.None);
-                DiagnosticLine(text, "Cover/heat: covered={0} roof={1} leaky={2} shield={3} melting={4} | heat={5:G9} melt={6:G9} active={7} links={8}",
+                DiagnosticLine(text, "Cover/heat: covered={0} roof={1} leaky={2} shield={3} melting={4} | heat={5:F5} melt={6:F5} active={7} links={8}",
                     state.Covered, state.Roof, state.Leaky, state.Shielded, state.Melting, state.HeatRate, state.MeltRate,
                     state.InteractiveUntil > Time.time, state.HeatLinks?.Count ?? 0);
-                DiagnosticLine(text, "Consumed: WeatherGain={0:G9} WeatherTime={1:G17} | catch-up={2}",
+                DiagnosticLine(text, "Consumed: WeatherGain={0:F3} WeatherTime={1:F1} s | catch-up={2}",
                     state.WeatherGain, state.WeatherTime, double.IsNaN(state.CatchUpFrom) ? "none" :
-                    String.Format(CultureInfo.InvariantCulture, "{0:G17} -> {1:G17}", state.CatchUpFrom, now));
-                DiagnosticLine(text, "Remembered: present={0} value={1:G9} baseline={2:G9} epoch={3} from={4}",
-                    state.SnapshotPresent, state.SnapshotValue, state.SnapshotBaseline, state.SnapshotEpoch, state.SnapshotTime);
+                    String.Format(CultureInfo.InvariantCulture, "{0:F1} -> {1:F1} s", state.CatchUpFrom, now));
+                DiagnosticLine(text, "Remembered: present={0} value={1:F5} baseline={2:F5} epoch={3} from={4:F1} s",
+                    state.SnapshotPresent, state.SnapshotValue, state.SnapshotBaseline, state.SnapshotEpoch,
+                    SeasonalSnowStorage.FromTimestamp(state.SnapshotTime));
             }
 
             long period = (long)Math.Floor(now / Math.Max(1L, SeasonalSnow.EnvironmentDuration));
@@ -141,35 +142,39 @@ namespace Seasons
             string record = "<unavailable>";
             if (SeasonalSnow.SeasonalSnowTimelines.TryGetValue(biome, out SeasonalSnow.BiomeSnowTimeline timeline) &&
                 index >= 0L && index < timeline.Periods.Length)
-                record = timeline.Periods[(int)index].ToString();
+            {
+                SeasonalSnow.SnowPeriod entry = timeline.Periods[(int)index];
+                record = String.Format(CultureInfo.InvariantCulture, "{0} | buildup={1:F2} | cumulative={2:F3}",
+                    entry.EnvironmentName, entry.SnowBuildup, entry.CumulativeSnowGain);
+            }
             DiagnosticLine(text, "Weather: period={0} | {1}", period, record);
-            DiagnosticLine(text, "Timeline: {0:G17} -> {1:G17} | gain now={2:G9} ready={3}",
+            DiagnosticLine(text, "Timeline: {0:F1} -> {1:F1} s | gain now={2:F3} ready={3}",
                 SeasonalSnow.TimelineStartSeconds, SeasonalSnow.TimelineEndSeconds,
                 SeasonalSnow.GetCumulativeSnowGainAt(biome, now), SeasonalSnow.WeatherReady);
             EnvMan envMan = EnvMan.instance;
             EnvSetup current = envMan ? envMan.GetCurrentEnvironment() : null;
-            DiagnosticLine(text, "Environment: {0} buildup={1:G9} | native period={2} force={3} debug={4}",
+            DiagnosticLine(text, "Environment: {0} buildup={1:F2} | native period={2} force={3} debug={4}",
                 current?.m_name ?? "<none>", current?.m_snowBuildup ?? 0f, envMan ? envMan.m_environmentPeriod : -1L,
                 envMan && !String.IsNullOrEmpty(envMan.m_forceEnv) ? envMan.m_forceEnv : "none",
                 envMan && !String.IsNullOrEmpty(envMan.m_debugEnv) ? envMan.m_debugEnv : "none");
-            DiagnosticLine(text, "Clock: world={0:G17} calendar={1:G17} | {2} day={3} | overrides: season={4}/{5} day={6}/{7}",
+            DiagnosticLine(text, "Clock: world={0:F1} s calendar={1:F1} s | {2} day={3} | overrides: season={4}/{5} day={6}/{7}",
                 now, seasonState != null && ZNet.instance ? seasonState.GetTotalSeconds() : 0d,
                 seasonState != null ? seasonState.GetCurrentSeason().ToString() : "<none>", seasonState?.GetCurrentDay() ?? 0,
                 overrideSeason?.Value ?? false, seasonOverrided?.Value.ToString() ?? "<none>",
                 overrideSeasonDay?.Value ?? false, seasonDayOverrided?.Value ?? 0);
 
             SeasonalSnowStorage.Snapshot snapshot = new SeasonalSnowStorage.Snapshot(zdo);
-            DiagnosticLine(text, "Stored: present={0} value={1:G9} baseline={2:G9} epoch={3} from={4}",
-                snapshot.Present, snapshot.Value, snapshot.Baseline, snapshot.Epoch, snapshot.From);
+            DiagnosticLine(text, "Stored: present={0} value={1:F5} baseline={2:F5} epoch={3} from={4:F1} s",
+                snapshot.Present, snapshot.Value, snapshot.Baseline, snapshot.Epoch, SeasonalSnowStorage.FromTimestamp(snapshot.From));
             bool nativePresent = zdo != null && zdo.GetFloat(ZDOVars.s_snow, out _);
-            DiagnosticLine(text, "Native: snow={0:G9} pre={1} heavy={2} | ZDO snow={3} pre={4} | caps N/W/B={5}/{6}/{7}",
+            DiagnosticLine(text, "Native: snow={0:F5} pre={1} heavy={2} | ZDO snow={3} pre={4} | caps N/W/B={5}/{6}/{7}",
                 piece.m_snowBuildup, piece.m_addPreSnow, piece.m_heavySnow,
-                nativePresent ? zdo.GetFloat(ZDOVars.s_snow).ToString("G9", CultureInfo.InvariantCulture) : "<absent>",
+                nativePresent ? zdo.GetFloat(ZDOVars.s_snow).ToString("F5", CultureInfo.InvariantCulture) : "<absent>",
                 zdo != null && zdo.GetBool(ZDOVars.s_preSnow), (bool)piece.m_snow, (bool)piece.m_snowWorn, (bool)piece.m_snowBroken);
             if (visual == null)
                 DiagnosticLine(text, "Visual: no state/binding");
             else
-                DiagnosticLine(text, "Visual: bound={0} disabled={1} queued={2} | target={3} snow={4:G9} level={5:G9} | applied={6} level={7:G9} set={8}",
+                DiagnosticLine(text, "Visual: bound={0} disabled={1} queued={2} | target={3} snow={4:F5} level={5:F5} | applied={6} level={7:F5} set={8}",
                     visual.Bound, visual.Disabled, visual.Queued, visual.Target ? visual.Target.name : "<none>",
                     visual.TargetSnow, visual.TargetLevel, visual.Applied ? visual.Applied.name : "<none>", visual.AppliedLevel, visual.HasApplied);
             return text.ToString().TrimEnd('\n');

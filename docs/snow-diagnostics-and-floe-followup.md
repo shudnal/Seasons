@@ -291,6 +291,10 @@ The ordinarily loaded zone's owned `SpawnSystem.m_nview` is again the producer o
 
 `PlaceShip` clears linear and angular velocity only while dynamic, before applying the kinematic state; the subsequent Karve correction no longer writes velocity. The first fixed update observing thaw or changed ownership restores the captured body/synchronization policy synchronously. While frozen, saved body-velocity synchronization is disabled and later restored. A scoped Harmony guard skips only the native force/damping tail for the captured Seasons-frozen kinematic body. Controls, sail/rudder visuals, owner checks, damage and speed bookkeeping still run. The boundary was checked in the 1.0.15 source and matching publicized DLL (`worldCenterOfMass`, IL `0081-0087`, no exception handlers). No global setter patch or warning suppression was added; warnings and thaw behavior still require gameplay verification.
 
+### Completed: diagnostic formatting (section 5)
+
+The read-only hover uses invariant `F1` seconds, `F2` limits/intensity, `F3` cumulative gain and `F5` snow/visual/heat values. Snapshot timestamps are converted from milliseconds to seconds and labeled. IDs and epochs remain exact integers, and period fields are formatted explicitly in the hover. Stored values and the precise RUE `SnowPeriod.ToString()` are unchanged. The effective live-source line belongs to the explicit-weather correction below.
+
 ### Remaining work and verification
 
 Sections 4-8 are in progress. No build, tests or Valheim execution has been performed. The maintainer's prior gameplay observations in section 2 are preserved as reported evidence, separate from acceptance of the corrective implementation.
