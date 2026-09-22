@@ -440,6 +440,7 @@ namespace Seasons
 
         internal void ResetSnowRuntime()
         {
+            SeasonalSnowDiagnostics.ClearCache();
             foreach (SnowPiece state in snowPieces.Values)
             {
                 state.Retired = true;

@@ -217,6 +217,12 @@ Implementation started from a clean `perf/snow-performance` worktree at `2ffa4ad
 
 Static review compared every changed arithmetic expression and reader with the baseline. RUE inspection and the clear-weather gameplay investigation remain unexecuted. A flat cumulative record alone does not prove the cause of the reported growth: consumed history, initialization/snapshots, exact snow and delayed visuals still need to be compared on the same piece. No balance change is included.
 
+### Completed: read-only snow hover (section 3)
+
+`WinterSnow/SeasonalSnowDiagnostics.cs` appends a marker-delimited diagnostic block from the native `Hud.UpdateCrosshair(Player, float)` postfix. The existing central `clientConfig` binding uses `AlwaysClientControlled`, the specified text, and a default of false. The disabled path returns before HUD, component, ZDO or formatting work. The current target/block are cached for 0.2 unscaled seconds and cleared on config changes, world reset or target loss. Marker removal also handles text retained by another HUD patch across cache resets.
+
+The narrow controller reader reports existing runtime/region/heat/weather/snapshot/visual caches and native save fields. Unregistered pieces remain unregistered. Static call-path review found no registration, readiness/cast, material binding, simulation or publication call; native signatures and fields were checked against the source baseline. Project inclusion and XML were inspected. Hover layout, coexistence with HUD mods, summer/unregistered targets and the reported clear-weather growth still require gameplay checks.
+
 ### Remaining implementation and verification
 
-Sections 3-6 are in progress. No mod build, tests or Valheim run has been performed. The maintainer's previously reported observations in section 1 remain separate from acceptance of these changes.
+Sections 4-6 are in progress. No mod build, tests or Valheim run has been performed. The maintainer's previously reported observations in section 1 remain separate from acceptance of these changes.

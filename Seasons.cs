@@ -96,6 +96,7 @@ namespace Seasons
         public static ConfigEntry<bool> cultivatedGroundTurnsIntoDirtInWinter;
 
         public static ConfigEntry<bool> enableSeasonalSnow;
+        public static ConfigEntry<bool> showSnowDiagnosticsOnHover;
         public static ConfigEntry<Vector2> seasonalSnowBuildup;
         public static ConfigEntry<Vector2> reducedSeasonalSnowBuildup;
         public static ConfigEntry<float> seasonalSnowAccumulationSpeed;
@@ -584,6 +585,10 @@ namespace Seasons
                 "Controls heat-based melting on roof pieces. 0 keeps snow on roofs even when a fire is nearby.");
             seasonalSnowCoveredPieceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - covered pieces", defaultValue: 2f,
                 "Melts existing snow under a newly added roof at 0.0018 buildup per active second times this value. Independent of fireplace and roof-piece multipliers. Zero stops covered melting but still blocks snowfall.");
+
+            showSnowDiagnosticsOnHover = clientConfig("Season - Winter snow", "Show snow diagnostics on hover", defaultValue: false,
+                "Shows technical seasonal snow runtime information while hovering a building piece.");
+            showSnowDiagnosticsOnHover.SettingChanged += (sender, args) => SeasonalSnowDiagnostics.ClearCache();
 
             enableSeasonalSnow.SettingChanged += (sender, args) => SeasonalSnow.OnEnabledConfigChanged();
             seasonalSnowBuildup.SettingChanged += (sender, args) => SeasonalSnow.OnSnowRangeConfigChanged();
