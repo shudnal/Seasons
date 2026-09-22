@@ -287,6 +287,10 @@ Only the existing central `seasonalSnowSelfHeatMultiplier` binding default chang
 
 The ordinarily loaded zone's owned `SpawnSystem.m_nview` is again the producer on a client or host. Every placement slice checks loaded state, current season and that same ownership; it never claims ownership. Native spawning callbacks retry ownership arriving after zone loading. Server-only global removal and marker reset remain separate. Placement retains private RNG, exclusions, completion/existing-floe checks and the previous budgets: 8 discovery/request steps, 64 inspected objects, 4 candidates, 1 instantiation, 4 removals and 4 marker resets per service, a 1.5 ms guard, and 0.5 s scope refresh. No forced `SpawnZone` or unloaded placement was added. These are source checks; multiplayer placement remains a gameplay check.
 
+### Completed: frozen ships (section 7)
+
+`PlaceShip` clears linear and angular velocity only while dynamic, before applying the kinematic state; the subsequent Karve correction no longer writes velocity. The first fixed update observing thaw or changed ownership restores the captured body/synchronization policy synchronously. While frozen, saved body-velocity synchronization is disabled and later restored. A scoped Harmony guard skips only the native force/damping tail for the captured Seasons-frozen kinematic body. Controls, sail/rudder visuals, owner checks, damage and speed bookkeeping still run. The boundary was checked in the 1.0.15 source and matching publicized DLL (`worldCenterOfMass`, IL `0081-0087`, no exception handlers). No global setter patch or warning suppression was added; warnings and thaw behavior still require gameplay verification.
+
 ### Remaining work and verification
 
 Sections 4-8 are in progress. No build, tests or Valheim execution has been performed. The maintainer's prior gameplay observations in section 2 are preserved as reported evidence, separate from acceptance of the corrective implementation.

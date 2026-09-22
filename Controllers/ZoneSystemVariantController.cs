@@ -3,6 +3,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection.Emit;
 using UnityEngine;
 using static Heightmap;
 using static Seasons.Seasons;
@@ -161,8 +162,10 @@ namespace Seasons
             public ZSyncTransform SyncTransform;
             public bool IsKinematic;
             public bool SyncIsKinematic;
+            public bool SyncBodyVelocity;
             public bool AppliedIsKinematic;
             public bool WasOwner;
+            public bool WasFrozen;
             public readonly Dictionary<GameObject, bool> WaterMasks = new Dictionary<GameObject, bool>();
 
             public void Restore()
@@ -171,6 +174,8 @@ namespace Seasons
                     Body.isKinematic = IsKinematic;
                 if (SyncTransform != null && SyncTransform.m_isKinematicBody == AppliedIsKinematic)
                     SyncTransform.m_isKinematicBody = SyncIsKinematic;
+                if (SyncTransform != null && AppliedIsKinematic && !SyncTransform.m_syncBodyVelocity)
+                    SyncTransform.m_syncBodyVelocity = SyncBodyVelocity;
                 foreach (KeyValuePair<GameObject, bool> mask in WaterMasks)
                     if (mask.Key != null && !mask.Key.activeSelf)
                         mask.Key.SetActive(mask.Value);
@@ -702,11 +707,15 @@ namespace Seasons
 
             FrozenShipState state = ship.GetComponent<FrozenShipState>();
             state?.Restore();
-            if (ZoneSystem.instance == null || ship.m_nview == null || !ship.m_nview.IsValid() || !ship.m_nview.IsOwner() || ship.m_body == null || !IsWaterSurfaceFrozen())
+            bool isOwner = ship.m_nview != null && ship.m_nview.IsValid() && ship.m_nview.IsOwner();
+            bool isFrozen = IsShipFreezeActive();
+            if (state != null)
+            {
+                state.WasOwner = isOwner;
+                state.WasFrozen = isFrozen;
+            }
+            if (!isOwner || ship.m_body == null || !isFrozen)
                 return;
-
-            List<MeshRenderer> watermask = ship.GetComponentsInChildren<MeshRenderer>(includeInactive: true)
-                .Where(renderer => renderer.sharedMaterial != null && renderer.sharedMaterial.shader != null && renderer.sharedMaterial.shader.name == "Custom/WaterMask").ToList();
 
             float positionDelta = ship.m_body.position.y - (WaterLevel + ship.m_waterLevelOffset);
             if (positionDelta > 0)
@@ -717,29 +726,47 @@ namespace Seasons
             state.IsKinematic = ship.m_body.isKinematic;
             state.SyncTransform = ship.GetComponent<ZSyncTransform>();
             state.SyncIsKinematic = state.SyncTransform != null && state.SyncTransform.m_isKinematicBody;
+            state.SyncBodyVelocity = state.SyncTransform != null && state.SyncTransform.m_syncBodyVelocity;
             state.AppliedIsKinematic = !placeShipAboveFrozenOcean.Value;
-            ship.m_body.WakeUp();
-            ship.m_body.isKinematic = !placeShipAboveFrozenOcean.Value;
+            state.WasOwner = isOwner;
+            state.WasFrozen = isFrozen;
+
+            // A frozen Karve can also need repositioning. Clear motion before freezing,
+            // never through Unity's unsupported velocity setters on a kinematic body.
+            if (!ship.m_body.isKinematic)
+            {
+                ship.m_body.linearVelocity = Vector3.zero;
+                ship.m_body.angularVelocity = Vector3.zero;
+            }
+            ship.m_body.isKinematic = state.AppliedIsKinematic;
+            if (!ship.m_body.isKinematic)
+                ship.m_body.WakeUp();
 
             if (state.SyncTransform != null)
+            {
                 state.SyncTransform.m_isKinematicBody = ship.m_body.isKinematic;
+                // OwnerSync restores saved velocities on ownership acquisition.
+                // The body must stay frozen until Seasons restores its dynamic policy.
+                if (state.AppliedIsKinematic)
+                    state.SyncTransform.m_syncBodyVelocity = false;
+            }
 
             if (placeShipAboveFrozenOcean.Value)
             {
                 ship.m_body.rotation = Quaternion.identity;
                 ship.m_body.position = new Vector3(ship.m_body.position.x, WaterLevel + ship.m_waterLevelOffset + 0.1f, ship.m_body.position.z);
-                ship.m_body.linearVelocity = Vector3.zero;
             }
             else if (frozenKarvePositionFix.Value && Utils.GetPrefabName(ship.name) == "Karve" && positionDelta <= -1.43f)
             {
                 ship.m_body.rotation = Quaternion.identity;
                 ship.m_body.position = new Vector3(ship.m_body.position.x, WaterLevel + ship.m_waterLevelOffset - 1.42f, ship.m_body.position.z);
-                ship.m_body.linearVelocity = Vector3.zero;
             }
             else if (positionDelta < -ship.m_waterLevelOffset * 1.5f && ship.m_body.isKinematic)
             {
-                foreach (MeshRenderer renderer in watermask)
+                foreach (MeshRenderer renderer in ship.GetComponentsInChildren<MeshRenderer>(includeInactive: true))
                 {
+                    if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null || renderer.sharedMaterial.shader.name != "Custom/WaterMask")
+                        continue;
                     state.WaterMasks[renderer.gameObject] = renderer.gameObject.activeSelf;
                     renderer.gameObject.SetActive(false);
                 }
@@ -748,15 +775,22 @@ namespace Seasons
 
         public static void CheckShipOwnership(Ship ship)
         {
-            if (ship == null || ship.m_nview == null || !ship.m_nview.IsValid())
+            if (ship == null)
                 return;
             FrozenShipState state = ship.GetComponent<FrozenShipState>() ?? ship.gameObject.AddComponent<FrozenShipState>();
-            bool isOwner = ship.m_nview.IsOwner();
-            if (state.WasOwner == isOwner)
+            bool isOwner = ship.m_nview != null && ship.m_nview.IsValid() && ship.m_nview.IsOwner();
+            bool isFrozen = IsShipFreezeActive();
+            if (state.WasOwner == isOwner && state.WasFrozen == isFrozen)
                 return;
-            state.WasOwner = isOwner;
+            // A water update schedules placement through a coroutine. Restore on the
+            // first thawed fixed tick instead of waiting for that coroutine to resume.
             PlaceShip(ship);
         }
+
+        private static bool IsShipFreezeActive() => ZoneSystem.instance != null && UseTextureControllers() && SeasonState.IsActive && IsWaterSurfaceFrozen();
+
+        public static bool ShouldSkipFrozenShipPhysics(Ship ship) => ship.m_body != null && ship.m_body.isKinematic
+            && ship.TryGetComponent(out FrozenShipState state) && state.Body == ship.m_body && state.AppliedIsKinematic;
 
         public static void CheckIfFishAboveSurface(Fish fish)
         {
@@ -1673,6 +1707,39 @@ namespace Seasons
     [HarmonyPatch(typeof(Ship), nameof(Ship.CustomFixedUpdate))]
     public static class Ship_CustomFixedUpdate_FrozenShip
     {
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
+        {
+            List<CodeInstruction> codes = new List<CodeInstruction>(instructions);
+            var bodyField = AccessTools.Field(typeof(Ship), nameof(Ship.m_body));
+            var centerGetter = AccessTools.PropertyGetter(typeof(Rigidbody), nameof(Rigidbody.worldCenterOfMass));
+            var skipPhysics = AccessTools.Method(typeof(ZoneSystemVariantController), nameof(ShouldSkipFrozenShipPhysics));
+            for (int i = 2; i < codes.Count; ++i)
+            {
+                if (!codes[i].Calls(centerGetter) || codes[i - 1].opcode != OpCodes.Ldfld
+                    || !Equals(codes[i - 1].operand, bodyField) || codes[i - 2].opcode != OpCodes.Ldarg_0)
+                    continue;
+
+                // In 1.0.15 this is the beginning of the buoyancy/force/damping tail.
+                // Controls, sail/rudder visuals, damage and speed bookkeeping stay native.
+                int physicsStart = i - 2;
+                Label continuePhysics = generator.DefineLabel();
+                CodeInstruction checkShip = new CodeInstruction(OpCodes.Ldarg_0);
+                checkShip.labels.AddRange(codes[physicsStart].labels);
+                codes[physicsStart].labels.Clear();
+                codes[physicsStart].labels.Add(continuePhysics);
+                codes.InsertRange(physicsStart, new[]
+                {
+                    checkShip,
+                    new CodeInstruction(OpCodes.Call, skipPhysics),
+                    new CodeInstruction(OpCodes.Brfalse, continuePhysics),
+                    new CodeInstruction(OpCodes.Ret)
+                });
+                return codes;
+            }
+
+            throw new InvalidOperationException("Could not locate Ship.CustomFixedUpdate physics boundary for frozen ships.");
+        }
+
         private static void Prefix(Ship __instance, ref float ___m_disableLevel, ref float? __state)
         {
             __state = null;
