@@ -126,6 +126,7 @@ namespace Seasons
             internal Smelter Smelter;
             internal WearNTear Piece;
             internal readonly List<HeatArea> Areas = new List<HeatArea>();
+            internal HeatArea[] AreaSnapshot = Array.Empty<HeatArea>();
             internal readonly List<HeatLink> Links = new List<HeatLink>();
             internal readonly List<SnowHeatCell> Cells = new List<SnowHeatCell>();
             internal Bounds Bounds;
@@ -287,7 +288,8 @@ namespace Seasons
             bool hadBounds = source.HasBounds;
             bool initialized = false;
             float distance = Mathf.Max(1f, seasonalSnowHeatSourceCheckDistance.Value);
-            foreach (HeatArea area in source.Areas)
+            source.AreaSnapshot = source.Areas.ToArray();
+            foreach (HeatArea area in source.AreaSnapshot)
             {
                 if (!area.Area || !area.Collider || !area.Transform)
                     continue;
@@ -430,12 +432,10 @@ namespace Seasons
             }
         }
 
-        private static float DistanceWeight(float distance)
+        private static float DistanceWeight(float distance, float maximum, float near, float far)
         {
-            Vector2 weights = seasonalSnowHeatDistanceMultipliers.Value;
-            float maximum = Mathf.Max(1f, seasonalSnowHeatSourceCheckDistance.Value);
             float t = maximum <= 1.0001f ? 0f : Mathf.InverseLerp(1f, maximum, distance);
-            return Mathf.Lerp(Mathf.Max(0f, weights.x), Mathf.Max(0f, weights.y), t);
+            return Mathf.Lerp(near, far, t);
         }
 
         private void RebuildHeatLinks(SnowPiece state)
@@ -448,30 +448,40 @@ namespace Seasons
             if (selfHeaters.TryGetValue(state.Piece, out HashSet<HeatSource> own))
                 heatCandidates.UnionWith(own);
             float maximum = Mathf.Max(1f, seasonalSnowHeatSourceCheckDistance.Value);
+            float maximumSqr = maximum * maximum;
+            Vector2 configuredWeights = seasonalSnowHeatDistanceMultipliers.Value;
+            float nearWeight = Mathf.Max(0f, configuredWeights.x);
+            float farWeight = Mathf.Max(0f, configuredWeights.y);
+            float selfMultiplier = Mathf.Max(0f, seasonalSnowSelfHeatMultiplier.Value);
             foreach (HeatSource source in heatCandidates)
             {
-                if (source.Retired)
+                if (source.Retired || source.AreaSnapshot.Length == 0)
                     continue;
+                HeatArea[] areas = source.AreaSnapshot;
                 HeatLink link = new HeatLink
                 {
                     Source = source, Piece = state, SourceIndex = source.Links.Count,
-                    Areas = source.Areas.ToArray(), Weights = new float[source.Areas.Count]
+                    Areas = areas, Weights = new float[areas.Length]
                 };
                 bool any = false;
-                for (int i = 0; i < link.Areas.Length; ++i)
+                bool self = source.Piece == state.Piece;
+                for (int i = 0; i < areas.Length; ++i)
                 {
-                    HeatArea area = link.Areas[i];
-                    bool self = source.Piece == state.Piece;
-                    float distance = Vector3.Distance(state.Position, area.Position);
-                    if (!self && distance > maximum && !area.Contains(state.Position))
+                    HeatArea area = areas[i];
+                    Vector3 offset = state.Position - area.Position;
+                    float distanceSqr = offset.sqrMagnitude;
+                    if (!self && distanceSqr > maximumSqr && !area.Contains(state.Position))
                         continue;
-                    link.Weights[i] = DistanceWeight(Mathf.Min(distance, maximum)) *
-                        (self ? Mathf.Max(0f, seasonalSnowSelfHeatMultiplier.Value) : 1f);
+                    float distance = Mathf.Sqrt(Mathf.Min(distanceSqr, maximumSqr));
+                    link.Weights[i] = DistanceWeight(distance, maximum, nearWeight, farWeight) *
+                        (self ? selfMultiplier : 1f);
                     any |= link.Weights[i] > 0f;
                 }
                 if (!any)
                     continue;
-                state.HeatLinks.Add(source, link);
+                if (state.HeatLinks == null)
+                    state.HeatLinks = new List<HeatLink>(2);
+                state.HeatLinks.Add(link);
                 source.Links.Add(link);
             }
             heatCandidates.Clear();
@@ -480,7 +490,9 @@ namespace Seasons
 
         private static void RemoveHeatLinks(SnowPiece state)
         {
-            foreach (HeatLink link in state.HeatLinks.Values)
+            if (state.HeatLinks == null)
+                return;
+            foreach (HeatLink link in state.HeatLinks)
             {
                 List<HeatLink> links = link.Source.Links;
                 int last = links.Count - 1;
@@ -497,8 +509,9 @@ namespace Seasons
         private static void RecalculateHeat(SnowPiece state)
         {
             float weight = 0f;
-            foreach (HeatLink link in state.HeatLinks.Values)
-                weight += link.Contribution();
+            if (state.HeatLinks != null)
+                foreach (HeatLink link in state.HeatLinks)
+                    weight += link.Contribution();
             float piece = state.Roof ? seasonalSnowRoofPieceMeltMultiplier.Value :
                 state.Leaky ? seasonalSnowLeakyPieceMeltMultiplier.Value : 1f;
             float rate = UnitMeltRate * Mathf.Max(0f, seasonalSnowHeatSourceMeltMultiplier.Value) *

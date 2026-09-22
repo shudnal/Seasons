@@ -86,7 +86,7 @@ namespace Seasons
             internal float WeatherGain;
             internal double CatchUpFrom = double.NaN;
             internal int ReadyGeneration;
-            internal readonly Dictionary<HeatSource, HeatLink> HeatLinks = new Dictionary<HeatSource, HeatLink>();
+            internal List<HeatLink> HeatLinks;
 
             internal SnowPiece(WearNTear piece, ZDO zdo)
             {
