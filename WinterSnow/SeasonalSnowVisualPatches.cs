@@ -1,6 +1,7 @@
 using HarmonyLib;
 using System.Collections.Generic;
 using System.Reflection.Emit;
+using UnityEngine;
 using static Seasons.Seasons;
 
 namespace Seasons
@@ -13,13 +14,17 @@ namespace Seasons
         private static bool Prefix(WearNTear __instance)
         {
             SeasonalSnowController controller = SeasonalSnowController.Instance;
-            if (!SeasonalSnow.WinterReady && !SeasonalSnowMeshSettings.IsSnowDisabled(__instance) &&
-                !controller.HasSnowRuntime(__instance) && !controller.HasSnowVisual(__instance))
+            if (!SeasonalSnow.WinterReady && !controller.HasSnowRuntime(__instance) &&
+                !controller.HasSnowVisual(__instance))
             {
-                // Awake/Start check persisted metadata once. Ordinary summer updates
-                // only retry cleanup when native snow actually arrives on the instance.
+                // Ordinary summer callbacks do not need a prefab-name/rule lookup.
+                // Only an unexpected native value can require disabled or legacy cleanup.
                 if (__instance.m_snowBuildup > 0f || __instance.m_addPreSnow)
+                {
+                    if (SeasonalSnowMeshSettings.TryApplyDisabledSnow(__instance))
+                        return false;
                     SeasonalSnow.ClearInactiveLoadedSnow(__instance);
+                }
                 return true;
             }
             return !controller.TryQueueCurrentVisual(__instance);
@@ -29,11 +34,25 @@ namespace Seasons
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateWear))]
     internal static class WearNTear_UpdateWear_ExcludeSnowFromWetVisuals
     {
+        private static GameObject GetWetVisual(WearNTear piece)
+        {
+            GameObject wet = SeasonalSnowController.GetWetVisual(piece);
+            if (!wet)
+                return null;
+
+            // Disabled caps are usually unbound and therefore absent from the visual
+            // controller. Resolve the rule only for the rare direct wet/cap alias.
+            bool aliasesCap = (piece.m_snow && piece.m_snow.gameObject == wet) ||
+                (piece.m_snowWorn && piece.m_snowWorn.gameObject == wet) ||
+                (piece.m_snowBroken && piece.m_snowBroken.gameObject == wet);
+            return aliasesCap && SeasonalSnowMeshSettings.IsSnowDisabled(piece) ? null : wet;
+        }
+
         [HarmonyTranspiler]
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
         {
             var wetField = AccessTools.Field(typeof(WearNTear), nameof(WearNTear.m_wet));
-            var getWetVisual = AccessTools.Method(typeof(SeasonalSnowController), nameof(SeasonalSnowController.GetWetVisual));
+            var getWetVisual = AccessTools.Method(typeof(WearNTear_UpdateWear_ExcludeSnowFromWetVisuals), nameof(GetWetVisual));
             bool found = false;
             foreach (CodeInstruction instruction in instructions)
             {
