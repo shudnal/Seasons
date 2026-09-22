@@ -24,14 +24,6 @@ namespace Seasons
             }
             return !controller.TryQueueCurrentVisual(__instance);
         }
-
-        [HarmonyFinalizer]
-        private static void Finalizer(WearNTear __instance)
-        {
-            if (SeasonalSnow.WinterReady || SeasonalSnowMeshSettings.IsSnowDisabled(__instance) ||
-                SeasonalSnowMeshSettings.IsSnowIgnored(__instance))
-                SeasonalSnowMeshSettings.Apply(__instance);
-        }
     }
 
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateWear))]

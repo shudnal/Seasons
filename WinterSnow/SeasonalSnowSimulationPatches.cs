@@ -12,10 +12,8 @@ namespace Seasons
         private static void Postfix(WearNTear __instance)
         {
             SeasonalSnow.ClearInactiveLoadedSnow(__instance);
-            if (!SeasonalSnow.WinterReady)
-                return;
-            SeasonalSnowMeshSettings.Apply(__instance);
-            SeasonalSnowController.Instance.RegisterSnow(__instance);
+            if (SeasonalSnow.WinterReady)
+                SeasonalSnowController.Instance.RegisterSnow(__instance);
         }
     }
 
