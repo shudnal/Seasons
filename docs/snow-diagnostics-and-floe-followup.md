@@ -2,7 +2,7 @@
 
 Date: 2026-09-22. Branch: `perf/snow-performance`.
 Implementation baseline reviewed: `396be7d9a3aa3fa01cbcc2a11cec46ce28f50346`.
-Status: agreed corrective work for Codex; this update changes documentation only.
+Status: corrective implementation in progress; actual work and remaining checks are recorded in section 12.
 
 ## 1. Authority, history, and scope
 
@@ -274,3 +274,15 @@ Original narrow floe reference: `Controllers/ZoneSystemVariantController.cs` at 
 Game-source mirror at `d1374bfd`: `assembly_valheim/EnvMan.cs`, `Terminal.cs`, `Water.cs`, `Floating.cs`, `ZSyncTransform.cs`, `Ship.cs`, `ZoneSystem.cs`, `ZDO.cs`, and `ZDOMan.cs`.
 
 The attached AzuHoverStats decompilation remains only the historical reference for appending to Hud.UpdateCrosshair, not a new dependency. The screenshots are conversation evidence, not checked-in benchmark data. This revision records planned corrections; implementation status must be updated by Codex rather than inferred from this document's existence.
+
+## 12. Corrective implementation status
+
+Work started in the existing `perf/snow-performance` worktree at `396be7d9a3aa3fa01cbcc2a11cec46ce28f50346`. The worktree and index were clean; the maintainer's `ffd2488b4ec9df01b78466fe58481de8a82d1257` specification was fetched and applied by fast-forward. No local work or commits were discarded. No applicable `AGENTS.md` was found. Game-source inspection uses the clean `shudnal/assemblies_combined` checkout at `d1374bfd9175ac8f733ae483b0a06e5c8b75906e` (1.0.15). The user's subsequent instruction explicitly authorizes pushing, opening a PR and requesting Codex review; it supersedes this document's earlier no-PR instruction, but does not authorize merging or changing the protected branches.
+
+### Completed: self-heat default (section 3)
+
+Only the existing central `seasonalSnowSelfHeatMultiplier` binding default changed from `5f` to `2f`. Its key, description, formula, heat-link weighting and saved configuration are unchanged; no migration was added. Static arithmetic gives kiln `0.0072` and hive `0.0009` per active second under the specified identical coefficients (ratio 8). With an existing saved self value of 5, the calculated `0.018` / `0.0009` and ratio 20 remain. These are calculations, not new gameplay observations.
+
+### Remaining work and verification
+
+Sections 4-8 are in progress. No build, tests or Valheim execution has been performed. The maintainer's prior gameplay observations in section 2 are preserved as reported evidence, separate from acceptance of the corrective implementation.

@@ -577,7 +577,7 @@ namespace Seasons
                 "Near and far heat-melting multipliers. The first value applies at 1 meter or closer, the second at the configured maximum heat-source distance, with linear scaling between them.");
             seasonalSnowHeatSourceCheckDistance = serverConfig("Season - Winter snow", "Snow melt heat source check distance", defaultValue: 3f,
                 "Maximum center-to-center distance in meters for active heat sources to melt seasonal snow. Values below 1 are treated as 1. A piece still counts as heated when its position is inside an active heat area.");
-            seasonalSnowSelfHeatMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - self-heating pieces", defaultValue: 5f,
+            seasonalSnowSelfHeatMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - self-heating pieces", defaultValue: 2f,
                 "Additional heat-melting speed for pieces that produce their own heat while active, such as kilns and smelters.");
             seasonalSnowInteractiveObjectMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - interactive objects", defaultValue: 5f,
                 "Controls how quickly snow melts while an object is actively used, including crafting stations, chairs, beds and similar objects.");
