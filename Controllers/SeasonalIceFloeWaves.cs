@@ -107,14 +107,14 @@ namespace Seasons
 
         private static bool EnsureCenterWater(Floe floe)
         {
+            Vector3 position = floe.Floating.transform.position;
+            if (!Finite(position.x) || !Finite(position.y) || !Finite(position.z))
+                return false;
             if (HasWater(floe))
             {
                 floe.Floating.m_waterLevel = floe.CallbackLevel;
                 return true;
             }
-            Vector3 position = floe.Floating.transform.position;
-            if (!Finite(position.x) || !Finite(position.y) || !Finite(position.z))
-                return false;
             // A scaled collider may overlap a neighbor whose last callback does not cover the root.
             // Retry only a near owner's missing center, also allowing a sleeping body to recover.
             if (Time.time >= floe.NextCenterProbe)
