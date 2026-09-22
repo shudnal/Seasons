@@ -39,7 +39,8 @@ namespace Seasons
         private static void Prefix(WearNTear __instance)
         {
             SeasonalSnowController.Instance.ForgetSnow(__instance);
-            SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true);
+            if (SeasonalSnowController.Instance.ObservesSnowGeometry)
+                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true);
             SeasonalSnowMeshSettings.Forget(__instance);
         }
     }
@@ -96,6 +97,10 @@ namespace Seasons
 
         internal static void ClearNativeFields(WearNTear piece)
         {
+            // This runs before and after native wear. A clean piece needs neither
+            // prefab-name lookup nor seasonal eligibility/biome work.
+            if (!piece || (piece.m_snowBuildup == 0f && !piece.m_addPreSnow && !piece.m_heavySnow))
+                return;
             if (!SeasonalSnowMeshSettings.IsSnowDisabled(piece) && !SeasonalSnow.IsSeasonalSnowPosition(piece))
                 return;
             // Legacy native ZDO values can still arrive from another owner during
