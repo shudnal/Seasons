@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using UnityEngine;
 using static Seasons.Seasons;
 
@@ -10,6 +11,8 @@ namespace Seasons
     {
         internal static SeasonalSnowController Instance { get; } = new SeasonalSnowController();
         internal const int VisualsPerFrame = 50;
+        private const int InitialBindingsPerFrame = 10;
+        private const double InitialBindingBudgetSeconds = 0.001d;
         private const float VisualStep = 0.01f;
         private const float VisibilityThreshold = 0.25f;
 
@@ -40,6 +43,9 @@ namespace Seasons
             internal readonly Renderer Renderer;
             internal readonly GameObject Object;
             internal int CapMask;
+            private readonly Material original;
+            private Material assignedSingle;
+            private readonly SeasonalSnowMaterials.Levels singleLevels;
             private readonly Material[] originals;
             private readonly Material[] assigned;
             private readonly SeasonalSnowMaterials.Levels[] levels;
@@ -50,13 +56,23 @@ namespace Seasons
             {
                 Renderer = renderer;
                 Object = renderer.gameObject;
-                originals = renderer.sharedMaterials;
-                assigned = (Material[])originals.Clone();
-                levels = new SeasonalSnowMaterials.Levels[originals.Length];
-                for (int i = 0; i < originals.Length; ++i)
+                Material[] shared = renderer.sharedMaterials;
+                if (shared.Length == 1)
                 {
-                    levels[i] = materials.GetLevels(originals[i]);
-                    Supported |= levels[i] != null;
+                    original = assignedSingle = shared[0];
+                    singleLevels = materials.GetLevels(original);
+                    Supported = singleLevels != null;
+                }
+                else
+                {
+                    originals = shared;
+                    assigned = (Material[])originals.Clone();
+                    levels = new SeasonalSnowMaterials.Levels[originals.Length];
+                    for (int i = 0; i < originals.Length; ++i)
+                    {
+                        levels[i] = materials.GetLevels(originals[i]);
+                        Supported |= levels[i] != null;
+                    }
                 }
                 // Leave unrelated child renderers entirely outside snow ownership.
                 if (!Supported)
@@ -64,7 +80,8 @@ namespace Seasons
 
                 // Seasons owns both renderer-wide and per-slot overrides on its caps.
                 renderer.SetPropertyBlock(null);
-                for (int i = 0; i < originals.Length; ++i)
+                int slots = shared.Length;
+                for (int i = 0; i < slots; ++i)
                     renderer.SetPropertyBlock(null, i);
             }
 
@@ -72,6 +89,18 @@ namespace Seasons
             {
                 if (!Renderer || index == appliedIndex)
                     return;
+
+                if (singleLevels != null)
+                {
+                    Material target = index == 0 ? original : singleLevels.Get(index);
+                    if (assignedSingle != target)
+                    {
+                        assignedSingle = target;
+                        Renderer.sharedMaterial = target;
+                    }
+                    appliedIndex = index;
+                    return;
+                }
 
                 bool changed = false;
                 for (int i = 0; i < assigned.Length; ++i)
@@ -83,12 +112,7 @@ namespace Seasons
                     changed = true;
                 }
                 if (changed)
-                {
-                    if (assigned.Length == 1)
-                        Renderer.sharedMaterial = assigned[0];
-                    else
-                        Renderer.sharedMaterials = assigned;
-                }
+                    Renderer.sharedMaterials = assigned;
                 appliedIndex = index;
             }
         }
@@ -107,6 +131,7 @@ namespace Seasons
             internal float TargetSnow;
             internal float AppliedLevel;
             internal bool HasApplied;
+            internal bool Bound;
             internal bool Disabled;
             internal bool Queued;
             internal VisualState Previous;
@@ -128,6 +153,7 @@ namespace Seasons
         private readonly Dictionary<WearNTear, VisualState> visuals = new Dictionary<WearNTear, VisualState>();
         private readonly HashSet<Renderer> ownedRenderers = new HashSet<Renderer>();
         private readonly HashSet<string> unsupportedCaps = new HashSet<string>(StringComparer.Ordinal);
+        private readonly List<Renderer> capRenderers = new List<Renderer>(8);
         private VisualState firstVisual;
         private VisualState lastVisual;
         private ZNetScene visualScene;
@@ -150,6 +176,18 @@ namespace Seasons
                 DisableVisual(piece);
                 return true;
             }
+            if (TryGetRuntimeSnow(piece, out float runtimeSnow))
+            {
+                if (ZNet.instance && ZNet.instance.IsDedicated())
+                    return true;
+                if (runtimeSnow <= VisibilityThreshold && !visuals.ContainsKey(piece))
+                {
+                    HideCapRoots(piece);
+                    return true;
+                }
+                RequestSnowVisual(piece, force: false);
+                return true;
+            }
             if (!SeasonalSnow.IsSeasonalSnowPosition(piece))
             {
                 SeasonalSnow.ClearInactiveLoadedSnow(piece);
@@ -168,11 +206,18 @@ namespace Seasons
         internal static GameObject GetWetVisual(WearNTear piece)
         {
             GameObject wet = piece.m_wet;
-            if (wet && Instance.visuals.TryGetValue(piece, out VisualState state))
+            if (!wet)
+                return wet;
+
+            SeasonalSnowController controller = Instance;
+            bool managed = controller.snowPieces.ContainsKey(piece) || controller.visuals.ContainsKey(piece);
+            if (managed && ((piece.m_snow && piece.m_snow.gameObject == wet) ||
+                (piece.m_snowWorn && piece.m_snowWorn.gameObject == wet) ||
+                (piece.m_snowBroken && piece.m_snowBroken.gameObject == wet)))
+                return null;
+
+            if (controller.visuals.TryGetValue(piece, out VisualState state) && state.Bound)
             {
-                for (int i = 0; i < state.Caps.Count; ++i)
-                    if (state.Caps[i].Object == wet)
-                        return null;
                 for (int i = 0; i < state.Renderers.Count; ++i)
                     if (state.Renderers[i].Object == wet)
                         return null;
@@ -201,6 +246,19 @@ namespace Seasons
             return true;
         }
 
+        private static void HideCapRoots(WearNTear piece)
+        {
+            GameObject normal = piece.m_snow ? piece.m_snow.gameObject : null;
+            GameObject worn = piece.m_snowWorn ? piece.m_snowWorn.gameObject : null;
+            GameObject broken = piece.m_snowBroken ? piece.m_snowBroken.gameObject : null;
+            if (normal && normal.activeSelf)
+                normal.SetActive(false);
+            if (worn && worn != normal && worn.activeSelf)
+                worn.SetActive(false);
+            if (broken && broken != normal && broken != worn && broken.activeSelf)
+                broken.SetActive(false);
+        }
+
         private void QueueVisual(WearNTear piece, float snow, bool disabled, bool force)
         {
             if (!EnsureVisualScene())
@@ -210,14 +268,18 @@ namespace Seasons
                 ReleaseVisual(piece, hide: true, restoreNative: false);
                 state = null;
             }
+            // Do not discover renderer hierarchies or allocate material bindings for a
+            // cap that has never been visible. Runtime callbacks will create the state
+            // when its value actually crosses the native visibility threshold.
+            if (state == null && !disabled && snow <= VisibilityThreshold)
+            {
+                HideCapRoots(piece);
+                return;
+            }
             if (state == null)
             {
                 state = new VisualState(piece);
                 visuals.Add(piece, state);
-                BindCap(state, state.Normal);
-                BindCap(state, state.Worn);
-                BindCap(state, state.Broken);
-                RemoveNativeSnowProperty(piece);
             }
 
             bool prioritizeHide = SetVisualTarget(state, snow, disabled);
@@ -249,6 +311,17 @@ namespace Seasons
             return prioritizeHide;
         }
 
+        private void BindVisualState(VisualState state)
+        {
+            if (state.Bound)
+                return;
+            state.Bound = true;
+            BindCap(state, state.Normal);
+            BindCap(state, state.Worn);
+            BindCap(state, state.Broken);
+            RemoveNativeSnowProperty(state.Piece);
+        }
+
         private void BindCap(VisualState state, MeshRenderer renderer)
         {
             if (!renderer)
@@ -273,10 +346,13 @@ namespace Seasons
                         BindCapRenderer(state, cap, child);
                 }
             }
-            else
+            else if (renderer.transform.childCount != 0)
             {
-                foreach (Renderer child in renderer.GetComponentsInChildren<Renderer>(true))
+                capRenderers.Clear();
+                renderer.GetComponentsInChildren(includeInactive: true, capRenderers);
+                foreach (Renderer child in capRenderers)
                     BindCapRenderer(state, cap, child);
+                capRenderers.Clear();
             }
 
             if (!cap.Supported)
@@ -366,6 +442,8 @@ namespace Seasons
                 return;
             lastVisualFrame = Time.frameCount;
             int remaining = VisualsPerFrame;
+            int initialBindings = 0;
+            long bindingStart = Stopwatch.GetTimestamp();
             while (remaining-- > 0 && firstVisual != null)
             {
                 VisualState state = firstVisual;
@@ -379,6 +457,18 @@ namespace Seasons
                 {
                     QueueVisual(state.Piece, state.TargetSnow, state.Disabled, force: true);
                     continue;
+                }
+                if (!state.Bound)
+                {
+                    if (initialBindings >= InitialBindingsPerFrame ||
+                        (initialBindings > 0 && (Stopwatch.GetTimestamp() - bindingStart) /
+                            (double)Stopwatch.Frequency >= InitialBindingBudgetSeconds))
+                    {
+                        EnqueueVisual(state, prioritize: false);
+                        break;
+                    }
+                    BindVisualState(state);
+                    initialBindings++;
                 }
 
                 // Arithmetic and preparation may have advanced while this handle waited.
@@ -429,8 +519,15 @@ namespace Seasons
             RemoveQueuedVisual(state);
             visuals.Remove(piece);
             if (hide)
-                foreach (CapBinding cap in state.Caps)
-                    cap.SetVisible(false);
+            {
+                if (state.Bound)
+                    foreach (CapBinding cap in state.Caps)
+                        cap.SetVisible(false);
+                else if (piece)
+                    HideCapRoots(piece);
+            }
+            if (!state.Bound)
+                return;
             foreach (SnowRendererBinding binding in state.Renderers)
             {
                 ownedRenderers.Remove(binding.Renderer);
@@ -453,6 +550,12 @@ namespace Seasons
             // Restore bindings before disposing their pooled materials.
             foreach (VisualState state in visuals.Values)
             {
+                if (!state.Bound)
+                {
+                    if (state.Piece)
+                        HideCapRoots(state.Piece);
+                    continue;
+                }
                 foreach (CapBinding cap in state.Caps)
                     cap.SetVisible(false);
                 foreach (SnowRendererBinding binding in state.Renderers)
@@ -465,6 +568,7 @@ namespace Seasons
             visuals.Clear();
             ownedRenderers.Clear();
             unsupportedCaps.Clear();
+            capRenderers.Clear();
             firstVisual = null;
             lastVisual = null;
             materials.Dispose();
