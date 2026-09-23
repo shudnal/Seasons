@@ -458,12 +458,7 @@ namespace Seasons
                 if (source.Retired || source.AreaSnapshot.Length == 0)
                     continue;
                 HeatArea[] areas = source.AreaSnapshot;
-                HeatLink link = new HeatLink
-                {
-                    Source = source, Piece = state, SourceIndex = source.Links.Count,
-                    Areas = areas, Weights = new float[areas.Length]
-                };
-                bool any = false;
+                HeatLink link = null;
                 bool self = source.Piece == state.Piece;
                 for (int i = 0; i < areas.Length; ++i)
                 {
@@ -473,11 +468,23 @@ namespace Seasons
                     if (!self && distanceSqr > maximumSqr && !area.Contains(state.Position))
                         continue;
                     float distance = Mathf.Sqrt(Mathf.Min(distanceSqr, maximumSqr));
-                    link.Weights[i] = DistanceWeight(distance, maximum, nearWeight, farWeight) *
+                    float weight = DistanceWeight(distance, maximum, nearWeight, farWeight) *
                         (self ? selfMultiplier : 1f);
-                    any |= link.Weights[i] > 0f;
+                    if (link == null)
+                    {
+                        if (!(weight > 0f))
+                            continue;
+                        // Rejected spatial candidates allocate neither a link nor an
+                        // area-sized array. Accepted areas retain their original indices.
+                        link = new HeatLink
+                        {
+                            Source = source, Piece = state, SourceIndex = source.Links.Count,
+                            Areas = areas, Weights = new float[areas.Length]
+                        };
+                    }
+                    link.Weights[i] = weight;
                 }
-                if (!any)
+                if (link == null)
                     continue;
                 if (state.HeatLinks == null)
                     state.HeatLinks = new List<HeatLink>(2);
