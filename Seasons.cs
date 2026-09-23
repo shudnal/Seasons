@@ -37,6 +37,7 @@ namespace Seasons
         private static ConfigEntry<bool> loggingEnabled;
         public static ConfigEntry<long> dayLengthSec;
         public static ConfigEntry<bool> enableLoadingTips;
+        public static ConfigEntry<bool> preventLookVectorConsoleSpam;
 
         public static ConfigEntry<CacheFormat> cacheStorageFormat;
         public static ConfigEntry<bool> logTime;
@@ -438,6 +439,8 @@ namespace Seasons
             loggingEnabled = config("General", "Logging enabled", defaultValue: false, "Enable logging.", synchronizedSetting: false);
             dayLengthSec = serverConfig("General", "Day length in seconds", defaultValue: 1800L, "Day length in seconds. Vanilla - 1800 seconds. Set to 0 to disable.");
             enableLoadingTips = config("General", "Loading tips enabled", defaultValue: true, "Show seasonal tips on loading screen.", synchronizedSetting: false);
+            preventLookVectorConsoleSpam = config("General", "Prevent Look Rotation Viewing Vector Is Zero console message", defaultValue: true,
+                "If a shield takes damage from an indirect hit with a missing direction, the Look Rotation Viewing Vector Is Zero message will no longer be shown in the log file or console.");
 
             enableLoadingTips.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
 
@@ -859,8 +862,8 @@ namespace Seasons
         private void LoadIcons()
         {
             LoadIcon("season_spring.png", ref iconSpring);
-            LoadIcon("season_summer.png", ref iconSummer);
             LoadIcon("season_fall.png", ref iconFall);
+            LoadIcon("season_summer.png", ref iconSummer);
             LoadIcon("season_winter.png", ref iconWinter);
             LoadIcon("valheim_warm.png", ref iconWarm);
 
@@ -1199,6 +1202,18 @@ namespace Seasons
             }
 
             LogInfo($"Replanted {prefab}");
+        }
+
+        [HarmonyPatch(typeof(SE_Shield), nameof(SE_Shield.OnDamaged))]
+        public static class SE_Shield_OnDamaged_PreventEffectSpam
+        {
+            [HarmonyPriority(Priority.Last)]
+            private static bool Prefix(ref HitData hit)
+            {
+                if (preventLookVectorConsoleSpam.Value && hit != null && hit.m_dir.sqrMagnitude < 0.1f)
+                    hit.m_dir = Vector3.down;
+                return true;
+            }
         }
     }
 }
