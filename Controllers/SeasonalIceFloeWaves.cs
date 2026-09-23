@@ -13,6 +13,24 @@ namespace Seasons
         private const float RecoveryInterval = 0.5f;
         private const float CenterProbeInterval = 0.5f;
         private const int BobBudget = 16;
+        private const float PointRebuildDegrees = 1f;
+
+        private struct Geometry
+        {
+            internal Vector3 Center, Size, Scale, RelativePosition, CenterOfMass;
+            internal Quaternion RelativeRotation;
+            internal Mesh Mesh;
+            internal Bounds MeshBounds;
+            internal int VertexCount;
+            internal bool Convex;
+
+            internal bool Matches(Geometry other) => Close(Center, other.Center) && Close(Size, other.Size) &&
+                Close(Scale, other.Scale) && Close(RelativePosition, other.RelativePosition) &&
+                Close(CenterOfMass, other.CenterOfMass) && Quaternion.Angle(RelativeRotation, other.RelativeRotation) < 0.01f &&
+                Mesh == other.Mesh && MeshBounds.Equals(other.MeshBounds) && VertexCount == other.VertexCount && Convex == other.Convex;
+
+            private static bool Close(Vector3 a, Vector3 b) => (a - b).sqrMagnitude <= 0.00000001f;
+        }
 
         private sealed class Floe
         {
@@ -20,6 +38,12 @@ namespace Seasons
             internal ZNetView View;
             internal ZSyncTransform Sync;
             internal Rigidbody Body;
+            internal Transform Root, ColliderTransform;
+            internal Collider Collider;
+            internal Vector3[] Points;
+            internal Geometry Geometry;
+            internal float BuildHeading, BuildWind;
+            internal bool PointsReady;
             internal WaterVolume Water, CenterWater;
             internal bool WaterObserved;
             internal float CallbackLevel, CenterLevel = -10000f, NextCenterProbe;
@@ -61,7 +85,7 @@ namespace Seasons
                 return;
             Floe floe = new Floe
             {
-                Floating = floating, View = view, Sync = sync, Body = floating.m_body,
+                Floating = floating, View = view, Sync = sync, Body = floating.m_body, Root = floating.transform,
                 CallbackLevel = floating.m_waterLevel,
                 Owner = view.GetZDO().GetOwner(), Index = bobOrder.Count, NextBob = Time.time + (floaters.Count % 8) * BobInterval / 8f
             };
@@ -297,6 +321,92 @@ namespace Seasons
             floe.Body.AddForceAtPosition(force * 0.02f * floe.Body.mass * 0.25f, position, ForceMode.Impulse);
         }
 
+        private static bool ReadGeometry(Floe floe, Collider collider, out Geometry geometry)
+        {
+            Transform transform = collider.transform;
+            geometry = new Geometry
+            {
+                Scale = transform.lossyScale,
+                RelativePosition = floe.Root.InverseTransformPoint(transform.position),
+                RelativeRotation = Quaternion.Inverse(floe.Root.rotation) * transform.rotation,
+                CenterOfMass = floe.Body.centerOfMass
+            };
+            if (collider is BoxCollider box)
+            {
+                geometry.Center = box.center;
+                geometry.Size = box.size;
+            }
+            else if (collider is SphereCollider sphere)
+            {
+                geometry.Center = sphere.center;
+                geometry.Size = new Vector3(sphere.radius, 0f, 0f);
+            }
+            else if (collider is CapsuleCollider capsule)
+            {
+                geometry.Center = capsule.center;
+                geometry.Size = new Vector3(capsule.radius, capsule.height, capsule.direction);
+            }
+            else if (collider is MeshCollider mesh)
+            {
+                geometry.Mesh = mesh.sharedMesh;
+                if (!geometry.Mesh)
+                    return false;
+                // Native floe collider meshes are immutable assets. Do not allocate vertex arrays to
+                // detect arbitrary same-bounds in-place mesh edits by another mod.
+                geometry.MeshBounds = geometry.Mesh.bounds;
+                geometry.VertexCount = geometry.Mesh.vertexCount;
+                geometry.Convex = mesh.convex;
+            }
+            else
+                return false;
+            return Finite(geometry.Scale.x) && Finite(geometry.Scale.y) && Finite(geometry.Scale.z) &&
+                geometry.Scale.x != 0f && geometry.Scale.y != 0f && geometry.Scale.z != 0f;
+        }
+
+        private static bool EnsurePoints(Floe floe, Collider collider, Vector3 wind)
+        {
+            if (!collider || !collider.enabled || !collider.gameObject.activeInHierarchy)
+            {
+                floe.PointsReady = false;
+                return false;
+            }
+            if (!ReadGeometry(floe, collider, out Geometry geometry))
+                return floe.PointsReady = false;
+            Quaternion rotation = floe.Root.rotation;
+            float twist = rotation.y * rotation.y + rotation.w * rotation.w;
+            wind.y = 0f;
+            // A degenerate heading/wind cannot define new supports; retain only a still-valid geometry.
+            bool sameGeometry = floe.PointsReady && floe.Collider == collider && floe.Geometry.Matches(geometry);
+            if (!Finite(twist) || twist < 0.000001f || !Finite(wind.sqrMagnitude) || wind.sqrMagnitude < 0.000001f)
+                return sameGeometry;
+            wind.Normalize();
+            // Y twist discards ordinary pitch/roll. Compare to the last build, not the previous tick,
+            // so slow cumulative yaw and the 359/0 degree boundary both invalidate at one degree.
+            float heading = 2f * Mathf.Atan2(rotation.y, rotation.w) * Mathf.Rad2Deg;
+            float windHeading = Mathf.Atan2(wind.x, wind.z) * Mathf.Rad2Deg;
+            if (sameGeometry && Mathf.Abs(Mathf.DeltaAngle(floe.BuildHeading, heading)) < PointRebuildDegrees &&
+                Mathf.Abs(Mathf.DeltaAngle(floe.BuildWind, windHeading)) < PointRebuildDegrees)
+                return true;
+            floe.PointsReady = false;
+            floe.Collider = collider;
+            floe.ColliderTransform = collider.transform;
+            if (floe.Points == null)
+                floe.Points = new Vector3[4];
+            Vector3 center = floe.Body.worldCenterOfMass;
+            Vector3 side = Vector3.Cross(wind, floe.Root.up);
+            floe.Points[0] = floe.ColliderTransform.InverseTransformPoint(collider.ClosestPoint(center + wind * 100f));
+            floe.Points[1] = floe.ColliderTransform.InverseTransformPoint(collider.ClosestPoint(center - wind * 100f));
+            floe.Points[2] = floe.ColliderTransform.InverseTransformPoint(collider.ClosestPoint(center + side * 100f));
+            floe.Points[3] = floe.ColliderTransform.InverseTransformPoint(collider.ClosestPoint(center - side * 100f));
+            for (int i = 0; i < floe.Points.Length; i++)
+                if (!Finite(floe.Points[i].x) || !Finite(floe.Points[i].y) || !Finite(floe.Points[i].z))
+                    return false;
+            floe.Geometry = geometry;
+            floe.BuildHeading = heading;
+            floe.BuildWind = windHeading;
+            return floe.PointsReady = true;
+        }
+
         private static bool BeforeFloating(Floating floating, float fixedDeltaTime)
         {
             if (!floaters.TryGetValue(floating, out Floe floe) || !Valid(floe))
@@ -329,17 +439,13 @@ namespace Seasons
                 HoldGravity(floe);
                 return false;
             }
-            if (!collider.enabled || !collider.gameObject.activeInHierarchy)
-                return true; // Keep native buoyancy; health/variant collider enablement is not ours to override.
-            Vector3 wind = WaterVolume.s_globalWindAlpha == 0f ? WaterVolume.s_globalWind1 :
-                Vector4.Lerp(WaterVolume.s_globalWind1, WaterVolume.s_globalWind2, WaterVolume.s_globalWindAlpha);
-            Vector3 side = Vector3.Cross(wind, floating.transform.up);
-            Vector3 center = floe.Body.worldCenterOfMass;
-            floe.Body.WakeUp();
-            AddProbeForce(floe, collider.ClosestPoint(center + wind * 100f), fixedDeltaTime);
-            AddProbeForce(floe, collider.ClosestPoint(center - wind * 100f), fixedDeltaTime);
-            AddProbeForce(floe, collider.ClosestPoint(center + side * 100f), fixedDeltaTime);
-            AddProbeForce(floe, collider.ClosestPoint(center - side * 100f), fixedDeltaTime);
+            Vector3 wind = EnvMan.instance ? EnvMan.instance.GetWindDir() : Vector3.zero;
+            if (EnsurePoints(floe, collider, wind))
+            {
+                floe.Body.WakeUp();
+                for (int i = 0; i < floe.Points.Length; i++)
+                    AddProbeForce(floe, floe.ColliderTransform.TransformPoint(floe.Points[i]), fixedDeltaTime);
+            }
             return true;
         }
 
