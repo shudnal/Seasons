@@ -6,6 +6,8 @@ Corrected code: `dd14897ce9f6d36dd8891470cc55ddedfb73303e`.
 
 This report supplements [the agreed implementation specification](snow-diagnostics-and-floe-followup.md). It does not replace the agreed floe model or authorize another redesign. The maintainer requested fixes for the three preceding findings, a check against the accepted decisions, and a separate performance review of new and older functionality. Additional performance changes were explicitly deferred.
 
+Follow-up: the maintainer subsequently approved material-binding allocation improvements and change-gated water properties (items 1 and 2 in the chat summary, P1 and P3 below). They are implemented in section 6. Lighting (chat item 3, P2 below) is explicitly deferred; its overhead is not considered a current priority. No other performance candidate was authorized.
+
 ## 1. Changes actually committed
 
 ### 1.1 Skip pure land before sector discovery
@@ -66,9 +68,9 @@ No further confirmed deviation requiring a code change was established in the in
 
 Remaining design limits are unchanged: same-mesh edits preserving identity/bounds/count do not have automatic point-cache detection; normalized depth and the effective-wind transition are approximations; simultaneous clients can still race; the old reported disabled-collider cause has not been reproduced or established.
 
-## 3. Additional performance findings: NOT IMPLEMENTED
+## 3. Original additional performance findings
 
-All items in this section are review results only. Their proposed changes are not present in these commits. Priority indicates which measurements or small changes are likely to be most useful, not measured milliseconds or a promised FPS improvement.
+At the original review, all items in this section were deferred. The descriptions below preserve that baseline; section 6 records the subsequently approved implementation of P1 and P3. P2 and P4-P9 remain unimplemented. Priority indicates which measurements or small changes are likely to be most useful, not measured milliseconds or a promised FPS improvement.
 
 ### P1. Repeated material-array copies and repeated setup during prefab binding
 
@@ -186,4 +188,36 @@ For the fixes made here, prioritize:
 - Disable/re-enable a floe while no WaterVolume is available: the center follows current mathematical ocean height rather than retaining the preceding fallback value. Then restore local water and verify callback takeover.
 - Previously accepted owner-zero/local/foreign-owner, distant Dampen, climb and server cleanup scenarios.
 
-The reporting user's large-base and ocean profiles remain necessary. Separate initial binding from steady state, pure land from Ocean/coastal work, and one-time season/configuration transitions from ordinary gameplay. The unimplemented candidates in section 3 should be chosen for later work from those observations, not treated as already fixed or as proven causes of the previous user freezes.
+The reporting user's large-base and ocean profiles remain necessary. Separate initial binding from steady state, pure land from Ocean/coastal work, and one-time season/configuration transitions from ordinary gameplay. The remaining unimplemented candidates in section 3 should be chosen for later work from those observations, not treated as already fixed or as proven causes of the previous user freezes.
+
+## 6. Approved material-binding and water-property follow-up
+
+Baseline: `53b0f48352f8deda2af4260f6b627ad3ad2c093a`. Corrected code: `f9e79ea1135ee94eadbf96f24d9eb5462f3818b7`.
+
+### 6.1 Material binding: implemented
+
+Commit: `bd4da227bde64fa450a7cda7d76f6a3b52b6c2da`.
+
+`AddMaterialVariants` reads shared materials once into a reusable list, separate from the material-application scratch list, and clears retained references in `finally`. It caches each slot's material/shader names for matching. It does not instantiate per-object materials or change variant selection.
+
+The material-pool key is a value tuple retaining both the material and CachedMaterial context, so successful lookups no longer allocate a Tuple object. Relative path text is cached by source path and prefab name; immutable split segments are shared by path. These caches contain no instance transforms and are cleared on reinitialization and world teardown. LOD matching uses the same ordered comparisons without a Where closure/iterator, with renderer name/type read once per renderer.
+
+The existing matching order, duplicate-name hierarchy traversal, texture/color rules, original-material restoration and mass-recolor scheduling are unchanged. This is P1 only, not implementation of P4.
+
+### 6.2 Water properties: implemented
+
+Commit: `f9e79ea1135ee94eadbf96f24d9eb5462f3818b7`.
+
+WaterState now has a `m_propertiesChanged` flag. Setters and restoration set it only for an actual property-block change; ApplyProperties returns immediately otherwise and resets the flag after a write. An inactive-property count is maintained during acquire/release so ordinary maintenance returns before reading the renderer when there are no released overrides.
+
+When released neutral overrides remain because MPB cannot remove one property, only their material defaults are compared first. Unchanged defaults return before GetPropertyBlock, ownership reconciliation, and SetPropertyBlock. Real default changes still obtain a fresh block and recheck whether the property remains ours before writing. A different foreign override is preserved, and unrelated block fields are never cleared. Explicit season/config restoration still reads a fresh block, including when no property had previously been owned, because it also prepares the next edit.
+
+This does not claim zero material reads after thaw: those narrow comparisons intentionally preserve response to changed material defaults. It eliminates unchanged block copies/writes without global hooks for all material setters. Native water-time updates, frozen-water physics and existing restoration entry points remain unchanged.
+
+### 6.3 Deferred scope and verification
+
+Lighting state/conversion work (P2) is explicitly not changed. P4-P9, floe physics/placement, snow arithmetic/storage, environment-texture retirement, configurations, versions and packaging are also untouched in this follow-up.
+
+The two published source diffs were read back and inspected. Native WaterVolume SetupMaterial/UpdateMaterials were checked from assemblies_combined at the revision listed above; no new Harmony target or project file is required. Added code and this documentation are English. No build, tests, Valheim, full-project syntax pass, FPS/GC/network measurements, PR action or Codex review was run.
+
+Owner-run checks: load a large base and compare initial binding; inspect multi-material/LOD objects and duplicate-name hierarchies; reload texture rules and switch worlds; run freeze/thaw and partial-freeze transitions; verify original water overrides survive and released values follow a real material-default change without clobbering unrelated property-block values. Confirm ordinary lighting remains visually unchanged.
