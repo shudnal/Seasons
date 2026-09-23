@@ -45,7 +45,7 @@ namespace Seasons
             internal bool PointsReady;
             internal WaterVolume Water;
             internal bool WaterObserved;
-            internal float CallbackLevel;
+            internal float CallbackLevel = -10000f;
             internal bool HoldingGravity, BodyGravity, SyncGravity;
             internal bool Distant, SyncPosition, SyncVelocity;
             internal bool Recovered, RecoveryPending;
@@ -103,7 +103,8 @@ namespace Seasons
             Floe floe = new Floe
             {
                 Floating = floating, View = view, Sync = sync, Body = floating.m_body, Root = floating.transform,
-                CallbackLevel = floating.m_waterLevel,
+                // Floating retains m_waterLevel across disable/re-enable, including our own
+                // last fallback. Only a new SetLiquidLevel callback can establish live water.
                 Owner = view.GetZDO().GetOwner(), Index = bobOrder.Count
             };
             floaters.Add(floating, floe);
@@ -146,8 +147,8 @@ namespace Seasons
         private static bool ContainsCenter(Floe floe, WaterVolume water) => water && water.isActiveAndEnabled &&
             water.m_collider && water.m_collider.enabled && water.m_collider.bounds.Contains(floe.Floating.transform.position);
 
-        private static bool HasWater(Floe floe) => WaterLevelValid(floe.CallbackLevel) &&
-            (!floe.WaterObserved || ContainsCenter(floe, floe.Water));
+        private static bool HasWater(Floe floe) => floe.WaterObserved && WaterLevelValid(floe.CallbackLevel) &&
+            ContainsCenter(floe, floe.Water);
 
         private static bool EnsureCenterWater(Floe floe)
         {
@@ -651,7 +652,7 @@ namespace Seasons
                 if (!floe.Distant && floe.View.IsOwner() && HasWater(floe))
                     RestoreGravity(floe);
                 // Missing/neighbor callbacks are resolved by the next fixed/sync safeguard,
-                // which can reuse or refresh the bounded center fallback before holding gravity.
+                // which uses the mathematical ocean surface before holding gravity.
             }
         }
 
