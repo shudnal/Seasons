@@ -575,11 +575,11 @@ Before this documentation update, only the task, branch reference, existing docu
 
 ### Agreement and preserved behavior
 
-The maintainer's attached "Implement the agreed ice-floe simplification and two targeted snow optimizations" brief supersedes the floe decisions above. Placement requires normally loaded local terrain/static geometry and an existing valid zone-controller ZDO with no foreign owner. An owner-zero controller is allowed; an owned `SpawnSystem` and the enemy-spawning radius are not prerequisites. The dedicated server does not place floes. Global seasonal removal remains server-only.
+The implementation follows sections 2-7 above and the matching attached "Implement the agreed ice-floe simplification and two targeted snow optimizations" brief, superseding the earlier corrective iteration. Placement requires normally loaded local terrain/static geometry and an existing valid zone-controller ZDO with no foreign owner. An owner-zero controller is allowed; an owned `SpawnSystem` and the enemy-spawning radius are not prerequisites. The dedicated server does not place floes. Global seasonal removal remains server-only.
 
 Native `ZoneSystem` Ghost terrain generation and mod floe Ghost initialization are different operations. This implementation never calls `SpawnZone` or generates unloaded terrain. After validating normal local geometry, it may briefly use `StartGhostInit -> Instantiate floe -> populate its ZDO -> FinishGhostInit -> destroy temporary instance`. Full initialization retains the instance. Ghost scope and RNG restoration finish within the same candidate call, including exceptional exits.
 
-The previous repeated four `ClosestPoint` calls, spatial liquid searches, global wind-field reads, 0.35 m random-phase sine and 0.25 s bob timer are superseded. The original native `Floating` center buoyancy/damping and four extra force formulas, mass scaling, impulse mode and fixed-step timing remain. The rejected universal motion/proxy system remains absent; no new per-floe component or renderer hierarchy replaces it.
+The previous repeated four `ClosestPoint` calls, spatial liquid searches, global wind-field reads, 0.35 m fixed-amplitude sine and 0.25 s bob timer are superseded. The original native `Floating` center buoyancy/damping and four extra force formulas, mass scaling, impulse mode and fixed-step timing remain. The rejected universal motion/proxy system remains absent; no new per-floe component or renderer hierarchy replaces it.
 
 Only heat-link allocation and sharing identical live-weather calculations change in snow. Four regional buckets, catch-up and construction/saved-zero behavior, distant prediction/confirmation, exact arithmetic, snapshot schema, publication thresholds, env/resetenv boundaries, cap visuals and texture lifecycle remain. The self-heat default stays 2 and custom configuration is not migrated. The `ruleBiome`, wet-Fireplace and frozen-ship fixes and bounded day-boundary maintenance are preserved.
 
@@ -587,7 +587,7 @@ Only heat-link allocation and sharing identical live-weather calculations change
 
 The existing `.worktrees/snow-performance` worktree started clean at `e4f67d1563a232170a6c98aee31205be3d02a131`; a fetch confirmed that the requested remote branch had the same tip. No local changes or newer commits were discarded. During the final pre-push fetch, maintainer specification commit `61346e2f9c496eaa74785d1e41461549a8a42dc8` arrived. It was preserved by an ordinary merge; its agreed task is retained above and this implementation report was appended to it. The main checkout on `master` was left untouched. No applicable `AGENTS.md` was found. Game sources were read first from the clean `shudnal/assemblies_combined` checkout at `d1374bfd9175ac8f733ae483b0a06e5c8b75906e` (1.0.15), with original floe behavior compared to `988e98c514ce49369a92cbaf934a7aca384fe6e1`.
 
-The user authorized ordinary commits and a push to this branch. No new PR, merge, close, Codex review request, build, tests or Valheim execution is part of this follow-up. Versions, dependencies, packaging, configuration keys/defaults, publication automation and snow JSON/ZDO schemas are unchanged.
+The user authorized ordinary commits and a push to this branch. No new PR, PR merge/closure, Codex review request, build, tests or Valheim execution is part of this follow-up. Versions, dependencies, packaging, configuration keys/defaults, publication automation and snow JSON/ZDO schemas are unchanged.
 
 ### Implemented: local placement and cleanup
 
