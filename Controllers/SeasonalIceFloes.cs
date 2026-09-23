@@ -101,6 +101,11 @@ namespace Seasons
         private static ZoneSystem world;
         private static int zonePrefab;
         private static bool wanted, prefabChecked;
+        // AddToSector runs before a new ZDO's prefab is initialized. Delay only this
+        // candidate's matching-zone notifications until its exact ZDO is known.
+        private static ZoneWork creatingFloe;
+        private static ZDO creationSectorZdo;
+        private static bool creationHasOtherAdds;
 
         internal static void InitializePrefab(ZoneSystem instance)
         {
@@ -140,6 +145,9 @@ namespace Seasons
             world = null;
             zonePrefab = 0;
             wanted = prefabChecked = false;
+            creatingFloe = null;
+            creationSectorZdo = null;
+            creationHasOtherAdds = false;
             s_iceFloe = null;
         }
 
@@ -353,6 +361,18 @@ namespace Seasons
                     Queue(zone);
                     continue;
                 }
+                if (!ReadyGeometry(current))
+                {
+                    Defer(current);
+                    continue;
+                }
+                // Ordinary Heightmap.GetBiome selects from these corner biomes. Settle
+                // pure land locally before any sector discovery; mixed coasts still qualify.
+                if (!current.Terrain.HaveBiome(Heightmap.Biome.Ocean))
+                {
+                    StopZone(zone);
+                    continue;
+                }
                 if (control == null && !FindControl(current, ref objects, deadline, out control))
                     continue;
                 if (control.GetBool(SeasonsVars.s_iceFloesSpawned))
@@ -366,11 +386,6 @@ namespace Seasons
                 {
                     current.Control = control.m_uid;
                     RestartInspection(current);
-                }
-                if (!ReadyGeometry(current))
-                {
-                    Defer(current);
-                    continue;
                 }
                 try
                 {
@@ -468,9 +483,34 @@ namespace Seasons
             Vector2s zone = sector.Sector == 0 ? ZoneSystem.GetZone(zdo.GetPosition()) : ZoneSystem.IndexToSector(sector.Sector);
             if (!work.TryGetValue(zone, out ZoneWork current))
                 return;
+            if (ReferenceEquals(current, creatingFloe))
+            {
+                if (creationSectorZdo == null)
+                    creationSectorZdo = zdo;
+                else if (!ReferenceEquals(creationSectorZdo, zdo))
+                    creationHasOtherAdds = true;
+                return;
+            }
             RestartInspection(current);
             current.NextAttempt = 0f;
             Queue(zone);
+        }
+
+        private static void FinishFloeCreation(ZoneWork current, ZDO created)
+        {
+            // Ignore only the exact floe just created. Unexpected reentrant additions
+            // still invalidate the pass, including additions before its ZNetView.Awake.
+            bool inspectAgain = creationHasOtherAdds ||
+                (creationSectorZdo != null && !ReferenceEquals(creationSectorZdo, created));
+            creatingFloe = null;
+            creationSectorZdo = null;
+            creationHasOtherAdds = false;
+            if (inspectAgain && work.TryGetValue(current.Zone, out ZoneWork pending) && ReferenceEquals(pending, current))
+            {
+                RestartInspection(current);
+                current.NextAttempt = 0f;
+                Queue(current.Zone);
+            }
         }
 
         private static void ForgetZone(Vector2s zone)
@@ -639,7 +679,7 @@ namespace Seasons
 
         private static CandidateResult PlaceCandidateWithRandom(ZoneWork current)
         {
-            if (ZNetView.m_ghostInit)
+            if (ZNetView.m_ghostInit || creatingFloe != null)
                 return CandidateResult.Deferred;
             Vector3 center = ZoneSystem.GetZonePos(current.Zone);
             float halfZone = world.m_zoneSize / 2f;
@@ -682,15 +722,24 @@ namespace Seasons
             // Full/Ghost describes this floe's network initialization, never terrain generation.
             // Missing unrelated dynamic instances selects Ghost instead of blocking local geometry.
             GameObject instance = null;
+            ZDO created = null;
             bool ghost = current.Ghost;
-            if (ghost)
-                ZNetView.StartGhostInit();
+            bool ghostStarted = false;
+            creatingFloe = current;
+            creationSectorZdo = null;
+            creationHasOtherAdds = false;
             try
             {
+                if (ghost)
+                {
+                    ZNetView.StartGhostInit();
+                    ghostStarted = true;
+                }
                 instance = UnityEngine.Object.Instantiate(s_iceFloe.m_prefab, p,
                     Quaternion.Euler(0, UnityEngine.Random.Range(0, 360), 0));
                 ZNetView view = instance.GetComponent<ZNetView>();
                 ZDO zdo = view.GetZDO();
+                created = zdo;
                 zdo.Set(SeasonsVars.s_iceFloeWatermark, true);
                 current.Created.Add(zdo.m_uid);
                 view.m_distant = true;
@@ -704,14 +753,21 @@ namespace Seasons
             }
             finally
             {
-                if (ghost)
+                try
                 {
-                    ZNetView.FinishGhostInit();
-                    if (instance)
+                    if (ghostStarted)
                     {
-                        instance.SetActive(false);
-                        UnityEngine.Object.Destroy(instance);
+                        ZNetView.FinishGhostInit();
+                        if (instance)
+                        {
+                            instance.SetActive(false);
+                            UnityEngine.Object.Destroy(instance);
+                        }
                     }
+                }
+                finally
+                {
+                    FinishFloeCreation(current, created);
                 }
             }
         }
