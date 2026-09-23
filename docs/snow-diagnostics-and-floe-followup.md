@@ -1,12 +1,12 @@
 # Snow and ice floes: corrective follow-up
 
-Date: 2026-09-22. Branch: `perf/snow-performance`.
-Implementation baseline reviewed: `396be7d9a3aa3fa01cbcc2a11cec46ce28f50346`.
-Status: sections 3-8 implemented and statically reviewed; unexecuted gameplay acceptance is recorded in sections 10 and 12.
+Updated: 2026-09-23. Branch: `perf/snow-performance`.
+Latest implementation baseline: `e4f67d1563a232170a6c98aee31205be3d02a131`.
+Status: the September 22 correction is recorded in sections 1-12; the superseding September 23 agreement, implementation and outstanding checks are in section 13. No build, tests or gameplay execution was performed for either implementation.
 
 ## 1. Authority, history, and scope
 
-This document is the current implementation brief. It supersedes the earlier version of this document for the topics below, especially server-only floe generation, universal visual proxies, the one-zone floe physics radius, and the unresolved MyLittleUI forecast explanation. The previous implementation report remains available in Git history at `396be7d`. Earlier snow plans are background, not authority to reintroduce rejected architecture.
+Sections 1-12 retain the September 22 findings and implementation history. Section 13 supersedes their conflicting floe permission, sampling, cache and distant-motion decisions; it also authorizes exactly two local snow optimizations. The previous implementation report remains available in Git history at `396be7d`. Earlier snow plans are background, not authority to reintroduce rejected architecture.
 
 The maintainer will implement through Codex and perform compilation/gameplay checks locally. This planning change does not alter source code, defaults, saves, or runtime behavior.
 
@@ -277,6 +277,8 @@ The attached AzuHoverStats decompilation remains only the historical reference f
 
 ## 12. Corrective implementation status
 
+This section records the September 22 implementation, including its then-authorized PR/review work. It is historical where section 13 replaces that behavior. The latest user instruction prohibits requesting another Codex review.
+
 Work started in the existing `perf/snow-performance` worktree at `396be7d9a3aa3fa01cbcc2a11cec46ce28f50346`. The worktree and index were clean; the maintainer's `ffd2488b4ec9df01b78466fe58481de8a82d1257` specification was fetched and applied by fast-forward. No local work or commits were discarded. No applicable `AGENTS.md` was found. Game-source inspection uses the clean `shudnal/assemblies_combined` checkout at `d1374bfd9175ac8f733ae483b0a06e5c8b75906e` (1.0.15). The user's subsequent instruction explicitly authorizes pushing, opening a PR and requesting Codex review; it supersedes this document's earlier no-PR instruction, but does not authorize merging or changing the protected branches.
 
 ### Completed: self-heat default (section 3)
@@ -330,3 +332,101 @@ Uncertainty remains about the reported disabled floe collider's exact native/pre
 Codex review on PR #45 identified that the old center-biome shortcut prematurely settled mixed coastal zones whose centers were land. It was removed: loaded-zone ownership and bounded candidate work remain, and each placement point still checks its actual terrain biome, biome area, altitude, water and exclusions. Include a coastal zone with a land center and Ocean candidates in the maintainer placement checks. This correction was source/syntax reviewed without build or gameplay execution.
 
 A conservative loaded-Heightmap prefilter avoids copying dense pure-land sector lists: only an initialized, ordinary heightmap belonging to the zone with no Ocean in any of its four corners can settle early. In the matching game source, candidate `GetGroundData` calls ordinary `Heightmap.GetBiome`, which can select only those corner biomes. Mixed coastal heightmaps continue to candidate processing; unavailable or distant heightmaps are not rejected by this shortcut. No terrain generation or new sampling was added.
+
+## 13. September 23 floe simplification and targeted snow optimizations
+
+### Agreement and preserved behavior
+
+The maintainer's attached "Implement the agreed ice-floe simplification and two targeted snow optimizations" brief supersedes the floe decisions above. Placement requires normally loaded local terrain/static geometry and an existing valid zone-controller ZDO with no foreign owner. An owner-zero controller is allowed; an owned `SpawnSystem` and the enemy-spawning radius are not prerequisites. The dedicated server does not place floes. Global seasonal removal remains server-only.
+
+Native `ZoneSystem` Ghost terrain generation and mod floe Ghost initialization are different operations. This implementation never calls `SpawnZone` or generates unloaded terrain. After validating normal local geometry, it may briefly use `StartGhostInit -> Instantiate floe -> populate its ZDO -> FinishGhostInit -> destroy temporary instance`. Full initialization retains the instance. Ghost scope and RNG restoration finish within the same candidate call, including exceptional exits.
+
+The previous repeated four `ClosestPoint` calls, spatial liquid searches, global wind-field reads, 0.35 m random-phase sine and 0.25 s bob timer are superseded. The original native `Floating` center buoyancy/damping and four extra force formulas, mass scaling, impulse mode and fixed-step timing remain. The rejected universal motion/proxy system remains absent; no new per-floe component or renderer hierarchy replaces it.
+
+Only heat-link allocation and sharing identical live-weather calculations change in snow. Four regional buckets, catch-up and construction/saved-zero behavior, distant prediction/confirmation, exact arithmetic, snapshot schema, publication thresholds, env/resetenv boundaries, cap visuals and texture lifecycle remain. The self-heat default stays 2 and custom configuration is not migrated. The `ruleBiome`, wet-Fireplace and frozen-ship fixes and bounded day-boundary maintenance are preserved.
+
+### Actual worktree and execution scope
+
+The existing `.worktrees/snow-performance` worktree started clean at `e4f67d1563a232170a6c98aee31205be3d02a131`; a fetch confirmed that the requested remote branch had the same tip. No local changes or newer commits were discarded. The main checkout on `master` was left untouched. No applicable `AGENTS.md` was found. Game sources were read first from the clean `shudnal/assemblies_combined` checkout at `d1374bfd9175ac8f733ae483b0a06e5c8b75906e` (1.0.15), with original floe behavior compared to `988e98c514ce49369a92cbaf934a7aca384fe6e1`.
+
+The user authorized ordinary commits and a push to this branch. No new PR, merge, close, Codex review request, build, tests or Valheim execution is part of this follow-up. Versions, dependencies, packaging, configuration keys/defaults, publication automation and snow JSON/ZDO schemas are unchanged.
+
+### Implemented: local placement and cleanup
+
+`Controllers/SeasonalIceFloes.cs` retains the singleton placement queue and private candidate RNG. Successful native `PokeLocalZone`, zone-controller view arrival, controller ownership changes, deferred location completion (`UnsetLoadingInZone`) and water lifecycle events schedule relevant loaded zones. A bounded one-time walk considers zones already loaded when the floe season starts. Normal Heightmap destruction retires the zone's cached controller, work, settled state and exclusions, with identity checks protecting a newer loaded root. There is no recurrent `SpawnSystem.UpdateSpawning` scan or summer client cleanup request.
+
+The controller cache checks an existing completion marker before allocating a placement job or inspecting sector objects. Permission is `!HasOwner() || IsOwner()`; no ownership is claimed. When the cache has no controller, a resumable direct sector/portal cursor finds it without `FindObjects`/`AddRange` or a whole-sector copy. Every candidate slice rechecks the controller, permission, season, loaded heightmap/collider and current-zone deferred location loading. Missing unrelated dynamic objects select Ghost initialization; missing static placement geometry defers the pass. Adjacent dynamic objects and client `IsZoneGenerated` flags do not block it. Mixed coastal zones keep per-candidate biome/altitude/depth checks.
+
+`AddToSector` invalidates only matching pending work, by the supplied destination sector: native deserialization can append objects before their prefab/type is known. Reinspection remains bounded and preserves candidate RNG/known created IDs, so newly arriving static inputs or existing floes are not missed between slices. The candidate captures its Ghost flag before Instantiate; a reentrant arrival cannot skip `FinishGhostInit`. Unload or controller disappearance/replacement abandons partial work without a completion mark and requires fresh inputs on retry.
+
+Native `ZDO.Set(int, int, bool)` updates data revision and the client-changed queue for an owner-zero controller; the client send path consumes that queue without an owner filter. The completion write uses that existing replication path with `okForNotOwner: true`, without an ownership transfer or new RPC/schema. A floe is watermarked immediately after obtaining its ZDO. Only an exhausted successful candidate pass writes the completion marker, including zero valid candidates. Deferred, failed and unknown partial passes do not become completed. Known partial work retains candidate progress and exclusions; existing unknown marked floes suppress duplicate production. The accepted simultaneous two-client owner-zero race is not atomic and is not claimed to be eliminated.
+
+Server maintenance still discovers/removes only the seasonal prefab plus existing floe watermark. Marker reset checks that the completion mark is actually set both when queued and immediately before writing; absent markers are not initialized to zero. Ordinary ZDO distant loading is retained after creation.
+
+### Implemented: singleton point cache and native ocean mathematics
+
+All wave state lives in the existing non-MonoBehaviour `SeasonalIceFloeWaves` singleton collection. `IceFloeClimb` only notifies lifecycle/interaction. Registration caches the native component references; the four-point array and collider path are initialized lazily on the first valid physical update. Floating disable, climb destruction/disable, and world/plugin reset remove the state and restore modified native policy; re-enable starts with a fresh entry.
+
+The first support build uses the original along/across-wind `Collider.ClosestPoint` queries and stores their results in collider-local coordinates. Later updates transform those four points into world coordinates. Rebuilds compare horizontal forward heading and wind direction to their last build with `DeltaAngle` and a 1 degree threshold, including gradual yaw and 359/0 wraparound. Shape fields, mesh identity/bounds/count, collider identity, relative local transform and scale also invalidate. Local transform composition avoids translation-dependent cancellation near the world edge; ordinary bob/pitch/roll and intensity-only wind changes do not deliberately rebuild the points. Disabled/inactive geometry cannot build points. Degenerate headings retain only an otherwise valid cache. This is the accepted fixed-support tilt approximation, not an exact closest-surface solution every tick.
+
+The native collider mesh is treated as an immutable prefab asset. Replacing its mesh, changing its bounds/count, shape or scale is detected. Arbitrary in-place vertex edits by another mod that preserve mesh identity, bounds and count have no cheap native revision signal and are not detected by reading/allocating vertex arrays; such modifications require separate compatibility investigation.
+
+One shared snapshot per `MonoUpdaters.UpdateCount` / render frame reads `EnvMan.GetWindDir()`, `EnvMan.GetWindIntensity()` and `ZNet.GetWrappedDayTimeSeconds()`. The accessor intensity already contains the seasonal multiplier and any other accessor patches. It is applied once. There are no reads of EnvMan wind fields, WaterVolume global wind fields, or wind-vector `.w` values in mod sampling. The effective direction/intensity replaces native interpolation between two independently evaluated wind-wave endpoints; that small wind-transition approximation is intentional.
+
+An existing native WaterVolume component in the normal zone water prefab is only a receiver for `CalcWave(position, 1f, effectiveWind, wrappedTime, 1f, northFade)`. No fake component is created or `Depth` lookup performed. If native `Awake` has not initialized tangent storage yet, a narrow ten-coefficient adapter calls the same native `CreateWave` function. Native `TrochSin`, world-position phase, division of wrapped time by 20, Deep North attenuation and applicable world-edge lowering are retained. Normalized depth `1f` is the explicit Ocean/coastal approximation; no distant/coastal depth grid is reconstructed.
+
+Surface height uses the world ocean baseline and applicable local water offset, or the ocean prefab default plus the existing seasonal surface offset when no local volume is available. It never borrows the height/depth of an unrelated loaded volume. All four extra forces use this math directly. Native center callbacks remain valid when available; a missing/unloaded/neighbor-only volume supplies the same mathematical surface to the marked floe's native `m_waterLevel`. Native Floating applies its offset once. Nonfinite/missing values give no extra point force; a failed center temporarily coordinates Rigidbody gravity with native `ZSyncTransform.m_useGravity`, without making the floe kinematic or changing collider enablement. Valid water, ownership/lifecycle transitions and reset restore policy. A verified invalid height has one bounded owner-authorized repair, including its saved position; healthy and cosmetic positions are not published by this path.
+
+### Implemented: wave-driven distant Dampen
+
+The shared distance remains exactly `NearSimulationDistance * m_zoneSize`, with its squared value, refreshed on initialization and Water settings updates. Distant mode starts when horizontal camera distance exceeds it; a new owner first completes native ownership adoption. Dedicated servers and camera-less peers do not run cosmetics. This is a simple distance split, not a proxy/ownership classification system.
+
+The distant target is exactly:
+
+```text
+Dampen(v) = v / (1 + Abs(v))
+targetY = waterLevel + floating.m_waterLevelOffset + Dampen(surfaceLevel - waterLevel)
+```
+
+`surfaceLevel` comes from the same ocean math. There is no random phase, sine amplitude, four-point force or generated tilt in the distant path. Target sampling is bounded; cheap interpolation in existing native sync callbacks prevents discrete target jumps from becoming abrupt height steps. Physical owner XZ is preserved; nonowner baselines follow current authoritative data. Cosmetic Y never becomes the next water baseline.
+
+Position/body-velocity synchronization is temporarily isolated and restored before normal near interaction, ownership handoff, unload or reset. Nonowners and ownership transitions restore the latest ZDO position, not an obsolete bob baseline. A continuously authoritative owner restores its physical baseline while retaining actual horizontal movement. No cosmetic ZDO position/velocity stream is introduced.
+
+### Implemented: two separate snow optimizations
+
+- `SeasonalSnowHeat.cs`: allocate a HeatLink and its area-indexed weight array only after the first positive weight. Accepted weights, self multiplier, logical-source maximum, independent-source sum and link topology are unchanged; no pool was added.
+- `SeasonalSnowLiveWeather.cs`, `SeasonalSnowRuntime.cs`, `SeasonalSnowSimulation.cs`: the existing per-pass biome dictionary shares current cumulative gain and one replaceable exact `[from, until]` live interval per biome. Distinct times/boundaries are evaluated separately; ownership/readiness/catch-up gates still run before integration. There is no timestamp-keyed growing cache or time quantization. Update, synchronous override settlement and flush delimit the context with `try/finally`; rules, timeline, override, time-jump and season reset paths invalidate it. Dry override consumption, natural history, owner-zero prediction and the existing snapshot checkpoint arithmetic/policy remain unchanged.
+
+### Scheduling constants and static verification
+
+| Work | Limit |
+| --- | --- |
+| Placement discovery / queued requests | 8 loaded-zone keys / 8 requests per service |
+| Placement discovery / candidates / instantiation | 64 ZDO reads / 4 candidates / 1 instance per service |
+| Server floe removals / set-marker resets | 4 / 4 per service |
+| Shared placement/cleanup time guard | 1.5 ms; a single Unity/native call is indivisible |
+| Pending local readiness retry | 0.5 s |
+| Support-point yaw/wind rebuild | 1 degree from the last build |
+| Distant sampling | At most 16 round-robin visits per late frame, camera far-clip bounded |
+| Distant interpolation | 0.15 s exponential smoothing, at most once per render frame through existing sync callbacks |
+| Invalid-height retry before its one successful repair | 0.5 s |
+| Existing world-maintenance discovery (unchanged) | 1,024 sector slots / 128 objects / 1 ms per frame |
+| Existing terrain maintenance (unchanged) | Queue 128; 8 validations / 1 operation / 0.5 ms per frame |
+
+Source review covers native Harmony signatures/callback ordering, normal terrain versus floe Ghost initialization, `finally` balancing and private RNG restoration, owner-zero replication, support-point invalidation, wind/time/native math, gravity/pose acquisition and existing snow arithmetic. The project continues to include the same source files; no proxy/motion files or additional per-floe components are introduced. Ordinary point/force updates introduce no managed allocation or full hierarchy/liquid search. These are static findings, not measured GC or network results.
+
+Static validation: all 80 project Compile entries exist without duplicates; Roslyn C# 10 syntax-only parsing reports no syntax errors. `git diff --check` and added-text English/Cyrillic checks pass. Metadata-only inspection of the matching publicized Valheim DLL identifies `GameVersion(1, 0, 15)` and confirms both CalcWave overloads, CreateWave, the static direction/tangent fields, wind/time/update APIs and Harmony targets. Unity Core/Physics metadata confirms the collider, mesh, transform, Rigidbody and math members used here. This did not execute game code, bind/compile the mod, emit an assembly or run tests; project references and packaging were not rewritten.
+
+### Remaining maintainer checks
+
+No compilation, tests, Valheim run, GC/FPS/network measurement or new profiler capture has been performed. Static validation does not establish runtime Harmony compatibility, collider behavior, multi-client ordering or the final performance improvement. Large floe counts increase the round-robin target refresh interval even though displayed height is interpolated. The earlier reported disabled-collider cause remains unproven.
+
+- Singleplayer and an ordinary client far from the host; newly and previously generated normally loaded Ocean zones, including a land-centered mixed coastline.
+- Controller owner zero, local owner and foreign owner; completed, zero-candidate, interrupted and repeated placement; objects arriving between discovery slices; ghost-created ZDO loading normally near and distant.
+- Two clients approaching one zone, with the accepted residual race; no periodic client summer cleanup and correct server-only seasonal removal/marker reset.
+- Native collider/climb/collision/center buoyancy and original four-force behavior across floe scales; gradual yaw crossing 1 degree and 359/0; wind-direction versus intensity-only changes and patched EnvMan accessors.
+- Missing/unloaded WaterVolume with valid ocean math; real wave-driven Dampen without added tilt, random bob or cosmetic ZDO spam; changed simulation distance and far-to-near return.
+- Unload, re-enable, ownership transfer, shutdown, season change and verified invalid-height recovery; no stuck gravity policy or stale authoritative pose.
+- Kiln/beehive rates unchanged by allocation: under the previously specified geometry self=2 still calculates 0.0072 / 0.0009; saved self=5 still calculates 0.018 / 0.0009.
+- Natural weather and env/resetenv transitions, dry overrides, skiptime/sleep, pause, save/reload, owner changes, saved zero and snapshot checkpoints; no replay or double gain.
+- Separate initial-loading and steady-state profiles for the large base and a large Ocean floe population. Measure remaining skiptime peaks without attributing them to an unmeasured cause.
