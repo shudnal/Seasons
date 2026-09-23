@@ -6,7 +6,7 @@ Corrected code: `dd14897ce9f6d36dd8891470cc55ddedfb73303e`.
 
 This report supplements [the agreed implementation specification](snow-diagnostics-and-floe-followup.md). It does not replace the agreed floe model or authorize another redesign. The maintainer requested fixes for the three preceding findings, a check against the accepted decisions, and a separate performance review of new and older functionality. Additional performance changes were explicitly deferred.
 
-Follow-up: the maintainer subsequently approved material-binding allocation improvements and change-gated water properties (items 1 and 2 in the chat summary, P1 and P3 below). They are implemented in section 6. Lighting (chat item 3, P2 below) is explicitly deferred; its overhead is not considered a current priority. No other performance candidate was authorized.
+Follow-up: the maintainer subsequently approved material-binding allocation improvements and change-gated water properties (items 1 and 2 in the chat summary, P1 and P3 below). They are implemented in section 6. Section 7 records the later approval and implementation of heading-only floe support caching (P6) and per-call water-context reuse (the narrow part of P7). Lighting (P2), mass recoloring (P4), minimap preparation (P5), distant scheduling (P8), and external placement notifications (P9) remain unchanged. Section 7 supersedes earlier requirements to monitor floe shape, scale, or hierarchy changes at runtime.
 
 ## 1. Changes actually committed
 
@@ -66,11 +66,11 @@ The reviewed paths still implement the following decisions. This table records s
 
 No further confirmed deviation requiring a code change was established in the inspected paths beyond the three findings fixed above. This is not a claim that every line or every multiplayer ordering has been proved correct.
 
-Remaining design limits are unchanged: same-mesh edits preserving identity/bounds/count do not have automatic point-cache detection; normalized depth and the effective-wind transition are approximations; simultaneous clients can still race; the old reported disabled-collider cause has not been reproduced or established.
+The original audit did not promise detection of same-mesh edits preserving identity/bounds/count. Section 7 now explicitly treats all internal floe geometry as fixed after placement and removes runtime geometry polling entirely. Other design limits remain: normalized depth and the effective-wind transition are approximations; simultaneous clients can still race; the old reported disabled-collider cause has not been reproduced or established.
 
 ## 3. Original additional performance findings
 
-At the original review, all items in this section were deferred. The descriptions below preserve that baseline; section 6 records the subsequently approved implementation of P1 and P3. P2 and P4-P9 remain unimplemented. Priority indicates which measurements or small changes are likely to be most useful, not measured milliseconds or a promised FPS improvement.
+At the original review, all items in this section were deferred. The descriptions below preserve that baseline; section 6 records the subsequently approved implementation of P1 and P3, and section 7 records P6 and the per-call portion of P7. P2, P4, P5, P8, P9 and cross-callback center-height reuse remain unimplemented. Priority indicates which measurements or small changes are likely to be most useful, not measured milliseconds or a promised FPS improvement.
 
 ### P1. Repeated material-array copies and repeated setup during prefab binding
 
@@ -136,7 +136,7 @@ A valid cache avoids ClosestPoint calls, but each validation still traverses the
 
 This is not a managed-allocation finding: the normal valid-cache path reuses its collections. The opportunity is reducing repeated native property access and common arithmetic. No measurement establishes that this costs more than the removed closest-point calls.
 
-Suggested later direction: compute common wind heading once, distinguish immutable prefab shape data from per-instance changes, and narrow geometry checks while preserving scale, reparenting and collider replacement invalidation. Do not remove the accepted one-degree thresholds or add new components.
+Original suggestion: compute common wind heading once, distinguish immutable prefab shape data from per-instance changes, and narrow geometry checks while preserving scale, reparenting and collider replacement invalidation. The maintainer subsequently rejected runtime geometry monitoring altogether; the simpler accepted implementation is recorded in section 7. The one-degree heading thresholds remain.
 
 ### P7. Water context and fallback center sampling repeat across the same floe's callbacks
 
@@ -221,3 +221,35 @@ Lighting state/conversion work (P2) is explicitly not changed. P4-P9, floe physi
 The two published source diffs were read back and inspected. Native WaterVolume SetupMaterial/UpdateMaterials were checked from assemblies_combined at the revision listed above; no new Harmony target or project file is required. Added code and this documentation are English. No build, tests, Valheim, full-project syntax pass, FPS/GC/network measurements, PR action or Codex review was run.
 
 Owner-run checks: load a large base and compare initial binding; inspect multi-material/LOD objects and duplicate-name hierarchies; reload texture rules and switch worlds; run freeze/thaw and partial-freeze transitions; verify original water overrides survive and released values follow a real material-default change without clobbering unrelated property-block values. Confirm ordinary lighting remains visually unchanged.
+
+## 7. Fixed floe geometry and per-call surface inputs
+
+Baseline: `cff3e1837676fec64414b39fb7af07a5fcfdf4a1`.
+Code commit: `eaa135b6c0c861d2d511b847356f8b762c763017`.
+File: `Controllers/SeasonalIceFloeWaves.cs`.
+
+### 7.1 Heading-only support cache: implemented
+
+The maintainer confirmed that the floe's internal structure and shape do not change during its lifetime. This supersedes the earlier requirements in this review and the implementation specification to poll scale, collider replacement, hierarchy changes, center of mass, or mesh metadata.
+
+`ReadGeometry`, `Geometry`, the cached collider-parent path and the redundant collider reference have been removed. There is no geometry snapshot, TRS composition, shape comparison or vertex/bounds inspection in the support-cache path.
+
+Each floe lazily builds four collider-local points through the original four `ClosestPoint` queries after initial placement. Once built, the only refresh triggers are a horizontal floe-heading change or a horizontal wind-heading change of at least one degree relative to the last successful build. `DeltaAngle` preserves wraparound and accumulation of small turns. The wind heading is calculated once with the existing common wind/time snapshot, not for every floe. Wind intensity still updates the wave calculation without invalidating support points.
+
+The normal path reuses the four points with `TransformPoint` and the original force formula. Translation and rocking move the points with the body; they do not trigger geometry reconstruction. Basic unusable-input/component guards remain, but do not act as shape-change monitoring. An undefined heading keeps an existing cache rather than causing continuous rebuilds. Disable/unload removes the floe record through the existing lifecycle; a new record starts uninitialized.
+
+### 7.2 Per-call surface context: implemented
+
+A small value-type `SurfaceContext` is prepared once for the synchronous four-force pass. It contains the world water level, surface offset, wave-enable flag and whether world-edge correction applies. Selection of observed local water versus prefab fallback and the center-containment check are no longer repeated for all four probes.
+
+Every probe still evaluates its own current position, native wave function, Deep North fading, world-edge distance, depth delta and force. No wave height is cached by frame or position, and there is no new persistent water cache. The existing shared EnvMan accessor/time snapshot and normalized depth approximation are unchanged.
+
+Center buoyancy, recovery, distant sampling and synchronization calls continue to request fresh surface inputs independently. A previously calculated center height is not reused between `BeforeSync` and `BeforeFloating`. Missing-water observation handling, gravity/ownership safety, four-force coefficients and `Dampen` remain unchanged.
+
+### 7.3 Scope and verification
+
+Only this source file and this review document changed in the follow-up. Placement, cleanup, distant scheduling, lighting, mass recoloring, minimap generation, snow logic/storage, configurations and packaging are untouched. The existing general shield-direction fix in the baseline is preserved.
+
+The published source diff was read back and checked for the removed geometry code, updated call sites, unchanged force/wave arithmetic and absence of unrelated edits. Added source and documentation are English. No new Harmony target or project include is needed. No build, tests, Valheim, full-project syntax pass or performance measurement was run.
+
+Owner-run checks: initial loading of differently scaled floes; fixed-direction rocking without repeated ClosestPoint; slow yaw/wind changes reaching one degree and wraparound; intensity-only weather changes; disable/re-enable with missing water; transitions between observed and mathematical center water; unchanged nearby forces and distant Dampen. Arbitrary in-place geometry modification is deliberately outside this cache's contract.
