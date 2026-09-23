@@ -64,9 +64,14 @@ namespace Seasons
             }
             ObserveSnowReadiness();
             ExpandRegionRefreshes();
-            ProcessSnowRefreshes(now);
-            if (SeasonalSnow.WeatherReady)
-                IntegrateSnow(now);
+            BeginSnowWeatherPass(now);
+            try
+            {
+                ProcessSnowRefreshes(now);
+                if (SeasonalSnow.WeatherReady)
+                    IntegrateSnow(now);
+            }
+            finally { EndSnowWeatherPass(); }
             PublishSnowChanges();
             PrepareSnowVisuals();
             foreach (SnowRegion region in regionList)
@@ -383,30 +388,40 @@ namespace Seasons
 
         private void IntegrateSnow(double now)
         {
-            frameWeather.Clear();
-            snowingBiomes.Clear();
-            foreach (Heightmap.Biome biome in SeasonalSnow.SeasonalSnowTimelines.Keys)
+            bool ownsPass = snowWeatherPassTime != now;
+            if (ownsPass)
+                BeginSnowWeatherPass(now);
+            try
             {
-                frameWeather[biome] = SeasonalSnow.GetCumulativeSnowGainAt(biome, now);
-                if (liveWeatherEnvironment != null || SeasonalSnow.GainBetween(biome, lastWorldSeconds, now) > 0f)
-                    snowingBiomes.Add(biome);
-            }
-            foreach (SnowRegion region in regionList)
-            {
-                if (!region.Ready)
-                    continue;
-                foreach (KeyValuePair<Heightmap.Biome, List<SnowPiece>> group in region.Buckets[(int)SnowBucket.MeltingSnow])
+                snowingBiomes.Clear();
+                foreach (Heightmap.Biome biome in SeasonalSnow.SeasonalSnowTimelines.Keys)
                 {
-                    frameWeather.TryGetValue(group.Key, out float gain);
-                    IntegrateBucket(group.Value, now, gain, onlySnowing: false);
+                    SnowWeatherGainAt(biome, now);
+                    if (liveWeatherEnvironment != null || SeasonalSnow.GainBetween(biome, lastWorldSeconds, now) > 0f)
+                        snowingBiomes.Add(biome);
                 }
-                if (snowingBiomes.Count != 0)
-                    foreach (KeyValuePair<Heightmap.Biome, List<SnowPiece>> group in region.Buckets[(int)SnowBucket.AccumulationOpen])
-                        if (snowingBiomes.Contains(group.Key))
-                        {
-                            frameWeather.TryGetValue(group.Key, out float gain);
-                            IntegrateBucket(group.Value, now, gain, onlySnowing: true);
-                        }
+                foreach (SnowRegion region in regionList)
+                {
+                    if (!region.Ready)
+                        continue;
+                    foreach (KeyValuePair<Heightmap.Biome, List<SnowPiece>> group in region.Buckets[(int)SnowBucket.MeltingSnow])
+                    {
+                        float gain = SnowWeatherGainAt(group.Key, now);
+                        IntegrateBucket(group.Value, now, gain, onlySnowing: false);
+                    }
+                    if (snowingBiomes.Count != 0)
+                        foreach (KeyValuePair<Heightmap.Biome, List<SnowPiece>> group in region.Buckets[(int)SnowBucket.AccumulationOpen])
+                            if (snowingBiomes.Contains(group.Key))
+                            {
+                                float gain = SnowWeatherGainAt(group.Key, now);
+                                IntegrateBucket(group.Value, now, gain, onlySnowing: true);
+                            }
+                }
+            }
+            finally
+            {
+                if (ownsPass)
+                    EndSnowWeatherPass();
             }
         }
 
@@ -431,7 +446,7 @@ namespace Seasons
                 (state.Owner != 0L && !state.View.IsOwner()))
                 return;
             float previous = state.Snow;
-            float gain = cumulativeGain ?? SeasonalSnow.GetCumulativeSnowGainAt(state.Biome, now);
+            float gain = cumulativeGain ?? SnowWeatherGainAt(state.Biome, now);
             if (state.Melting)
                 state.Snow = Mathf.Max(0f, state.Snow - state.MeltRate * (float)Math.Max(0d, clock - state.LastHeatTime));
             else
@@ -441,9 +456,13 @@ namespace Seasons
             state.WeatherGain = gain;
             // A dry override can consume weather without changing Snow. Checkpoint
             // that deliberate replacement at the existing gain publication scale.
-            if (state.MayPublish && state.ReplacedWeatherUntil > SeasonalSnowStorage.FromTimestamp(state.SnapshotTime) &&
-                SeasonalSnow.GainBetween(state.Biome, SeasonalSnowStorage.FromTimestamp(state.SnapshotTime), now) >= PublicationStep)
-                QueuePublication(state);
+            if (state.MayPublish)
+            {
+                double persisted = SeasonalSnowStorage.FromTimestamp(state.SnapshotTime);
+                if (state.ReplacedWeatherUntil > persisted && now > persisted &&
+                    Mathf.Max(0f, gain - SeasonalSnow.GetCumulativeSnowGainAt(state.Biome, persisted)) >= PublicationStep)
+                    QueuePublication(state);
+            }
             if (previous.Equals(state.Snow))
                 return;
             Classify(state);

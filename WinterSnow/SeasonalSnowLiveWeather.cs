@@ -14,11 +14,46 @@ namespace Seasons
         private double liveWeatherFrom;
         private double liveWeatherUntil;
 
+        private struct SnowWeatherPassValues
+        {
+            internal float NaturalGain;
+            internal bool HasLiveInterval;
+            internal double From, Until;
+            internal float Before, After, LiveGain;
+        }
+
+        private double snowWeatherPassTime = double.NaN;
+
+        private void BeginSnowWeatherPass(double now)
+        {
+            frameWeather.Clear();
+            snowWeatherPassTime = now;
+        }
+
+        private void EndSnowWeatherPass()
+        {
+            snowWeatherPassTime = double.NaN;
+            frameWeather.Clear();
+        }
+
+        private float SnowWeatherGainAt(Heightmap.Biome biome, double now)
+        {
+            if (snowWeatherPassTime != now)
+                return SeasonalSnow.GetCumulativeSnowGainAt(biome, now);
+            if (!frameWeather.TryGetValue(biome, out SnowWeatherPassValues weather))
+            {
+                weather.NaturalGain = SeasonalSnow.GetCumulativeSnowGainAt(biome, now);
+                frameWeather.Add(biome, weather);
+            }
+            return weather.NaturalGain;
+        }
+
         private bool ContinuousSnowTime(double now) => now >= lastWorldSeconds &&
             now - lastWorldSeconds <= Math.Max(5d, Time.deltaTime * 10d);
 
         private void ResetLiveWeather()
         {
+            EndSnowWeatherPass();
             liveWeatherObserved = false;
             liveWeatherEnvironment = null;
             liveWeatherBuildup = liveWeatherRate = 0f;
@@ -53,16 +88,22 @@ namespace Seasons
                 {
                     // Settle the previous source before replacing it. Pending catch-up,
                     // unready pieces and stale ownership are rejected by IntegratePiece.
-                    foreach (SnowPiece state in snowPieces.Values)
+                    BeginSnowWeatherPass(now);
+                    try
                     {
-                        IntegratePiece(state, now, snowClock);
-                        if (state.MayPublish && state.ReplacedWeatherUntil > 0d)
-                            QueuePublication(state);
+                        foreach (SnowPiece state in snowPieces.Values)
+                        {
+                            IntegratePiece(state, now, snowClock);
+                            if (state.MayPublish && state.ReplacedWeatherUntil > 0d)
+                                QueuePublication(state);
+                        }
                     }
+                    finally { EndSnowWeatherPass(); }
                 }
             }
             if (!continuous || changed)
             {
+                EndSnowWeatherPass();
                 liveWeatherEnvironment = name;
                 liveWeatherBuildup = buildup;
                 liveWeatherRate = rate;
@@ -81,14 +122,40 @@ namespace Seasons
                 return Mathf.Max(0f, naturalGain - state.WeatherGain);
             double from = Math.Max(state.WeatherTime, liveWeatherFrom);
             double until = Math.Min(now, liveWeatherUntil);
-            float before = SeasonalSnow.GetCumulativeSnowGainAt(state.Biome, from);
-            float after = SeasonalSnow.GetCumulativeSnowGainAt(state.Biome, until);
+            SnowWeatherPassValues weather = default;
+            bool shared = snowWeatherPassTime == now &&
+                frameWeather.TryGetValue(state.Biome, out weather);
+            float before, after, liveGain;
+            if (shared && weather.HasLiveInterval && weather.From == from && weather.Until == until)
+            {
+                before = weather.Before;
+                after = weather.After;
+                liveGain = weather.LiveGain;
+            }
+            else
+            {
+                before = SeasonalSnow.GetCumulativeSnowGainAt(state.Biome, from);
+                after = until == now ? naturalGain : SeasonalSnow.GetCumulativeSnowGainAt(state.Biome, until);
+                liveGain = SeasonalSnow.GetLiveSnowGain(liveWeatherBuildup, until - from);
+                if (shared)
+                {
+                    // One replaceable interval per biome in this pass. Distinct piece
+                    // boundaries are evaluated individually, never rounded or merged.
+                    weather.HasLiveInterval = true;
+                    weather.From = from;
+                    weather.Until = until;
+                    weather.Before = before;
+                    weather.After = after;
+                    weather.LiveGain = liveGain;
+                    frameWeather[state.Biome] = weather;
+                }
+            }
             if (after > before)
                 state.ReplacedWeatherUntil = Math.Max(state.ReplacedWeatherUntil, until);
             // Consume the natural cursor even for a dry override. Retain natural
             // history before activation and outside the observed live interval.
             return Mathf.Max(0f, before - state.WeatherGain) +
-                SeasonalSnow.GetLiveSnowGain(liveWeatherBuildup, until - from) +
+                liveGain +
                 Mathf.Max(0f, naturalGain - after);
         }
 

@@ -27,7 +27,8 @@ namespace Seasons
         private double snowClock;
         private double lastWorldSeconds;
         private int observedShieldRevision;
-        private readonly Dictionary<Heightmap.Biome, float> frameWeather = new Dictionary<Heightmap.Biome, float>();
+        private readonly Dictionary<Heightmap.Biome, SnowWeatherPassValues> frameWeather =
+            new Dictionary<Heightmap.Biome, SnowWeatherPassValues>();
         private readonly HashSet<Heightmap.Biome> snowingBiomes = new HashSet<Heightmap.Biome>();
 
         internal int SnowPieceCount => snowPieces.Count;
@@ -309,6 +310,8 @@ namespace Seasons
         {
             if (!SeasonalSnow.WinterReady || !EnsureSnowScene())
                 return;
+            if (rules)
+                EndSnowWeatherPass();
             discoveryCursor = 0;
             foreach (SnowRegion region in regionList)
                 QueueRegion(region, rules ? SnowRefresh.Rules | SnowRefresh.Area | SnowRefresh.Snapshot | SnowRefresh.Heat : SnowRefresh.Geometry);
@@ -410,9 +413,14 @@ namespace Seasons
                 double now = ZNet.instance.GetTimeSeconds();
                 if (ContinuousSnowTime(now))
                     ObserveLiveWeather(now);
+                BeginSnowWeatherPass(now);
             }
-            foreach (SnowPiece state in snowPieces.Values)
-                FlushSnowPiece(state);
+            try
+            {
+                foreach (SnowPiece state in snowPieces.Values)
+                    FlushSnowPiece(state);
+            }
+            finally { EndSnowWeatherPass(); }
         }
 
         private void FlushSnowPiece(SnowPiece state)
