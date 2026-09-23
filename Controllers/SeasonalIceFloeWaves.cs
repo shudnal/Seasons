@@ -13,21 +13,11 @@ namespace Seasons
         private const float BobSmoothingSeconds = 0.15f;
         private const float PointRebuildDegrees = 1f;
 
-        private struct Geometry
+        // Prepared for one synchronous set of probes, never retained across physics/sync calls.
+        private struct SurfaceContext
         {
-            internal Vector3 Center, Size, Scale, RelativePosition, CenterOfMass;
-            internal Quaternion RelativeRotation;
-            internal Mesh Mesh;
-            internal Bounds MeshBounds;
-            internal int VertexCount;
-            internal bool Convex;
-
-            internal bool Matches(Geometry other) => Close(Center, other.Center) && Close(Size, other.Size) &&
-                Close(Scale, other.Scale) && Close(RelativePosition, other.RelativePosition) &&
-                Close(CenterOfMass, other.CenterOfMass) && Quaternion.Angle(RelativeRotation, other.RelativeRotation) < 0.01f &&
-                Mesh == other.Mesh && MeshBounds.Equals(other.MeshBounds) && VertexCount == other.VertexCount && Convex == other.Convex;
-
-            private static bool Close(Vector3 a, Vector3 b) => (a - b).sqrMagnitude <= 0.00000001f;
+            internal float WaterLevel, Offset;
+            internal bool UseWaves, HasWorldEdge;
         }
 
         private sealed class Floe
@@ -37,10 +27,7 @@ namespace Seasons
             internal ZSyncTransform Sync;
             internal Rigidbody Body;
             internal Transform Root, ColliderTransform;
-            internal Collider Collider;
             internal Vector3[] Points;
-            internal List<Transform> ColliderPath;
-            internal Geometry Geometry;
             internal float BuildHeading, BuildWind;
             internal bool PointsReady;
             internal WaterVolume Water;
@@ -65,7 +52,7 @@ namespace Seasons
         private static int snapshotCycle = -1, snapshotFrame = -1;
         private static Vector3 windDirection;
         private static Vector4 effectiveWind;
-        private static float waveTime, windIntensity;
+        private static float waveTime, windIntensity, windHeading;
         private static bool snapshotValid;
         // CalcWave coefficients from game 1.0.15, only used before WaterVolume.Awake initializes
         // native tangent storage. Even this fallback calls native CreateWave, not copied wave math.
@@ -191,6 +178,8 @@ namespace Seasons
             if (!Finite(windDirection.x) || !Finite(windDirection.z) || !Finite(windIntensity) || !Finite(waveTime))
                 return false;
             windDirection.Normalize();
+            windHeading = windDirection.sqrMagnitude > 0f
+                ? Mathf.Atan2(windDirection.x, windDirection.z) * Mathf.Rad2Deg : float.NaN;
             // Use the public effective direction/intensity once per cycle. This approximates native
             // two-wave wind-transition blending with one effective wind. GetWindIntensity already
             // includes Seasons' multiplier and other accessor patches; never apply it a second time.
@@ -198,18 +187,36 @@ namespace Seasons
             return snapshotValid = true;
         }
 
+        private static bool TrySurfaceContext(Floe floe, out SurfaceContext context)
+        {
+            context = default;
+            if (!Snapshot())
+                return false;
+            // Resolve the shared surface policy once for all four probes in this call.
+            // Their positions and wave heights remain independent and are never cached here.
+            WaterVolume water = ContainsCenter(floe, floe.Water) ? floe.Water : null;
+            context.WaterLevel = ZoneSystem.instance.m_waterLevel;
+            context.Offset = water ? water.m_surfaceOffset : oceanPrefab.m_surfaceOffset - (IsWaterSurfaceFrozen() ? _winterWaterSurfaceOffset : 0f);
+            context.UseWaves = water ? water.m_useGlobalWind : oceanPrefab.m_useGlobalWind && !IsWaterSurfaceFrozen();
+            context.HasWorldEdge = (water ? water.m_forceDepth : oceanPrefab.m_forceDepth) < 0f;
+            return true;
+        }
+
         private static bool TrySurface(Floe floe, Vector3 position, out float surface)
         {
             surface = -10000f;
-            if (!Finite(position.x) || !Finite(position.y) || !Finite(position.z) || !Snapshot())
+            return TrySurfaceContext(floe, out SurfaceContext context) && TrySurface(context, position, out surface);
+        }
+
+        private static bool TrySurface(SurfaceContext context, Vector3 position, out float surface)
+        {
+            surface = -10000f;
+            if (!Finite(position.x) || !Finite(position.y) || !Finite(position.z))
                 return false;
             // The prefab is an existing native component used solely as a math receiver. Its ocean
             // defaults apply without loaded volumes; never borrow another volume's depth or height.
-            WaterVolume water = ContainsCenter(floe, floe.Water) ? floe.Water : null;
-            float offset = water ? water.m_surfaceOffset : oceanPrefab.m_surfaceOffset - (IsWaterSurfaceFrozen() ? _winterWaterSurfaceOffset : 0f);
-            bool useWaves = water ? water.m_useGlobalWind : oceanPrefab.m_useGlobalWind && !IsWaterSurfaceFrozen();
             float wave = 0f;
-            if (useWaves)
+            if (context.UseWaves)
             {
                 float big = 1f - (float)WorldGenerator.DeepNorthWaveFade(position.x, position.z);
                 // Normalized depth 1 is the intentional Ocean approximation, including coastal floes.
@@ -227,8 +234,8 @@ namespace Seasons
                     wave *= windIntensity;
                 }
             }
-            surface = ZoneSystem.instance.m_waterLevel + offset + wave;
-            if ((water ? water.m_forceDepth : oceanPrefab.m_forceDepth) < 0f && Utils.LengthXZ(position) > 10500f)
+            surface = context.WaterLevel + context.Offset + wave;
+            if (context.HasWorldEdge && Utils.LengthXZ(position) > 10500f)
                 surface -= 100f;
             return WaterLevelValid(surface);
         }
@@ -426,9 +433,9 @@ namespace Seasons
             }
         }
 
-        private static void AddProbeForce(Floe floe, Vector3 position, float fixedDeltaTime)
+        private static void AddProbeForce(Floe floe, SurfaceContext context, Vector3 position, float fixedDeltaTime)
         {
-            if (!TrySurface(floe, position, out float water))
+            if (!TrySurface(context, position, out float water))
                 return;
             float depthDelta = position.y - water;
             float forceAmount = 0.5f * Mathf.Clamp01(Mathf.Abs(depthDelta / 4f)) * (fixedDeltaTime * 50f) * Mathf.Abs(depthDelta);
@@ -436,115 +443,32 @@ namespace Seasons
             floe.Body.AddForceAtPosition(force * 0.02f * floe.Body.mass * 0.25f, position, ForceMode.Impulse);
         }
 
-        private static bool ReadGeometry(Floe floe, Collider collider, out Geometry geometry)
-        {
-            Transform transform = collider.transform;
-            bool pathValid = floe.Collider == collider && floe.ColliderPath != null;
-            if (pathValid)
-                for (int i = 0; i < floe.ColliderPath.Count; i++)
-                    if (!floe.ColliderPath[i] || floe.ColliderPath[i].parent !=
-                        (i + 1 < floe.ColliderPath.Count ? floe.ColliderPath[i + 1] : floe.Root))
-                    {
-                        pathValid = false;
-                        break;
-                    }
-            if (!pathValid)
-            {
-                if (floe.ColliderPath == null)
-                    floe.ColliderPath = new List<Transform>(2);
-                floe.ColliderPath.Clear();
-                for (Transform part = transform; part && part != floe.Root; part = part.parent)
-                    floe.ColliderPath.Add(part);
-                floe.Collider = collider;
-                floe.PointsReady = false;
-            }
-            Matrix4x4 relative = Matrix4x4.identity;
-            Quaternion relativeRotation = Quaternion.identity;
-            // Compose cached local transforms, avoiding translation-dependent float cancellation
-            // from world -> local conversion near the world edge. No recurring hierarchy search.
-            foreach (Transform part in floe.ColliderPath)
-            {
-                relative = Matrix4x4.TRS(part.localPosition, part.localRotation, part.localScale) * relative;
-                relativeRotation = part.localRotation * relativeRotation;
-            }
-            geometry = new Geometry
-            {
-                Scale = transform.lossyScale,
-                RelativePosition = relative.MultiplyPoint3x4(Vector3.zero),
-                RelativeRotation = relativeRotation,
-                CenterOfMass = floe.Body.centerOfMass
-            };
-            if (collider is BoxCollider box)
-            {
-                geometry.Center = box.center;
-                geometry.Size = box.size;
-            }
-            else if (collider is SphereCollider sphere)
-            {
-                geometry.Center = sphere.center;
-                geometry.Size = new Vector3(sphere.radius, 0f, 0f);
-            }
-            else if (collider is CapsuleCollider capsule)
-            {
-                geometry.Center = capsule.center;
-                geometry.Size = new Vector3(capsule.radius, capsule.height, capsule.direction);
-            }
-            else if (collider is MeshCollider mesh)
-            {
-                geometry.Mesh = mesh.sharedMesh;
-                if (!geometry.Mesh)
-                    return false;
-                // Native floe collider meshes are immutable assets. Do not allocate vertex arrays to
-                // detect arbitrary same-bounds in-place mesh edits by another mod.
-                geometry.MeshBounds = geometry.Mesh.bounds;
-                geometry.VertexCount = geometry.Mesh.vertexCount;
-                geometry.Convex = mesh.convex;
-            }
-            else
-                return false;
-            return Finite(geometry.Scale.x) && Finite(geometry.Scale.y) && Finite(geometry.Scale.z) &&
-                geometry.Scale.x != 0f && geometry.Scale.y != 0f && geometry.Scale.z != 0f;
-        }
-
-        private static bool EnsurePoints(Floe floe, Collider collider, Vector3 wind)
+        private static bool EnsurePoints(Floe floe, Collider collider)
         {
             if (!collider || !collider.enabled || !collider.gameObject.activeInHierarchy)
-            {
-                floe.PointsReady = false;
                 return false;
-            }
-            if (!ReadGeometry(floe, collider, out Geometry geometry))
-                return floe.PointsReady = false;
             Vector3 forward = floe.Root.forward;
-            forward.y = 0f;
-            wind.y = 0f;
-            // A degenerate heading/wind cannot define new supports; retain only a still-valid geometry.
-            bool sameGeometry = floe.PointsReady && floe.Collider == collider && floe.Geometry.Matches(geometry);
-            if (!Finite(forward.sqrMagnitude) || forward.sqrMagnitude < 0.000001f || !Finite(wind.sqrMagnitude) || wind.sqrMagnitude < 0.000001f)
-                return sameGeometry;
-            wind.Normalize();
-            // Horizontal forward ignores ordinary pitch/roll. Compare to the last build, not the previous tick,
-            // so slow cumulative yaw and the 359/0 degree boundary both invalidate at one degree.
             float heading = Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg;
-            float windHeading = Mathf.Atan2(wind.x, wind.z) * Mathf.Rad2Deg;
-            if (sameGeometry && Mathf.Abs(Mathf.DeltaAngle(floe.BuildHeading, heading)) < PointRebuildDegrees &&
+            if (!Finite(heading) || !Finite(windHeading) || forward.x * forward.x + forward.z * forward.z < 0.000001f)
+                return floe.PointsReady;
+            // Floe geometry is fixed after placement. Only horizontal floe/wind headings
+            // invalidate supports; compare with the last build so small changes accumulate.
+            if (floe.PointsReady && Mathf.Abs(Mathf.DeltaAngle(floe.BuildHeading, heading)) < PointRebuildDegrees &&
                 Mathf.Abs(Mathf.DeltaAngle(floe.BuildWind, windHeading)) < PointRebuildDegrees)
                 return true;
             floe.PointsReady = false;
-            floe.Collider = collider;
             floe.ColliderTransform = collider.transform;
             if (floe.Points == null)
                 floe.Points = new Vector3[4];
             Vector3 center = floe.Body.worldCenterOfMass;
-            Vector3 side = Vector3.Cross(wind, floe.Root.up);
-            floe.Points[0] = floe.ColliderTransform.InverseTransformPoint(collider.ClosestPoint(center + wind * 100f));
-            floe.Points[1] = floe.ColliderTransform.InverseTransformPoint(collider.ClosestPoint(center - wind * 100f));
+            Vector3 side = Vector3.Cross(windDirection, floe.Root.up);
+            floe.Points[0] = floe.ColliderTransform.InverseTransformPoint(collider.ClosestPoint(center + windDirection * 100f));
+            floe.Points[1] = floe.ColliderTransform.InverseTransformPoint(collider.ClosestPoint(center - windDirection * 100f));
             floe.Points[2] = floe.ColliderTransform.InverseTransformPoint(collider.ClosestPoint(center + side * 100f));
             floe.Points[3] = floe.ColliderTransform.InverseTransformPoint(collider.ClosestPoint(center - side * 100f));
             for (int i = 0; i < floe.Points.Length; i++)
                 if (!Finite(floe.Points[i].x) || !Finite(floe.Points[i].y) || !Finite(floe.Points[i].z))
                     return false;
-            floe.Geometry = geometry;
             floe.BuildHeading = heading;
             floe.BuildWind = windHeading;
             return floe.PointsReady = true;
@@ -582,12 +506,11 @@ namespace Seasons
                 HoldGravity(floe);
                 return false;
             }
-            Vector3 wind = Snapshot() ? windDirection : Vector3.zero;
-            if (EnsurePoints(floe, collider, wind))
+            if (TrySurfaceContext(floe, out SurfaceContext context) && EnsurePoints(floe, collider))
             {
                 floe.Body.WakeUp();
                 for (int i = 0; i < floe.Points.Length; i++)
-                    AddProbeForce(floe, floe.ColliderTransform.TransformPoint(floe.Points[i]), fixedDeltaTime);
+                    AddProbeForce(floe, context, floe.ColliderTransform.TransformPoint(floe.Points[i]), fixedDeltaTime);
             }
             return true;
         }
