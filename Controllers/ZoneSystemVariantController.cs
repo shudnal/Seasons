@@ -30,6 +30,8 @@ namespace Seasons
             private readonly MaterialPropertyBlock m_properties = new MaterialPropertyBlock();
             private readonly Dictionary<int, PropertyState> m_ownedProperties = new Dictionary<int, PropertyState>();
             private readonly List<int> m_releasedProperties = new List<int>();
+            private bool m_propertiesChanged;
+            private int m_inactivePropertyCount;
             public bool m_useGlobalWind;
             public bool m_appliedGlobalWind;
             public float m_appliedSurfaceOffset;
@@ -79,13 +81,40 @@ namespace Seasons
                 m_colorBottomShallowFrozen = Color.Lerp(m_colorBottomShallow, Color.white, 0.5f);
             }
 
+            private bool ReleasedPropertiesChanged(Material material)
+            {
+                // MPB has no individual removal. Our released neutral overrides must
+                // still follow real material changes, without copying the block each frame.
+                foreach (KeyValuePair<int, PropertyState> entry in m_ownedProperties)
+                {
+                    PropertyState property = entry.Value;
+                    if (property.Active)
+                        continue;
+                    if (property.IsColor
+                        ? !material.GetColor(entry.Key).Equals(property.AppliedColor)
+                        : !material.GetFloat(entry.Key).Equals(property.AppliedFloat))
+                        return true;
+                }
+                return false;
+            }
+
             public void RestoreProperties(MeshRenderer renderer, bool inactiveOnly = false)
             {
-                if (renderer == null || renderer.sharedMaterial == null)
+                // The normal per-frame call has no work before any override was released,
+                // or while every owned override is active. Avoid even reading the renderer.
+                if (inactiveOnly && m_inactivePropertyCount == 0)
                     return;
+                if (renderer == null)
+                    return;
+                Material material = renderer.sharedMaterial;
+                if (material == null || (inactiveOnly && !ReleasedPropertiesChanged(material)))
+                    return;
+
+                // Explicit season/config restoration also starts the next edit from a fresh
+                // block. Recheck ownership before writing, preserving other mods' properties.
                 renderer.GetPropertyBlock(m_properties);
+                m_propertiesChanged = false;
                 m_releasedProperties.Clear();
-                bool changed = false;
                 foreach (KeyValuePair<int, PropertyState> entry in m_ownedProperties)
                 {
                     PropertyState property = entry.Value;
@@ -96,41 +125,64 @@ namespace Seasons
                         : m_properties.GetFloat(entry.Key).Equals(property.AppliedFloat));
                     if (!stillOwned)
                     {
+                        if (!property.Active)
+                            m_inactivePropertyCount--;
                         m_releasedProperties.Add(entry.Key);
                         continue;
                     }
 
                     if (property.IsColor)
                     {
-                        property.AppliedColor = property.HadOverride ? property.OriginalColor : renderer.sharedMaterial.GetColor(entry.Key);
-                        m_properties.SetColor(entry.Key, property.AppliedColor);
+                        property.AppliedColor = property.HadOverride ? property.OriginalColor : material.GetColor(entry.Key);
+                        if (!m_properties.GetColor(entry.Key).Equals(property.AppliedColor))
+                        {
+                            m_properties.SetColor(entry.Key, property.AppliedColor);
+                            m_propertiesChanged = true;
+                        }
                     }
                     else
                     {
-                        property.AppliedFloat = property.HadOverride ? property.OriginalFloat : renderer.sharedMaterial.GetFloat(entry.Key);
-                        m_properties.SetFloat(entry.Key, property.AppliedFloat);
+                        property.AppliedFloat = property.HadOverride ? property.OriginalFloat : material.GetFloat(entry.Key);
+                        if (!m_properties.GetFloat(entry.Key).Equals(property.AppliedFloat))
+                        {
+                            m_properties.SetFloat(entry.Key, property.AppliedFloat);
+                            m_propertiesChanged = true;
+                        }
                     }
-                    changed = true;
-                    property.Active = false;
+                    if (property.Active)
+                    {
+                        property.Active = false;
+                        m_inactivePropertyCount++;
+                    }
                     if (property.HadOverride)
+                    {
+                        m_inactivePropertyCount--;
                         m_releasedProperties.Add(entry.Key);
+                    }
                 }
                 foreach (int property in m_releasedProperties)
                     m_ownedProperties.Remove(property);
-                if (changed)
-                    renderer.SetPropertyBlock(m_properties);
+                ApplyProperties(renderer);
             }
 
             public void SetFloat(int property, float value)
             {
                 if (!m_ownedProperties.TryGetValue(property, out PropertyState state))
                 {
-                    state = new PropertyState { HadOverride = m_properties.HasProperty(property), OriginalFloat = m_properties.GetFloat(property) };
+                    state = new PropertyState { Active = true, HadOverride = m_properties.HasProperty(property), OriginalFloat = m_properties.GetFloat(property) };
                     m_ownedProperties.Add(property, state);
                 }
-                state.Active = true;
+                else if (!state.Active)
+                {
+                    state.Active = true;
+                    m_inactivePropertyCount--;
+                }
                 state.AppliedFloat = value;
-                m_properties.SetFloat(property, value);
+                if (!m_properties.HasProperty(property) || !m_properties.GetFloat(property).Equals(value))
+                {
+                    m_properties.SetFloat(property, value);
+                    m_propertiesChanged = true;
+                }
             }
 
             public void SetFloat(string property, float value) => SetFloat(Shader.PropertyToID(property), value);
@@ -140,15 +192,29 @@ namespace Seasons
                 int property = Shader.PropertyToID(propertyName);
                 if (!m_ownedProperties.TryGetValue(property, out PropertyState state))
                 {
-                    state = new PropertyState { IsColor = true, HadOverride = m_properties.HasProperty(property), OriginalColor = m_properties.GetColor(property) };
+                    state = new PropertyState { Active = true, IsColor = true, HadOverride = m_properties.HasProperty(property), OriginalColor = m_properties.GetColor(property) };
                     m_ownedProperties.Add(property, state);
                 }
-                state.Active = true;
+                else if (!state.Active)
+                {
+                    state.Active = true;
+                    m_inactivePropertyCount--;
+                }
                 state.AppliedColor = value;
-                m_properties.SetColor(property, value);
+                if (!m_properties.HasProperty(property) || !m_properties.GetColor(property).Equals(value))
+                {
+                    m_properties.SetColor(property, value);
+                    m_propertiesChanged = true;
+                }
             }
 
-            public void ApplyProperties(MeshRenderer renderer) => renderer.SetPropertyBlock(m_properties);
+            public void ApplyProperties(MeshRenderer renderer)
+            {
+                if (!m_propertiesChanged || renderer == null)
+                    return;
+                renderer.SetPropertyBlock(m_properties);
+                m_propertiesChanged = false;
+            }
         }
 
         private class FrozenOceanFishPositionGuard : MonoBehaviour
