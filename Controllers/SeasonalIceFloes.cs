@@ -8,89 +8,99 @@ using static Seasons.ZoneSystemVariantController;
 
 namespace Seasons
 {
-    /// <summary>Zone-owner placement in normally loaded zones, with server-only global cleanup.</summary>
+    /// <summary>Local geometry placement, with independent server-only seasonal removal.</summary>
     internal static class SeasonalIceFloes
     {
-        // These bound service work, not an individual Unity call such as Instantiate or a terrain raycast.
-        private const int DiscoveryBudget = 8;
+        // A budget cannot interrupt a single Instantiate, terrain raycast, or destruction call.
+        private const int RequestBudget = 8;
         private const int ObjectBudget = 64;
         private const int CandidateBudget = 4;
         private const int InstanceBudget = 1;
         private const int RemovalBudget = 4;
         private const int MarkerBudget = 4;
         private const double ServiceMilliseconds = 1.5;
-        private const float PeerRefreshSeconds = 0.5f;
+        private const float PendingRetrySeconds = 0.5f;
 
-        private sealed class RegionScan
+        // Read native sector lists in place. No full-sector snapshot is hidden in a work item.
+        private sealed class SectorCursor
         {
-            internal long Peer;
-            internal Vector2s Center;
-            internal int NearRadius;
-            internal int Radius;
-            internal int Ring;
-            internal int Edge;
-            internal bool OutsideFirst;
+            private List<ZDO> source;
+            private int stage;
+            private int index;
+            private bool started;
 
-            internal bool Next(out Vector2s zone)
+            internal void Reset()
             {
-                zone = Center;
-                if (Ring > Radius || Ring < 0)
-                    return false;
-                if (Ring == 0)
+                source = null;
+                stage = index = 0;
+                started = false;
+            }
+
+            internal bool Next(Vector2s zone, out ZDO zdo)
+            {
+                ZoneSystem.SectorIndex sector = ZoneSystem.SectorToIndex(zone);
+                while (stage < 2)
                 {
-                    Ring = OutsideFirst ? -1 : 1;
-                    return true;
+                    List<ZDO> current;
+                    if (stage == 0)
+                        current = ZDOMan.instance.m_objectsBySector[sector.Sector];
+                    else
+                        ZDOMan.instance.m_portalObjects.TryGetValue(sector, out current);
+                    if (!started || !ReferenceEquals(current, source))
+                    {
+                        source = current;
+                        index = current == null ? -1 : current.Count - 1;
+                        started = true;
+                    }
+                    if (source != null)
+                        index = Math.Min(index, source.Count - 1);
+                    if (index >= 0)
+                    {
+                        // Native mutations append or List.Remove. Backward traversal tolerates
+                        // removals; AddToSector invalidates pending inspections on append.
+                        // This is not a cross-peer placement transaction.
+                        zdo = source[index--];
+                        return true;
+                    }
+                    stage++;
+                    started = false;
+                    source = null;
                 }
-                int side = Edge / (2 * Ring);
-                int offset = Edge % (2 * Ring);
-                int x = side == 0 ? -Ring + offset : side == 1 ? Ring : side == 2 ? Ring - offset : -Ring;
-                int y = side == 0 ? -Ring : side == 1 ? -Ring + offset : side == 2 ? Ring : Ring - offset;
-                zone = new Vector2s(Center.x + x, Center.y + y);
-                if (++Edge == 8 * Ring)
-                {
-                    Edge = 0;
-                    Ring += OutsideFirst ? -1 : 1;
-                }
-                return true;
+                zdo = null;
+                return false;
             }
         }
 
         private sealed class ZoneWork
         {
             internal Vector2s Zone;
-            internal readonly List<ZDO> Objects = new List<ZDO>();
-            internal readonly List<ZoneSystem.ClearArea> Exclusions = new List<ZoneSystem.ClearArea>();
-            internal int ObjectIndex;
             internal ZDOID Control;
-            internal SpawnSystem SpawnSystem;
-            internal bool ExistingFloe;
-            internal bool RandomReady;
+            internal Heightmap Terrain;
+            internal readonly SectorCursor Cursor = new SectorCursor();
+            internal readonly List<ZoneSystem.ClearArea> Exclusions = new List<ZoneSystem.ClearArea>();
+            internal readonly HashSet<ZDOID> Created = new HashSet<ZDOID>();
+            internal bool Inspected, StaticMissing, Ghost, RandomReady;
             internal int Remaining;
+            internal float NextAttempt;
             internal UnityEngine.Random.State RandomState;
         }
 
         private enum CandidateResult { Skipped, Placed, Deferred }
 
-        private static readonly List<RegionScan> scans = new List<RegionScan>();
-        private static readonly HashSet<ZoneSystem.SectorIndex> visited = new HashSet<ZoneSystem.SectorIndex>();
         private static readonly Queue<Vector2s> requests = new Queue<Vector2s>();
         private static readonly HashSet<Vector2s> requestSet = new HashSet<Vector2s>();
         private static readonly Dictionary<Vector2s, ZoneWork> work = new Dictionary<Vector2s, ZoneWork>();
+        private static readonly Dictionary<Vector2s, ZDOID> controllers = new Dictionary<Vector2s, ZDOID>();
         private static readonly Dictionary<Vector2s, List<ZoneSystem.ClearArea>> initialExclusions = new Dictionary<Vector2s, List<ZoneSystem.ClearArea>>();
         private static readonly HashSet<Vector2s> settled = new HashSet<Vector2s>();
-        private static readonly Queue<Vector2s> cleanupZones = new Queue<Vector2s>();
-        private static readonly HashSet<Vector2s> cleanupSet = new HashSet<Vector2s>();
         private static readonly Queue<ZDOID> removals = new Queue<ZDOID>();
         private static readonly HashSet<ZDOID> removalSet = new HashSet<ZDOID>();
         private static readonly Queue<ZDOID> markerResets = new Queue<ZDOID>();
         private static readonly HashSet<ZDOID> markerSet = new HashSet<ZDOID>();
-        private static ZoneWork cleanup;
+        private static IEnumerator<Vector2s> loadedZones;
         private static ZoneSystem world;
-        private static float nextPeerCheck;
-        private static int scanCursor;
         private static int zonePrefab;
-        private static bool wanted;
-        private static bool prefabChecked;
+        private static bool wanted, prefabChecked;
 
         internal static void InitializePrefab(ZoneSystem instance)
         {
@@ -118,31 +128,24 @@ namespace Seasons
 
         internal static void Reset()
         {
-            scans.Clear();
-            visited.Clear();
+            loadedZones?.Dispose();
+            loadedZones = null;
             requests.Clear();
             requestSet.Clear();
             work.Clear();
+            controllers.Clear();
             initialExclusions.Clear();
             settled.Clear();
-            cleanupZones.Clear();
-            cleanupSet.Clear();
-            removals.Clear();
-            removalSet.Clear();
-            markerResets.Clear();
-            markerSet.Clear();
-            cleanup = null;
+            CancelCleanup();
             world = null;
-            nextPeerCheck = 0f;
-            scanCursor = zonePrefab = 0;
+            zonePrefab = 0;
             wanted = prefabChecked = false;
             s_iceFloe = null;
         }
 
         private static bool PeerReady()
         {
-            if (!ZoneSystem.instance || !ZNet.instance ||
-                !ZNetScene.instance || ZDOMan.instance == null ||
+            if (!ZoneSystem.instance || !ZNet.instance || !ZNetScene.instance || ZDOMan.instance == null ||
                 ZNet.GetConnectionStatus() != ZNet.ConnectionStatus.Connected)
                 return false;
             if (world != ZoneSystem.instance)
@@ -155,350 +158,431 @@ namespace Seasons
         }
 
         private static bool ServerReady() => PeerReady() && ZNet.instance.IsServer();
+        private static bool PlacementSeason() => SeasonState.IsActive && IsTimeForIceFloes();
 
         private static bool PlacementReady()
         {
             if (!prefabChecked && world.m_vegetation.Count != 0)
                 InitializePrefab(world);
-            return WorldGenerator.instance != null && (!ZNet.instance.IsServer() || world.LocationsGenerated) &&
+            return !ZNet.instance.IsDedicated() && WorldGenerator.instance != null &&
                 waterStateInitialized && s_waterEdge > 100f && s_iceFloe?.m_prefab != null;
         }
 
-        // A normal water/load event only queues work; placement stays outside the callback.
         internal static bool CheckWaterVolume(WaterVolume water)
         {
-            if (!water || !water.m_heightmap)
+            if (!water || !water.m_heightmap || !ZNet.instance || ZNet.instance.IsDedicated() || !PlacementSeason())
                 return true;
-            if (!PeerReady() || !PlacementReady())
+            if (!PeerReady())
                 return false;
-            ScheduleZone(ZoneSystem.GetZone(water.transform.position));
+            RequestZone(ZoneSystem.GetZone(water.transform.position));
             return true;
         }
 
-        private static void ScheduleZone(Vector2s zone)
+        private static bool ValidInZone(ZDO zdo, Vector2s zone) => zdo != null && zdo.IsValid() &&
+            ZDOMan.instance.GetZDO(zdo.m_uid) == zdo && ZoneSystem.GetZone(zdo.GetPosition()) == zone;
+
+        private static ZDO CachedControl(Vector2s zone)
         {
-            if (!SeasonState.IsActive || !IsTimeForIceFloes())
-            {
-                ScheduleCleanup(zone);
+            if (!controllers.TryGetValue(zone, out ZDOID id))
+                return null;
+            ZDO zdo = ZDOMan.instance.GetZDO(id);
+            if (ValidInZone(zdo, zone) && zdo.GetPrefab() == zonePrefab)
+                return zdo;
+            controllers.Remove(zone);
+            work.Remove(zone); // Reacquisition must rebuild the missing controller's static inputs.
+            return null;
+        }
+
+        private static bool AllowedControl(ZDO zdo) => zdo != null && (!zdo.HasOwner() || zdo.IsOwner());
+
+        private static void RequestZone(Vector2s zone)
+        {
+            // Summer has no client cleanup or recurring discovery. Server maintenance owns removal.
+            if (!PlacementSeason() || ZNet.instance.IsDedicated() || settled.Contains(zone) || !world.m_zones.ContainsKey(zone))
                 return;
+            ZDO control = CachedControl(zone);
+            if (control != null && control.GetBool(SeasonsVars.s_iceFloesSpawned))
+            {
+                StopZone(zone);
+                return; // Check the persistent completion marker before creating or inspecting work.
             }
-            if (!settled.Contains(zone) && requestSet.Add(zone))
+            if (control != null && !AllowedControl(control))
+                return;
+            if (work.TryGetValue(zone, out ZoneWork current))
+            {
+                current.NextAttempt = 0f;
+                if (!requestSet.Contains(zone))
+                    RestartInspection(current);
+            }
+            Queue(zone);
+        }
+
+        private static void Queue(Vector2s zone)
+        {
+            if (requestSet.Add(zone))
                 requests.Enqueue(zone);
         }
 
-        private static void ScheduleCleanup(Vector2s zone)
+        private static void ObserveControl(ZDO zdo)
         {
-            if (ServerReady() && !(SeasonState.IsActive && IsTimeForIceFloes()) && cleanupSet.Add(zone))
-                cleanupZones.Enqueue(zone);
+            if (!PeerReady() || ZNet.instance.IsDedicated() || zdo == null || zdo.GetPrefab() != zonePrefab || !zdo.IsValid())
+                return;
+            Vector2s zone = ZoneSystem.GetZone(zdo.GetPosition());
+            if (!world.m_zones.ContainsKey(zone))
+                return;
+            controllers[zone] = zdo.m_uid;
+            RequestZone(zone);
         }
 
-        // The existing world-cleanup pass supplies its established scope; this service adds no world scan.
+        // Only the existing bounded server maintenance pass supplies global removal requests.
         internal static void ScheduleRemoval(ZDO zdo)
         {
-            if (zdo != null && ServerReady() && !(SeasonState.IsActive && IsTimeForIceFloes()) && removalSet.Add(zdo.m_uid))
+            if (zdo != null && ServerReady() && !PlacementSeason() && removalSet.Add(zdo.m_uid))
                 removals.Enqueue(zdo.m_uid);
         }
 
         internal static void ScheduleMarkerReset(ZDO zdo)
         {
-            if (zdo != null && ServerReady() && !(SeasonState.IsActive && IsTimeForIceFloes()) && markerSet.Add(zdo.m_uid))
+            if (zdo != null && ServerReady() && !PlacementSeason() &&
+                zdo.GetBool(SeasonsVars.s_iceFloesSpawned) && markerSet.Add(zdo.m_uid))
                 markerResets.Enqueue(zdo.m_uid);
         }
 
         private static void CancelCleanup()
         {
-            cleanup = null;
-            cleanupZones.Clear();
-            cleanupSet.Clear();
             removals.Clear();
             removalSet.Clear();
             markerResets.Clear();
             markerSet.Clear();
         }
 
-        private static void Observe(long peer, Vector3 position, int nearRadius, int radius)
-        {
-            Vector2s center = ZoneSystem.GetZone(position);
-            RegionScan scan = scans.Find(item => item.Peer == peer);
-            if (scan == null)
-            {
-                scans.Add(new RegionScan { Peer = peer, Center = center, NearRadius = nearRadius, Radius = radius });
-                return;
-            }
-            if (scan.Center == center && scan.Radius == radius && scan.NearRadius == nearRadius)
-                return;
-            scan.Center = center;
-            scan.NearRadius = nearRadius;
-            scan.Radius = radius;
-            // Approaching a new zone should reach the newly eligible outer ring before old inner rings.
-            scan.OutsideFirst = true;
-            scan.Ring = radius;
-            scan.Edge = 0;
-        }
-
-        private static bool InScope(Vector2s zone, bool near)
-        {
-            foreach (RegionScan scan in scans)
-            {
-                int radius = near ? scan.NearRadius : scan.Radius;
-                if (Math.Abs(zone.x - scan.Center.x) <= radius && Math.Abs(zone.y - scan.Center.y) <= radius &&
-                    (world.m_simulationDistance.IsClassic || world.ZonesWithinRadius(scan.Center, zone, radius, ghostZone: !near)))
-                    return true;
-            }
-            return false;
-        }
-
         private static bool BeforeDeadline(long deadline) => Stopwatch.GetTimestamp() < deadline;
+
+        private static void DiscoverLoadedZones(long deadline)
+        {
+            if (loadedZones == null)
+                return;
+            for (int i = 0; i < RequestBudget && BeforeDeadline(deadline); i++)
+            {
+                try
+                {
+                    if (loadedZones.MoveNext())
+                    {
+                        RequestZone(loadedZones.Current);
+                        continue;
+                    }
+                    loadedZones.Dispose();
+                    loadedZones = null;
+                    return;
+                }
+                catch (InvalidOperationException)
+                {
+                    // Normal zone loading can change the dictionary between frames. Restart
+                    // this one-off winter-entry walk; coalesced/settled zones stay cheap.
+                    loadedZones.Dispose();
+                    loadedZones = world.m_zones.Keys.GetEnumerator();
+                    return;
+                }
+            }
+        }
 
         internal static void Update()
         {
             if (!PeerReady() || Game.IsPaused() || Time.timeScale <= 0f)
                 return;
-            long deadline = Stopwatch.GetTimestamp() + (long)(Stopwatch.Frequency * ServiceMilliseconds / 1000.0);
-            bool nowWanted = SeasonState.IsActive && IsTimeForIceFloes();
+            long deadline = Stopwatch.GetTimestamp() + (long)(Stopwatch.Frequency * ServiceMilliseconds / 1000d);
+            bool nowWanted = PlacementSeason();
             if (wanted != nowWanted)
             {
                 wanted = nowWanted;
-                if (!wanted)
+                loadedZones?.Dispose();
+                loadedZones = null;
+                work.Clear();
+                settled.Clear();
+                if (wanted)
                 {
-                    foreach (Vector2s zone in work.Keys)
-                        ScheduleCleanup(zone);
+                    CancelCleanup();
+                    if (!ZNet.instance.IsDedicated())
+                        loadedZones = world.m_zones.Keys.GetEnumerator();
+                }
+                else
+                {
                     requests.Clear();
                     requestSet.Clear();
                     initialExclusions.Clear();
+                    if (ZNet.instance.IsServer())
+                        SeasonalWorldMaintenance.RequestWorldScan();
                 }
-                else
-                    CancelCleanup();
-                work.Clear();
-                settled.Clear();
-                foreach (RegionScan scan in scans)
-                {
-                    scan.OutsideFirst = false;
-                    scan.Ring = scan.Edge = 0;
-                }
-                nextPeerCheck = 0f;
             }
-            if (Time.time >= nextPeerCheck)
-            {
-                nextPeerCheck = Time.time + PeerRefreshSeconds;
-                var distance = ZNet.instance.GetSyncedSimulationDistance();
-                int radius = wanted ? distance.NearSimulationDistance : distance.TotalSimulationDistance;
-                List<ZNetPeer> peers = ZNet.instance.GetPeers();
-                scans.RemoveAll(scan => scan.Peer != 0L && !peers.Exists(peer => peer.m_uid == scan.Peer && peer.IsReady()));
-                if (!ZNet.instance.IsDedicated())
-                    Observe(0L, ZNet.instance.GetReferencePosition(), distance.NearSimulationDistance, radius);
-                if (wanted)
-                    scans.RemoveAll(scan => scan.Peer != 0L);
-                foreach (ZNetPeer peer in peers)
-                    if (!wanted && ZNet.instance.IsServer() && peer.IsReady())
-                        Observe(peer.m_uid, peer.GetRefPos(), distance.NearSimulationDistance, radius);
-            }
-
-            int objectBudget = ObjectBudget;
-            if (ZNet.instance.IsServer())
-            {
-                ServiceCleanup(ref objectBudget, deadline);
-                ServiceRemovals(deadline);
-            }
-
-            // Normal load events already queued their zones. Discovery never runs placement in callbacks.
-            for (int i = 0; i < DiscoveryBudget && BeforeDeadline(deadline); ++i)
-            {
-                bool found = false;
-                Vector2s zone = default;
-                for (int j = 0; j < scans.Count; ++j)
-                {
-                    scanCursor %= scans.Count;
-                    if (scans[scanCursor++].Next(out zone))
-                    {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found)
-                    break;
-                if ((wanted && settled.Contains(zone)) || !InScope(zone, wanted) ||
-                    (!wanted && !world.IsZoneGenerated(zone)))
-                    continue;
-                if (!wanted || world.IsZoneLoaded(zone))
-                    ScheduleZone(zone);
-            }
-
-            // Finish old-season cleanup before permitting new placement or writing a completion marker.
-            if (!wanted || cleanup != null || cleanupZones.Count != 0 || removals.Count != 0 || markerResets.Count != 0 ||
-                !PlacementReady())
+            ServiceRemovals(deadline);
+            if (!wanted || ZNet.instance.IsDedicated())
                 return;
-            int candidates = CandidateBudget;
-            int instances = InstanceBudget;
-            int requestBudget = DiscoveryBudget;
-            while (requests.Count != 0 && candidates > 0 && instances > 0 && requestBudget-- > 0 && BeforeDeadline(deadline))
+            DiscoverLoadedZones(deadline);
+            if (!PlacementReady())
+                return;
+
+            int objects = ObjectBudget, candidates = CandidateBudget, instances = InstanceBudget;
+            int attempts = Math.Min(RequestBudget, requests.Count);
+            while (attempts-- > 0 && candidates > 0 && instances > 0 && BeforeDeadline(deadline))
             {
                 Vector2s zone = requests.Dequeue();
                 requestSet.Remove(zone);
-                if (settled.Contains(zone) || !world.IsZoneLoaded(zone) || !InScope(zone, near: true))
+                if (!world.m_zones.ContainsKey(zone))
                 {
-                    work.Remove(zone);
+                    ForgetZone(zone);
                     continue;
                 }
-                if (!work.TryGetValue(zone, out ZoneWork current))
+                if (settled.Contains(zone))
+                    continue;
+                ZDO control = CachedControl(zone);
+                if (control != null && control.GetBool(SeasonsVars.s_iceFloesSpawned))
                 {
-                    SpawnSystem spawn = FindOwnedSpawnSystem(zone);
-                    if (!spawn)
-                        continue; // An ordinary loaded zone owner is the only producer.
-                    Heightmap heightmap = spawn.m_heightmap;
-                    // Native candidate GetBiome selects from these four loaded corner biomes.
-                    // This excludes pure land without rejecting mixed coastal zones or copying their ZDOs.
-                    if (!heightmap.m_isDistantLod && heightmap.m_buildData != null &&
-                        ZoneSystem.GetZone(heightmap.transform.position) == zone && !heightmap.HaveBiome(Heightmap.Biome.Ocean))
+                    StopZone(zone);
+                    continue;
+                }
+                if (control != null && !AllowedControl(control))
+                    continue; // No ownership request. SetOwnerInternal/load events can retry later.
+                if (!work.TryGetValue(zone, out ZoneWork current) ||
+                    (control != null && current.Control != ZDOID.None && current.Control != control.m_uid))
+                {
+                    current = new ZoneWork { Zone = zone };
+                    work[zone] = current;
+                }
+                if (Time.time < current.NextAttempt)
+                {
+                    Queue(zone);
+                    continue;
+                }
+                if (control == null && !FindControl(current, ref objects, deadline, out control))
+                    continue;
+                if (control.GetBool(SeasonsVars.s_iceFloesSpawned))
+                {
+                    StopZone(zone);
+                    continue;
+                }
+                if (!AllowedControl(control))
+                    continue;
+                if (current.Control != control.m_uid)
+                {
+                    current.Control = control.m_uid;
+                    RestartInspection(current);
+                }
+                if (!ReadyGeometry(current))
+                {
+                    Defer(current);
+                    continue;
+                }
+                try
+                {
+                    if (!current.Inspected && !InspectPlacement(current, ref objects, deadline))
+                        continue;
+                    // Marker, season, static loading and foreign ownership can change between slices.
+                    if (!PlacementSeason() || !AllowedControl(control) || !ValidInZone(control, zone) ||
+                        world.m_loadingObjectsInZones.ContainsKey(zone))
                     {
-                        Complete(zone);
+                        Defer(current, inspectAgain: true);
                         continue;
                     }
-                    current = BeginZone(zone);
-                    current.SpawnSystem = spawn;
-                    current.Control = spawn.m_nview.GetZDO().m_uid;
-                    work.Add(zone, current);
-                }
-                if (!OwnsLoadedZone(current))
-                {
-                    work.Remove(zone);
-                    continue; // Discard stale authority and RNG state; a new owner checks existing floes.
-                }
-                if (!InspectZone(current, false, ref objectBudget, deadline))
-                {
-                    ScheduleZone(zone);
-                    continue;
-                }
-                ZDO control = ZDOMan.instance.GetZDO(current.Control);
-                if (control == null)
-                {
-                    work.Remove(zone);
-                    continue; // Wait for another normal load event, not a distant retry loop.
-                }
-                if (current.ExistingFloe || control.GetBool(SeasonsVars.s_iceFloesSpawned))
-                {
-                    // A partial run from a previous session is also a duplicate-prevention input.
-                    // Do not invent a completed marker for it, or recreate deliberately removed floes.
-                    Complete(zone);
-                    continue;
-                }
-                if (!current.RandomReady)
-                    InitializeRandom(current);
-                if (current.Remaining <= 0)
-                {
-                    control.Set(SeasonsVars.s_iceFloesSpawned, 1);
-                    Complete(zone);
-                    continue;
-                }
-                candidates--;
-                CandidateResult result = PlaceCandidate(current);
-                if (result == CandidateResult.Deferred)
-                    continue; // Keep the exact RNG/candidate cursor for the next load/approach event.
-                current.Remaining--;
-                if (result == CandidateResult.Placed)
-                    instances--;
-                ScheduleZone(zone);
-            }
-        }
-
-        private static SpawnSystem FindOwnedSpawnSystem(Vector2s zone)
-        {
-            foreach (SpawnSystem spawn in SpawnSystem.m_instances)
-                if (spawn && spawn.m_heightmap && spawn.m_nview && spawn.m_nview.IsValid() &&
-                    spawn.m_nview.IsOwner() && ZoneSystem.GetZone(spawn.transform.position) == zone)
-                    return spawn;
-            return null;
-        }
-
-        private static bool OwnsLoadedZone(ZoneWork current) => SeasonState.IsActive && IsTimeForIceFloes() &&
-            world.IsZoneLoaded(current.Zone) && current.SpawnSystem && current.SpawnSystem.m_heightmap &&
-            current.SpawnSystem.m_nview && current.SpawnSystem.m_nview.IsValid() &&
-            current.SpawnSystem.m_nview.IsOwner() && current.SpawnSystem.m_nview.GetZDO().m_uid == current.Control;
-
-        private static ZoneWork BeginZone(Vector2s zone)
-        {
-            ZoneWork current = new ZoneWork { Zone = zone };
-            visited.Clear();
-            ZDOMan.instance.FindObjects(zone, current.Objects, visited);
-            if (initialExclusions.TryGetValue(zone, out List<ZoneSystem.ClearArea> exclusions))
-            {
-                current.Exclusions.AddRange(exclusions);
-                initialExclusions.Remove(zone);
-            }
-            else if (world.m_locationInstances.TryGetValue(zone, out ZoneSystem.LocationInstance location) &&
-                location.m_placed && location.m_location != null && location.m_location.m_clearArea)
-                current.Exclusions.Add(new ZoneSystem.ClearArea(location.m_position, location.m_location.m_exteriorRadius));
-            return current;
-        }
-
-        private static bool InspectZone(ZoneWork current, bool remove, ref int budget, long deadline)
-        {
-            while (current.ObjectIndex < current.Objects.Count && budget > 0 && BeforeDeadline(deadline))
-            {
-                budget--;
-                ZDO zdo = current.Objects[current.ObjectIndex++];
-                if (zdo == null || !zdo.IsValid() || ZDOMan.instance.GetZDO(zdo.m_uid) != zdo ||
-                    ZoneSystem.GetZone(zdo.GetPosition()) != current.Zone)
-                    continue;
-                if (zdo.GetPrefab() == zonePrefab)
-                {
-                    if (remove)
-                        current.Control = zdo.m_uid;
-                    if (remove)
-                        ScheduleMarkerReset(zdo);
-                }
-                else if (zdo.GetPrefab() == s_iceFloePrefab && zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
-                {
-                    if (remove)
-                        ScheduleRemoval(zdo);
-                    else
+                    if (!current.RandomReady)
+                        InitializeRandom(current);
+                    if (current.Remaining <= 0)
                     {
-                        current.ExistingFloe = true;
-                        if (zdo.IsOwner())
-                            zdo.SetDistant(true);
+                        // The integer overload updates DataRevision, ClientChanged and dirty-sector
+                        // state for owner zero too. Normal replication sends it without SetOwner.
+                        if (!control.GetBool(SeasonsVars.s_iceFloesSpawned))
+                            control.Set(SeasonsVars.s_iceFloesSpawned, 1, okForNotOwner: true);
+                        StopZone(zone);
+                        continue;
                     }
+                    candidates--;
+                    CandidateResult result = PlaceCandidate(current);
+                    if (result == CandidateResult.Deferred)
+                    {
+                        Defer(current, inspectAgain: true);
+                        continue;
+                    }
+                    current.Remaining--;
+                    if (result == CandidateResult.Placed)
+                        instances--;
+                    Queue(zone);
+                }
+                catch (Exception exception)
+                {
+                    // Any already created floe remains watermarked. Do not retry a failed partial
+                    // spawn locally or publish a completed marker for it.
+                    StopZone(zone);
+                    LogWarning($"Seasonal ice floe placement stopped in {zone}: {exception}");
                 }
             }
-            if (current.ObjectIndex != current.Objects.Count)
-                return false;
-            current.Objects.Clear();
-            current.ObjectIndex = 0;
-            return true;
         }
 
-        private static void Complete(Vector2s zone)
+        private static bool FindControl(ZoneWork current, ref int budget, long deadline, out ZDO control)
+        {
+            control = null;
+            while (budget > 0 && BeforeDeadline(deadline))
+            {
+                if (!current.Cursor.Next(current.Zone, out ZDO zdo))
+                {
+                    Defer(current, inspectAgain: true);
+                    return false;
+                }
+                budget--;
+                if (!ValidInZone(zdo, current.Zone) || zdo.GetPrefab() != zonePrefab)
+                    continue;
+                controllers[current.Zone] = zdo.m_uid;
+                current.Cursor.Reset();
+                control = zdo;
+                return true;
+            }
+            Queue(current.Zone);
+            return false;
+        }
+
+        private static bool ReadyGeometry(ZoneWork current)
+        {
+            if (!world.m_zones.TryGetValue(current.Zone, out ZoneSystem.ZoneData zone) || !zone.m_root)
+                return false;
+            if (!current.Terrain)
+                current.Terrain = zone.m_root.GetComponentInChildren<Heightmap>();
+            Heightmap terrain = current.Terrain;
+            // m_loadingObjectsInZones is populated by deferred LocationProxy/DungeonGenerator
+            // work. Only this zone matters; unrelated dynamic/adjacent objects are not a gate.
+            return terrain && terrain.isActiveAndEnabled && !terrain.m_isDistantLod && terrain.m_buildData != null &&
+                terrain.m_collider && terrain.m_collider.enabled && terrain.m_collider.sharedMesh &&
+                ZoneSystem.GetZone(terrain.transform.position) == current.Zone && !world.m_loadingObjectsInZones.ContainsKey(current.Zone);
+        }
+
+        private static void RestartInspection(ZoneWork current)
+        {
+            current.Cursor.Reset();
+            current.Inspected = current.StaticMissing = current.Ghost = false;
+        }
+
+        private static void InvalidatePendingSector(ZoneSystem.SectorIndex sector, ZDO zdo)
+        {
+            if (!world || work.Count == 0)
+                return;
+            // AddToSector runs before RPC deserialization and before a moved ZDO receives
+            // its new m_position. The destination sector, not prefab/type/old position,
+            // identifies pending work. Sector zero is the native out-of-range bucket.
+            Vector2s zone = sector.Sector == 0 ? ZoneSystem.GetZone(zdo.GetPosition()) : ZoneSystem.IndexToSector(sector.Sector);
+            if (!work.TryGetValue(zone, out ZoneWork current))
+                return;
+            RestartInspection(current);
+            current.NextAttempt = 0f;
+            Queue(zone);
+        }
+
+        private static void ForgetZone(Vector2s zone)
+        {
+            work.Remove(zone);
+            controllers.Remove(zone);
+            initialExclusions.Remove(zone);
+            settled.Remove(zone);
+            // Keep an existing queued key until its bounded dequeue. If normal loading
+            // resumes first, that same key services fresh work without a duplicate entry.
+        }
+
+        private static void ForgetGeometry(Heightmap heightmap)
+        {
+            if (!world || heightmap.m_isDistantLod)
+                return;
+            Vector2s zone = ZoneSystem.GetZone(heightmap.transform.position);
+            if (world.m_zones.TryGetValue(zone, out ZoneSystem.ZoneData loaded) && loaded.m_root &&
+                !heightmap.transform.IsChildOf(loaded.m_root.transform))
+                return; // A retired/ghost heightmap must not evict a newer normal root.
+            ForgetZone(zone);
+        }
+
+        private static void Defer(ZoneWork current, bool inspectAgain = false)
+        {
+            if (inspectAgain)
+                RestartInspection(current);
+            current.NextAttempt = Time.time + PendingRetrySeconds;
+            Queue(current.Zone);
+        }
+
+        private static void AddExclusion(ZoneWork current, ZoneSystem.ClearArea area)
+        {
+            foreach (ZoneSystem.ClearArea existing in current.Exclusions)
+                if (existing.m_center == area.m_center && existing.m_radius == area.m_radius)
+                    return;
+            current.Exclusions.Add(area);
+        }
+
+        private static bool InspectPlacement(ZoneWork current, ref int budget, long deadline)
+        {
+            if (initialExclusions.TryGetValue(current.Zone, out List<ZoneSystem.ClearArea> exclusions))
+            {
+                foreach (ZoneSystem.ClearArea area in exclusions)
+                    AddExclusion(current, area);
+                initialExclusions.Remove(current.Zone);
+            }
+            if (world.m_locationInstances.TryGetValue(current.Zone, out ZoneSystem.LocationInstance location) &&
+                location.m_placed && location.m_location != null && location.m_location.m_clearArea)
+                AddExclusion(current, new ZoneSystem.ClearArea(location.m_position, location.m_location.m_exteriorRadius));
+            while (budget > 0 && BeforeDeadline(deadline))
+            {
+                if (!current.Cursor.Next(current.Zone, out ZDO zdo))
+                {
+                    if (current.StaticMissing)
+                        Defer(current, inspectAgain: true);
+                    else
+                        current.Inspected = true;
+                    return current.Inspected;
+                }
+                budget--;
+                if (!ValidInZone(zdo, current.Zone))
+                    continue;
+                if (zdo.GetPrefab() == s_iceFloePrefab && zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
+                {
+                    if (zdo.IsOwner())
+                        zdo.SetDistant(true);
+                    if (!current.Created.Contains(zdo.m_uid))
+                    {
+                        // Existing and unknown partial passes suppress duplicates but are not
+                        // falsely promoted to a completed persistent placement marker.
+                        StopZone(current.Zone);
+                        return false;
+                    }
+                    continue;
+                }
+                if (!ZNetScene.instance.IsPrefabZDOValid(zdo))
+                    continue;
+                ZNetView view = ZNetScene.instance.FindInstance(zdo);
+                int locationHash = zdo.GetInt(ZDOVars.s_location);
+                if (locationHash != 0)
+                {
+                    ZoneSystem.ZoneLocation settings = world.GetLocation(locationHash);
+                    if (settings != null && settings.m_clearArea)
+                        AddExclusion(current, new ZoneSystem.ClearArea(zdo.GetPosition(), settings.m_exteriorRadius));
+                    LocationProxy proxy = view ? view.GetComponent<LocationProxy>() : null;
+                    if (!proxy || proxy.m_locationNeedsSpawn || !proxy.m_instance)
+                        current.StaticMissing = true;
+                }
+                if (!view)
+                {
+                    current.Ghost = true;
+                    if (zdo.m_uid != current.Control && (zdo.Type == ZDO.ObjectType.Solid || zdo.Type == ZDO.ObjectType.Terrain))
+                        current.StaticMissing = true;
+                }
+            }
+            Queue(current.Zone);
+            return false;
+        }
+
+        private static void StopZone(Vector2s zone)
         {
             work.Remove(zone);
             initialExclusions.Remove(zone);
             settled.Add(zone);
         }
 
-        private static void ServiceCleanup(ref int objectBudget, long deadline)
-        {
-            if (!ServerReady() || (SeasonState.IsActive && IsTimeForIceFloes()))
-                return;
-            int zones = DiscoveryBudget;
-            while (zones-- > 0 && objectBudget > 0 && BeforeDeadline(deadline))
-            {
-                if (cleanup == null)
-                {
-                    if (cleanupZones.Count == 0)
-                        break;
-                    cleanup = BeginZone(cleanupZones.Dequeue());
-                }
-                if (!InspectZone(cleanup, true, ref objectBudget, deadline))
-                    break;
-                cleanupSet.Remove(cleanup.Zone);
-                cleanup = null;
-            }
-        }
-
         private static void ServiceRemovals(long deadline)
         {
-            // Season/day overrides can invalidate queues between request and service.
-            if (!ServerReady() || (SeasonState.IsActive && IsTimeForIceFloes()))
+            if (!ZNet.instance.IsServer() || PlacementSeason())
                 return;
-            for (int i = 0; i < RemovalBudget && removals.Count != 0 && BeforeDeadline(deadline); ++i)
+            for (int i = 0; i < RemovalBudget && removals.Count != 0 && BeforeDeadline(deadline); i++)
             {
                 ZDOID id = removals.Dequeue();
                 removalSet.Remove(id);
@@ -506,12 +590,12 @@ namespace Seasons
                 if (zdo != null && zdo.GetPrefab() == s_iceFloePrefab && zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
                     RemoveObject(zdo, force: true);
             }
-            for (int i = 0; i < MarkerBudget && markerResets.Count != 0 && BeforeDeadline(deadline); ++i)
+            for (int i = 0; i < MarkerBudget && markerResets.Count != 0 && BeforeDeadline(deadline); i++)
             {
                 ZDOID id = markerResets.Dequeue();
                 markerSet.Remove(id);
                 ZDO zdo = ZDOMan.instance.GetZDO(id);
-                if (zdo != null && zdo.GetPrefab() == zonePrefab)
+                if (zdo != null && zdo.GetPrefab() == zonePrefab && zdo.GetBool(SeasonsVars.s_iceFloesSpawned))
                     zdo.Set(SeasonsVars.s_iceFloesSpawned, 0, okForNotOwner: true);
             }
         }
@@ -555,6 +639,8 @@ namespace Seasons
 
         private static CandidateResult PlaceCandidateWithRandom(ZoneWork current)
         {
+            if (ZNetView.m_ghostInit)
+                return CandidateResult.Deferred;
             Vector3 center = ZoneSystem.GetZonePos(current.Zone);
             float halfZone = world.m_zoneSize / 2f;
             Vector3 p = new Vector3(UnityEngine.Random.Range(center.x - halfZone, center.x + halfZone), 0f,
@@ -563,7 +649,7 @@ namespace Seasons
                 (s_iceFloe.m_blockCheck && world.IsBlocked(p)))
                 return CandidateResult.Skipped;
             world.GetGroundData(ref p, out _, out Heightmap.Biome biome, out Heightmap.BiomeArea biomeArea, out Heightmap hmap);
-            if (!hmap)
+            if (!hmap || hmap.m_isDistantLod || hmap.m_buildData == null)
                 return CandidateResult.Deferred;
             // Coastal zones can have a land center and eligible Ocean candidates.
             // Only the actual placement point determines biome eligibility.
@@ -593,19 +679,41 @@ namespace Seasons
             if (s_iceFloe.m_snapToWater)
                 p.y = world.m_waterLevel - _winterWaterSurfaceOffset;
 
-            GameObject instance = UnityEngine.Object.Instantiate(s_iceFloe.m_prefab, p,
-                Quaternion.Euler(0, UnityEngine.Random.Range(0, 360), 0));
-            ZNetView view = instance.GetComponent<ZNetView>();
-            view.SetLocalScale(new Vector3(scaleX, scaleY, scaleZ));
-            float health = iceFloesHealth.Value * scaleX * scaleY * scaleZ;
-            ZDO zdo = view.GetZDO();
-            zdo.Set(SeasonsVars.s_iceFloeWatermark, true);
-            view.m_distant = true;
-            zdo.SetDistant(true);
-            zdo.Set(SeasonsVars.s_iceFloeMass, view.m_body.mass * PowSquash(Mathf.Sqrt(Mathf.Abs(scaleX * scaleY * scaleZ)), 0.6f));
-            zdo.Set(ZDOVars.s_health, health + Game.m_worldLevel * health * Game.instance.m_worldLevelMineHPMultiplier);
-            current.Exclusions.Add(new ZoneSystem.ClearArea(p, GetFloeSize(instance) + 0.5f));
-            return CandidateResult.Placed;
+            // Full/Ghost describes this floe's network initialization, never terrain generation.
+            // Missing unrelated dynamic instances selects Ghost instead of blocking local geometry.
+            GameObject instance = null;
+            bool ghost = current.Ghost;
+            if (ghost)
+                ZNetView.StartGhostInit();
+            try
+            {
+                instance = UnityEngine.Object.Instantiate(s_iceFloe.m_prefab, p,
+                    Quaternion.Euler(0, UnityEngine.Random.Range(0, 360), 0));
+                ZNetView view = instance.GetComponent<ZNetView>();
+                ZDO zdo = view.GetZDO();
+                zdo.Set(SeasonsVars.s_iceFloeWatermark, true);
+                current.Created.Add(zdo.m_uid);
+                view.m_distant = true;
+                zdo.SetDistant(true);
+                view.SetLocalScale(new Vector3(scaleX, scaleY, scaleZ));
+                float health = iceFloesHealth.Value * scaleX * scaleY * scaleZ;
+                zdo.Set(SeasonsVars.s_iceFloeMass, view.m_body.mass * PowSquash(Mathf.Sqrt(Mathf.Abs(scaleX * scaleY * scaleZ)), 0.6f));
+                zdo.Set(ZDOVars.s_health, health + Game.m_worldLevel * health * Game.instance.m_worldLevelMineHPMultiplier);
+                current.Exclusions.Add(new ZoneSystem.ClearArea(p, GetFloeSize(instance) + 0.5f));
+                return CandidateResult.Placed;
+            }
+            finally
+            {
+                if (ghost)
+                {
+                    ZNetView.FinishGhostInit();
+                    if (instance)
+                    {
+                        instance.SetActive(false);
+                        UnityEngine.Object.Destroy(instance);
+                    }
+                }
+            }
         }
 
         [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.PlaceZoneCtrl))]
@@ -613,18 +721,21 @@ namespace Seasons
         {
             private static void Postfix(Vector2s zoneID, ZoneSystem.SpawnMode mode)
             {
-                if (mode != ZoneSystem.SpawnMode.Full || !PeerReady() || !SeasonState.IsActive || !IsTimeForIceFloes())
+                if (mode != ZoneSystem.SpawnMode.Full || !PeerReady() || ZNet.instance.IsDedicated() || !PlacementSeason())
                     return;
-                // Copy only the normal full-load exclusions; never retain the shared vanilla list.
                 initialExclusions[zoneID] = new List<ZoneSystem.ClearArea>(world.m_tempClearAreas);
-                ScheduleZone(zoneID);
+                RequestZone(zoneID);
             }
         }
 
         [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Start))]
         private static class ZoneSystem_Start_Floes
         {
-            private static void Postfix(ZoneSystem __instance) => InitializePrefab(__instance);
+            private static void Postfix(ZoneSystem __instance)
+            {
+                PeerReady();
+                InitializePrefab(__instance);
+            }
         }
 
         [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.PokeLocalZone))]
@@ -633,7 +744,7 @@ namespace Seasons
             private static void Postfix(Vector2s zoneID, bool __result)
             {
                 if (__result && PeerReady())
-                    ScheduleZone(zoneID);
+                    RequestZone(zoneID);
             }
         }
 
@@ -642,20 +753,35 @@ namespace Seasons
         {
             private static void Postfix(ZDO zdo)
             {
-                if (PeerReady() && world.IsZoneLoaded(zdo.GetSector()))
-                    ScheduleZone(zdo.GetSector());
+                if (PeerReady() && zdo != null)
+                    RequestZone(zdo.GetSector());
             }
         }
 
-        // Ownership can arrive after the load callback. Native spawning already retries once a second.
-        [HarmonyPatch(typeof(SpawnSystem), nameof(SpawnSystem.UpdateSpawning))]
-        private static class SpawnSystem_UpdateSpawning_Floes
+        [HarmonyPatch(typeof(ZDO), nameof(ZDO.SetOwnerInternal))]
+        private static class ZDO_SetOwnerInternal_FloePermission
         {
-            private static void Postfix(SpawnSystem __instance)
+            private static void Postfix(ZDO __instance)
             {
-                if (PeerReady() && __instance.m_nview && __instance.m_nview.IsValid() && __instance.m_nview.IsOwner())
-                    ScheduleZone(ZoneSystem.GetZone(__instance.transform.position));
+                if (ZoneSystem.instance && __instance.GetPrefab() == zonePrefab && PlacementSeason())
+                    ObserveControl(__instance);
             }
+        }
+
+        [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.AddToSector))]
+        private static class ZDOMan_AddToSector_PendingFloeInputs
+        {
+            private static void Postfix(ZDOMan __instance, ZDO zdo, ZoneSystem.SectorIndex sectorIndex)
+            {
+                if (__instance == ZDOMan.instance && world == ZoneSystem.instance && zdo != null)
+                    InvalidatePendingSector(sectorIndex, zdo);
+            }
+        }
+
+        [HarmonyPatch(typeof(Heightmap), nameof(Heightmap.OnDestroy))]
+        private static class Heightmap_OnDestroy_FloePlacement
+        {
+            private static void Prefix(Heightmap __instance) => ForgetGeometry(__instance);
         }
 
         [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Update))]
@@ -684,7 +810,11 @@ namespace Seasons
             private static void Postfix(ZNetView __instance)
             {
                 ZDO zdo = __instance.GetZDO();
-                if (zdo == null || zdo.GetPrefab() != s_iceFloePrefab || !zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
+                if (zdo == null)
+                    return;
+                if (zdo.GetPrefab() == zonePrefab)
+                    ObserveControl(zdo);
+                if (zdo.GetPrefab() != s_iceFloePrefab || !zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
                     return;
                 __instance.m_distant = true;
                 if (__instance.IsOwner())
