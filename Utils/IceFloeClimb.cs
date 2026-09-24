@@ -58,6 +58,16 @@ namespace Seasons
         partial void AppendWaveDiagnostics(ref string text);
         internal void AppendHoverDiagnostics(ref string text) => AppendWaveDiagnostics(ref text);
 
+        // Derived from the retained sample, with no live physics query or allocation.
+        public Vector3 SampleLeverArm0 => SampleLeverArm(0);
+        public Vector3 SampleLeverArm1 => SampleLeverArm(1);
+        public Vector3 SampleLeverArm2 => SampleLeverArm(2);
+        public Vector3 SampleLeverArm3 => SampleLeverArm(3);
+        public float SimulationDistance => SeasonalIceFloeWaves.WaterDistance;
+
+        private Vector3 SampleLeverArm(int index) => Diagnostics != null && Diagnostics.Captured
+            ? Diagnostics.Probes[index].AppliedWorld - Diagnostics.CenterOfMass : Vector3.zero;
+
         public string GetHoverName() => "";
         public float GetHoverOffset() => 0f;
 
