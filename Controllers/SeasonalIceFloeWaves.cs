@@ -331,7 +331,8 @@ namespace Seasons
         public WaterVolume Water;
         public bool Registered, WaterObserved, PointsReady, Distant, HoldingGravity;
         public float CallbackLevel = -10000f;
-        public Vector3[] Points;
+        // Runtime buffers must not inherit serialized empty arrays from the prefab.
+        [NonSerialized] public Vector3[] Points;
         public float BuildHeading, BuildWind;
         public int CacheBuildCount;
         public WaveStatus Status = WaveStatus.Unregistered;
@@ -375,7 +376,7 @@ namespace Seasons
         }
 
         [Header("Last captured physics call (before native Floating / physics simulation)")]
-        public WaveDiagnostics Diagnostics;
+        [NonSerialized] public WaveDiagnostics Diagnostics;
         private readonly float[] buildRoundTripErrors = new float[4];
         private float hoverUntil = -1f, nextHoverText;
         private string hoverText = "";
@@ -537,7 +538,8 @@ namespace Seasons
 
         private void RecoverInvalidHeight()
         {
-            bool adoptingPosition = m_view.IsOwner() && !Sync.m_wasOwner && Sync.m_syncPosition;
+            bool adoptingPosition = m_view.IsOwner() && !Sync.m_wasOwner;
+            adoptingPosition &= Sync.m_syncPosition;
             Vector3 position = adoptingPosition ? m_view.GetZDO().GetPosition() : Body.position;
             if (Recovered || !m_view.IsOwner() || !ZoneSystem.instance || Time.time < NextRecovery ||
                 (Finite(position.y) && position.y >= -5000f) || !Finite(position.x) || !Finite(position.z))
@@ -639,6 +641,13 @@ namespace Seasons
         {
             if (!collider || !collider.enabled || !collider.gameObject.activeInHierarchy)
                 return false;
+            // Validate before the cached fast path: a non-null array can still be empty
+            // after prefab cloning or have been resized in a runtime inspector.
+            if (Points == null || Points.Length != 4)
+            {
+                Points = new Vector3[4];
+                PointsReady = false;
+            }
             Vector3 forward = Root.forward;
             float heading = Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg;
             float windHeading = SeasonalIceFloeWaves.WindHeading;
@@ -649,8 +658,6 @@ namespace Seasons
                 return true;
             PointsReady = false;
             ColliderTransform = collider.transform;
-            if (Points == null)
-                Points = new Vector3[4];
             Vector3 center = Body.worldCenterOfMass;
             for (int i = 0; i < 4; i++)
             {
@@ -790,6 +797,9 @@ namespace Seasons
         {
             Diagnostics ??= new WaveDiagnostics();
             WaveDiagnostics d = Diagnostics;
+            d.Captured = false;
+            if (d.Probes == null || d.Probes.Length != 4)
+                d.Probes = new ProbeDiagnostics[4];
             d.Frame = Time.frameCount;
             d.PointMode = PointMode;
             d.WaterMode = WaterMode;
@@ -892,7 +902,7 @@ namespace Seasons
                 b.Append("\nForce calls=").Append(LastForceCalls).Append("/4 total=").Append(TotalForceCalls);
                 b.Append(" cache=").Append(PointsReady).Append(" builds=").Append(CacheBuildCount);
                 WaveDiagnostics d = Diagnostics;
-                if (d == null || !d.Captured)
+                if (d == null || !d.Captured || d.Probes == null || d.Probes.Length != 4)
                     b.Append("\nWaiting for an active physics sample. Inspector: DiagnosticsEnabled pins capture.");
                 else
                 {
