@@ -1,13 +1,13 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 namespace Seasons
 {
-    public class IceFloeClimb : MonoBehaviour, Hoverable, Interactable
+    public partial class IceFloeClimb : MonoBehaviour, Hoverable, Interactable
     {
         public float m_useDistance = 3f;
         public float m_radius = 4f;
-        private Floating m_floating;
-        private ZNetView m_view;
+        public Floating m_floating;
+        public ZNetView m_view;
         private bool m_started;
         internal bool Started => m_started;
 
@@ -32,57 +32,44 @@ namespace Seasons
         }
 
         private void OnDisable() => SeasonalIceFloeWaves.Untrack(m_floating);
-
         private void OnDestroy() => SeasonalIceFloeWaves.Untrack(m_floating);
 
         public bool Interact(Humanoid character, bool hold, bool alt)
         {
-            if (hold)
+            if (hold || !InUseDistance(character))
                 return false;
-
-            if (!InUseDistance(character))
-                return false;
-
             SeasonalIceFloeWaves.PrepareInteraction(m_floating);
-            character.transform.position = Vector3.Lerp(character.transform.position, base.transform.position, 0.35f) + Vector3.up;
+            character.transform.position = Vector3.Lerp(character.transform.position, transform.position, 0.35f) + Vector3.up;
             Physics.SyncTransforms();
             return false;
         }
 
-        public bool UseItem(Humanoid user, ItemDrop.ItemData item)
-        {
-            return false;
-        }
+        public bool UseItem(Humanoid user, ItemDrop.ItemData item) => false;
 
         public string GetHoverText()
         {
-            if (!InUseDistance(Player.m_localPlayer))
-                return "";
-
-            return "[<color=yellow><b>$KEY_Use</b></color>] $seasons_ice_floe_climb".Localize();
+            string text = InUseDistance(Player.m_localPlayer)
+                ? "[<color=yellow><b>$KEY_Use</b></color>] $seasons_ice_floe_climb".Localize() : "";
+            AppendWaveDiagnostics(ref text);
+            return text;
         }
 
-        public string GetHoverName()
-        {
-            return "";
-        }
+        // Implemented by the controller partial; climb distance never gates diagnostic hover.
+        partial void AppendWaveDiagnostics(ref string text);
+        internal void AppendHoverDiagnostics(ref string text) => AppendWaveDiagnostics(ref text);
 
+        public string GetHoverName() => "";
         public float GetHoverOffset() => 0f;
 
         public bool InUseDistance(Humanoid human)
         {
-            if (human == null)
+            if (human == null || m_view == null || !m_view.IsValid() ||
+                !m_view.GetZDO().GetBool(SeasonsVars.s_iceFloeWatermark))
                 return false;
-
-            if (m_view == null || !m_view.IsValid() || !m_view.GetZDO().GetBool(SeasonsVars.s_iceFloeWatermark))
+            if (transform.position.y - human.transform.position.y < 0.5f)
                 return false;
-
-            if (base.transform.position.y - human.transform.position.y < 0.5f)
-                return false;
-
             Vector3 distance = transform.InverseTransformPoint(human.transform.position);
             float ellipticalDistance = Mathf.Sqrt(distance.x * distance.x + distance.z * distance.z);
-
             return m_radius < ellipticalDistance && ellipticalDistance < m_radius + m_useDistance;
         }
     }
