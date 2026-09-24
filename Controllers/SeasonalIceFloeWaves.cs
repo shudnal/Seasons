@@ -181,9 +181,15 @@ namespace Seasons
         [HarmonyPatch(typeof(Floating), nameof(Floating.CustomFixedUpdate))]
         private static class Floating_CustomFixedUpdate_IceFloeRotation
         {
-            private static bool Prefix(Floating __instance, float fixedDeltaTime) =>
-                !floaters.TryGetValue(__instance, out IceFloeClimb controller) || !controller.WaveValid ||
-                controller.BeforeFloating(fixedDeltaTime);
+            private static bool Prefix(Floating __instance, float fixedDeltaTime)
+            {
+                if (!floaters.TryGetValue(__instance, out IceFloeClimb controller) || !controller.WaveValid)
+                    return true;
+                // Keep Floating enabled for water/lifecycle callbacks, but never run a second
+                // buoyancy/damping block after the seasonal component has handled this call.
+                controller.SimulatePhysics(fixedDeltaTime);
+                return false;
+            }
         }
 
         [HarmonyPatch(typeof(Floating), nameof(Floating.OnEnable))]
@@ -315,7 +321,7 @@ namespace Seasons
     {
         public enum PointSampling { Cached, FreshClosestPoint, LegacyClosestPoint }
         public enum WaterSampling { Mathematical, NativeLiquidLevel }
-        public enum WaveStatus { Unregistered, Ready, Paused, Distant, NonOwner, NoWater, Kinematic, NoCollider, NoPoints, NoSurface, NoValidProbes, ForcesSubmitted }
+        public enum WaveStatus { Unregistered, Ready, Paused, Distant, NonOwner, NoWater, Kinematic, NoCollider, NoPoints, NoSurface, NoValidProbes, ForcesSubmitted, WavesDisabled }
 
         [Header("Local diagnostic controls (not saved or synchronized)")]
         public bool ShowDiagnosticsInHover = true;
@@ -323,6 +329,22 @@ namespace Seasons
         public bool FreezeDiagnostics;
         public PointSampling PointMode = PointSampling.Cached;
         public WaterSampling WaterMode = WaterSampling.Mathematical;
+
+        [Header("Local physics switches (not saved or synchronized)")]
+        [Tooltip("Apply the additional four-point wave forces. Disabled points are still sampled during diagnostics.")]
+        public bool ApplyWaveForces = true;
+        public bool ApplyWavePoint0 = true;
+        public bool ApplyWavePoint1 = true;
+        public bool ApplyWavePoint2 = true;
+        public bool ApplyWavePoint3 = true;
+        [Tooltip("Apply the original Floating impulse at the center of mass.")]
+        public bool ApplyCenterBuoyancy = true;
+        [Tooltip("Apply the original Floating balance impulse at the lowest collider point.")]
+        public bool ApplyBottomBalance = true;
+        [Tooltip("Apply Floating.m_damping to linear velocity while submerged. Does not change Rigidbody.linearDamping.")]
+        public bool ApplyFloatingLinearDamping = true;
+        [Tooltip("Apply Floating.m_damping to angular velocity while submerged. Does not change Rigidbody.angularDamping.")]
+        public bool ApplyFloatingAngularDamping = true;
 
         [Header("Live floe state")]
         public Rigidbody Body;
@@ -354,15 +376,25 @@ namespace Seasons
             public float BuildRoundTripError, CacheError, CacheErrorXZ, CacheErrorY, LegacyError, OutsideDistance;
             public float CachedMathWater, CachedNativeWater, FreshMathWater, FreshNativeWater, LegacyNativeWater;
             public Vector3 AppliedWorld, AppliedImpulse, AngularImpulse;
-            public bool Applied, AppliedWaterValid;
+            public bool Enabled, Applied, AppliedWaterValid;
             public float AppliedWater;
         }
 
         [Serializable]
         public sealed class WaveDiagnostics
         {
-            public bool Captured;
-            public int Frame = -1, ForceCalls, NativeValidCount;
+            public bool Captured, WaveProbesCaptured;
+            public int Frame = -1, BodyId, ForceCalls, NativeValidCount, ValidProbeCount, WavePointMask;
+            public long Owner;
+            public bool CenterBuoyancyEnabled, BottomBalanceEnabled, LinearDampingEnabled, AngularDampingEnabled;
+            public bool Submerged, BottomBalanceApplied, CenterBuoyancyApplied;
+            public bool BodySleeping, BodyUseGravity, FloatingBodyMatches, SyncBodyMatches;
+            public RigidbodyConstraints Constraints;
+            public float FloatDepth, BuoyancyFactor, DampingFactor, BodyLinearDamping, MaxAngularVelocity;
+            public Quaternion BodyRotation;
+            public Vector3 BottomPoint, BottomImpulse, BottomAngularImpulse, CenterImpulse;
+            public Vector3 FloatingEngineAngularImpulse, TotalEngineAngularImpulse, TotalEngineImpulse;
+            public Vector3 VelocityAfterDamping, AngularVelocityAfterDamping;
             public PointSampling PointMode;
             public WaterSampling WaterMode;
             public float FixedTime, FixedDelta, WaveTime, WindIntensity;
@@ -375,8 +407,24 @@ namespace Seasons
             public ProbeDiagnostics[] Probes = new ProbeDiagnostics[4];
         }
 
-        [Header("Last captured physics call (before native Floating / physics simulation)")]
+        [Serializable]
+        public sealed class PhysicsStepDiagnostics
+        {
+            public bool Captured;
+            public int SourceFrame, ObservedFrame, WavePointMask;
+            public long Owner;
+            public float SourceFixedTime, ObservedFixedTime, RotationChangeDegrees;
+            public PointSampling PointMode;
+            public WaterSampling WaterMode;
+            public bool CenterBuoyancyEnabled, BottomBalanceEnabled, LinearDampingEnabled, AngularDampingEnabled;
+            public Vector3 TotalEngineAngularImpulse, AngularVelocityAfterDamping, ObservedAngularVelocity;
+        }
+
+        [Header("Last captured controller call (before physics simulation)")]
         [NonSerialized] public WaveDiagnostics Diagnostics;
+        [Header("Previous captured call observed at the next physics callback")]
+        [NonSerialized] public PhysicsStepDiagnostics LastPhysicsStep;
+        private bool diagnosticStepPending;
         private readonly float[] buildRoundTripErrors = new float[4];
         private float hoverUntil = -1f, nextHoverText;
         private string hoverText = "";
@@ -410,6 +458,7 @@ namespace Seasons
             BobFrame = -1;
             LastForceCalls = 0;
             Status = WaveStatus.Ready;
+            diagnosticStepPending = false;
             return Registered = true;
         }
 
@@ -474,6 +523,7 @@ namespace Seasons
 
         internal void StopMotion()
         {
+            diagnosticStepPending = false;
             if (!Body.isKinematic)
             {
                 Body.linearVelocity = Vector3.zero;
@@ -523,6 +573,7 @@ namespace Seasons
 
         internal void RestoreWaves()
         {
+            diagnosticStepPending = false;
             RestoreDistant();
             RestoreGravity();
         }
@@ -615,6 +666,9 @@ namespace Seasons
 
         internal void BeforeSync()
         {
+            // OwnerSync also runs from LateUpdate while the game is paused.
+            if (Game.IsPaused() || Time.timeScale <= 0f)
+                diagnosticStepPending = false;
             ObserveOwner();
             RecoverInvalidHeight();
             if (Distant && (!BeyondWater() || (m_view.IsOwner() && !Sync.m_wasOwner)))
@@ -687,71 +741,121 @@ namespace Seasons
             return alpha == 0f ? (Vector3)first : (Vector3)Vector4.Lerp(first, second, alpha);
         }
 
-        internal bool BeforeFloating(float dt)
+        private int EnabledWavePointMask => !ApplyWaveForces ? 0 :
+            (ApplyWavePoint0 ? 1 : 0) | (ApplyWavePoint1 ? 2 : 0) |
+            (ApplyWavePoint2 ? 4 : 0) | (ApplyWavePoint3 ? 8 : 0);
+
+        internal void SimulatePhysics(float dt)
         {
             LastRunFrame = Time.frameCount;
             LastRunFixedTime = Time.fixedTime;
             LastForceCalls = 0;
             if (Game.IsPaused() || Time.timeScale <= 0f)
             {
+                diagnosticStepPending = false;
                 Status = WaveStatus.Paused;
-                return false;
+                return;
             }
+            ObserveNextPhysicsStep();
             ObserveOwner();
             RecoverInvalidHeight();
             if (BeyondWater() && (!m_view.IsOwner() || Sync.m_wasOwner))
             {
                 EnterDistant();
                 Status = WaveStatus.Distant;
-                return false;
+                return;
             }
             RestoreDistant();
             if (!m_view.IsOwner())
             {
                 RestoreGravity();
                 Status = WaveStatus.NonOwner;
-                return true;
+                return;
             }
             if (!EnsureCenterWater())
             {
                 HoldGravity();
                 m_floating.SetSurfaceEffect(false);
                 Status = WaveStatus.NoWater;
-                return false;
+                return;
             }
             RestoreGravity();
             if (Body.isKinematic)
             {
                 Status = WaveStatus.Kinematic;
-                return false;
+                return;
             }
             Collider collider = m_floating.m_collider;
             if (!collider)
             {
                 HoldGravity();
                 Status = WaveStatus.NoCollider;
-                return false;
+                return;
+            }
+            bool capture = !FreezeDiagnostics && (DiagnosticsEnabled || Time.unscaledTime <= hoverUntil);
+            if (capture)
+                BeginDiagnostics(dt, Body.worldCenterOfMass);
+            Vector3 torqueBefore = capture ? Body.GetAccumulatedTorque(dt) : Vector3.zero;
+            Vector3 forceBefore = capture ? Body.GetAccumulatedForce(dt) : Vector3.zero;
+
+            // Preserve the previous order: four extra impulses, native balance, native center,
+            // then native velocity damping. Missing wave inputs must not suppress center buoyancy.
+            ApplyWavePhysics(collider, dt, capture);
+            if (capture)
+            {
+                Diagnostics.ForceCalls = LastForceCalls;
+                Diagnostics.EngineAngularImpulse = (Body.GetAccumulatedTorque(dt) - torqueBefore) * dt;
+                Diagnostics.EngineImpulse = (Body.GetAccumulatedForce(dt) - forceBefore) * dt;
+            }
+            ApplyFloatingPhysics(collider, dt, capture);
+            if (capture)
+            {
+                WaveDiagnostics d = Diagnostics;
+                d.TotalEngineAngularImpulse = (Body.GetAccumulatedTorque(dt) - torqueBefore) * dt;
+                d.TotalEngineImpulse = (Body.GetAccumulatedForce(dt) - forceBefore) * dt;
+                d.FloatingEngineAngularImpulse = d.TotalEngineAngularImpulse - d.EngineAngularImpulse;
+                d.VelocityAfterDamping = Body.linearVelocity;
+                d.AngularVelocityAfterDamping = Body.angularVelocity;
+                d.Captured = true;
+                diagnosticStepPending = true;
+            }
+        }
+
+        private void ApplyWavePhysics(Collider collider, float dt, bool capture)
+        {
+            int pointMask = EnabledWavePointMask;
+            if (pointMask == 0 && !capture)
+            {
+                Status = WaveStatus.WavesDisabled;
+                return;
             }
             if (!SeasonalIceFloeWaves.TrySurfaceContext(this, out SeasonalIceFloeWaves.SurfaceContext context))
             {
                 Status = WaveStatus.NoSurface;
-                return true;
+                return;
             }
             if (!EnsurePoints(collider))
             {
                 Status = WaveStatus.NoPoints;
-                return true;
+                return;
             }
-            bool capture = !FreezeDiagnostics && (DiagnosticsEnabled || Time.unscaledTime <= hoverUntil);
             Vector3 legacyWind = capture || PointMode == PointSampling.LegacyClosestPoint ? LegacyWindDirection() : Vector3.zero;
             Vector3 center = Body.worldCenterOfMass;
             if (capture)
-                BeginDiagnostics(dt, center, legacyWind);
-            Vector3 torqueBefore = capture ? Body.GetAccumulatedTorque(dt) : Vector3.zero;
-            Vector3 forceBefore = capture ? Body.GetAccumulatedForce(dt) : Vector3.zero;
-            Body.WakeUp();
+            {
+                Diagnostics.WaveProbesCaptured = true;
+                Diagnostics.WaveTime = SeasonalIceFloeWaves.WaveTime;
+                Diagnostics.Wind = SeasonalIceFloeWaves.WindDirection;
+                Diagnostics.WindIntensity = SeasonalIceFloeWaves.WindIntensity;
+                Diagnostics.LegacyWind = legacyWind;
+            }
+            if (pointMask != 0)
+                Body.WakeUp();
             for (int i = 0; i < 4; i++)
             {
+                bool enabled = (pointMask & (1 << i)) != 0;
+                if (!enabled && !capture)
+                    continue;
                 Vector3 cached = ColliderTransform.TransformPoint(Points[i]);
                 Vector3 fresh = capture || PointMode == PointSampling.FreshClosestPoint
                     ? FreshPoint(collider, center, SeasonalIceFloeWaves.WindDirection, i) : cached;
@@ -770,45 +874,157 @@ namespace Seasons
                     valid = SeasonalIceFloeWaves.TrySurface(context, position, out water);
                 Vector3 impulse = valid ? WaveImpulse(position, water, dt) : Vector3.zero;
                 valid &= Finite(position) && Finite(impulse);
-                if (valid)
+                bool submitted = enabled && valid;
+                if (submitted)
                 {
                     Body.AddForceAtPosition(impulse, position, ForceMode.Impulse);
                     LastForceCalls++;
                     TotalForceCalls++;
                 }
                 if (capture)
-                    CaptureProbe(i, collider, context, cached, fresh, legacy, position, water, impulse, valid, dt, center);
+                {
+                    if (valid)
+                        Diagnostics.ValidProbeCount++;
+                    CaptureProbe(i, collider, context, cached, fresh, legacy, position, water, impulse, submitted, dt, center);
+                }
             }
-            Status = LastForceCalls == 0 ? WaveStatus.NoValidProbes : WaveStatus.ForcesSubmitted;
-            if (capture)
-            {
-                Diagnostics.ForceCalls = LastForceCalls;
-                // Native accumulator deltas, not estimates from the submitted argument vectors.
-                // Contacts, native Floating and the next physics simulation are outside this bracket.
-                Diagnostics.EngineAngularImpulse = (Body.GetAccumulatedTorque(dt) - torqueBefore) * dt;
-                Diagnostics.EngineImpulse = (Body.GetAccumulatedForce(dt) - forceBefore) * dt;
-                Diagnostics.Captured = true;
-            }
-            return true;
+            Status = pointMask == 0 ? WaveStatus.WavesDisabled :
+                LastForceCalls == 0 ? WaveStatus.NoValidProbes : WaveStatus.ForcesSubmitted;
         }
 
-        private void BeginDiagnostics(float dt, Vector3 center, Vector3 legacyWind)
+        private void ApplyFloatingPhysics(Collider collider, float dt, bool capture)
+        {
+            // Floating.CustomFixedUpdate at assemblies_combined d1374bfd (Valheim 1.0.15).
+            // Native water/impact helpers remain in use. Read coefficients from the actual
+            // Floating component so inspector edits and other mods' field changes still apply.
+            if (!m_floating.HaveLiquidLevel())
+            {
+                m_floating.SetSurfaceEffect(false);
+                return;
+            }
+            m_floating.UpdateImpactEffect();
+            float floatDepth = m_floating.GetFloatDepth();
+            if (capture)
+                Diagnostics.FloatDepth = floatDepth;
+            if (!Finite(floatDepth) || floatDepth > 0f)
+            {
+                m_floating.SetSurfaceEffect(false);
+                return;
+            }
+            m_floating.SetSurfaceEffect(true);
+            Vector3 center = Body.worldCenterOfMass;
+            float factor = Mathf.Clamp01(Mathf.Abs(floatDepth) / m_floating.m_forceDistance);
+            Vector3 impulse = m_floating.m_force * factor * (dt * 50f) * Vector3.up;
+            Body.WakeUp();
+            if (capture)
+            {
+                Diagnostics.Submerged = true;
+                Diagnostics.BuoyancyFactor = factor;
+                Diagnostics.DampingFactor = m_floating.m_damping * factor;
+            }
+            if (ApplyBottomBalance)
+            {
+                Vector3 bottom = collider.ClosestPoint(Root.position + Vector3.down * 1000f);
+                Vector3 balanceImpulse = impulse * m_floating.m_balanceForceFraction * Body.mass;
+                Body.AddForceAtPosition(balanceImpulse, bottom, ForceMode.Impulse);
+                if (capture)
+                {
+                    Diagnostics.BottomBalanceApplied = true;
+                    Diagnostics.BottomPoint = bottom;
+                    Diagnostics.BottomImpulse = balanceImpulse;
+                    Diagnostics.BottomAngularImpulse = Vector3.Cross(bottom - center, balanceImpulse);
+                }
+            }
+            if (ApplyCenterBuoyancy)
+            {
+                Vector3 centerImpulse = impulse * Body.mass;
+                Body.AddForceAtPosition(centerImpulse, center, ForceMode.Impulse);
+                if (capture)
+                {
+                    Diagnostics.CenterBuoyancyApplied = true;
+                    Diagnostics.CenterImpulse = centerImpulse;
+                }
+            }
+            if (ApplyFloatingLinearDamping)
+                Body.linearVelocity -= m_floating.m_damping * factor * Body.linearVelocity;
+            if (ApplyFloatingAngularDamping)
+                Body.angularVelocity -= m_floating.m_damping * factor * Body.angularVelocity;
+        }
+
+        private void ObserveNextPhysicsStep()
+        {
+            bool pending = diagnosticStepPending;
+            diagnosticStepPending = false;
+            WaveDiagnostics d = Diagnostics;
+            if (!pending || FreezeDiagnostics || d == null || !d.Captured ||
+                (!DiagnosticsEnabled && Time.unscaledTime > hoverUntil))
+                return;
+            LastPhysicsStep ??= new PhysicsStepDiagnostics();
+            LastPhysicsStep.Captured = false;
+            float elapsed = Time.fixedTime - d.FixedTime;
+            if (Distant || HoldingGravity || Body.isKinematic || BeyondWater() || !m_view.IsOwner() ||
+                m_view.GetZDO().GetOwner() != d.Owner || Body.GetInstanceID() != d.BodyId || elapsed <= 0f ||
+                elapsed > Mathf.Max(d.FixedDelta, Time.fixedDeltaTime) * 1.5f + 0.001f)
+                return; // Do not pair samples across a pause, ownership change or simulation gap.
+            PhysicsStepDiagnostics step = LastPhysicsStep;
+            step.SourceFrame = d.Frame;
+            step.ObservedFrame = Time.frameCount;
+            step.SourceFixedTime = d.FixedTime;
+            step.ObservedFixedTime = Time.fixedTime;
+            step.Owner = d.Owner;
+            step.PointMode = d.PointMode;
+            step.WaterMode = d.WaterMode;
+            step.WavePointMask = d.WavePointMask;
+            step.CenterBuoyancyEnabled = d.CenterBuoyancyEnabled;
+            step.BottomBalanceEnabled = d.BottomBalanceEnabled;
+            step.LinearDampingEnabled = d.LinearDampingEnabled;
+            step.AngularDampingEnabled = d.AngularDampingEnabled;
+            step.TotalEngineAngularImpulse = d.TotalEngineAngularImpulse;
+            step.AngularVelocityAfterDamping = d.AngularVelocityAfterDamping;
+            step.ObservedAngularVelocity = Body.angularVelocity;
+            Quaternion delta = Body.rotation * Quaternion.Inverse(d.BodyRotation);
+            // Atan2 preserves small rotations that Quaternion.Angle's near-one dot product
+            // can round to zero. Abs(w) selects the shortest equivalent rotation.
+            float sine = Mathf.Sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
+            step.RotationChangeDegrees = 2f * Mathf.Atan2(sine, Mathf.Abs(delta.w)) * Mathf.Rad2Deg;
+            // This observation includes the solver, contacts, Rigidbody damping and any other
+            // scripts between callbacks. It is not an isolated response to our impulse alone.
+            step.Captured = true;
+        }
+
+        private void BeginDiagnostics(float dt, Vector3 center)
         {
             Diagnostics ??= new WaveDiagnostics();
             WaveDiagnostics d = Diagnostics;
-            d.Captured = false;
+            d.Captured = d.WaveProbesCaptured = false;
             if (d.Probes == null || d.Probes.Length != 4)
                 d.Probes = new ProbeDiagnostics[4];
+            else
+                Array.Clear(d.Probes, 0, d.Probes.Length);
             d.Frame = Time.frameCount;
+            d.BodyId = Body.GetInstanceID();
+            d.Owner = m_view.GetZDO().GetOwner();
+            d.WavePointMask = EnabledWavePointMask;
+            d.CenterBuoyancyEnabled = ApplyCenterBuoyancy;
+            d.BottomBalanceEnabled = ApplyBottomBalance;
+            d.LinearDampingEnabled = ApplyFloatingLinearDamping;
+            d.AngularDampingEnabled = ApplyFloatingAngularDamping;
+            d.Submerged = d.BottomBalanceApplied = d.CenterBuoyancyApplied = false;
+            d.FloatDepth = float.NaN;
+            d.BuoyancyFactor = d.DampingFactor = 0f;
+            d.BottomPoint = d.BottomImpulse = d.BottomAngularImpulse = d.CenterImpulse = Vector3.zero;
+            d.EngineAngularImpulse = d.EngineImpulse = d.TotalEngineAngularImpulse =
+                d.TotalEngineImpulse = d.FloatingEngineAngularImpulse = Vector3.zero;
+            d.VelocityAfterDamping = d.AngularVelocityAfterDamping = Vector3.zero;
+            d.ForceCalls = d.ValidProbeCount = 0;
             d.PointMode = PointMode;
             d.WaterMode = WaterMode;
             d.NativeValidCount = 0;
             d.FixedTime = Time.fixedTime;
             d.FixedDelta = dt;
-            d.WaveTime = SeasonalIceFloeWaves.WaveTime;
-            d.Wind = SeasonalIceFloeWaves.WindDirection;
-            d.WindIntensity = SeasonalIceFloeWaves.WindIntensity;
-            d.LegacyWind = legacyWind;
+            // ApplyWavePhysics fills the wind snapshot only when it obtains valid wave inputs.
+            d.WaveTime = d.WindIntensity = float.NaN;
+            d.Wind = d.LegacyWind = Vector3.zero;
             d.CenterOfMass = center;
             d.EulerAngles = Root.eulerAngles;
             d.AngularVelocity = Body.angularVelocity;
@@ -817,6 +1033,14 @@ namespace Seasons
             d.InertiaRotation = Body.inertiaTensorRotation;
             d.Mass = Body.mass;
             d.AngularDamping = Body.angularDamping;
+            d.BodyLinearDamping = Body.linearDamping;
+            d.MaxAngularVelocity = Body.maxAngularVelocity;
+            d.Constraints = Body.constraints;
+            d.BodySleeping = Body.IsSleeping();
+            d.BodyUseGravity = Body.useGravity;
+            d.BodyRotation = Body.rotation;
+            d.FloatingBodyMatches = m_floating.m_body == Body;
+            d.SyncBodyMatches = Sync.m_body == Body;
             d.BalanceFraction = m_floating.m_balanceForceFraction;
             d.Damping = m_floating.m_damping;
             d.CenterWater = m_floating.m_waterLevel;
@@ -855,6 +1079,7 @@ namespace Seasons
             p.AppliedWorld = applied;
             p.AppliedWater = water;
             p.AppliedWaterValid = WaterValid(water);
+            p.Enabled = (d.WavePointMask & (1 << index)) != 0;
             p.Applied = submitted;
             p.AppliedImpulse = submitted ? impulse : Vector3.zero;
             p.AngularImpulse = Vector3.Cross(applied - center, p.AppliedImpulse);
@@ -875,13 +1100,25 @@ namespace Seasons
         public void ClearWaveDiagnostics()
         {
             Diagnostics = null;
+            LastPhysicsStep = null;
+            diagnosticStepPending = false;
             CacheBuildCount = 0;
             TotalForceCalls = 0;
             nextHoverText = 0f;
         }
 
         private static string Number(float value, string format = "F3") => value.ToString(format, CultureInfo.InvariantCulture);
-        private static string Vector(Vector3 value) => "(" + Number(value.x) + ", " + Number(value.y) + ", " + Number(value.z) + ")";
+        private static string Vector(Vector3 value, string format = "F3") =>
+            "(" + Number(value.x, format) + ", " + Number(value.y, format) + ", " + Number(value.z, format) + ")";
+
+        private static void AppendPhysicsSwitches(StringBuilder b, int mask, bool center, bool balance, bool linear, bool angular)
+        {
+            b.Append(" waves=");
+            for (int i = 0; i < 4; i++)
+                b.Append((mask & (1 << i)) != 0 ? '1' : '0');
+            b.Append(" center=").Append(center).Append(" balance=").Append(balance);
+            b.Append(" damp L/A=").Append(linear).Append('/').Append(angular);
+        }
 
         partial void AppendWaveDiagnostics(ref string text)
         {
@@ -893,37 +1130,78 @@ namespace Seasons
             if (Time.unscaledTime >= nextHoverText)
             {
                 nextHoverText = Time.unscaledTime + 0.2f;
-                StringBuilder b = hoverBuilder ??= new StringBuilder(1536);
+                StringBuilder b = hoverBuilder ??= new StringBuilder(3072);
                 b.Clear();
                 b.Append(HoverBlockStart).Append(' ').Append(Status).Append(" | ").Append(PointMode).Append('/').Append(WaterMode);
                 b.Append("\nOwner=").Append(m_view.GetZDO().GetOwner()).Append(" local=").Append(m_view.IsOwner());
                 b.Append(" distant=").Append(Distant).Append(" gravityHold=").Append(HoldingGravity);
-                b.Append("\nForce calls=").Append(LastForceCalls).Append("/4 total=").Append(TotalForceCalls);
+                b.Append("\nWave calls=").Append(LastForceCalls).Append("/4 total=").Append(TotalForceCalls);
                 b.Append(" cache=").Append(PointsReady).Append(" builds=").Append(CacheBuildCount);
+                b.Append("\nLive switches:");
+                AppendPhysicsSwitches(b, EnabledWavePointMask, ApplyCenterBuoyancy, ApplyBottomBalance,
+                    ApplyFloatingLinearDamping, ApplyFloatingAngularDamping);
                 WaveDiagnostics d = Diagnostics;
                 if (d == null || !d.Captured || d.Probes == null || d.Probes.Length != 4)
                     b.Append("\nWaiting for an active physics sample. Inspector: DiagnosticsEnabled pins capture.");
                 else
                 {
-                    b.Append("\nSample frame=").Append(d.Frame).Append(" fixed=").Append(Number(d.FixedTime, "F1"));
+                    b.Append("\nSample frame=").Append(d.Frame).Append(" owner=").Append(d.Owner);
+                    b.Append(" fixed=").Append(Number(d.FixedTime, "F3"));
                     b.Append(" age=").Append(Number(Mathf.Max(0f, Time.fixedTime - d.FixedTime), "F1")).Append("s frozen=").Append(FreezeDiagnostics);
-                    b.Append("\nSample mode=").Append(d.PointMode).Append('/').Append(d.WaterMode).Append(" native water=").Append(d.NativeValidCount).Append("/4");
+                    b.Append("\nSample mode=").Append(d.PointMode).Append('/').Append(d.WaterMode);
+                    b.Append(" probes=").Append(d.WaveProbesCaptured).Append(" valid/native=");
+                    b.Append(d.ValidProbeCount).Append('/').Append(d.NativeValidCount).Append(" of 4");
+                    b.Append("\nSample switches:");
+                    AppendPhysicsSwitches(b, d.WavePointMask, d.CenterBuoyancyEnabled, d.BottomBalanceEnabled,
+                        d.LinearDampingEnabled, d.AngularDampingEnabled);
                     b.Append("\nWind=").Append(Number(d.WindIntensity, "F2")).Append(" angles=").Append(Vector(d.EulerAngles));
-                    b.Append(" angularVelocity=").Append(Vector(d.AngularVelocity));
-                    for (int i = 0; i < d.Probes.Length; i++)
+                    b.Append(" omega=").Append(Vector(d.AngularVelocity, "F5"));
+                    b.Append("\nBody mass=").Append(Number(d.Mass)).Append(" inertia=").Append(Vector(d.Inertia));
+                    b.Append(" maxOmega=").Append(Number(d.MaxAngularVelocity));
+                    b.Append("\nBody constraints=").Append(d.Constraints);
+                    b.Append("\nBody damp L/A=").Append(Number(d.BodyLinearDamping)).Append('/').Append(Number(d.AngularDamping));
+                    b.Append(" gravity=").Append(d.BodyUseGravity).Append(" same Floating/Sync=");
+                    b.Append(d.FloatingBodyMatches).Append('/').Append(d.SyncBodyMatches);
+                    for (int i = 0; d.WaveProbesCaptured && i < d.Probes.Length; i++)
                     {
                         ProbeDiagnostics p = d.Probes[i];
                         b.Append("\nP").Append(i).Append(" roundtrip=").Append(Number(p.BuildRoundTripError, "F5"));
                         b.Append(" cacheXZ/Y=").Append(Number(p.CacheErrorXZ)).Append('/').Append(Number(p.CacheErrorY));
                         b.Append(" old=").Append(Number(p.LegacyError)).Append(" outside=").Append(Number(p.OutsideDistance));
+                        b.Append(" on/applied=").Append(p.Enabled).Append('/').Append(p.Applied);
                         b.Append(" Jy=").Append(Number(p.AppliedImpulse.y, "F5"));
                     }
-                    b.Append("\nAngular J submitted=").Append(Vector(d.SubmittedAngularImpulse));
+                    b.Append("\nWave J submitted=").Append(Vector(d.SubmittedAngularImpulse));
                     b.Append(" engine=").Append(Vector(d.EngineAngularImpulse));
-                    b.Append("\nExpected cached/math=").Append(Vector(d.CachedMathAngularImpulse));
+                    b.Append("\nFloating depth=").Append(Number(d.FloatDepth)).Append(" submerged=").Append(d.Submerged);
+                    b.Append(" factor=").Append(Number(d.BuoyancyFactor)).Append(" dampFactor=").Append(Number(d.DampingFactor));
+                    b.Append("\nFloating Jy center/bottom=").Append(Number(d.CenterImpulse.y)).Append('/').Append(Number(d.BottomImpulse.y));
+                    b.Append(" bottom J=").Append(Vector(d.BottomAngularImpulse));
+                    b.Append("\nFloating J engine=").Append(Vector(d.FloatingEngineAngularImpulse));
+                    b.Append(" total J engine=").Append(Vector(d.TotalEngineAngularImpulse));
+                    b.Append("\nOmega before/after damping=").Append(Vector(d.AngularVelocity, "F5"));
+                    b.Append('/').Append(Vector(d.AngularVelocityAfterDamping, "F5"));
+                    b.Append("\nExpected all 4 cached/math=").Append(Vector(d.CachedMathAngularImpulse));
                     b.Append(" fresh/math=").Append(Vector(d.FreshMathAngularImpulse));
                     b.Append("\nExpected cached/native=").Append(Vector(d.CachedNativeAngularImpulse));
                     b.Append(" legacy/native=").Append(Vector(d.LegacyNativeAngularImpulse));
+                }
+                PhysicsStepDiagnostics step = LastPhysicsStep;
+                if (step != null && step.Captured)
+                {
+                    b.Append("\nPrevious step fixed=").Append(Number(step.SourceFixedTime, "F3"));
+                    b.Append(" -> ").Append(Number(step.ObservedFixedTime, "F3"));
+                    b.Append(" age=").Append(Number(Mathf.Max(0f, Time.fixedTime - step.ObservedFixedTime), "F1")).Append("s");
+                    b.Append("\nPrevious mode=").Append(step.PointMode).Append('/').Append(step.WaterMode);
+                    b.Append(" owner=").Append(step.Owner);
+                    b.Append("\nPrevious switches:");
+                    AppendPhysicsSwitches(b, step.WavePointMask, step.CenterBuoyancyEnabled, step.BottomBalanceEnabled,
+                        step.LinearDampingEnabled, step.AngularDampingEnabled);
+                    b.Append("\nPrevious total J=").Append(Vector(step.TotalEngineAngularImpulse));
+                    b.Append(" rotation change=").Append(Number(step.RotationChangeDegrees, "F5")).Append(" deg");
+                    b.Append("\nPrevious omega after damping -> next callback=");
+                    b.Append(Vector(step.AngularVelocityAfterDamping, "F5")).Append(" -> ");
+                    b.Append(Vector(step.ObservedAngularVelocity, "F5"));
                 }
                 b.Append("</size>");
                 hoverText = b.ToString();
