@@ -65,7 +65,8 @@ namespace Seasons
         public Vector3 SampleLeverArm3 => SampleLeverArm(3);
         public float SimulationDistance => SeasonalIceFloeWaves.WaterDistance;
 
-        private Vector3 SampleLeverArm(int index) => Diagnostics != null && Diagnostics.Captured
+        private Vector3 SampleLeverArm(int index) => Diagnostics != null && Diagnostics.Captured &&
+            Diagnostics.Probes != null && (uint)index < (uint)Diagnostics.Probes.Length
             ? Diagnostics.Probes[index].AppliedWorld - Diagnostics.CenterOfMass : Vector3.zero;
 
         public string GetHoverName() => "";
