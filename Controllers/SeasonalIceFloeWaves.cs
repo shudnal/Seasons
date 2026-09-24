@@ -538,8 +538,7 @@ namespace Seasons
 
         private void RecoverInvalidHeight()
         {
-            bool adoptingPosition = m_view.IsOwner() && !Sync.m_wasOwner;
-            adoptingPosition &= Sync.m_syncPosition;
+            bool adoptingPosition = m_view.IsOwner() && !Sync.m_wasOwner && Sync.m_syncPosition;
             Vector3 position = adoptingPosition ? m_view.GetZDO().GetPosition() : Body.position;
             if (Recovered || !m_view.IsOwner() || !ZoneSystem.instance || Time.time < NextRecovery ||
                 (Finite(position.y) && position.y >= -5000f) || !Finite(position.x) || !Finite(position.z))
