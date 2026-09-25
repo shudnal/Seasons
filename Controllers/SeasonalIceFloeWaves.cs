@@ -9,23 +9,25 @@ using static Seasons.ZoneSystemVariantController;
 namespace Seasons
 {
     // Shared wave inputs and native callback routing. Per-floe physics belongs to IceFloeClimb.
-    internal static class SeasonalIceFloeWaves
+    internal static partial class SeasonalIceFloeWaves
     {
         internal struct SurfaceContext
         {
             internal float WaterLevel, Offset;
+            internal WaterVolume Water;
             internal bool UseWaves, HasWorldEdge;
         }
 
         private static readonly Dictionary<Floating, IceFloeClimb> floaters = new Dictionary<Floating, IceFloeClimb>();
         private static readonly Dictionary<ZSyncTransform, IceFloeClimb> syncs = new Dictionary<ZSyncTransform, IceFloeClimb>();
-        private static readonly List<IceFloeClimb> bobOrder = new List<IceFloeClimb>();
-        private static int bobCursor;
         private static WaterVolume oceanPrefab;
         private static int snapshotCycle = -1, snapshotFrame = -1;
         internal static Vector3 WindDirection { get; private set; }
         internal static float WindIntensity { get; private set; }
         internal static float WaveTime { get; private set; }
+        internal static Vector4 WaterWind1 { get; private set; }
+        internal static Vector4 WaterWind2 { get; private set; }
+        internal static float WaterWindBlend { get; private set; }
         private static Vector4 effectiveWind;
         private static bool snapshotValid;
         private static readonly Vector4[] waves =
@@ -57,10 +59,8 @@ namespace Seasons
             IceFloeClimb controller = floating.GetComponent<IceFloeClimb>();
             if (!controller || !controller.Started || !controller.isActiveAndEnabled || !controller.InitializeWaves(floating))
                 return;
-            controller.WaveIndex = bobOrder.Count;
             floaters.Add(floating, controller);
             syncs.Add(controller.Sync, controller);
-            bobOrder.Add(controller);
         }
 
         internal static void Untrack(Floating floating)
@@ -70,11 +70,6 @@ namespace Seasons
             controller.ReleaseWaves();
             floaters.Remove(floating);
             syncs.Remove(controller.Sync);
-            int last = bobOrder.Count - 1;
-            bobOrder[controller.WaveIndex] = bobOrder[last];
-            bobOrder[controller.WaveIndex].WaveIndex = controller.WaveIndex;
-            bobOrder.RemoveAt(last);
-            controller.WaveIndex = -1;
         }
 
         internal static void Reset()
@@ -84,8 +79,6 @@ namespace Seasons
                     controller.ReleaseWaves();
             floaters.Clear();
             syncs.Clear();
-            bobOrder.Clear();
-            bobCursor = 0;
             WaterDistance = WaterDistanceSquared = 0f;
             oceanPrefab = null;
             snapshotCycle = snapshotFrame = -1;
@@ -116,6 +109,12 @@ namespace Seasons
                 return false;
             direction.Normalize();
             WindDirection = direction;
+            EnvMan.instance.GetWindData(out Vector4 first, out Vector4 second, out float blend);
+            if (!Finite((Vector3)first) || !Finite(first.w) || !Finite((Vector3)second) || !Finite(second.w) || !Finite(blend))
+                return false;
+            WaterWind1 = first;
+            WaterWind2 = second;
+            WaterWindBlend = blend;
             // Keep the effective-wind approximation and patched accessors; never multiply
             // seasonal wind intensity again or substitute WaterVolume's cached intensity.
             effectiveWind = new Vector4(direction.x, 0f, direction.z, WindIntensity);
@@ -128,7 +127,8 @@ namespace Seasons
             if (!Snapshot())
                 return false;
             WaterVolume water = controller.ContainsCenter(controller.Water) ? controller.Water : null;
-            context.WaterLevel = ZoneSystem.instance.m_waterLevel;
+            context.Water = water;
+            context.WaterLevel = water ? water.transform.position.y : ZoneSystem.instance.m_waterLevel;
             context.Offset = water ? water.m_surfaceOffset : oceanPrefab.m_surfaceOffset - (IsWaterSurfaceFrozen() ? _winterWaterSurfaceOffset : 0f);
             context.UseWaves = water ? water.m_useGlobalWind : oceanPrefab.m_useGlobalWind && !IsWaterSurfaceFrozen();
             context.HasWorldEdge = (water ? water.m_forceDepth : oceanPrefab.m_forceDepth) < 0f;
@@ -141,7 +141,7 @@ namespace Seasons
             return TrySurfaceContext(controller, out SurfaceContext context) && TrySurface(context, position, out surface);
         }
 
-        // Retained full-spectrum sampler for distant bobbing, recovery and water diagnostics.
+        // Full-spectrum sampler retained only for recovery and explicit water diagnostics.
         internal static bool TrySurface(SurfaceContext context, Vector3 position, out float surface)
         {
             surface = -10000f;
@@ -191,7 +191,7 @@ namespace Seasons
                     Vector4 parameters = waves[i];
                     Vector2 direction = i == 0 ? new Vector2(WindDirection.x, WindDirection.z) : WaterVolume.s_createWaveDirections[i];
                     float height = parameters.z * big * (i == 0 ? 1f : secondarySwellWeight);
-                    wave += oceanPrefab.CreateWave(position, (WaveTime + timeOffset) / 20f,
+                    wave += oceanPrefab.CreateWave(position, ((WaveTime + timeOffset) % 86400f) / 20f,
                         parameters.x, parameters.y, height, direction, new Vector2(-direction.y, direction.x), parameters.w);
                 }
                 wave *= WindIntensity; // Normalized depth 1 remains the accepted Ocean approximation.
@@ -200,6 +200,52 @@ namespace Seasons
             if (context.HasWorldEdge && Utils.LengthXZ(position) > 10500f)
                 surface -= 100f;
             return WaterLevelValid(surface);
+        }
+
+        // Heave must follow the actual full surface, not the deliberately low-pass tilt
+        // plane. Native water depth/wind blending are retained when a volume is available.
+        internal static bool TryWaterlineSurface(SurfaceContext context, Vector3 point, float timeOffset, out float surface)
+        {
+            surface = -10000f;
+            if (!Finite(point) || !Finite(timeOffset))
+                return false;
+            float wave = 0f;
+            if (context.UseWaves && !IsWaterSurfaceFrozen())
+            {
+                WaterVolume water = context.Water ? context.Water : oceanPrefab;
+                if (!water)
+                    return false;
+                float depth = context.Water ? water.Depth(point) : 1f;
+                if (!Finite(depth))
+                    return false;
+                if (depth != 0f)
+                {
+                    float big = 1f - (float)WorldGenerator.DeepNorthWaveFade(point.x, point.z);
+                    float time = (WaveTime + timeOffset) % 86400f;
+                    float first = FullWave(water, point, depth, WaterWind1, time, big);
+                    wave = WaterWindBlend == 0f ? first : Mathf.LerpUnclamped(first,
+                        FullWave(water, point, depth, WaterWind2, time, big), WaterWindBlend);
+                }
+            }
+            surface = context.WaterLevel + context.Offset + wave;
+            if (context.HasWorldEdge && Utils.LengthXZ(point) > 10500f)
+                surface -= 100f;
+            return WaterLevelValid(surface);
+        }
+
+        private static float FullWave(WaterVolume water, Vector3 point, float depth, Vector4 wind, float time, float big)
+        {
+            if (WaterVolume.s_createWaveTangents != null)
+                return water.CalcWave(point, depth, wind, time, 1f, big);
+            float result = 0f;
+            for (int i = 0; i < waves.Length; i++)
+            {
+                Vector4 p = waves[i];
+                Vector2 direction = i == 0 ? new Vector2(wind.x, wind.z).normalized : WaterVolume.s_createWaveDirections[i];
+                result += water.CreateWave(point, time / 20f, p.x, p.y, p.z * (i < 6 ? big : 1f),
+                    direction, new Vector2(-direction.y, direction.x), p.w);
+            }
+            return result * Mathf.Lerp(0f, wind.w, depth);
         }
 
         internal static void PrepareInteraction(Floating floating)
@@ -248,14 +294,17 @@ namespace Seasons
         [HarmonyPatch(typeof(ZSyncTransform), nameof(ZSyncTransform.OwnerSync))]
         private static class ZSyncTransform_OwnerSync_IceFloe
         {
-            private static void Prefix(ZSyncTransform __instance, out bool __state)
+            private static bool Prefix(ZSyncTransform __instance, out bool __state)
             {
                 __state = false;
                 if (!syncs.TryGetValue(__instance, out IceFloeClimb controller) || !controller.WaveValid)
-                    return;
+                    return true;
                 bool acquiring = controller.m_view.IsOwner() && !__instance.m_wasOwner;
                 controller.BeforeSync();
+                if (controller.Distant)
+                    return false;
                 __state = acquiring && (controller.HoldingGravity || controller.RecoveryPending);
+                return true;
             }
             private static void Postfix(ZSyncTransform __instance, bool __state)
             {
@@ -278,6 +327,12 @@ namespace Seasons
                 if (!syncs.TryGetValue(__instance, out IceFloeClimb controller) || !controller.WaveValid)
                     return true;
                 controller.BeforeSync();
+                if (controller.Distant)
+                    return false;
+                if (controller.m_view.IsOwner())
+                    return true; // Native fast path; no ownerless lease/replica checks.
+                if (__instance.m_lastUpdateFrame == Time.frameCount && !controller.FallbackSimulator)
+                    return true;
                 if (controller.SuppressFallbackClientSync())
                     return false;
                 __state = __instance.m_lastUpdateFrame != Time.frameCount && controller.IsFallbackReplica();
@@ -288,24 +343,6 @@ namespace Seasons
             {
                 if (__state && syncs.TryGetValue(__instance, out IceFloeClimb controller) && controller.WaveValid)
                     controller.RestoreFallbackReplicaVelocity();
-            }
-        }
-        [HarmonyPatch(typeof(MonoUpdaters), nameof(MonoUpdaters.LateUpdate))]
-        private static class MonoUpdaters_LateUpdate_IceFloeBob
-        {
-            private static void Postfix()
-            {
-                if (Game.IsPaused() || Time.timeScale <= 0f)
-                    return;
-                int visits = Mathf.Min(16, bobOrder.Count);
-                for (int i = 0; i < visits; i++)
-                {
-                    if (bobCursor >= bobOrder.Count)
-                        bobCursor = 0;
-                    IceFloeClimb controller = bobOrder[bobCursor++];
-                    if (controller.WaveValid)
-                        controller.UpdateBobTarget();
-                }
             }
         }
         [HarmonyPatch(typeof(Hud), nameof(Hud.UpdateCrosshair))]
@@ -379,8 +416,8 @@ namespace Seasons
         [Range(0.5f, 0.99f)] public static float RelativeDensity = 0.9f;
         [Tooltip("Additional world-space correction of the collider waterline. Positive raises the floe. Floating.m_waterLevelOffset is not added.")]
         public static float HeightOffset;
-        [Tooltip("Nominal fraction of the collider thickness below the sampled plane at rest. 0.5 places its center on the plane, independently of the root pivot and COM.")]
-        [Range(0.1f, 0.95f)] public static float RestingSubmergence = 0.5f;
+        [Tooltip("Nominal fraction of collider thickness below water. 0.7 submerges 70%; independent of the pivot, COM and legacy Floating offset.")]
+        [Range(0.1f, 0.95f)] public static float RestingSubmergence = 0.7f;
         [Tooltip("Damping ratio relative to moving water. 1 is the small-motion critical-damping reference, not an absolute velocity brake.")]
         public static float VerticalDampingRatio = 1f;
         [Tooltip("Limit on vertical water-drag acceleration, m/s^2. Buoyancy is separately limited by displaced volume.")]
@@ -414,14 +451,13 @@ namespace Seasons
         public float LastRunFixedTime;
         public long TotalForceCalls;
         public bool Recovered, RecoveryPending;
-        public bool BodyGravity, SyncGravity, SyncPosition, SyncVelocity;
+        public bool BodyGravity, SyncGravity;
         public Vector3 Baseline;
         public long Owner;
         public float NextRecovery, TargetY;
         public int BobFrame = -1;
         [NonSerialized] public float SourceMass;
         private float appliedMass, appliedMassMultiplier;
-        internal int WaveIndex = -1;
 
         [Serializable]
         public struct SurfaceSettings
@@ -456,7 +492,7 @@ namespace Seasons
             public int Frame, BodyId, ForceCalls;
             public long Owner, AuthorityToken;
             public float FixedTime, FixedDelta, WaveTime, WindIntensity, Mass;
-            public float FullSurfaceHeight, NativeSurfaceHeight, PlaneHeight, TargetComHeight, HeightError;
+            public float FullSurfaceHeight, NativeSurfaceHeight, PlaneHeight, TiltPlaneHeight, TargetComHeight, HeightError;
             public HullShape HullShape;
             public Vector3 SampleCenter, SampleVelocity;
             public float PivotY, TargetPivotY, TargetHullCenterY, ColliderThickness, ColliderBottomY, ColliderTopY;
@@ -528,6 +564,7 @@ namespace Seasons
             appliedMassMultiplier = 1f;
             UpdatePhysicsMass();
             InitializeSimulationAuthority();
+            InitializePrediction();
             return Registered = true;
         }
 
@@ -555,6 +592,8 @@ namespace Seasons
             RestoreWaves();
             if (Body && Body.mass.Equals(appliedMass) && Finite(SourceMass) && SourceMass > 0f)
                 Body.mass = SourceMass;
+            InvalidatePrediction("Component released");
+            hullCached = false;
             Registered = WaterObserved = false;
             Water = null;
             CallbackLevel = -10000f;
@@ -564,31 +603,12 @@ namespace Seasons
 
         internal bool ContainsCenter(WaterVolume water) => water && water.isActiveAndEnabled &&
             water.m_collider && water.m_collider.enabled && water.m_collider.bounds.Contains(Root.position);
-        private bool HasWater() => WaterObserved && WaterValid(CallbackLevel) && ContainsCenter(Water);
-
-        private bool EnsureCenterWater()
-        {
-            Vector3 position = Root.position;
-            if (!Finite(position))
-                return false;
-            if (HasWater())
-            {
-                m_floating.m_waterLevel = CallbackLevel;
-                return true;
-            }
-            if (!SeasonalIceFloeWaves.TrySurface(this, position, out float surface))
-                return false;
-            m_floating.m_waterLevel = surface;
-            return true;
-        }
 
         internal void ObserveWater(float level, Component liquidObj)
         {
             CallbackLevel = level;
             Water = liquidObj as WaterVolume;
             WaterObserved = liquidObj is WaterVolume;
-            if (!Distant && HasPhysicsAuthority && HasWater())
-                RestoreGravity();
         }
 
         private bool BeyondWater()
@@ -643,24 +663,37 @@ namespace Seasons
         {
             if (!Distant)
                 return;
+            bool sameOwner = m_view && m_view.IsValid() && m_view.IsOwner() &&
+                m_view.GetZDO().GetOwner() == distantOwner && m_view.GetZDO().OwnerRevision == distantOwnerRevision;
+            ZDO zdo = m_view && m_view.IsValid() ? m_view.GetZDO() : null;
             if (Body)
             {
-                bool sameOwner = m_view && m_view.IsValid() && m_view.IsOwner() &&
-                    m_view.GetZDO().GetOwner() == Owner && Sync && Sync.m_wasOwner;
-                Vector3 position = !sameOwner && m_view && m_view.IsValid() ? m_view.GetZDO().GetPosition() : Baseline;
-                if (sameOwner)
+                Body.isKinematic = distantKinematic;
+                Body.collisionDetectionMode = distantCollisionMode;
+                Body.detectCollisions = distantCollisions;
+                // Never promote the local decorative pose to authoritative state.
+                Vector3 position = sameOwner || zdo == null ? Baseline : zdo.GetPosition();
+                Quaternion rotation = sameOwner || zdo == null ? distantRotation : zdo.GetRotation();
+                if (Finite(position) && FiniteRotation(rotation))
                 {
-                    position.x = Body.position.x;
-                    position.z = Body.position.z;
+                    Body.position = position;
+                    Body.rotation = rotation;
                 }
-                Body.position = position;
+                if (!Body.isKinematic)
+                {
+                    Vector3 velocity = sameOwner || zdo == null ? distantVelocity : zdo.GetVec3(ZDOVars.s_bodyVelHash, Vector3.zero);
+                    Vector3 omega = sameOwner || zdo == null ? distantAngularVelocity : zdo.GetVec3(ZDOVars.s_bodyAVelHash, Vector3.zero);
+                    Body.linearVelocity = Finite(velocity) ? velocity : Vector3.zero;
+                    Body.angularVelocity = Finite(omega) ? omega : Vector3.zero;
+                }
             }
             if (Sync)
             {
-                Sync.m_syncPosition = SyncPosition;
-                Sync.m_syncBodyVelocity = SyncVelocity;
+                Sync.m_lastUpdateFrame = -1;
+                Sync.m_positionCached = Sync.m_velocityCached = Vector3.negativeInfinity;
             }
             Distant = false;
+            InvalidatePrediction("Returned from local visual bob");
         }
 
         internal void RestoreWaves()
@@ -668,6 +701,7 @@ namespace Seasons
             diagnosticStepPending = false;
             RestoreDistant();
             RestoreGravity();
+            InvalidatePrediction("Physics state restored");
         }
 
         private void ObserveOwner()
@@ -675,8 +709,13 @@ namespace Seasons
             long owner = m_view.GetZDO().GetOwner();
             if (owner == Owner)
                 return;
-            RestoreWaves();
+            // A remote owner's movement cannot displace our local far visual.
+            if (!Distant)
+                RestoreWaves();
+            else
+                InvalidatePrediction("Native owner changed during local visual bob");
             Owner = owner;
+            authorityFrame = -1;
         }
 
         private void RecoverInvalidHeight()
@@ -691,7 +730,11 @@ namespace Seasons
             if (!SeasonalIceFloeWaves.TrySurface(this, probe, out float water))
                 return;
             RestoreWaves();
-            position.y = water + m_floating.m_waterLevelOffset - Root.TransformVector(Body.centerOfMass).y;
+            if (!m_floating.m_collider || !ReadHullGeometry(m_floating.m_collider, out HullGeometry hull))
+                return;
+            SurfaceSettings settings = ReadSettings();
+            float centerOffset = (Body.rotation * hullCenterOffset).y;
+            position.y = water + settings.HeightOffset + (0.5f - settings.RestingSubmergence) * hull.Thickness - centerOffset;
             if (!Finite(position.y))
                 return;
             if (!Body.isKinematic)
@@ -714,32 +757,27 @@ namespace Seasons
             if (Distant)
                 return;
             Baseline = Body.position;
-            TargetY = Baseline.y;
-            SyncPosition = Sync.m_syncPosition;
-            SyncVelocity = Sync.m_syncBodyVelocity;
-            Sync.m_syncPosition = false;
-            Sync.m_syncBodyVelocity = false;
+            distantRotation = Body.rotation;
+            distantVelocity = Body.isKinematic ? Vector3.zero : Body.linearVelocity;
+            distantAngularVelocity = Body.isKinematic ? Vector3.zero : Body.angularVelocity;
+            distantOwner = m_view.GetZDO().GetOwner();
+            distantOwnerRevision = m_view.GetZDO().OwnerRevision;
+            distantKinematic = Body.isKinematic;
+            distantCollisions = Body.detectCollisions;
+            distantCollisionMode = Body.collisionDetectionMode;
+            Vector3 forward = distantRotation * Vector3.forward;
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 0.000001f)
+                forward = Vector3.forward;
+            distantFlatRotation = Quaternion.LookRotation(forward.normalized, Vector3.up);
+            WithdrawSimulationAuthority("Outside visible waves");
             Distant = true;
             HoldGravity();
-        }
-
-        internal void UpdateBobTarget()
-        {
-            if (!Distant || Game.IsPaused() || Time.timeScale <= 0f)
-                return;
-            Camera camera = GameCamera.instance ? GameCamera.instance.m_camera : null;
-            if (!camera || (camera.transform.position - Baseline).sqrMagnitude > camera.farClipPlane * camera.farClipPlane)
-                return;
-            if (!m_view.IsOwner())
-                Baseline = m_view.GetZDO().GetPosition();
-            if (SeasonalIceFloeWaves.TrySurface(this, Baseline, out float surface))
-            {
-                float water = ZoneSystem.instance.m_waterLevel;
-                float displacement = surface - water;
-                float target = water + m_floating.m_waterLevelOffset + displacement / (1f + Mathf.Abs(displacement));
-                if (Finite(target))
-                    TargetY = target;
-            }
+            Body.collisionDetectionMode = CollisionDetectionMode.Discrete;
+            Body.isKinematic = true;
+            Body.detectCollisions = false;
+            m_floating.SetSurfaceEffect(false);
+            InvalidatePrediction("Local visual bob; no wave sampling");
         }
 
         private void ApplyBob()
@@ -747,36 +785,38 @@ namespace Seasons
             if (!Distant || BobFrame == Time.frameCount || Game.IsPaused() || Time.timeScale <= 0f)
                 return;
             BobFrame = Time.frameCount;
-            if (!m_view.IsOwner())
-                Baseline = m_view.GetZDO().GetPosition();
-            else
-            {
-                Baseline.x = Body.position.x;
-                Baseline.z = Body.position.z;
-            }
+            Camera camera = GameCamera.instance ? GameCamera.instance.m_camera : null;
+            if (!camera || (camera.transform.position - Baseline).sqrMagnitude > camera.farClipPlane * camera.farClipPlane ||
+                !TryAuthorityTime(out double now) || !SeasonalIceFloeWaves.TrySurfaceContext(this, out SeasonalIceFloeWaves.SurfaceContext context))
+                return;
+            float blend = 1f - Mathf.Exp(-Time.deltaTime / 0.2f);
+            Body.rotation = Quaternion.Slerp(Body.rotation, distantFlatRotation, blend);
+            if (!m_floating.m_collider || !ReadHullGeometry(m_floating.m_collider, out HullGeometry hull))
+                return;
+            float amplitude = context.UseWaves ? Setting(DistantBobAmplitude, 0.08f, 0f, 0.25f) : 0f;
+            float period = Setting(DistantBobPeriod, 6f, 2f, 30f);
+            float bob = amplitude * (float)Math.Sin(now * (2.0 * Math.PI / period) + electionPhase * 2.0 * Math.PI);
+            float surface = context.WaterLevel + context.Offset;
+            if (context.HasWorldEdge && Utils.LengthXZ(Baseline) > 10500f)
+                surface -= 100f;
+            // Use the collider waterline in EVERY mode. The old distant path added the
+            // native offset to a bottom pivot and left the whole floe above the sea.
+            TargetY = surface + Setting(HeightOffset, 0f, -10f, 10f) + bob +
+                (0.5f - Setting(RestingSubmergence, 0.7f, 0.1f, 0.95f)) * hull.Thickness -
+                (hull.Center.y - Body.position.y);
             Vector3 position = Baseline;
-            position.y = Mathf.Lerp(Body.position.y, TargetY, 1f - Mathf.Exp(-Time.deltaTime / 0.15f));
-            if (Finite(position.y))
+            position.y = Mathf.Lerp(Body.position.y, TargetY, blend);
+            if (Finite(position))
                 Body.position = position;
         }
 
         internal void BeforeSync()
         {
+            RefreshFloeState();
             if (Game.IsPaused() || Time.timeScale <= 0f)
                 diagnosticStepPending = false;
-            ObserveOwner();
-            UpdateSimulationAuthority();
-            RecoverInvalidHeight();
-            if (Distant && (!BeyondWater() || (m_view.IsOwner() && !Sync.m_wasOwner)))
-                RestoreDistant();
-            if (!Distant && HasPhysicsAuthority)
-            {
-                if (EnsureCenterWater())
-                    RestoreGravity();
-                else
-                    HoldGravity();
-            }
-            ApplyBob();
+            if (Distant)
+                ApplyBob();
         }
 
         private SurfaceSettings ReadSettings()
@@ -791,7 +831,7 @@ namespace Seasons
                 Thickness = Mathf.Clamp(Setting(HullThickness, 1f, 0.1f, 10f) * scaleY, 0.05f, 100f),
                 Density = Setting(RelativeDensity, 0.9f, 0.5f, 0.99f),
                 HeightOffset = Setting(HeightOffset, 0f, -10f, 10f),
-                RestingSubmergence = Setting(RestingSubmergence, 0.5f, 0.1f, 0.95f),
+                RestingSubmergence = Setting(RestingSubmergence, 0.7f, 0.1f, 0.95f),
                 VerticalDampingRatio = Setting(VerticalDampingRatio, 1f, 0f, 5f),
                 MaxWaterDragAcceleration = Setting(MaxWaterDragAcceleration, 6f, 0f, 50f),
                 HorizontalDamping = Setting(HorizontalDamping, 0.15f, 0f, 10f),
@@ -940,40 +980,27 @@ namespace Seasons
             LastRunFrame = Time.frameCount;
             LastRunFixedTime = Time.fixedTime;
             LastForceCalls = 0;
-            ObserveOwner();
-            UpdateSimulationAuthority();
+            RefreshFloeState();
             if (Game.IsPaused() || Time.timeScale <= 0f)
             {
                 diagnosticStepPending = false;
                 Status = WaveStatus.Paused;
                 return;
             }
-            UpdatePhysicsMass();
-            ObserveNextPhysicsStep();
-            RecoverInvalidHeight();
-            if (BeyondWater() && (!m_view.IsOwner() || Sync.m_wasOwner))
+            if (Distant)
             {
-                EnterDistant();
                 Status = WaveStatus.Distant;
                 return;
             }
-            RestoreDistant();
+            UpdatePhysicsMass();
+            ObserveNextPhysicsStep();
+            RecoverInvalidHeight();
             if (!HasPhysicsAuthority)
             {
                 RestoreGravity();
                 Status = WaveStatus.NonOwner;
                 return;
             }
-            if (!EnsureCenterWater())
-            {
-                HoldGravity();
-                m_floating.SetSurfaceEffect(false);
-                Status = WaveStatus.NoWater;
-                return;
-            }
-            RestoreGravity();
-            if (FallbackSimulator)
-                Body.useGravity = Sync.m_useGravity;
             if (Body.isKinematic)
             {
                 Status = WaveStatus.Kinematic;
@@ -983,6 +1010,7 @@ namespace Seasons
             if (!collider || !collider.enabled || !collider.gameObject.activeInHierarchy)
             {
                 HoldGravity();
+                m_floating.SetSurfaceEffect(false);
                 Status = WaveStatus.NoCollider;
                 return;
             }
@@ -996,7 +1024,7 @@ namespace Seasons
                 Status = WaveStatus.InvalidBody;
                 return;
             }
-            if (!TryHullGeometry(collider, out HullGeometry hull))
+            if (!ReadHullGeometry(collider, out HullGeometry hull))
             {
                 HoldGravity();
                 m_floating.SetSurfaceEffect(false);
@@ -1005,13 +1033,19 @@ namespace Seasons
             }
             SurfaceSettings settings = ReadSettings();
             if (!SeasonalIceFloeWaves.TrySurfaceContext(this, out SeasonalIceFloeWaves.SurfaceContext context) ||
-                !TrySurfaceFrame(context, settings, hull, out SurfaceFrame frame))
+                !TryScheduledSurfaceFrame(context, settings, hull, out SurfaceFrame frame))
             {
                 HoldGravity();
                 m_floating.SetSurfaceEffect(false);
                 Status = WaveStatus.NoSurface;
                 return;
             }
+            // Reuse the surface already sampled/predicted for physics. Never call a second
+            // full-spectrum sampler merely to prepare Floating or a synchronization callback.
+            m_floating.m_waterLevel = frame.Height;
+            RestoreGravity();
+            if (Body.useGravity != Sync.m_useGravity)
+                Body.useGravity = Sync.m_useGravity;
             bool capture = !FreezeDiagnostics && (DiagnosticsEnabled || Time.unscaledTime <= hoverUntil);
             if (capture)
                 BeginDiagnostics(dt, frame, settings, context);
@@ -1033,8 +1067,8 @@ namespace Seasons
         {
             float gravity = Mathf.Max(0f, -Physics.gravity.y);
             // Separate the geometric waterline from the effective displacement model.
-            // At 0.5 the collider center lies on the sampled plane. For a bottom pivot,
-            // its resting root is therefore half the scaled collider height below water.
+            // At the default 0.7 the collider center lies 0.2 of its intrinsic thickness
+            // below water. A bottom pivot lies 0.7 of that thickness below water.
             // Do not also add Floating.m_waterLevelOffset or another half-height shift.
             float targetHullHeight = frame.Height + settings.HeightOffset +
                 (0.5f - settings.RestingSubmergence) * frame.Hull.Thickness;
@@ -1182,6 +1216,7 @@ namespace Seasons
             d.Wind = frame.Wind;
             d.TargetNormal = frame.Normal;
             d.PlaneHeight = frame.Height;
+            d.TiltPlaneHeight = Mean(frame.Heights);
             d.WaterVerticalVelocity = frame.VerticalVelocity;
             d.Heights = frame.Heights;
             d.NextHeights = frame.NextHeights;
@@ -1240,7 +1275,7 @@ namespace Seasons
             HullThickness = 1f;
             RelativeDensity = 0.9f;
             HeightOffset = 0f;
-            RestingSubmergence = 0.5f;
+            RestingSubmergence = 0.7f;
             VerticalDampingRatio = 1f;
             MaxWaterDragAcceleration = 6f;
             HorizontalDamping = 0.15f;
@@ -1250,6 +1285,14 @@ namespace Seasons
             MaxTiltAcceleration = 1.5f;
             MaxSurfaceTilt = 45f;
             YawDamping = 0.15f;
+            EnableWavePrediction = true;
+            UseFullWaterHeight = true;
+            MinimumPredictionSeconds = 0.1f;
+            MaximumPredictionSeconds = 2f;
+            PredictionKnotSeconds = 0.25f;
+            PredictionPositionTolerance = 0.5f;
+            DistantBobAmplitude = 0.08f;
+            DistantBobPeriod = 6f;
             // Apply mass through the normal lifecycle on the next callback, not inside the inspector.
         }
 
@@ -1259,6 +1302,7 @@ namespace Seasons
             LastPhysicsStep = null;
             diagnosticStepPending = false;
             TotalForceCalls = 0;
+            DirectSurfaceFrames = PredictionBuilds = PredictionHits = SurfaceHeightQueries = 0;
             nextHoverText = 0f;
         }
 
@@ -1289,6 +1333,7 @@ namespace Seasons
                 b.Append("\nOwner=").Append(m_view.GetZDO().GetOwner()).Append(" local=").Append(m_view.IsOwner());
                 b.Append(" distant=").Append(Distant).Append(" gravityHold=").Append(HoldingGravity);
                 AppendAuthorityDiagnostics(b);
+                AppendPredictionDiagnostics(b);
                 b.Append("\nForce/torque calls=").Append(LastForceCalls).Append("/2 total=").Append(TotalForceCalls);
                 WaveDiagnostics d = Diagnostics;
                 if (d == null || !d.Captured)
@@ -1302,9 +1347,10 @@ namespace Seasons
                     AppendSwitches(b, d.Settings);
                     b.Append("\nWind=").Append(Vector(d.Wind)).Append(" intensity=").Append(Number(d.WindIntensity));
                     b.Append(" secondary swell=").Append(Number(d.Settings.SecondarySwellWeight));
-                    b.Append("\nWater plane/full/native=").Append(Number(d.PlaneHeight)).Append('/');
+                    b.Append("\nWater heave/tilt/full/native=").Append(Number(d.PlaneHeight)).Append('/');
+                    b.Append(Number(d.TiltPlaneHeight)).Append('/');
                     b.Append(Number(d.FullSurfaceHeight)).Append('/').Append(Number(d.NativeSurfaceHeight));
-                    b.Append(" gap plane/native=").Append(WaterValid(d.NativeSurfaceHeight)
+                    b.Append(" gap heave/native=").Append(WaterValid(d.NativeSurfaceHeight)
                         ? Number(d.PlaneHeight - d.NativeSurfaceHeight) : "invalid");
                     b.Append("\nProbe heights +W/-W/+S/-S=").Append(Heights(d.Heights));
                     b.Append(" radii=").Append(Number(d.AlongRadius)).Append('/').Append(Number(d.AcrossRadius));
