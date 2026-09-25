@@ -58,16 +58,24 @@ namespace Seasons
         partial void AppendWaveDiagnostics(ref string text);
         internal void AppendHoverDiagnostics(ref string text) => AppendWaveDiagnostics(ref text);
 
-        // Derived from the retained sample, with no live physics query or allocation.
-        public Vector3 SampleLeverArm0 => SampleLeverArm(0);
-        public Vector3 SampleLeverArm1 => SampleLeverArm(1);
-        public Vector3 SampleLeverArm2 => SampleLeverArm(2);
-        public Vector3 SampleLeverArm3 => SampleLeverArm(3);
+        // Retained surface observations, not collider supports or force application points.
+        public Vector3 SamplePosition0 => SamplePosition(0);
+        public Vector3 SamplePosition1 => SamplePosition(1);
+        public Vector3 SamplePosition2 => SamplePosition(2);
+        public Vector3 SamplePosition3 => SamplePosition(3);
         public float SimulationDistance => SeasonalIceFloeWaves.WaterDistance;
 
-        private Vector3 SampleLeverArm(int index) => Diagnostics != null && Diagnostics.Captured &&
-            Diagnostics.Probes != null && (uint)index < (uint)Diagnostics.Probes.Length
-            ? Diagnostics.Probes[index].AppliedWorld - Diagnostics.CenterOfMass : Vector3.zero;
+        private Vector3 SamplePosition(int index)
+        {
+            WaveDiagnostics d = Diagnostics;
+            if (d == null || !d.Captured || (uint)index >= 4u)
+                return Vector3.zero;
+            Vector3 offset = index < 2 ? d.Wind * (index == 0 ? d.AlongRadius : -d.AlongRadius) :
+                Vector3.Cross(d.Wind, Vector3.up) * (index == 2 ? d.AcrossRadius : -d.AcrossRadius);
+            Vector3 point = d.CenterOfMass + offset;
+            point.y = d.Heights[index];
+            return point;
+        }
 
         public string GetHoverName() => "";
         public float GetHoverOffset() => 0f;

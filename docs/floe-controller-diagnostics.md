@@ -1,224 +1,277 @@
-# Floe controller diagnostics
+# Wind-surface floe physics and runtime diagnostics
 
-## Current objective and handoff
+Date: 2026-09-25. Branch: `perf/snow-performance`, PR #45.
+Implementation base: `75881a1d565305fd45f1e151aa88aa9162dfce3e`.
+Game source reference: `shudnal/assemblies_combined` at
+`d1374bfd9175ac8f733ae483b0a06e5c8b75906e` (WaterVolume, Floating, ZSyncTransform).
 
-The component-owned iteration started from `e44249803b43f3cc0b2e6275d82d7c1b808f63e3`.
-The granular physics follow-up starts from `5b5bdfa2bef8eda5408268e275e35174655202b3`
-on `perf/snow-performance` (PR #45).
+## Current agreement and evidence
 
-Maintainer observations:
+This implementation supersedes the four-point force and native Floating physics
+requirements in earlier floe documents. Earlier agreements about placement,
+ownership, water simulation distance, distant motion, persistence and snow remain
+unchanged. The previous diagnostic implementation is available in this file and
+`Controllers/SeasonalIceFloeWaves.cs` at commit `5aa3621`.
 
-- Four-point rocking worked in Seasons 1.8.2 before the game release, although
-  its physics was expensive. Rocking stopped working after the 1.9.0 rewrite.
-- Distant motion also failed. Subsequent work corrected water simulation distance
-  and clarified zone/floe ownership boundaries.
-- The latest point/water A/B screenshots show nonzero angular impulses accepted
-  by the Rigidbody accumulator but no expected visible rocking. These captures
-  bracketed only the four extra forces, before native Floating and the solver.
-- An earlier attempt to zero m_balanceForceFraction did not restore rocking and
-  only increased immersion. Bottom balancing is not an established root cause.
-- Seasonality was inspected for comparison only. Its seasonal ice clones ice1
-  without an analogous four-point force driver. No Seasonality code is used here.
+The maintainer's A/B/C/D observations established that:
 
-The objective is to locate the regression, not to replace the known force formula
-with a different simulation or tune away its symptoms. This iteration supersedes
-older requirements to keep per-floe state outside MonoBehaviours and to execute
-the native Floating physics body after the mod's forces.
+- The active owner submits nonzero wave impulses accepted by the Rigidbody.
+- Disabling Floating angular damping alone did not give the intended rocking.
+- Disabling bottom balance as well allowed large, inertial rocking.
+- The corrected single-point experiment responded to that point's wave force.
+- Center buoyancy remained enabled in C and both D observations. The first D had
+  all four wave points disabled; the corrected D had only P0 enabled.
 
-## Execution and scope
+There is no evidence here that AddForceAtPosition was globally broken, nor proof
+of the precise historical 1.9.0 regression. The maintainer chose to replace the
+model instead of continuing to tune four edge forces. No Seasonality code is used.
 
-The existing `IceFloeClimb` component owns its references, support points, water
-observations, ownership transitions, gravity safeguards, distant pose, physics
-contributions and diagnostic samples. Its partial class is split between
-`Utils/IceFloeClimb.cs` (interaction/lifecycle) and
-`Controllers/SeasonalIceFloeWaves.cs` (controller implementation).
+## What now drives the floe
 
-`SeasonalIceFloeWaves` retains shared wave inputs/math, distance settings, callback
-lookups and the bounded distant-target service. The existing
-`Floating.CustomFixedUpdate` prefix invokes `IceFloeClimb.SimulatePhysics` once
-for a tracked valid seasonal floe and then returns false. The original method
-body does not add buoyancy a second time. There is no independent FixedUpdate.
-Untracked objects and unmarked native ice retain native Floating behavior.
+The existing IceFloeClimb partial component contains one simulation entry point,
+called from the existing Floating.CustomFixedUpdate prefix. The prefix skips the
+original method for a registered valid seasonal floe. Floating stays enabled for
+water observations, lifecycle, terrain safety and impact/surface presentation.
+Unmarked ice and other Floating objects keep their native implementation.
 
-Floating remains enabled for lifecycle and water callbacks. Impact/surface-effect
-helpers, the existing terrain checks, native sync and safety paths are retained.
-The physical block was moved from `assembly_valheim/Floating.cs` at
-`shudnal/assemblies_combined` revision `d1374bfd9175ac8f733ae483b0a06e5c8b75906e`
-(Valheim 1.0.15). With valid inputs and all switches enabled, the order remains:
+The old edge supports, ClosestPoint caches, point modes, four extra impulses,
+lowest-point balance, native center buoyancy and explicit native velocity damping
+are removed from the active controller. The four remaining points only measure
+water. They do not touch a collider and receive no forces themselves.
 
-1. Four extra point impulses using the existing wave formula and selected modes.
-2. The native bottom-point balance impulse when float depth is nonpositive.
-3. The native center-of-mass buoyancy impulse under the same condition.
-4. The native linear and angular velocity damping under the same condition.
+A near, locally authoritative floe receives one combined force at its center of
+mass and one combined world-space torque, both using ForceMode.Force. There is no
+additional FixedUpdate. The controller never assigns its near simulation pose,
+linear velocity or angular velocity, does not make the body kinematic, and does
+not freeze rotation or alter collision materials. Existing invalid-height and
+missing-water recovery, ownership transitions and distant bobbing retain their
+narrow pose/velocity handling.
 
-The copied block reads coefficients from the actual `m_floating` component.
-No duplicate force/damping settings, new multipliers or extra AddTorque calls
-were introduced. Missing wave inputs or disabled wave forces do not disable
-center buoyancy. Non-finite center float depth is not used for physics.
+Players, creatures, ships and other floes still collide with the actual Rigidbody.
+Contact impulses and the controller's bounded water forces are resolved by the
+same physics solver. This preserves a dynamic interaction path; it is not a claim
+that all gameplay/network collision cases have already been accepted in-game.
 
-Placement, cleanup, snow, the water sampler, point caching, gravity safeguards,
-distant motion, mass, force coefficients, ForceMode, versions, dependencies and
-persistent data are not changed. Rigidbody damping, inertia, constraints and
-collision response are not overridden. Other mods' Harmony patches can still
-run; skipping the original body is not a global patch bypass.
+## Water spectrum and the four-point plane
 
-## Inspector controls
+Native WaterVolume.CalcWave sums ten CreateWave terms. Only term 0 changes its
+direction with wind. Every CreateWave term multiplies two TrochSin factors; the
+slow transverse factor is part of that wave, not the separate ripple spectrum.
 
-Open IceFloeClimb on a nearby, locally owned seasonal ice1 in RUE.
+The new physics sampler calls native CreateWave directly with the reviewed native
+parameters, phase and coordinate mapping. It retains both factors. It uses the
+existing shared effective GetWindDir/GetWindIntensity snapshot, native wrapped
+time, the accepted normalized Ocean depth of 1, surface offset and Deep North
+large-wave attenuation. Frozen water suppresses these waves. No seasonal wind
+multiplier is applied twice.
 
-`ShowDiagnosticsInHover` defaults to true. Hover requests capture from the next
-real physics callback, kept active for 0.5 seconds after the latest request.
-Text refreshes every 0.2 seconds. `DiagnosticsEnabled` pins capture on the selected
-component without hover. `FreezeDiagnostics` freezes both diagnostic records,
-not the simulation. `RebuildWavePoints()` requests a lazy point-cache rebuild.
-`ClearWaveDiagnostics()` clears samples/counters without changing physics.
+Default spectrum: term 0 only (speed 10, spatial frequency 0.04, height 8,
+sharpness 0.5). SecondarySwellWeight optionally adds native terms 1..4 with their
+original directions and parameters. Terms 5..9 (spatial frequency at least 1)
+are always omitted. Terms 1..4 are substantial swells, not just tiny ripples.
 
-Hover formatting does not query water, rebuild points, apply forces or log.
-The existing narrow HUD fallback handles another Hoverable on the same object
-without appending the block twice. Arrays and the text builder are reused.
-Do not benchmark while hovering or pinning capture: comparison queries and
-accumulator reads intentionally add diagnostic work.
+Therefore a primary-only plane is intentionally not the exact rendered/full
+water surface. It cannot both exclude other waves and coincide with them at every
+point. Diagnostics show plane/full/native heights separately. Raising
+SecondarySwellWeight can restore more large-scale surface variation while still
+omitting short waves; no shader or global water function is modified.
 
-All physics switches default to true, are local to the selected component and
-are not saved in ZDO or synchronized. They do not bypass ownership, water safety
-or the near/distant boundary and do not control the separate distant bobbing path.
+Each real physics call constructs four offsets from the current wind direction:
++wind, -wind, +(wind cross world-up), and its opposite. ProbeDistance is their
+half-spacing, default 2 world metres. These horizontal axes do not rock with the
+body. There are no cached supports, rotations or collider searches.
 
-| Switch | Controlled contribution |
-| --- | --- |
-| ApplyWaveForces | Master switch for the four extra wave impulses |
-| ApplyWavePoint0 / 1 / 2 / 3 | Individual impulses: +wind, -wind, wind cross up, and its opposite |
-| ApplyCenterBuoyancy | Original Floating impulse at the center of mass |
-| ApplyBottomBalance | Original Floating impulse at the lowest collider point |
-| ApplyFloatingLinearDamping | Original submerged linear-velocity damping using Floating.m_damping |
-| ApplyFloatingAngularDamping | Original submerged angular-velocity damping using Floating.m_damping |
+ScaleProbeDistance defaults to false. When enabled, local X/Z scale is projected
+into the horizontal wind frame, ignoring ordinary pitch/roll. Thickness always
+uses absolute scale Y. The known fixed ice prefab is approximated as a slab; no
+mesh/volume reconstruction is attempted.
 
-The master switch retains the four point selections. `waves=1010` means P0/P2
-are enabled and P1/P3 disabled. WavePointMask uses bits 0 through 3.
+Four points on a curved wave generally are not coplanar. On a symmetric cross the
+least-squares plane is particularly simple:
 
-The damping switches do not change Rigidbody.linearDamping/angularDamping.
-Those independent engine coefficients remain editable through Body in RUE and
-are included in captured diagnostics. Disabling bottom balancing removes lift
-as well as moment; disabling center buoyancy can make the floe sink. Disabling
-all listed contributions does not disable gravity, contacts, sync or other scripts.
+```text
+H = (h(+W) + h(-W) + h(+S) + h(-S)) / 4
+gW = (h(+W) - h(-W)) / (2 * radiusW)
+gS = (h(+S) - h(-S)) / (2 * radiusS)
+n = normalize(up - W*gW - S*gS)
+```
 
-## Point and water modes
+The target gradient is limited by MaxSurfaceTilt. This limits the target normal,
+not the actual body's rotation or external collision response.
 
-Defaults remain PointMode=Cached and WaterMode=Mathematical.
+For water-relative damping and tilt feed-forward the same four positions are also
+sampled 0.05 seconds ahead, including predicted horizontal body travel. This gives
+the time derivative along the floe's horizontal motion without differentiating a
+stored previous frame. It does not teleport/predict the Rigidbody itself. Wind and
+geometry are held at the current snapshot during this derivative calculation, so
+an owner switch or an explicit wind/time command cannot create a stored-history
+derivative spike. Abrupt surface target changes still produce bounded forces.
 
-| Mode | Sampling |
-| --- | --- |
-| Cached | Cached collider-local supports transformed to the current world pose |
-| FreshClosestPoint | Fresh supports using the effective wind used by Cached |
-| LegacyClosestPoint | Fresh supports using 1.8.2-style wind interpolation through EnvMan.GetWindData |
-| Mathematical | Shared game-derived ocean wave mathematics |
-| NativeLiquidLevel | Floating.GetLiquidLevel at the selected point; invalid heights are skipped |
+Default cost: eight single-term CreateWave evaluations per active floe call (four
+current heights plus four derivative heights). Nonzero secondary weight evaluates
+five terms per point instead. Diagnostic full/native comparisons add work only
+while capturing. No performance improvement is claimed without profiling.
 
-Only enabled points in the selected combination apply forces. Alternative
-combinations are read-only estimates. The central missing-water fallback and
-distant Dampen retain their behavior regardless of these controls. The legacy
-combination reproduces old active sampling on the current game, not the old
-game's prefab, physics engine or water implementation.
+## Vertical displacement and drag
 
-## Point diagnostics
+Let m be the actual Rigidbody mass, r the relative ice/water density, D the scaled
+effective slab thickness, and H the filtered plane height. The existing
+Floating.m_waterLevelOffset is a datum offset, not a force coefficient.
 
-Diagnostics.Probes[0..3] use the original along/across-wind ordering.
+```text
+reference = H + Floating.m_waterLevelOffset + HeightOffset
+fraction = clamp01(0.5 + (reference - centerOfMass.y) / D)
+F_buoyancy = m * g * fraction / r
+resting centerOfMass.y = reference + (0.5 - r) * D
+```
 
-| Field | Meaning |
-| --- | --- |
-| LocalPoint / CachedWorld | Cached collider-local support and its current world position |
-| BuildRoundTripError | Error after TransformPoint(InverseTransformPoint(original)) at the last build |
-| FreshWorld | Fresh ClosestPoint with the same current effective wind |
-| CacheErrorXZ / CacheErrorY / CacheError | Horizontal, signed vertical and total difference from FreshWorld |
-| LegacyWorld / LegacyError | Fresh legacy-direction support and its difference from CachedWorld |
-| OutsideDistance | Distance to collider.ClosestPoint(CachedWorld); zero means inside/on the collider |
-| Enabled / Applied | Effective switch permission and whether AddForceAtPosition was actually called |
-| AppliedWorld / AppliedWater / AppliedImpulse | Selected position, sampled height and submitted impulse |
+This corresponds to an effective displacement volume V = m/(waterDensity*r),
+with thickness D controlling its effective area and vertical stiffness. It is not
+a claim to measure the irregular collider's actual submerged mesh volume.
 
-WaveProbesCaptured distinguishes unavailable point diagnostics from valid zeros.
-ValidProbeCount counts valid selected samples regardless of switches; ForceCalls
-counts extra wave submissions, excluding the native center/bottom contributions.
-During capture, disabled points are sampled but cannot apply forces. Without
-capture, disabled point queries are skipped. Expected alternative angular impulses
-remain all-four-point estimates; they do not follow the enabled-point mask.
+Static buoyancy saturates when the slab is fully displaced. At r=0.9 its maximum
+is about 1.111 times body weight, rather than growing with arbitrary immersion
+depth. With no drag or external load, net upward acceleration while fully submerged
+is about 0.111*g. Once dry, buoyancy and water drag vanish; there is no airborne
+magnetic attachment to a wave.
 
-The existing geometry approximation remains: a cumulative horizontal floe/wind
-turn of at least 1 degree rebuilds supports. Pitch/roll drift from a fresh support
-is distinct from coordinate round-trip error. No new geometry scan or projection
-of force positions onto the collider is introduced. Applying a force outside a
-collider still supplies a moment; its perpendicular lever arm matters.
+Damping acts on body vertical velocity minus water vertical velocity, not velocity
+relative to the world. Its small-motion rate is
+2 * VerticalDampingRatio * sqrt(g/(r*D)), weighted by contact with water. The drag
+step is implicit and includes predicted buoyancy/gravity velocity for that step;
+its acceleration is limited by MaxWaterDragAcceleration. It is passive resistance
+to relative motion, not a second unbounded height spring. Dynamic drag may exceed
+static buoyancy transiently, and its limit is reported separately.
 
-## Complete controller call and following step
+Horizontal drag uses an independent 1/s rate. It imposes no X/Z position target.
+Native Rigidbody damping is left unchanged and remains visible in diagnostics.
+There are no assignments that erase collision velocity after the solver.
 
-Diagnostics now records the complete controlled call before the physics solver:
+This aims to reduce overshoot and lag without claiming exact continuous contact
+with every visible wave. A sufficiently violent collision, under-tuned damping,
+or deliberately filtered water can still cause separation or immersion.
 
-- SubmittedAngularImpulse and EngineAngularImpulse: computed and engine-measured
-  wave contributions. EngineImpulse is the corresponding linear impulse.
-- BottomImpulse and BottomAngularImpulse: native bottom balance contribution.
-  CenterImpulse is the native central contribution.
-- FloatingEngineAngularImpulse: engine-measured native-block contribution.
-  TotalEngineAngularImpulse and TotalEngineImpulse cover both controlled blocks.
-- AngularVelocity and AngularVelocityAfterDamping: velocity before and after the
-  controlled call, not a prediction that accumulated impulses have been solved.
-- Submerged, FloatDepth, BuoyancyFactor and DampingFactor explain native gating.
-- Mass, Inertia, InertiaRotation, Rigidbody damping, MaxAngularVelocity,
-  Constraints, gravity and FloatingBodyMatches/SyncBodyMatches expose body state.
+## Actual mass, load capacity and lifecycle
 
-GetAccumulatedForce/GetAccumulatedTorque deltas are converted from ForceMode.Force
-units using this callback's dt. They are inputs, not post-solver motion.
+MassMultiplier defaults to 4 relative to the already saved seasonal floe mass.
+It changes actual collision mass, not a second fake gravity. Both buoyancy and
+water drag scale with that mass; mass alone is not the cure for vertical bobbing.
+The dynamic force model, density and water-relative damping provide that change.
 
-LastPhysicsStep pairs the previous captured call with the next eligible physics
-callback. It retains source time, owner, sampling modes and switch mask, then
-records observed angular velocity and the angle of Body.rotation change. Small
-rotation angles use quaternion-vector Atan2 rather than Quaternion.Angle's
-near-one dot-product threshold. Pairing is rejected across a detected pause,
-ownership/body change, distant/safety transition or a skipped-step time gap.
+Mass is applied after IceFloeClimb.Start reads the existing saved mass, including
+on non-owner instances. No new ZDO value is written and the prefab is not mutated.
+The override is restored on release/disable/world shutdown if the body's mass is
+still the value this component applied. It does not rewrite another mod's mass
+every tick. An explicit runtime change to MassMultiplier can adopt an externally
+changed mass as its new baseline. SourceMass is visible in the inspector.
 
-This observation includes the solver, contacts, Rigidbody damping and any scripts
-between callbacks, including native ZSyncTransform before Floating. It does not
-isolate PhysX or identify an external writer by itself. It also does not assume
-that a nonzero angular impulse must produce a visibly large turn: inertia matters.
-The full inertia tensor orientation is available in Diagnostics for that analysis.
+Finite displacement means finite load capacity: static reserve is
+m*(1/r - 1). For the reported 308.837 base mass, multiplier 4 and r=0.9, this is
+about 137.3 mass units of extra supported load. Heavier total loads may submerge the
+floe. The model is not intended to support an arbitrarily heavy ship by enforcing
+a pose. Default coefficients are initial tuning choices, not measured acceptance.
 
-Live state and retained samples are deliberately separate. Check frame/time/age,
-owner, switches and capture flags before comparing values. A paused live status
-or changed live switches do not relabel an older sample. Old LastPhysicsStep
-values remain identifiable by their source/observation times and age.
+## Torque controller
 
-## Next owner-run check
+The shortest axis-angle error aligns body-up with the plane normal. It explicitly
+handles a fully inverted floe, for which an unqualified cross product is zero.
+No desired compass heading is imposed. Tilt damping uses relative angular velocity
+against the changing surface normal; yaw drag is separate.
 
-Use one nearby, freely floating, locally owned floe, not touching a ship, shore
-or another floe. Do not stand on it. Pin DiagnosticsEnabled, leave
-FreezeDiagnostics=false, and keep the game unpaused during observations.
-Keep one sampling combination throughout: LegacyClosestPoint/NativeLiquidLevel
-with valid native water at all four points is useful for this isolated check.
-Do not rebuild/reload or change wind between passes unnecessarily.
+```text
+w = 2*pi*TiltFrequency
+kp = w*w * wetWeight                 (when alignment is enabled)
+kd = 2*TiltDampingRatio*w*wetWeight   (when tilt damping is enabled)
+alpha = (kp*angleError + (kd + kp*dt)*(targetOmega - bodyOmega)_tilt)
+        / (1 + kd*dt + kp*dt*dt)
+```
 
-| Pass | Changes from the preceding pass |
-| --- | --- |
-| A | All nine physics switches true; collect a baseline |
-| B | Only ApplyFloatingAngularDamping=false |
-| C | Also ApplyBottomBalance=false; retain center buoyancy and linear damping |
-| D, only if still unclear | Also disable ApplyWavePoint1/2/3, leaving P0 and the wave master enabled |
+Tilt acceleration is limited, and optional yaw drag is added. The resulting
+acceleration is transformed through the Rigidbody's actual rotated inertia tensor
+into world-space torque. AddTorque(ForceMode.Force) applies it through the physics
+solver. There is no rotation assignment, scalar-mass torque approximation,
+duplicate dt multiplication or explicit cancellation of external contacts.
 
-Allow several seconds of active simulation per pass and capture the hover or
-Inspector records. For D, choose another single point if P0's actual impulse or
-horizontal lever arm is effectively zero; a zero test impulse proves nothing.
-Stop if a pass gives a clear response and restore the preceding switches to
-check reversibility. Restore all switches after the short experiment.
+## Inspector settings
 
-The immediate questions are whether native balancing cancels the wave moment,
-whether explicit angular damping suppresses persistent motion, and whether one
-uncancelled point produces a measurable next-step turn. A nonzero total moment
-with little response requires inspection of inertia, constraints, engine damping
-and intervening body/sync writes; it is not proof of any one cause. Do not change
-these extra variables during the first passes. Do not disable the Floating
-component itself: it remains the driver and water callback receiver.
+All fields are local per-instance runtime controls, not persistent configuration
+keys. Change them on the authoritative test floe. Other peers start with identical
+defaults but do not receive inspector edits; ownership transfer may therefore
+change experimentally edited coefficients. Invalid numeric values are replaced
+by defaults or bounded for the calculation, without rewriting inspector fields.
+The captured Settings record contains the effective values.
+
+| Field | Default | Effect |
+| --- | --- | --- |
+| ProbeDistance | 2 m | Sampling half-spacing along/across wind |
+| ScaleProbeDistance | false | Optional X/Z scale-aware spacing |
+| SecondarySwellWeight | 0 | Optional native fixed-direction long swells, range 0..1 |
+| MassMultiplier | 4 | Actual body mass relative to the saved base mass |
+| HullThickness | 1 m | Effective displacement thickness before scale Y |
+| RelativeDensity | 0.9 | Resting submerged fraction; larger values give less reserve lift |
+| HeightOffset | 0 m | Additional vertical datum correction |
+| VerticalDampingRatio | 1 | Damping of motion relative to water, not a height target gain |
+| MaxWaterDragAcceleration | 6 m/s^2 | Limit on vertical drag, separate from buoyancy |
+| HorizontalDamping | 0.15 /s | Drag against horizontal motion |
+| TiltFrequency | 0.65 Hz | Normal-following responsiveness |
+| TiltDampingRatio | 1 | Suppression of angular overshoot relative to the wave |
+| MaxTiltAcceleration | 1.5 rad/s^2 | Limits the tilt controller's authority |
+| MaxSurfaceTilt | 45 degrees | Maximum target inclination, not a body constraint |
+| YawDamping | 0.15 /s | Drag around body-up without heading lock |
+
+Independent switches, all initially true: ApplyBuoyancy,
+ApplyVerticalWaterDamping, ApplyHorizontalWaterDamping, ApplySurfaceAlignment,
+ApplyTiltDamping, ApplyYawDamping. Disabling alignment alone does not disable
+rotational water drag. Disabling all switches does not disable gravity, other
+scripts, engine damping, collisions or native synchronization.
+
+ResetSurfacePhysicsSettings restores these runtime fields, without teleporting or
+zeroing the body. Mass takes effect through the normal callback. ClearWaveDiagnostics
+clears measurements only. The old per-point force and point/water mode controls
+are intentionally removed; there is no hidden parallel legacy driver.
+
+## Diagnostics and maintainer checks
+
+DiagnosticsEnabled pins capture; otherwise hover requests it for 0.5 seconds.
+FreezeDiagnostics retains the current and previous records, not the simulation.
+SamplePosition0..3 reconstruct retained water sample positions without querying
+physics. Force/torque calls now count at most two calls, not four point forces.
+
+The retained record shows filtered/full/native height, the four heights and probe
+radii, target and actual normals, COM target/error, water/body relative velocity,
+density/displacement, forces in N, torque in Nm, effective settings, actual body
+mass/inertia/damping/constraints and expected versus engine-accepted impulses.
+LastPhysicsStep pairs the preceding call with the next callback's observed
+velocity and rotation; it includes contacts, sync and any other intervening script.
+Do not infer isolated controller response from that observation alone.
+
+Initial maintainer pass:
+
+1. Use a free, upright owner floe with local=True, distant=False and
+   gravityHold=False. Leave default settings enabled and retain the same wind.
+2. Inspect plane/full/native height before changing gains. A large difference
+   concerns the wave spectrum or depth approximation, not weak torque. Compare
+   SecondarySwellWeight=0 and 1 while leaving the other settings unchanged.
+3. Adjust VerticalDampingRatio for vertical overshoot and TiltDampingRatio for
+   angular overshoot. Use TiltFrequency for response speed. Do not change mass,
+   density, height offset and several damping values simultaneously.
+4. Check several scales, a player standing/moving on the floe, creatures, ship
+   contact and floe-to-floe contact. Check finite load capacity and recovery from
+   immersion/inversion; contacts must not be overwritten by pose/velocity writes.
+5. Check pause/resume, explicit wind/time changes, ownership handoff, missing
+   WaterVolume, unload/reload, disable/re-enable and distant-to-near return.
+6. Turn off detailed capture before profiling.
+
+The distant full-spectrum Dampen path remains deliberately unchanged in this
+iteration and is not controlled by the new near-force switches. Its height
+convention can differ from the new density-based equilibrium. No new distant
+rotation, pose publication or ownership rule is introduced.
 
 ## Verification boundary
 
-This follow-up is diagnostic instrumentation and component ownership of the
-native physical block, not a confirmed rocking fix. Source/API inspection and
-manual diff/lifecycle review are performed without building the mod, running
-Valheim or executing automated tests. Compilation, gameplay acceptance, ownership
-handoff, re-enable/unload behavior, missing water and distant-to-near checks remain
-with the maintainer. No performance or runtime-success claim is made.
+No mod build, automated mod tests, game execution or performance measurement was
+performed. Validation is limited to source/API review, lexical C# structure,
+reference/diff checks and an English-text scan of delivered files. Native methods
+used here are referenced by the already compiled project paths; no dependency,
+project Compile item, package, version or snow/persistence-schema changes are
+required. Gameplay tuning and multiplayer acceptance remain with the maintainer.
