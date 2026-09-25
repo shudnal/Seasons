@@ -336,52 +336,56 @@ namespace Seasons
 
     public partial class IceFloeClimb
     {
-        public enum WaveStatus { Unregistered, Ready, Paused, Distant, NonOwner, NoWater, Kinematic, NoCollider, NoSurface, InvalidBody, Dry, PhysicsDisabled, ForcesSubmitted }
+        public enum WaveStatus { Unregistered, Ready, Paused, Distant, NonOwner, NoWater, Kinematic, NoCollider, NoSurface, InvalidBody, Dry, PhysicsDisabled, ForcesSubmitted, NoHullGeometry }
 
         [Header("Local diagnostics (not saved or synchronized)")]
         public bool ShowDiagnosticsInHover = true;
         public bool DiagnosticsEnabled;
         public bool FreezeDiagnostics;
 
-        [Header("Surface sampling (local runtime settings)")]
+        // RUE can edit these static fields once for every seasonal floe on this peer.
+        // New instances read the same values; only explicit reset or plugin reload clears edits.
+        [Header("Surface sampling (shared runtime settings, this peer only)")]
         [Tooltip("Half-distance in metres along/across wind. Four mathematical samples, not force application points.")]
-        public float ProbeDistance = 2f;
-        public bool ScaleProbeDistance;
+        public static float ProbeDistance = 2f;
+        public static bool ScaleProbeDistance;
         [Tooltip("0: only the native wind-directed wave. 1: also include native fixed-direction terms 1..4. Short waves are always excluded.")]
-        [Range(0f, 1f)] public float SecondarySwellWeight;
+        [Range(0f, 1f)] public static float SecondarySwellWeight = 1f;
 
-        [Header("Displacement and water resistance (local runtime settings)")]
-        public bool ApplyBuoyancy = true;
-        public bool ApplyVerticalWaterDamping = true;
-        public bool ApplyHorizontalWaterDamping = true;
+        [Header("Displacement and water resistance (shared runtime settings, this peer only)")]
+        public static bool ApplyBuoyancy = true;
+        public static bool ApplyVerticalWaterDamping = true;
+        public static bool ApplyHorizontalWaterDamping = true;
         [Tooltip("Actual Rigidbody mass relative to the existing saved floe mass. Restored on release; never written to ZDO.")]
-        public float MassMultiplier = 4f;
+        public static float MassMultiplier = 4f;
         [Tooltip("Effective displacement thickness in metres at scale Y=1. This is a slab approximation, not a mesh volume calculation.")]
-        public float HullThickness = 1f;
-        [Tooltip("Effective ice/water density ratio. 0.9 gives 90% equilibrium displacement and caps static lift at weight/0.9.")]
-        [Range(0.5f, 0.99f)] public float RelativeDensity = 0.9f;
-        [Tooltip("Additional world-space height offset relative to Floating.m_waterLevelOffset. Positive raises the equilibrium floe position.")]
-        public float HeightOffset;
+        public static float HullThickness = 1f;
+        [Tooltip("Effective ice/water density ratio. 0.9 caps static lift at weight/0.9. This controls effective displacement, not the geometric waterline.")]
+        [Range(0.5f, 0.99f)] public static float RelativeDensity = 0.9f;
+        [Tooltip("Additional world-space correction of the collider waterline. Positive raises the floe. Floating.m_waterLevelOffset is not added.")]
+        public static float HeightOffset;
+        [Tooltip("Nominal fraction of the collider thickness below the sampled plane at rest. 0.5 places its center on the plane, independently of the root pivot and COM.")]
+        [Range(0.1f, 0.95f)] public static float RestingSubmergence = 0.5f;
         [Tooltip("Damping ratio relative to moving water. 1 is the small-motion critical-damping reference, not an absolute velocity brake.")]
-        public float VerticalDampingRatio = 1f;
+        public static float VerticalDampingRatio = 1f;
         [Tooltip("Limit on vertical water-drag acceleration, m/s^2. Buoyancy is separately limited by displaced volume.")]
-        public float MaxWaterDragAcceleration = 6f;
+        public static float MaxWaterDragAcceleration = 6f;
         [Tooltip("Horizontal water drag rate, 1/s. It does not change Rigidbody.linearDamping.")]
-        public float HorizontalDamping = 0.15f;
+        public static float HorizontalDamping = 0.15f;
 
-        [Header("Dynamic tilt control (local runtime settings)")]
-        public bool ApplySurfaceAlignment = true;
-        public bool ApplyTiltDamping = true;
-        public bool ApplyYawDamping = true;
+        [Header("Dynamic tilt control (shared runtime settings, this peer only)")]
+        public static bool ApplySurfaceAlignment = true;
+        public static bool ApplyTiltDamping = true;
+        public static bool ApplyYawDamping = true;
         [Tooltip("Tilt response frequency in Hz. The controller submits torque through the actual world-space inertia tensor.")]
-        public float TiltFrequency = 0.65f;
-        public float TiltDampingRatio = 1f;
+        public static float TiltFrequency = 0.65f;
+        public static float TiltDampingRatio = 1f;
         [Tooltip("Maximum commanded tilt acceleration, radians/s^2. This is not a rotation constraint.")]
-        public float MaxTiltAcceleration = 1.5f;
+        public static float MaxTiltAcceleration = 1.5f;
         [Tooltip("Maximum target surface inclination in degrees. Collisions may still tilt the actual body further.")]
-        public float MaxSurfaceTilt = 45f;
+        public static float MaxSurfaceTilt = 45f;
         [Tooltip("Water drag around the floe's own up axis, 1/s. No target heading is imposed.")]
-        public float YawDamping = 0.15f;
+        public static float YawDamping = 0.15f;
 
         [Header("Live floe state")]
         public Rigidbody Body;
@@ -407,15 +411,25 @@ namespace Seasons
         [Serializable]
         public struct SurfaceSettings
         {
-            public float ProbeDistance, SecondarySwellWeight, MassMultiplier, Thickness, Density, HeightOffset;
+            public float ProbeDistance, SecondarySwellWeight, MassMultiplier, Thickness, Density, HeightOffset, RestingSubmergence;
             public float VerticalDampingRatio, MaxWaterDragAcceleration, HorizontalDamping;
             public float TiltFrequency, TiltDampingRatio, MaxTiltAcceleration, MaxSurfaceTilt, YawDamping;
             public bool ScaleProbes, Buoyancy, VerticalDamping, HorizontalDrag, Alignment, TiltDamping, YawDrag;
         }
 
+        public enum HullShape { Box, MeshBounds }
+
+        private struct HullGeometry
+        {
+            internal HullShape Shape;
+            internal Vector3 Center;
+            internal float Thickness, BottomY, TopY;
+        }
+
         private struct SurfaceFrame
         {
-            internal Vector3 Center, Wind, Side, Normal, NextNormal;
+            internal HullGeometry Hull;
+            internal Vector3 Center, SampleVelocity, Wind, Side, Normal, NextNormal;
             internal Vector4 Heights, NextHeights;
             internal float AlongRadius, AcrossRadius, Height, VerticalVelocity;
         }
@@ -428,6 +442,10 @@ namespace Seasons
             public long Owner;
             public float FixedTime, FixedDelta, WaveTime, WindIntensity, Mass;
             public float FullSurfaceHeight, NativeSurfaceHeight, PlaneHeight, TargetComHeight, HeightError;
+            public HullShape HullShape;
+            public Vector3 SampleCenter, SampleVelocity;
+            public float PivotY, TargetPivotY, TargetHullCenterY, ColliderThickness, ColliderBottomY, ColliderTopY;
+            public float NominalHullSubmergence, NativeWaterLevelOffset;
             public float SubmergedFraction, WetWeight, WaterVerticalVelocity, RelativeVerticalVelocity, TiltErrorDegrees;
             public float AlongRadius, AcrossRadius, LinearDamping, AngularDamping, MaxAngularVelocity;
             public Vector3 CenterOfMass, Wind, ActualUp, TargetNormal, TargetAngularVelocity, Inertia;
@@ -744,11 +762,12 @@ namespace Seasons
             {
                 ProbeDistance = Setting(ProbeDistance, 2f, 0.25f, 20f),
                 ScaleProbes = ScaleProbeDistance,
-                SecondarySwellWeight = Setting(SecondarySwellWeight, 0f, 0f, 1f),
+                SecondarySwellWeight = Setting(SecondarySwellWeight, 1f, 0f, 1f),
                 MassMultiplier = Setting(MassMultiplier, 4f, 0.25f, 20f),
                 Thickness = Mathf.Clamp(Setting(HullThickness, 1f, 0.1f, 10f) * scaleY, 0.05f, 100f),
                 Density = Setting(RelativeDensity, 0.9f, 0.5f, 0.99f),
                 HeightOffset = Setting(HeightOffset, 0f, -10f, 10f),
+                RestingSubmergence = Setting(RestingSubmergence, 0.5f, 0.1f, 0.95f),
                 VerticalDampingRatio = Setting(VerticalDampingRatio, 1f, 0f, 5f),
                 MaxWaterDragAcceleration = Setting(MaxWaterDragAcceleration, 6f, 0f, 50f),
                 HorizontalDamping = Setting(HorizontalDamping, 0.15f, 0f, 10f),
@@ -761,6 +780,47 @@ namespace Seasons
                 HorizontalDrag = ApplyHorizontalWaterDamping, Alignment = ApplySurfaceAlignment,
                 TiltDamping = ApplyTiltDamping, YawDrag = ApplyYawDamping
             };
+        }
+
+        private bool TryHullGeometry(Collider collider, out HullGeometry hull)
+        {
+            hull = default;
+            Bounds bounds;
+            if (collider is BoxCollider box)
+            {
+                bounds = new Bounds(box.center, box.size);
+                hull.Shape = HullShape.Box;
+            }
+            else if (collider is MeshCollider mesh && mesh.sharedMesh)
+            {
+                bounds = mesh.sharedMesh.bounds;
+                hull.Shape = HullShape.MeshBounds;
+            }
+            else
+                return false;
+
+            // The datum is the collider, not the bottom-positioned prefab pivot or an
+            // assumed center of mass. Read only this collider's local bounds, no mesh scan.
+            if (!Finite(bounds.center) || !Finite(bounds.extents) || bounds.extents.y <= 0f)
+                return false;
+            Transform shape = collider.transform;
+            Quaternion undoRootRotation = Quaternion.Inverse(Root.rotation);
+            Vector3 centerOffset = undoRootRotation * (shape.TransformPoint(bounds.center) - Root.position);
+            Vector3 x = undoRootRotation * shape.TransformVector(Vector3.right * bounds.extents.x);
+            Vector3 y = undoRootRotation * shape.TransformVector(Vector3.up * bounds.extents.y);
+            Vector3 z = undoRootRotation * shape.TransformVector(Vector3.forward * bounds.extents.z);
+            hull.Center = Body.position + Body.rotation * centerOffset;
+            // Intrinsic thickness follows scale and child transforms, not the growing
+            // world-axis AABB height when the wide floe tilts. Never apply scale twice.
+            hull.Thickness = 2f * (Mathf.Abs(x.y) + Mathf.Abs(y.y) + Mathf.Abs(z.y));
+            x = Body.rotation * x;
+            y = Body.rotation * y;
+            z = Body.rotation * z;
+            float worldHalfHeight = Mathf.Abs(x.y) + Mathf.Abs(y.y) + Mathf.Abs(z.y);
+            hull.BottomY = hull.Center.y - worldHalfHeight;
+            hull.TopY = hull.Center.y + worldHalfHeight;
+            return Finite(hull.Center) && Finite(hull.Thickness) && hull.Thickness > 0.0001f &&
+                Finite(hull.BottomY) && Finite(hull.TopY);
         }
 
         private Vector2 ProbeRadii(SurfaceSettings settings, Vector3 wind, Vector3 side)
@@ -797,10 +857,15 @@ namespace Seasons
             return (Vector3.up - gradient).normalized;
         }
 
-        private bool TrySurfaceFrame(SeasonalIceFloeWaves.SurfaceContext context, SurfaceSettings settings, out SurfaceFrame frame)
+        private bool TrySurfaceFrame(SeasonalIceFloeWaves.SurfaceContext context, SurfaceSettings settings,
+            HullGeometry hull, out SurfaceFrame frame)
         {
             frame = default;
             frame.Center = Body.worldCenterOfMass;
+            frame.Hull = hull;
+            frame.SampleVelocity = Body.GetPointVelocity(hull.Center);
+            if (!Finite(frame.SampleVelocity))
+                return false;
             frame.Wind = SeasonalIceFloeWaves.WindDirection;
             if (frame.Wind.sqrMagnitude < 0.000001f)
                 frame.Wind = Vector3.forward; // Deterministic calm-water axes; no point cache to invalidate.
@@ -808,13 +873,13 @@ namespace Seasons
             Vector2 radii = ProbeRadii(settings, frame.Wind, frame.Side);
             frame.AlongRadius = radii.x;
             frame.AcrossRadius = radii.y;
-            Vector3 travel = Body.linearVelocity * SurfaceDerivativeStep;
+            Vector3 travel = frame.SampleVelocity * SurfaceDerivativeStep;
             travel.y = 0f;
             for (int i = 0; i < 4; i++)
             {
                 Vector3 offset = i < 2 ? frame.Wind * (i == 0 ? radii.x : -radii.x) :
                     frame.Side * (i == 2 ? radii.y : -radii.y);
-                Vector3 point = frame.Center + offset;
+                Vector3 point = hull.Center + offset;
                 if (!SeasonalIceFloeWaves.TryPhysicsSurface(context, point, 0f, settings.SecondarySwellWeight, out float now) ||
                     !SeasonalIceFloeWaves.TryPhysicsSurface(context, point + travel, SurfaceDerivativeStep,
                         settings.SecondarySwellWeight, out float next))
@@ -896,15 +961,22 @@ namespace Seasons
             }
             if (!Finite(dt) || dt <= 0f || !Finite(Body.mass) || Body.mass <= 0f ||
                 !Finite(Body.worldCenterOfMass) || !Finite(Body.linearVelocity) || !Finite(Body.angularVelocity) ||
-                !Finite(Body.inertiaTensor) || !Finite(Physics.gravity) || !Finite(m_floating.m_waterLevelOffset) ||
+                !Finite(Body.inertiaTensor) || !Finite(Physics.gravity) ||
                 m_floating.m_body != Body || collider.attachedRigidbody != Body)
             {
                 Status = WaveStatus.InvalidBody;
                 return;
             }
+            if (!TryHullGeometry(collider, out HullGeometry hull))
+            {
+                HoldGravity();
+                m_floating.SetSurfaceEffect(false);
+                Status = WaveStatus.NoHullGeometry;
+                return;
+            }
             SurfaceSettings settings = ReadSettings();
             if (!SeasonalIceFloeWaves.TrySurfaceContext(this, out SeasonalIceFloeWaves.SurfaceContext context) ||
-                !TrySurfaceFrame(context, settings, out SurfaceFrame frame))
+                !TrySurfaceFrame(context, settings, hull, out SurfaceFrame frame))
             {
                 HoldGravity();
                 m_floating.SetSurfaceEffect(false);
@@ -930,14 +1002,22 @@ namespace Seasons
         private void ApplySurfacePhysics(float dt, SurfaceFrame frame, SurfaceSettings settings, bool capture)
         {
             float gravity = Mathf.Max(0f, -Physics.gravity.y);
-            float referenceHeight = frame.Height + m_floating.m_waterLevelOffset + settings.HeightOffset;
-            float submerged = Mathf.Clamp01(0.5f + (referenceHeight - frame.Center.y) / settings.Thickness);
+            // Separate the geometric waterline from the effective displacement model.
+            // At 0.5 the collider center lies on the sampled plane. For a bottom pivot,
+            // its resting root is therefore half the scaled collider height below water.
+            // Do not also add Floating.m_waterLevelOffset or another half-height shift.
+            float targetHullHeight = frame.Height + settings.HeightOffset +
+                (0.5f - settings.RestingSubmergence) * frame.Hull.Thickness;
+            float heightError = targetHullHeight - frame.Hull.Center.y;
+            float targetHeight = frame.Center.y + heightError;
+            float submerged = Mathf.Clamp01(settings.Density + heightError / settings.Thickness);
             float wet = Mathf.Clamp01(submerged / settings.Density);
-            float targetHeight = referenceHeight + (0.5f - settings.Density) * settings.Thickness;
-            float relativeVelocity = Body.linearVelocity.y - frame.VerticalVelocity;
+            float relativeVelocity = frame.SampleVelocity.y - frame.VerticalVelocity;
 
-            // A fixed effective slab volume V=m/(rho_water*density), not an unbounded spring:
-            // F_b = rho_water*g*V*fraction = m*g*fraction/density. At rest fraction=density.
+            // Effective slab volume V=m/(rho_water*density); at the chosen geometric
+            // waterline fraction=density, so lift balances weight. Density still limits
+            // reserve lift; it no longer imposes a visual 90% collider immersion.
+            // HullThickness remains the virtual slab thickness, not exact submerged mesh volume.
             float buoyancyAcceleration = settings.Buoyancy ? gravity * submerged / settings.Density : 0f;
             float dragAcceleration = 0f;
             if (settings.VerticalDamping && wet > 0f)
@@ -1010,7 +1090,11 @@ namespace Seasons
             {
                 WaveDiagnostics d = Diagnostics;
                 d.TargetComHeight = targetHeight;
-                d.HeightError = targetHeight - frame.Center.y;
+                d.TargetHullCenterY = targetHullHeight;
+                d.TargetPivotY = Body.position.y + heightError;
+                d.HeightError = heightError;
+                d.NominalHullSubmergence = Mathf.Clamp01(0.5f +
+                    (frame.Height + settings.HeightOffset - frame.Hull.Center.y) / frame.Hull.Thickness);
                 d.SubmergedFraction = submerged;
                 d.WetWeight = wet;
                 d.RelativeVerticalVelocity = relativeVelocity;
@@ -1053,6 +1137,15 @@ namespace Seasons
             d.MaxAngularVelocity = Body.maxAngularVelocity;
             d.BodyRotation = Body.rotation;
             d.CenterOfMass = frame.Center;
+            d.SampleCenter = frame.Hull.Center;
+            d.SampleVelocity = frame.SampleVelocity;
+            d.HullShape = frame.Hull.Shape;
+            d.ColliderThickness = frame.Hull.Thickness;
+            d.ColliderBottomY = frame.Hull.BottomY;
+            d.ColliderTopY = frame.Hull.TopY;
+            d.PivotY = Body.position.y;
+            d.NativeWaterLevelOffset = m_floating.m_waterLevelOffset; // Observed only, not used in near forces.
+            d.TargetPivotY = d.TargetHullCenterY = d.NominalHullSubmergence = 0f;
             d.Velocity = Body.linearVelocity;
             d.AngularVelocity = Body.angularVelocity;
             d.Wind = frame.Wind;
@@ -1063,8 +1156,8 @@ namespace Seasons
             d.NextHeights = frame.NextHeights;
             d.AlongRadius = frame.AlongRadius;
             d.AcrossRadius = frame.AcrossRadius;
-            SeasonalIceFloeWaves.TrySurface(context, frame.Center, out d.FullSurfaceHeight);
-            d.NativeSurfaceHeight = Floating.GetLiquidLevel(frame.Center);
+            SeasonalIceFloeWaves.TrySurface(context, frame.Hull.Center, out d.FullSurfaceHeight);
+            d.NativeSurfaceHeight = Floating.GetLiquidLevel(frame.Hull.Center);
             d.TargetComHeight = d.HeightError = d.SubmergedFraction = d.WetWeight = d.RelativeVerticalVelocity = d.TiltErrorDegrees = 0f;
             d.ActualUp = d.TargetAngularVelocity = d.BuoyancyForce = d.VerticalDragForce = d.HorizontalDragForce =
                 d.AngularAcceleration = d.SubmittedForce = d.SubmittedTorque = d.EngineImpulse = d.EngineAngularImpulse = Vector3.zero;
@@ -1104,16 +1197,18 @@ namespace Seasons
             step.Captured = true; // Includes contacts, engine damping, sync and other scripts between callbacks.
         }
 
-        public void ResetSurfacePhysicsSettings()
+        // Resets shared controls for ALL floes on this peer; does not reset their poses.
+        public static void ResetSurfacePhysicsSettings()
         {
             ProbeDistance = 2f;
             ScaleProbeDistance = false;
-            SecondarySwellWeight = 0f;
+            SecondarySwellWeight = 1f;
             ApplyBuoyancy = ApplyVerticalWaterDamping = ApplyHorizontalWaterDamping = true;
             MassMultiplier = 4f;
             HullThickness = 1f;
             RelativeDensity = 0.9f;
             HeightOffset = 0f;
+            RestingSubmergence = 0.5f;
             VerticalDampingRatio = 1f;
             MaxWaterDragAcceleration = 6f;
             HorizontalDamping = 0.15f;
@@ -1158,7 +1253,7 @@ namespace Seasons
                 nextHoverText = Time.unscaledTime + 0.2f;
                 StringBuilder b = hoverBuilder ??= new StringBuilder(3072);
                 b.Clear();
-                b.Append(HoverBlockStart).Append(' ').Append(Status).Append(" | Wind surface / dynamic forces");
+                b.Append(HoverBlockStart).Append(' ').Append(Status).Append(" | Wind surface / dynamic forces | shared settings");
                 b.Append("\nOwner=").Append(m_view.GetZDO().GetOwner()).Append(" local=").Append(m_view.IsOwner());
                 b.Append(" distant=").Append(Distant).Append(" gravityHold=").Append(HoldingGravity);
                 b.Append("\nForce/torque calls=").Append(LastForceCalls).Append("/2 total=").Append(TotalForceCalls);
@@ -1175,20 +1270,31 @@ namespace Seasons
                     b.Append(" secondary swell=").Append(Number(d.Settings.SecondarySwellWeight));
                     b.Append("\nWater plane/full/native=").Append(Number(d.PlaneHeight)).Append('/');
                     b.Append(Number(d.FullSurfaceHeight)).Append('/').Append(Number(d.NativeSurfaceHeight));
+                    b.Append(" gap plane/native=").Append(WaterValid(d.NativeSurfaceHeight)
+                        ? Number(d.PlaneHeight - d.NativeSurfaceHeight) : "invalid");
                     b.Append("\nProbe heights +W/-W/+S/-S=").Append(Heights(d.Heights));
                     b.Append(" radii=").Append(Number(d.AlongRadius)).Append('/').Append(Number(d.AcrossRadius));
                     b.Append("\nNormal=").Append(Vector(d.TargetNormal)).Append(" up=").Append(Vector(d.ActualUp));
                     b.Append(" tilt error=").Append(Number(d.TiltErrorDegrees)).Append(" deg");
                     b.Append("\nCOM target/actual=").Append(Number(d.TargetComHeight)).Append('/').Append(Number(d.CenterOfMass.y));
-                    b.Append(" error=").Append(Number(d.HeightError)).Append(" submerged=").Append(Number(d.SubmergedFraction));
-                    b.Append("\nVelocity Y water/body/relative=").Append(Number(d.WaterVerticalVelocity)).Append('/');
-                    b.Append(Number(d.Velocity.y)).Append('/').Append(Number(d.RelativeVerticalVelocity));
+                    b.Append(" error=").Append(Number(d.HeightError)).Append(" displacement=").Append(Number(d.SubmergedFraction));
+                    b.Append("\nY pivot/hull/COM=").Append(Number(d.PivotY)).Append('/');
+                    b.Append(Number(d.SampleCenter.y)).Append('/').Append(Number(d.CenterOfMass.y));
+                    b.Append("\nHull=").Append(d.HullShape).Append(" thickness=").Append(Number(d.ColliderThickness));
+                    b.Append(" bottom/top=").Append(Number(d.ColliderBottomY)).Append('/').Append(Number(d.ColliderTopY));
+                    b.Append("\nWaterline target/actual fraction=").Append(Number(d.Settings.RestingSubmergence));
+                    b.Append('/').Append(Number(d.NominalHullSubmergence));
+                    b.Append(" heightOffset=").Append(Number(d.Settings.HeightOffset));
+                    b.Append("\nTarget Y pivot/hull=").Append(Number(d.TargetPivotY)).Append('/').Append(Number(d.TargetHullCenterY));
+                    b.Append(" nativeOffset(unused)=").Append(Number(d.NativeWaterLevelOffset));
+                    b.Append("\nVelocity Y water/hull/relative=").Append(Number(d.WaterVerticalVelocity)).Append('/');
+                    b.Append(Number(d.SampleVelocity.y)).Append('/').Append(Number(d.RelativeVerticalVelocity));
                     b.Append("\nBody mass=").Append(Number(d.Mass)).Append(" inertia=").Append(Vector(d.Inertia));
                     b.Append(" gravity=").Append(d.UseGravity).Append(" constraints=").Append(d.Constraints);
                     b.Append("\nBody damp L/A=").Append(Number(d.LinearDamping)).Append('/').Append(Number(d.AngularDamping));
                     b.Append(" maxOmega=").Append(Number(d.MaxAngularVelocity)).Append(" same Floating/Sync=");
                     b.Append(d.FloatingBodyMatches).Append('/').Append(d.SyncBodyMatches);
-                    b.Append("\nDensity/thickness=").Append(Number(d.Settings.Density)).Append('/').Append(Number(d.Settings.Thickness));
+                    b.Append("\nDensity/effectiveThickness=").Append(Number(d.Settings.Density)).Append('/').Append(Number(d.Settings.Thickness));
                     b.Append(" heave damping=").Append(Number(d.Settings.VerticalDampingRatio));
                     b.Append(" tilt Hz/damping=").Append(Number(d.Settings.TiltFrequency)).Append('/').Append(Number(d.Settings.TiltDampingRatio));
                     b.Append("\nForces N: buoyancy=").Append(Number(d.BuoyancyForce.y)).Append(" vertical drag=").Append(Number(d.VerticalDragForce.y));

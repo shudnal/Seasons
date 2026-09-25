@@ -72,7 +72,7 @@ namespace Seasons
                 return Vector3.zero;
             Vector3 offset = index < 2 ? d.Wind * (index == 0 ? d.AlongRadius : -d.AlongRadius) :
                 Vector3.Cross(d.Wind, Vector3.up) * (index == 2 ? d.AcrossRadius : -d.AcrossRadius);
-            Vector3 point = d.CenterOfMass + offset;
+            Vector3 point = d.SampleCenter + offset;
             point.y = d.Heights[index];
             return point;
         }
