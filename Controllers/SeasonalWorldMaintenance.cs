@@ -29,6 +29,13 @@ namespace Seasons
         private static int objectIndex = -1;
         private static bool requested;
         private static bool scanning;
+        private static bool cleanupPolicyKnown, previousCleanupRequired, loadedCleanupRequested;
+        private static bool deferredTerrainScan;
+        private static readonly Queue<Vector2s> priorityCleanupZones = new Queue<Vector2s>();
+        private static readonly HashSet<Vector2s> priorityCleanupZoneSet = new HashSet<Vector2s>();
+        private static List<ZDO> priorityCleanupSector;
+        private static int priorityCleanupIndex = -1;
+        private static int lastLoadedFloesQueued, lastLoadedMarkersQueued;
 
         internal static void Reset()
         {
@@ -41,11 +48,14 @@ namespace Seasons
             sectorIndex = 0;
             objectIndex = -1;
             requested = scanning = false;
+            cleanupPolicyKnown = previousCleanupRequired = loadedCleanupRequested = deferredTerrainScan = false;
+            ClearPriorityCleanup();
+            lastLoadedFloesQueued = lastLoadedMarkersQueued = 0;
         }
 
         private static bool EnsureWorld()
         {
-            if (!ZoneSystem.instance || !ZNet.instance || ZDOMan.instance == null || !SeasonState.IsActive)
+            if (!ZoneSystem.instance || !ZNet.instance || ZDOMan.instance == null)
                 return false;
             if (manager != ZDOMan.instance || world != ZoneSystem.instance || sectors != ZDOMan.instance.m_objectsBySector)
             {
@@ -61,11 +71,131 @@ namespace Seasons
             return sectors != null;
         }
 
+        // An absent season during startup is not evidence that winter has ended. An
+        // explicit feature disable, however, is sufficient even before season setup.
+        private static bool CleanupPolicyReady => enableIceFloes != null &&
+            (!enableIceFloes.Value || SeasonState.IsActive);
+        private static bool CleanupRequired => CleanupPolicyReady &&
+            (!enableIceFloes.Value || !IsTimeForIceFloes());
+        private static bool TerrainWanted => SeasonState.IsActive && IsTimeToDecultivateGround();
+        private static bool TerrainReady => SeasonState.IsActive && ZNetScene.instance &&
+            (ZNet.instance.IsDedicated() || !ZNetScene.instance.InLoadingScreen()) &&
+            WorldGenerator.instance?.m_world?.m_biomeData?.IsReady == true;
+
         internal static void RequestWorldScan()
         {
-            if (EnsureWorld() && ZNet.instance.IsServer() && (!IsTimeForIceFloes() || IsTimeToDecultivateGround()))
+            if (!EnsureWorld() || !ZNet.instance.IsServer())
+                return;
+            if (CleanupRequired)
+            {
+                requested = true;
+                loadedCleanupRequested = true;
+            }
+            if (TerrainWanted)
+            {
                 requested = true; // Requests during a pass coalesce into one following pass.
+                deferredTerrainScan |= !TerrainReady;
+            }
         }
+
+        private static void ObserveCleanupPolicy()
+        {
+            if (!CleanupPolicyReady)
+                return;
+            bool cleanup = CleanupRequired;
+            if (cleanupPolicyKnown && previousCleanupRequired == cleanup)
+                return;
+            cleanupPolicyKnown = true;
+            previousCleanupRequired = cleanup;
+            ClearPriorityCleanup();
+            loadedCleanupRequested = cleanup;
+            if (cleanup)
+                requested = true; // Includes loading an old winter world with floes disabled.
+        }
+
+        private static void ClearPriorityCleanup()
+        {
+            priorityCleanupZones.Clear();
+            priorityCleanupZoneSet.Clear();
+            priorityCleanupSector = null;
+            priorityCleanupIndex = -1;
+        }
+
+        private static bool IsLiveZdo(ZDO zdo) => zdo != null && zdo.IsValid() &&
+            manager.GetZDO(zdo.m_uid) == zdo;
+
+        private static void ScheduleCleanup(ZDO zdo, bool prioritizeZone)
+        {
+            if (!IsLiveZdo(zdo))
+                return;
+            int prefab = zdo.GetPrefab();
+            if (prefab == s_iceFloePrefab && zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
+            {
+                SeasonalIceFloes.ScheduleRemoval(zdo);
+                if (prioritizeZone && priorityCleanupZoneSet.Add(zdo.GetSector()))
+                    priorityCleanupZones.Enqueue(zdo.GetSector());
+            }
+            else if (prefab == s_zoneCtrlPrefab && zdo.GetBool(SeasonsVars.s_iceFloesSpawned))
+                SeasonalIceFloes.ScheduleMarkerReset(zdo);
+        }
+
+        private static void QueueLoadedCleanup()
+        {
+            loadedCleanupRequested = false;
+            lastLoadedFloesQueued = lastLoadedMarkersQueued = 0;
+            // A transition-only walk of already instantiated objects, NOT all world ZDOs.
+            // Only enqueue IDs here: destroying an instance would mutate this dictionary.
+            // Visible floes must not wait behind a million-object background scan.
+            foreach (KeyValuePair<ZDO, ZNetView> entry in ZNetScene.instance.m_instances)
+            {
+                ZDO zdo = entry.Key;
+                if (!entry.Value || !IsLiveZdo(zdo))
+                    continue;
+                if (zdo.GetPrefab() == s_iceFloePrefab && zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
+                    lastLoadedFloesQueued++;
+                else if (zdo.GetPrefab() == s_zoneCtrlPrefab && zdo.GetBool(SeasonsVars.s_iceFloesSpawned))
+                    lastLoadedMarkersQueued++;
+                else
+                    continue;
+                ScheduleCleanup(zdo, prioritizeZone: true);
+            }
+        }
+
+        private static void DiscoverPriorityCleanup(ref int objects, long deadline)
+        {
+            // Distant floes can be instantiated without their zone controller. Find its
+            // persistent spawn marker in the resident sector before the global cursor
+            // reaches it, so off/on can populate the visible ocean again.
+            while (priorityCleanupZones.Count != 0 && objects > 0 && Stopwatch.GetTimestamp() < deadline)
+            {
+                if (priorityCleanupSector == null)
+                {
+                    Vector2s zone = priorityCleanupZones.Peek();
+                    priorityCleanupSector = sectors[ZoneSystem.SectorToIndex(zone).Sector];
+                    priorityCleanupIndex = priorityCleanupSector == null ? -1 : priorityCleanupSector.Count - 1;
+                    objects--; // Empty sectors also consume the discovery budget.
+                }
+                if (priorityCleanupSector != null)
+                    priorityCleanupIndex = Math.Min(priorityCleanupIndex, priorityCleanupSector.Count - 1);
+                if (priorityCleanupIndex < 0)
+                {
+                    priorityCleanupZones.Dequeue();
+                    priorityCleanupSector = null;
+                    continue;
+                }
+                if (objects <= 0)
+                    return;
+                objects--;
+                ScheduleCleanup(priorityCleanupSector[priorityCleanupIndex--], prioritizeZone: false);
+            }
+        }
+
+        // Runtime-inspector action; does not request work, change settings or delete objects.
+        public static string GetFloeCleanupStatus() =>
+            $"server={(ZNet.instance && ZNet.instance.IsServer())} cleanupRequired={CleanupRequired} " +
+            $"loadedSweepPending={loadedCleanupRequested} loadedFloesQueued={lastLoadedFloesQueued} " +
+            $"loadedMarkersQueued={lastLoadedMarkersQueued} priorityZones={priorityCleanupZones.Count} " +
+            $"worldScanRequested={requested} worldScanning={scanning} sector={sectorIndex}/{sectors?.Length ?? 0}";
 
         // False means backpressure: discovery retains its cursor, loaded compilers retry next Update.
         internal static bool RequestTerrain(ZDO zdo)
@@ -83,7 +213,7 @@ namespace Seasons
 
         private static bool CanProcessTerrain(ZDO zdo) => zdo != null && zdo.IsValid()
             && manager.GetZDO(zdo.m_uid) == zdo && zdo.GetPrefab() == s_terrainCompilerPrefab
-            && IsTimeToDecultivateGround() && (zdo.IsOwner() || (!zdo.HasOwner() && ZNet.instance.IsServer()))
+            && TerrainWanted && (zdo.IsOwner() || (!zdo.HasOwner() && ZNet.instance.IsServer()))
             && TerrainDecultivation.IsDecultivationDue(zdo, seasonState.GetCurrentWorldDay(), seasonState.GetYearLengthInDays());
 
         private static void Update()
@@ -94,17 +224,46 @@ namespace Seasons
                 return;
             }
             if (Game.IsPaused() || Time.timeScale <= 0f || !ZNetScene.instance
-                || ZNet.GetConnectionStatus() != ZNet.ConnectionStatus.Connected
-                || (!ZNet.instance.IsDedicated() && ZNetScene.instance.InLoadingScreen())
-                || WorldGenerator.instance?.m_world?.m_biomeData?.IsReady != true)
+                || ZNet.GetConnectionStatus() != ZNet.ConnectionStatus.Connected)
                 return;
-            ProcessTerrain();
+            // Floe removal only needs live ZDOs. Terrain loading and biome-generation
+            // readiness must never prevent disabling floes or removing expired ones.
+            bool terrainReady = TerrainReady;
+            if (terrainReady)
+                ProcessTerrain();
             if (!ZNet.instance.IsServer())
             {
                 requested = scanning = false;
                 currentSector = null;
                 return;
             }
+            ObserveCleanupPolicy();
+            bool cleanup = CleanupRequired;
+            if (cleanup && loadedCleanupRequested)
+                QueueLoadedCleanup();
+            if (!TerrainWanted)
+                deferredTerrainScan = false;
+            else if (!terrainReady)
+                deferredTerrainScan = true;
+            else if (deferredTerrainScan)
+            {
+                requested = true;
+                deferredTerrainScan = false;
+            }
+            if (!cleanup && !TerrainWanted)
+            {
+                requested = scanning = false;
+                currentSector = null;
+                return;
+            }
+
+            long deadline = Stopwatch.GetTimestamp() + (long)(Stopwatch.Frequency * DiscoveryMilliseconds / 1000d);
+            int slots = SectorSlotsPerFrame;
+            int objects = ObjectsPerFrame;
+            if (cleanup)
+                DiscoverPriorityCleanup(ref objects, deadline);
+            if (!cleanup && !terrainReady)
+                return; // Defer terrain-only work without blocking a cleanup pass.
             if (!scanning && requested)
             {
                 requested = false;
@@ -116,9 +275,6 @@ namespace Seasons
             if (!scanning)
                 return;
 
-            long deadline = Stopwatch.GetTimestamp() + (long)(Stopwatch.Frequency * DiscoveryMilliseconds / 1000d);
-            int slots = SectorSlotsPerFrame;
-            int objects = ObjectsPerFrame;
             while (sectorIndex < sectors.Length && objects > 0 && Stopwatch.GetTimestamp() < deadline)
             {
                 if (currentSector == null)
@@ -142,14 +298,9 @@ namespace Seasons
                 ZDO zdo = currentSector[objectIndex];
                 if (zdo != null && zdo.IsValid() && manager.GetZDO(zdo.m_uid) == zdo)
                 {
-                    if (!IsTimeForIceFloes())
-                    {
-                        if (zdo.GetPrefab() == s_iceFloePrefab && zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
-                            SeasonalIceFloes.ScheduleRemoval(zdo);
-                        else if (zdo.GetPrefab() == s_zoneCtrlPrefab && zdo.GetBool(SeasonsVars.s_iceFloesSpawned))
-                            SeasonalIceFloes.ScheduleMarkerReset(zdo);
-                    }
-                    if (zdo.GetPrefab() == s_terrainCompilerPrefab && !RequestTerrain(zdo))
+                    if (cleanup)
+                        ScheduleCleanup(zdo, prioritizeZone: false);
+                    if (terrainReady && zdo.GetPrefab() == s_terrainCompilerPrefab && !RequestTerrain(zdo))
                         break;
                 }
                 --objectIndex;
@@ -193,12 +344,25 @@ namespace Seasons
             {
                 // An existing floe can move behind the discovery cursor. New ZDOs call
                 // AddToSector before initialization/map insertion and are deliberately excluded.
-                if (!scanning || manager != __instance || !ZNet.instance || !ZNet.instance.IsServer()
-                    || !SeasonState.IsActive || IsTimeForIceFloes() || zdo == null || !zdo.IsValid()
+                if (manager != __instance || !ZNet.instance || !ZNet.instance.IsServer()
+                    || !CleanupRequired || zdo == null || !zdo.IsValid()
                     || __instance.GetZDO(zdo.m_uid) != zdo || zdo.GetPrefab() != s_iceFloePrefab
                     || !zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
                     return;
                 SeasonalIceFloes.ScheduleRemoval(zdo);
+            }
+        }
+
+        [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.AddInstance))]
+        private static class ZNetScene_AddInstance_ExpiredFloeCleanup
+        {
+            private static void Postfix(ZDO zdo)
+            {
+                if (!ZNet.instance || !ZNet.instance.IsServer() || !CleanupRequired || !EnsureWorld())
+                    return;
+                // Initialization may be in progress. Schedule only; normal service destroys
+                // marked floes later and rechecks the current season before each batch.
+                ScheduleCleanup(zdo, prioritizeZone: true);
             }
         }
 
