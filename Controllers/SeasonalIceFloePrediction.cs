@@ -27,7 +27,9 @@ namespace Seasons
         [Header("Live sampling diagnostics")]
         public FloeSurfaceMode SurfaceMode;
         public bool InActivePhysicsArea;
-        public float PredictionSeconds, PredictionAge, DistanceToCamera;
+        public float PredictionSeconds, PredictionAge, DistanceToCamera, DistanceToReference, DistanceToPlayer;
+        public bool WindRefreshPending;
+        public long WindChangesDeferred, WindRefreshes;
         public long DirectSurfaceFrames, PredictionBuilds, PredictionHits, SurfaceHeightQueries;
         public string PredictionInvalidation = "Not initialized";
 
@@ -49,6 +51,7 @@ namespace Seasons
             public long HullRebuilds, ScaleNoiseReuses, SameFrameFallbacks;
             public long GeometryResets, ClockResets, WaterResets, WindResets, SettingsResets;
             public long AuthorityResets, MotionResets, ScheduledBuilds, OtherBuilds;
+            public long WindChangesDeferred, WindRefreshes;
         }
 
         public static FloePredictionCounters PredictionPerformance { get; private set; } = new FloePredictionCounters();
@@ -97,7 +100,8 @@ namespace Seasons
         private long forecastOwner, forecastToken;
         private bool forecastValid, forecastFullHeight;
         private Vector4 forecastWaterWind1, forecastWaterWind2;
-        private float forecastWaterBlend, forecastSpacing;
+        private float forecastWaterBlend, forecastSpacing, forecastProbeDistance;
+        private bool forecastScaleProbes;
 
         private int stateFrame = -1;
         private ushort stateOwnerRevision;
@@ -130,6 +134,8 @@ namespace Seasons
             hullGeometryRevision = 0;
             hullParent = null;
             pendingForecastCause = ForecastRebuildCause.Empty;
+            WindRefreshPending = false;
+            DistanceToReference = DistanceToPlayer = float.NaN;
             PredictionSeconds = PredictionAge = 0f;
             SurfaceMode = FloeSurfaceMode.FullRate;
         }
@@ -137,6 +143,7 @@ namespace Seasons
         private void InvalidatePrediction(string reason, ForecastRebuildCause cause = ForecastRebuildCause.ExternalReset)
         {
             forecastValid = false;
+            WindRefreshPending = false;
             PredictionAge = 0f;
             PredictionInvalidation = reason;
             pendingForecastCause = cause;
@@ -230,10 +237,13 @@ namespace Seasons
             statePaused = paused;
             stateFallbackEnabled = EnableFallbackSimulation;
             ObserveOwner();
+            Vector3 referencePosition = ZNet.instance ? ZNet.instance.GetReferencePosition() : Body.position;
             InActivePhysicsArea = ZNet.instance && ZoneSystem.instance &&
-                ZNetScene.InActiveArea(Body.position, ZNet.instance.GetReferencePosition());
+                ZNetScene.InActiveArea(Body.position, referencePosition);
             Camera camera = GameCamera.instance ? GameCamera.instance.m_camera : null;
-            DistanceToCamera = camera ? Utils.DistanceXZ(camera.transform.position, Body.position) : 0f;
+            DistanceToCamera = camera ? Utils.DistanceXZ(camera.transform.position, Body.position) : float.NaN;
+            DistanceToReference = ZNet.instance ? Utils.DistanceXZ(referencePosition, Body.position) : float.NaN;
+            DistanceToPlayer = Player.m_localPlayer ? Utils.DistanceXZ(Player.m_localPlayer.transform.position, Body.position) : float.NaN;
             if (BeyondWater())
             {
                 EnterDistant();
@@ -254,7 +264,7 @@ namespace Seasons
             {
                 float zoneSize = ZoneSystem.instance.m_zoneSize;
                 float halfActive = zoneSize * (ZNet.instance.GetSyncedSimulationDistance().NearSimulationDistance == 1 ? 1f : 1.5f);
-                Vector3 zoneCenter = ZoneSystem.GetZonePos(ZoneSystem.GetZone(ZNet.instance.GetReferencePosition()));
+                Vector3 zoneCenter = ZoneSystem.GetZonePos(ZoneSystem.GetZone(referencePosition));
                 Vector3 delta = Body.position - zoneCenter;
                 float outside = Mathf.Max(0f, Mathf.Max(Mathf.Abs(delta.x), Mathf.Abs(delta.z)) - halfActive);
                 float fraction = Mathf.Clamp01(outside / Mathf.Max(zoneSize, SeasonalIceFloeWaves.WaterDistance - halfActive));
@@ -335,8 +345,27 @@ namespace Seasons
             return WaterValid(frame.Height) && Finite(frame.VerticalVelocity);
         }
 
+        private void ObserveForecastWind(Vector3 wind)
+        {
+            if (!forecastValid || WindRefreshPending)
+                return;
+            bool changed = Vector3.Dot(wind, forecastWind) <= 0.99996f ||
+                Mathf.Abs(SeasonalIceFloeWaves.WindIntensity - forecastWindIntensity) >= 0.01f ||
+                (UseFullWaterHeight && ((forecastWaterWind1 - SeasonalIceFloeWaves.WaterWind1).sqrMagnitude >= 0.0001f ||
+                    (forecastWaterWind2 - SeasonalIceFloeWaves.WaterWind2).sqrMagnitude >= 0.0001f ||
+                    Mathf.Abs(forecastWaterBlend - SeasonalIceFloeWaves.WaterWindBlend) >= 0.01f));
+            if (!changed)
+                return;
+            // A changed wind snapshot is a soft refresh, not invalid geometry/authority.
+            // Finish the already bounded horizon; repeated transition updates cannot reset
+            // the deadline or force all floes to rebuild in the same wind-change frame.
+            WindRefreshPending = true;
+            WindChangesDeferred++;
+            PredictionPerformance.WindChangesDeferred++;
+        }
+
         private ForecastRebuildCause ForecastChange(SeasonalIceFloeWaves.SurfaceContext context, SurfaceSettings settings,
-            double elapsed, Vector3 wind, Vector2 radii, Vector3 drift, float tolerance)
+            double elapsed, Vector2 radii, Vector3 drift, float tolerance)
         {
             if (!forecastValid)
                 return pendingForecastCause == ForecastRebuildCause.None ? ForecastRebuildCause.Empty : pendingForecastCause;
@@ -348,14 +377,9 @@ namespace Seasons
                 forecastContext.Offset != context.Offset || forecastContext.UseWaves != context.UseWaves ||
                 forecastContext.HasWorldEdge != context.HasWorldEdge)
                 return ForecastRebuildCause.WaterContext;
-            if (!(Vector3.Dot(wind, forecastWind) > 0.99996f) ||
-                !(Mathf.Abs(SeasonalIceFloeWaves.WindIntensity - forecastWindIntensity) < 0.01f) ||
-                (UseFullWaterHeight && (!((forecastWaterWind1 - SeasonalIceFloeWaves.WaterWind1).sqrMagnitude < 0.0001f) ||
-                    !((forecastWaterWind2 - SeasonalIceFloeWaves.WaterWind2).sqrMagnitude < 0.0001f) ||
-                    !(Mathf.Abs(forecastWaterBlend - SeasonalIceFloeWaves.WaterWindBlend) < 0.01f))))
-                return ForecastRebuildCause.Wind;
             if (forecastWeight != settings.SecondarySwellWeight || forecastMaxTilt != settings.MaxSurfaceTilt ||
-                forecastFullHeight != UseFullWaterHeight ||
+                forecastFullHeight != UseFullWaterHeight || forecastProbeDistance != settings.ProbeDistance ||
+                forecastScaleProbes != settings.ScaleProbes ||
                 forecastSpacing != Setting(PredictionKnotSeconds, 0.25f, 0.1f, 0.25f))
                 return ForecastRebuildCause.Settings;
             if (!((forecastRadii - radii).sqrMagnitude < 0.0001f))
@@ -396,11 +420,17 @@ namespace Seasons
                 wind = Vector3.forward;
             Vector3 side = Vector3.Cross(wind, Vector3.up);
             Vector2 radii = ProbeRadii(settings, wind, side);
+            // Under scale-aware sampling, a wind turn changes the projected radii even
+            // without a scale edit. Validate the old frame with its own wind axes. Explicit
+            // probe settings and genuine geometry/body-heading changes remain hard resets.
+            Vector2 acceptedRadii = forecastValid && settings.ScaleProbes
+                ? ProbeRadii(settings, forecastWind, forecastSide) : radii;
+            ObserveForecastWind(wind);
             double elapsed = now - forecastStart;
             Vector3 drift = hull.Center - (forecastOrigin + forecastVelocity * (float)elapsed);
             drift.y = 0f;
             float tolerance = Setting(PredictionPositionTolerance, 0.5f, 0.1f, 2f);
-            ForecastRebuildCause cause = ForecastChange(context, settings, elapsed, wind, radii, drift, tolerance);
+            ForecastRebuildCause cause = ForecastChange(context, settings, elapsed, acceptedRadii, drift, tolerance);
             if (cause != ForecastRebuildCause.None)
             {
                 bool compatible = forecastValid &&
@@ -433,15 +463,40 @@ namespace Seasons
                 float step = (horizon + SurfaceDerivativeStep) / (count - 1);
                 SurfaceKnot continuation = default;
                 bool continuous = compatible && elapsed <= forecastHorizon + SurfaceDerivativeStep;
+                bool adoptingWind = WindRefreshPending;
+                bool blendWind = continuous && adoptingWind;
                 if (continuous)
+                {
                     EvaluateForecast((float)elapsed, out continuation);
+                    // Knot indices are relative to the snapshot wind. Copying those four
+                    // numbers into new axes rotates the old normal when the wind turns.
+                    // Preserve its world-space plane and plane rate before changing axes.
+                    continuation = ReframeContinuation(continuation, wind, side, radii);
+                }
                 forecastValid = false;
+                SurfaceKnot correction = default;
                 for (int i = 0; i < count; i++)
                 {
-                    if (i == 0 && continuous)
+                    if (i == 0 && continuous && !blendWind)
+                    {
                         forecast[i] = continuation;
-                    else if (!SampleKnot(context, settings, hull.Center, horizontalVelocity, wind, side, radii, i * step, out forecast[i]))
+                        continue;
+                    }
+                    if (!SampleKnot(context, settings, hull.Center, horizontalVelocity, wind, side, radii, i * step, out forecast[i]))
                         return false;
+                    if (!blendWind)
+                        continue;
+                    if (i == 0)
+                    {
+                        correction.Heights = continuation.Heights - forecast[i].Heights;
+                        correction.Rates = continuation.Rates - forecast[i].Rates;
+                        correction.WaterHeight = continuation.WaterHeight - forecast[i].WaterHeight;
+                        correction.WaterRate = continuation.WaterRate - forecast[i].WaterRate;
+                    }
+                    // Match the old value AND velocity, then fade their correction across
+                    // the new horizon. Do not squeeze a multi-metre wind change into the
+                    // first 0.25-second knot or assign the Rigidbody pose/velocity.
+                    ApplyWindCorrection(ref forecast[i], correction, i * step, horizon);
                 }
                 forecastStart = now;
                 forecastCount = count;
@@ -460,12 +515,21 @@ namespace Seasons
                 forecastWaterWind2 = SeasonalIceFloeWaves.WaterWind2;
                 forecastWaterBlend = SeasonalIceFloeWaves.WaterWindBlend;
                 forecastSpacing = spacing;
+                forecastProbeDistance = settings.ProbeDistance;
+                forecastScaleProbes = settings.ScaleProbes;
                 forecastMaxTilt = settings.MaxSurfaceTilt;
                 forecastWindIntensity = SeasonalIceFloeWaves.WindIntensity;
                 forecastGeometryRevision = hullGeometryRevision;
                 forecastOwner = PhysicsOwner;
                 forecastToken = PhysicsAuthorityToken;
-                PredictionInvalidation = compatible ? "Forecast completed" : "Forecast rebuilt; see cause";
+                if (adoptingWind)
+                {
+                    WindRefreshes++;
+                    PredictionPerformance.WindRefreshes++;
+                }
+                WindRefreshPending = false;
+                PredictionInvalidation = blendWind ? "Wind adopted on schedule; smooth handover" :
+                    compatible ? "Forecast completed" : "Forecast rebuilt; see cause";
                 pendingForecastCause = ForecastRebuildCause.None;
                 forecastValid = true;
                 PredictionBuilds++;
@@ -495,6 +559,39 @@ namespace Seasons
             return WaterValid(frame.Height) && Finite(frame.VerticalVelocity) && Finite(frame.Normal) && Finite(frame.NextNormal);
         }
 
+        private SurfaceKnot ReframeContinuation(SurfaceKnot value, Vector3 wind, Vector3 side, Vector2 radii)
+        {
+            value.Heights = ReframePlane(value.Heights, wind, side, radii);
+            value.Rates = ReframePlane(value.Rates, wind, side, radii);
+            return value;
+        }
+
+        private Vector4 ReframePlane(Vector4 values, Vector3 wind, Vector3 side, Vector2 radii)
+        {
+            Vector3 gradient = forecastWind * ((values.x - values.y) / (2f * forecastRadii.x)) +
+                forecastSide * ((values.z - values.w) / (2f * forecastRadii.y));
+            float center = Mean(values);
+            float along = Vector3.Dot(gradient, wind) * radii.x;
+            float across = Vector3.Dot(gradient, side) * radii.y;
+            return new Vector4(center + along, center - along, center + across, center - across);
+        }
+
+        private static void ApplyWindCorrection(ref SurfaceKnot value, SurfaceKnot correction, float time, float duration)
+        {
+            if (time >= duration)
+                return;
+            float t = Mathf.Clamp01(time / duration);
+            float t2 = t * t, t3 = t2 * t;
+            float positionWeight = 2f * t3 - 3f * t2 + 1f;
+            float rateWeight = (t3 - 2f * t2 + t) * duration;
+            float positionDerivative = (6f * t2 - 6f * t) / duration;
+            float rateDerivative = 3f * t2 - 4f * t + 1f;
+            value.Heights += positionWeight * correction.Heights + rateWeight * correction.Rates;
+            value.Rates += positionDerivative * correction.Heights + rateDerivative * correction.Rates;
+            value.WaterHeight += positionWeight * correction.WaterHeight + rateWeight * correction.WaterRate;
+            value.WaterRate += positionDerivative * correction.WaterHeight + rateDerivative * correction.WaterRate;
+        }
+
         private void EvaluateForecast(float time, out SurfaceKnot result)
         {
             int index = Mathf.Clamp(Mathf.FloorToInt(time / forecastStep), 0, forecastCount - 2);
@@ -517,11 +614,16 @@ namespace Seasons
         private void AppendPredictionDiagnostics(StringBuilder b)
         {
             b.Append("\nSurface mode=").Append(SurfaceMode).Append(" activeArea=").Append(InActivePhysicsArea);
-            b.Append(" distance=").Append(Number(DistanceToCamera)).Append(" waveRadius=").Append(Number(SeasonalIceFloeWaves.WaterDistance));
+            b.Append(" waveRadius=").Append(Number(SeasonalIceFloeWaves.WaterDistance));
+            b.Append("\nDistance XZ camera/reference/player=").Append(Number(DistanceToCamera)).Append('/');
+            b.Append(Number(DistanceToReference)).Append('/').Append(Number(DistanceToPlayer));
             b.Append("\nPrediction interval/age=").Append(Number(PredictionSeconds)).Append('/').Append(Number(PredictionAge));
             b.Append(" knots=").Append(forecastValid ? forecastCount : 0).Append(" direct/builds/hits=");
             b.Append(DirectSurfaceFrames).Append('/').Append(PredictionBuilds).Append('/').Append(PredictionHits);
             b.Append(" heightQueries=").Append(SurfaceHeightQueries);
+            b.Append("\nWind refresh pending=").Append(WindRefreshPending);
+            b.Append(" deferred/adopted=").Append(WindChangesDeferred).Append('/').Append(WindRefreshes);
+            b.Append(" remaining=").Append(Number(forecastValid ? Mathf.Max(0f, forecastHorizon - PredictionAge) : 0f)).Append("s");
             b.Append("\nPrediction reason=").Append(PredictionInvalidation).Append(" fullWaterHeight=").Append(UseFullWaterHeight);
             b.Append(" nativeWaterThrottling=").Append(SeasonalIceFloeWaves.NativeWaterThrottlingActive);
             b.Append("\nCache geometry/noise/knots/fallbacks=").Append(GeometryCacheBuilds).Append('/');
@@ -536,6 +638,7 @@ namespace Seasons
             b.Append(totals.GeometryResets).Append('/').Append(totals.ClockResets).Append('/').Append(totals.WaterResets).Append('/');
             b.Append(totals.WindResets).Append('/').Append(totals.SettingsResets).Append('/').Append(totals.AuthorityResets).Append('/');
             b.Append(totals.MotionResets).Append('/').Append(totals.ScheduledBuilds).Append('/').Append(totals.OtherBuilds);
+            b.Append("\nAll floes wind deferred/adopted=").Append(totals.WindChangesDeferred).Append('/').Append(totals.WindRefreshes);
         }
     }
 }
