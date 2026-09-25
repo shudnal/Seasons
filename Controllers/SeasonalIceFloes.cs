@@ -8,16 +8,14 @@ using static Seasons.ZoneSystemVariantController;
 
 namespace Seasons
 {
-    /// <summary>Local geometry placement, with independent server-only seasonal removal.</summary>
+    /// <summary>Budgeted local placement and one-pass server-only seasonal removal.</summary>
     internal static class SeasonalIceFloes
     {
-        // A budget cannot interrupt a single Instantiate, terrain raycast, or destruction call.
+        // Placement is budgeted; explicit seasonal cleanup is deliberately not sliced.
         private const int RequestBudget = 8;
         private const int ObjectBudget = 64;
         private const int CandidateBudget = 4;
         private const int InstanceBudget = 1;
-        private const int RemovalBudget = 4;
-        private const int MarkerBudget = 4;
         private const double ServiceMilliseconds = 1.5;
         private const float PendingRetrySeconds = 0.5f;
 
@@ -93,10 +91,11 @@ namespace Seasons
         private static readonly Dictionary<Vector2s, ZDOID> controllers = new Dictionary<Vector2s, ZDOID>();
         private static readonly Dictionary<Vector2s, List<ZoneSystem.ClearArea>> initialExclusions = new Dictionary<Vector2s, List<ZoneSystem.ClearArea>>();
         private static readonly HashSet<Vector2s> settled = new HashSet<Vector2s>();
-        private static readonly Queue<ZDOID> removals = new Queue<ZDOID>();
-        private static readonly HashSet<ZDOID> removalSet = new HashSet<ZDOID>();
-        private static readonly Queue<ZDOID> markerResets = new Queue<ZDOID>();
-        private static readonly HashSet<ZDOID> markerSet = new HashSet<ZDOID>();
+        // Temporary selection buffers, emptied in the same call. Never a multi-frame queue.
+        private static readonly List<ZDOID> cleanupFloes = new List<ZDOID>();
+        private static readonly List<ZDOID> cleanupMarkers = new List<ZDOID>();
+        private static bool cleanupRequested, cleanupRunning, policyKnown;
+        private static int cleanupPasses, lastRemovedFloes, lastResetMarkers;
         private static IEnumerator<Vector2s> loadedZones;
         private static ZoneSystem world;
         private static int zonePrefab;
@@ -141,7 +140,10 @@ namespace Seasons
             controllers.Clear();
             initialExclusions.Clear();
             settled.Clear();
-            CancelCleanup();
+            cleanupFloes.Clear();
+            cleanupMarkers.Clear();
+            cleanupRequested = cleanupRunning = policyKnown = false;
+            cleanupPasses = lastRemovedFloes = lastResetMarkers = 0;
             world = null;
             zonePrefab = 0;
             wanted = prefabChecked = false;
@@ -165,7 +167,6 @@ namespace Seasons
             return true;
         }
 
-        private static bool ServerReady() => PeerReady() && ZNet.instance.IsServer();
         private static bool PlacementSeason() => SeasonState.IsActive && IsTimeForIceFloes();
 
         private static bool PlacementReady()
@@ -205,7 +206,7 @@ namespace Seasons
 
         private static void RequestZone(Vector2s zone)
         {
-            // Summer has no client cleanup or recurring discovery. Server maintenance owns removal.
+            // Summer has no client placement; only the server deletes seasonal objects.
             if (!PlacementSeason() || ZNet.instance.IsDedicated() || settled.Contains(zone) || !world.m_zones.ContainsKey(zone))
                 return;
             ZDO control = CachedControl(zone);
@@ -242,26 +243,77 @@ namespace Seasons
             RequestZone(zone);
         }
 
-        // Only the existing bounded server maintenance pass supplies global removal requests.
-        internal static void ScheduleRemoval(ZDO zdo)
+        private static bool CleanupPolicyReady => enableIceFloes != null &&
+            (!enableIceFloes.Value || SeasonState.IsActive);
+        private static bool CleanupRequired => CleanupPolicyReady && !PlacementSeason();
+
+        // Called by config/season updates. Coalesce callbacks until the next main-thread
+        // update, then complete the whole operation, including unloaded ZDOs, in one call.
+        internal static void RequestCleanup()
         {
-            if (zdo != null && ServerReady() && !PlacementSeason() && removalSet.Add(zdo.m_uid))
-                removals.Enqueue(zdo.m_uid);
+            if (PeerReady() && ZNet.instance.IsServer() && CleanupRequired && !cleanupRunning)
+                cleanupRequested = true;
         }
 
-        internal static void ScheduleMarkerReset(ZDO zdo)
-        {
-            if (zdo != null && ServerReady() && !PlacementSeason() &&
-                zdo.GetBool(SeasonsVars.s_iceFloesSpawned) && markerSet.Add(zdo.m_uid))
-                markerResets.Enqueue(zdo.m_uid);
-        }
+        public static string GetCleanupStatus() =>
+            $"server={(ZNet.instance && ZNet.instance.IsServer())} cleanupRequired={CleanupRequired} " +
+            $"pending={cleanupRequested} running={cleanupRunning} passes={cleanupPasses} " +
+            $"lastRemovedFloes={lastRemovedFloes} lastResetMarkers={lastResetMarkers}";
 
-        private static void CancelCleanup()
+        private static void CleanupAll()
         {
-            removals.Clear();
-            removalSet.Clear();
-            markerResets.Clear();
-            markerSet.Clear();
+            if (cleanupRunning || !ZNet.instance.IsServer() || !CleanupRequired)
+                return;
+            cleanupRequested = false;
+            cleanupRunning = true;
+            cleanupFloes.Clear();
+            cleanupMarkers.Clear();
+            lastRemovedFloes = lastResetMarkers = 0;
+            ZDOMan manager = ZDOMan.instance;
+            try
+            {
+                // Enumerate once, select only our records. Native destruction removes dictionary
+                // entries and can release pooled ZDOs, so do not destroy inside this enumeration.
+                foreach (KeyValuePair<ZDOID, ZDO> entry in manager.m_objectsByID)
+                {
+                    ZDO zdo = entry.Value;
+                    if (zdo == null || !zdo.IsValid())
+                        continue;
+                    int prefab = zdo.GetPrefab();
+                    if (prefab == s_iceFloePrefab && zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
+                        cleanupFloes.Add(entry.Key);
+                    else if (prefab == zonePrefab && zdo.GetBool(SeasonsVars.s_iceFloesSpawned))
+                        cleanupMarkers.Add(entry.Key);
+                }
+                foreach (ZDOID id in cleanupMarkers)
+                {
+                    ZDO zdo = manager.GetZDO(id);
+                    if (zdo == null || !zdo.IsValid() || zdo.GetPrefab() != zonePrefab)
+                        continue;
+                    zdo.Set(SeasonsVars.s_iceFloesSpawned, 0, okForNotOwner: true);
+                    lastResetMarkers++;
+                }
+                foreach (ZDOID id in cleanupFloes)
+                {
+                    ZDO zdo = manager.GetZDO(id);
+                    if (zdo == null || !zdo.IsValid() || zdo.GetPrefab() != s_iceFloePrefab ||
+                        !zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
+                        continue;
+                    RemoveObject(zdo, force: true);
+                    lastRemovedFloes++;
+                }
+                // Flush native destruction once for the whole batch. Do not manually remove
+                // dictionary entries or bypass dead-ZDO tracking and network notifications.
+                if (lastRemovedFloes != 0)
+                    manager.SendDestroyed();
+                cleanupPasses++;
+            }
+            finally
+            {
+                cleanupFloes.Clear();
+                cleanupMarkers.Clear();
+                cleanupRunning = false;
+            }
         }
 
         private static bool BeforeDeadline(long deadline) => Stopwatch.GetTimestamp() < deadline;
@@ -296,35 +348,32 @@ namespace Seasons
 
         internal static void Update()
         {
-            if (!PeerReady() || Game.IsPaused() || Time.timeScale <= 0f)
+            if (!PeerReady() || !CleanupPolicyReady)
                 return;
-            long deadline = Stopwatch.GetTimestamp() + (long)(Stopwatch.Frequency * ServiceMilliseconds / 1000d);
             bool nowWanted = PlacementSeason();
-            if (wanted != nowWanted)
+            if (!policyKnown || wanted != nowWanted)
             {
+                policyKnown = true;
                 wanted = nowWanted;
                 loadedZones?.Dispose();
                 loadedZones = null;
                 work.Clear();
                 settled.Clear();
-                if (wanted)
-                {
-                    CancelCleanup();
-                    if (!ZNet.instance.IsDedicated())
-                        loadedZones = world.m_zones.Keys.GetEnumerator();
-                }
-                else
-                {
-                    requests.Clear();
-                    requestSet.Clear();
+                requests.Clear();
+                requestSet.Clear();
+                if (!wanted)
                     initialExclusions.Clear();
-                    if (ZNet.instance.IsServer())
-                        SeasonalWorldMaintenance.RequestWorldScan();
-                }
+                cleanupRequested = !wanted && ZNet.instance.IsServer();
+                if (wanted && !ZNet.instance.IsDedicated())
+                    loadedZones = world.m_zones.Keys.GetEnumerator();
             }
-            ServiceRemovals(deadline);
-            if (!wanted || ZNet.instance.IsDedicated())
+            // Removing disabled floes does not depend on biome readiness, placement budgets,
+            // a terrain-loading screen or simulation time advancing in the config menu.
+            if (cleanupRequested && !wanted)
+                CleanupAll();
+            if (!wanted || ZNet.instance.IsDedicated() || Game.IsPaused() || Time.timeScale <= 0f)
                 return;
+            long deadline = Stopwatch.GetTimestamp() + (long)(Stopwatch.Frequency * ServiceMilliseconds / 1000d);
             DiscoverLoadedZones(deadline);
             if (!PlacementReady())
                 return;
@@ -618,28 +667,6 @@ namespace Seasons
             settled.Add(zone);
         }
 
-        private static void ServiceRemovals(long deadline)
-        {
-            if (!ZNet.instance.IsServer() || PlacementSeason())
-                return;
-            for (int i = 0; i < RemovalBudget && removals.Count != 0 && BeforeDeadline(deadline); i++)
-            {
-                ZDOID id = removals.Dequeue();
-                removalSet.Remove(id);
-                ZDO zdo = ZDOMan.instance.GetZDO(id);
-                if (zdo != null && zdo.GetPrefab() == s_iceFloePrefab && zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
-                    RemoveObject(zdo, force: true);
-            }
-            for (int i = 0; i < MarkerBudget && markerResets.Count != 0 && BeforeDeadline(deadline); i++)
-            {
-                ZDOID id = markerResets.Dequeue();
-                markerSet.Remove(id);
-                ZDO zdo = ZDOMan.instance.GetZDO(id);
-                if (zdo != null && zdo.GetPrefab() == zonePrefab && zdo.GetBool(SeasonsVars.s_iceFloesSpawned))
-                    zdo.Set(SeasonsVars.s_iceFloesSpawned, 0, okForNotOwner: true);
-            }
-        }
-
         private static void InitializeRandom(ZoneWork current)
         {
             UnityEngine.Random.State previous = UnityEngine.Random.state;
@@ -850,6 +877,17 @@ namespace Seasons
         private static class ZoneSystem_OnDestroy_Floes
         {
             private static void Postfix() => Reset();
+        }
+
+        [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.AddInstance))]
+        private static class ZNetScene_AddInstance_FloeCleanup
+        {
+            private static void Postfix(ZDO zdo)
+            {
+                if (zdo != null && zdo.GetPrefab() == s_iceFloePrefab &&
+                    zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
+                    RequestCleanup();
+            }
         }
 
         [HarmonyPatch(typeof(ZNetView), nameof(ZNetView.Awake))]

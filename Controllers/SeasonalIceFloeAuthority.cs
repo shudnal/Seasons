@@ -220,6 +220,7 @@ namespace Seasons
                 AuthorityReason = "No valid object or server clock";
                 return;
             }
+            UpdateOwnerlessBodyMode(zdo);
             LeaseRecord lease = ReadLease(zdo);
             ObserveLease(lease, now);
             if (zdo.HasOwner())
@@ -254,7 +255,7 @@ namespace Seasons
             }
             lastAuthorityTime = now;
             if (!EnableFallbackSimulation || !isActiveAndEnabled || !m_floating.isActiveAndEnabled || !Sync.isActiveAndEnabled ||
-                Body.isKinematic || Game.IsPaused() || Time.timeScale <= 0f || !WithinFallbackRange())
+                (Body.isKinematic && !OwnerlessKinematic) || Game.IsPaused() || Time.timeScale <= 0f || !WithinFallbackRange())
             {
                 WithdrawSimulationAuthority("Outside active fallback conditions");
                 AuthorityMode = !EnableFallbackSimulation ? FloeAuthorityMode.Disabled :
@@ -379,10 +380,19 @@ namespace Seasons
             RestoreWaves();
             Body.position = position;
             Body.rotation = rotation;
-            Body.linearVelocity = velocity;
-            Body.angularVelocity = angularVelocity;
-            Body.useGravity = Sync.m_useGravity;
-            Body.WakeUp();
+            if (OwnerlessKinematic)
+            {
+                KinematicVelocity = velocity;
+                KinematicAngularVelocity = angularVelocity;
+                Body.useGravity = false;
+            }
+            else
+            {
+                Body.linearVelocity = velocity;
+                Body.angularVelocity = angularVelocity;
+                Body.useGravity = Sync.m_useGravity;
+                Body.WakeUp();
+            }
             Sync.m_wasOwner = false;
             Sync.m_lastUpdateFrame = -1;
             return true;
@@ -392,13 +402,13 @@ namespace Seasons
             Finite(value.x) && Finite(value.y) && Finite(value.z) && Finite(value.w) &&
             value.x * value.x + value.y * value.y + value.z * value.z + value.w * value.w > 0.000001f;
 
-        private void RecordFallbackPhysicsStep()
+        private void RecordFallbackMotionStep()
         {
             if (!FallbackSimulator)
                 return;
             if (Status == WaveStatus.InvalidBody || !TryAuthorityTime(out double now))
             {
-                WithdrawSimulationAuthority("Physics step failed", LeaseTimeoutSeconds);
+                WithdrawSimulationAuthority("Motion update failed", LeaseTimeoutSeconds);
                 AuthorityMode = FloeAuthorityMode.Fault;
                 return;
             }
@@ -412,7 +422,9 @@ namespace Seasons
                 now < nextPoseAt || now - lastPhysicsTime > 0.5)
                 return;
             ZDO zdo = m_view.GetZDO();
-            Vector3 position = Body.position, velocity = Body.linearVelocity, angularVelocity = Body.angularVelocity;
+            Vector3 position = Body.position;
+            Vector3 velocity = OwnerlessKinematic ? KinematicVelocity : Body.linearVelocity;
+            Vector3 angularVelocity = OwnerlessKinematic ? KinematicAngularVelocity : Body.angularVelocity;
             Quaternion rotation = Body.rotation;
             if (!Finite(position) || !Finite(velocity) || !Finite(angularVelocity) || !FiniteRotation(rotation))
             {
@@ -435,31 +447,6 @@ namespace Seasons
             PosePublications++;
         }
 
-        internal bool SuppressFallbackClientSync()
-        {
-            if (!HasCurrentFallbackLease())
-                return false;
-            Sync.m_lastUpdateFrame = Time.frameCount;
-            // Native ClientSync also owns scale synchronization. Keep that small part while
-            // excluding pose adoption, gravity disable, and ownerless velocity zeroing.
-            if (Sync.m_syncScale)
-            {
-                ZDO zdo = m_view.GetZDO();
-                Vector3 scale = zdo.GetVec3(ZDOVars.s_scaleHash, Vector3.zero);
-                if (scale != Vector3.zero && Finite(scale))
-                    Root.localScale = scale;
-                else
-                {
-                    float scalar = zdo.GetFloat(ZDOVars.s_scaleScalarHash, Root.localScale.x);
-                    if (Finite(scalar) && scalar > 0f)
-                        Root.localScale = Vector3.one * scalar;
-                }
-            }
-            if (!HoldingGravity)
-                Body.useGravity = Sync.m_useGravity;
-            return true;
-        }
-
         internal bool IsFallbackReplica()
         {
             if (!EnableFallbackSimulation || !WaveValid || FallbackSimulator || Distant || !WithinFallbackRange() ||
@@ -468,34 +455,6 @@ namespace Seasons
             ZDO zdo = m_view.GetZDO();
             LeaseRecord lease = ReadLease(zdo);
             return LiveLease(zdo, lease, now) && lease.Simulator != LocalSimulationPeer;
-        }
-
-        internal void RestoreFallbackReplicaVelocity()
-        {
-            if (!IsFallbackReplica() || Body.isKinematic || Game.IsPaused() || Time.timeScale <= 0f ||
-                !TryAuthorityTime(out double now))
-                return;
-            ZDO zdo = m_view.GetZDO();
-            long token = zdo.GetLong(simulatorTokenKey);
-            if (replicaPoseToken != token || replicaPoseRevision != zdo.DataRevision)
-            {
-                replicaPoseToken = token;
-                replicaPoseRevision = zdo.DataRevision;
-                replicaPoseObservedAt = now;
-            }
-            // Keep native position/rotation interpolation. Restore velocity only for a fresh
-            // fallback snapshot, never extrapolate a stalled publisher for the whole lease.
-            if (now - replicaPoseObservedAt > 0.5)
-                return;
-            Vector3 velocity = zdo.GetVec3(ZDOVars.s_bodyVelHash, Vector3.zero);
-            Vector3 angularVelocity = zdo.GetVec3(ZDOVars.s_bodyAVelHash, Vector3.zero);
-            if (!Finite(velocity) || !Finite(angularVelocity))
-                return;
-            Body.useGravity = false;
-            Body.linearVelocity = velocity;
-            Body.angularVelocity = angularVelocity;
-            if (velocity.sqrMagnitude > 0.0001f || angularVelocity.sqrMagnitude > 0.0001f)
-                Body.WakeUp();
         }
 
         private void AppendAuthorityDiagnostics(StringBuilder builder)

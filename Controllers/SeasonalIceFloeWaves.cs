@@ -303,6 +303,7 @@ namespace Seasons
                 controller.BeforeSync();
                 if (controller.Distant)
                     return false;
+                controller.UpdateOwnerlessMotion();
                 __state = acquiring && (controller.HoldingGravity || controller.RecoveryPending);
                 return true;
             }
@@ -321,28 +322,14 @@ namespace Seasons
         [HarmonyPatch(typeof(ZSyncTransform), nameof(ZSyncTransform.ClientSync))]
         private static class ZSyncTransform_ClientSync_IceFloe
         {
-            private static bool Prefix(ZSyncTransform __instance, out bool __state)
+            private static bool Prefix(ZSyncTransform __instance)
             {
-                __state = false;
                 if (!syncs.TryGetValue(__instance, out IceFloeClimb controller) || !controller.WaveValid)
                     return true;
                 controller.BeforeSync();
-                if (controller.Distant)
-                    return false;
-                if (controller.m_view.IsOwner())
-                    return true; // Native fast path; no ownerless lease/replica checks.
-                if (__instance.m_lastUpdateFrame == Time.frameCount && !controller.FallbackSimulator)
-                    return true;
-                if (controller.SuppressFallbackClientSync())
-                    return false;
-                __state = __instance.m_lastUpdateFrame != Time.frameCount && controller.IsFallbackReplica();
-                return true;
-            }
-
-            private static void Postfix(ZSyncTransform __instance, bool __state)
-            {
-                if (__state && syncs.TryGetValue(__instance, out IceFloeClimb controller) && controller.WaveValid)
-                    controller.RestoreFallbackReplicaVelocity();
+                // Ownerless pose/scale reception runs once in LateUpdate without velocity
+                // writes to a kinematic body. Native owner and replica sync stay unchanged.
+                return !controller.Distant && !controller.OwnerlessKinematic;
             }
         }
         [HarmonyPatch(typeof(Hud), nameof(Hud.UpdateCrosshair))]
@@ -388,7 +375,7 @@ namespace Seasons
 
     public partial class IceFloeClimb
     {
-        public enum WaveStatus { Unregistered, Ready, Paused, Distant, NonOwner, NoWater, Kinematic, NoCollider, NoSurface, InvalidBody, Dry, PhysicsDisabled, ForcesSubmitted, NoHullGeometry }
+        public enum WaveStatus { Unregistered, Ready, Paused, Distant, NonOwner, NoWater, Kinematic, NoCollider, NoSurface, InvalidBody, Dry, PhysicsDisabled, ForcesSubmitted, NoHullGeometry, KinematicFollowing, KinematicReplica, KinematicWaiting }
 
         [Header("Local diagnostics (not saved or synchronized)")]
         public bool ShowDiagnosticsInHover = true;
@@ -488,7 +475,7 @@ namespace Seasons
         [Serializable]
         public sealed class WaveDiagnostics
         {
-            public bool Captured, UseGravity, Sleeping, FloatingBodyMatches, SyncBodyMatches;
+            public bool Captured, Kinematic, UseGravity, Sleeping, FloatingBodyMatches, SyncBodyMatches;
             public int Frame, BodyId, ForceCalls;
             public long Owner, AuthorityToken;
             public float FixedTime, FixedDelta, WaveTime, WindIntensity, Mass;
@@ -590,6 +577,7 @@ namespace Seasons
         {
             WithdrawSimulationAuthority("Component released");
             RestoreWaves();
+            RestoreOwnerlessBody();
             if (Body && Body.mass.Equals(appliedMass) && Finite(SourceMass) && SourceMass > 0f)
                 Body.mass = SourceMass;
             InvalidatePrediction("Component released");
@@ -756,6 +744,7 @@ namespace Seasons
         {
             if (Distant)
                 return;
+            RestoreOwnerlessBody();
             Baseline = Body.position;
             distantRotation = Body.rotation;
             distantVelocity = Body.isKinematic ? Vector3.zero : Body.linearVelocity;
@@ -813,6 +802,11 @@ namespace Seasons
         internal void BeforeSync()
         {
             RefreshFloeState();
+            if (OwnerlessKinematic && EnableWavePrediction && SurfaceMode == FloeSurfaceMode.FullRate)
+            {
+                SurfaceMode = FloeSurfaceMode.Predicted;
+                PredictionSeconds = Setting(MinimumPredictionSeconds, 0.1f, 0.05f, 2f);
+            }
             if (Game.IsPaused() || Time.timeScale <= 0f)
                 diagnosticStepPending = false;
             if (Distant)
@@ -992,6 +986,8 @@ namespace Seasons
                 Status = WaveStatus.Distant;
                 return;
             }
+            if (OwnerlessKinematic)
+                return; // One kinematic pose update in LateUpdate, not a force pass per fixed step.
             UpdatePhysicsMass();
             ObserveNextPhysicsStep();
             RecoverInvalidHeight();
@@ -1052,7 +1048,7 @@ namespace Seasons
             Vector3 beforeForce = capture ? Body.GetAccumulatedForce(dt) : Vector3.zero;
             Vector3 beforeTorque = capture ? Body.GetAccumulatedTorque(dt) : Vector3.zero;
             ApplySurfacePhysics(dt, frame, settings, capture);
-            RecordFallbackPhysicsStep();
+            RecordFallbackMotionStep();
             if (capture)
             {
                 Diagnostics.ForceCalls = LastForceCalls;
@@ -1179,6 +1175,7 @@ namespace Seasons
             Diagnostics ??= new WaveDiagnostics();
             WaveDiagnostics d = Diagnostics;
             d.Captured = false;
+            d.Kinematic = false;
             d.Frame = Time.frameCount;
             d.BodyId = Body.GetInstanceID();
             d.Owner = PhysicsOwner;
@@ -1293,6 +1290,7 @@ namespace Seasons
             PredictionPositionTolerance = 0.5f;
             DistantBobAmplitude = 0.08f;
             DistantBobPeriod = 6f;
+            KinematicResponseSeconds = 0.15f;
             // Apply mass through the normal lifecycle on the next callback, not inside the inspector.
         }
 
@@ -1334,13 +1332,14 @@ namespace Seasons
                 b.Append(" distant=").Append(Distant).Append(" gravityHold=").Append(HoldingGravity);
                 AppendAuthorityDiagnostics(b);
                 AppendPredictionDiagnostics(b);
+                AppendMotionDiagnostics(b);
                 b.Append("\nForce/torque calls=").Append(LastForceCalls).Append("/2 total=").Append(TotalForceCalls);
                 WaveDiagnostics d = Diagnostics;
                 if (d == null || !d.Captured)
                     b.Append("\nWaiting for an active physics sample. DiagnosticsEnabled pins capture.");
                 else
                 {
-                    b.Append("\nSample frame=").Append(d.Frame).Append(" fixed=").Append(Number(d.FixedTime));
+                    b.Append("\nSample kind=").Append(d.Kinematic ? "Kinematic pose" : "Dynamic forces").Append(" frame=").Append(d.Frame).Append(" fixed=").Append(Number(d.FixedTime));
                     b.Append(" simulator=").Append(d.Owner).Append(" token=").Append(d.AuthorityToken);
                     b.Append(" age=").Append(Number(Mathf.Max(0f, Time.fixedTime - d.FixedTime), "F1")).Append("s frozen=").Append(FreezeDiagnostics);
                     b.Append("\nSample switches: ");
