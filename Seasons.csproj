@@ -110,6 +110,7 @@
     <Compile Include="Controllers\ZoneSystemVariantController.cs" />
     <Compile Include="Controllers\SeasonalIceFloes.cs" />
     <Compile Include="Controllers\SeasonalIceFloeWaves.cs" />
+    <Compile Include="Controllers\SeasonalIceFloeAuthority.cs" />
     <Compile Include="Controllers\SeasonalWorldMaintenance.cs" />
     <Compile Include="Utils\ItemNameTokens.cs" />
     <Compile Include="Utils\LocalizationManager.cs" />

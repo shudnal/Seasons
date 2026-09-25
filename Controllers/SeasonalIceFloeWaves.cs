@@ -259,20 +259,35 @@ namespace Seasons
             }
             private static void Postfix(ZSyncTransform __instance, bool __state)
             {
-                if (__state && syncs.TryGetValue(__instance, out IceFloeClimb controller) && controller.WaveValid)
+                if (!syncs.TryGetValue(__instance, out IceFloeClimb controller) || !controller.WaveValid)
+                    return;
+                if (__state)
                 {
                     controller.StopMotion();
                     controller.RecoveryPending = false;
                 }
+                controller.PublishFallbackPose();
             }
         }
         [HarmonyPatch(typeof(ZSyncTransform), nameof(ZSyncTransform.ClientSync))]
         private static class ZSyncTransform_ClientSync_IceFloe
         {
-            private static void Prefix(ZSyncTransform __instance)
+            private static bool Prefix(ZSyncTransform __instance, out bool __state)
             {
-                if (syncs.TryGetValue(__instance, out IceFloeClimb controller) && controller.WaveValid)
-                    controller.BeforeSync();
+                __state = false;
+                if (!syncs.TryGetValue(__instance, out IceFloeClimb controller) || !controller.WaveValid)
+                    return true;
+                controller.BeforeSync();
+                if (controller.SuppressFallbackClientSync())
+                    return false;
+                __state = __instance.m_lastUpdateFrame != Time.frameCount && controller.IsFallbackReplica();
+                return true;
+            }
+
+            private static void Postfix(ZSyncTransform __instance, bool __state)
+            {
+                if (__state && syncs.TryGetValue(__instance, out IceFloeClimb controller) && controller.WaveValid)
+                    controller.RestoreFallbackReplicaVelocity();
             }
         }
         [HarmonyPatch(typeof(MonoUpdaters), nameof(MonoUpdaters.LateUpdate))]
@@ -439,7 +454,7 @@ namespace Seasons
         {
             public bool Captured, UseGravity, Sleeping, FloatingBodyMatches, SyncBodyMatches;
             public int Frame, BodyId, ForceCalls;
-            public long Owner;
+            public long Owner, AuthorityToken;
             public float FixedTime, FixedDelta, WaveTime, WindIntensity, Mass;
             public float FullSurfaceHeight, NativeSurfaceHeight, PlaneHeight, TargetComHeight, HeightError;
             public HullShape HullShape;
@@ -462,7 +477,7 @@ namespace Seasons
         {
             public bool Captured;
             public int SourceFrame, ObservedFrame;
-            public long Owner;
+            public long Owner, AuthorityToken;
             public float SourceFixedTime, ObservedFixedTime, RotationChangeDegrees, HeightChange;
             public Vector3 SourceForce, SourceTorque, BeforeVelocity, ObservedVelocity, BeforeOmega, ObservedOmega;
             public SurfaceSettings Settings;
@@ -512,6 +527,7 @@ namespace Seasons
             SourceMass = appliedMass = Body.mass;
             appliedMassMultiplier = 1f;
             UpdatePhysicsMass();
+            InitializeSimulationAuthority();
             return Registered = true;
         }
 
@@ -535,6 +551,7 @@ namespace Seasons
 
         internal void ReleaseWaves()
         {
+            WithdrawSimulationAuthority("Component released");
             RestoreWaves();
             if (Body && Body.mass.Equals(appliedMass) && Finite(SourceMass) && SourceMass > 0f)
                 Body.mass = SourceMass;
@@ -570,7 +587,7 @@ namespace Seasons
             CallbackLevel = level;
             Water = liquidObj as WaterVolume;
             WaterObserved = liquidObj is WaterVolume;
-            if (!Distant && m_view.IsOwner() && HasWater())
+            if (!Distant && HasPhysicsAuthority && HasWater())
                 RestoreGravity();
         }
 
@@ -584,6 +601,8 @@ namespace Seasons
 
         private void HoldGravity()
         {
+            if (FallbackSimulator)
+                WithdrawSimulationAuthority("Physics safety hold", 3.0);
             if (HoldingGravity)
                 return;
             HoldingGravity = true;
@@ -613,7 +632,7 @@ namespace Seasons
                 Sync.m_useGravity = SyncGravity;
             if (Body)
             {
-                Body.useGravity = m_view && m_view.IsValid() && m_view.IsOwner() ? SyncGravity : BodyGravity;
+                Body.useGravity = HasPhysicsAuthority ? SyncGravity : BodyGravity;
                 if (!Body.isKinematic)
                     Body.WakeUp();
             }
@@ -664,7 +683,7 @@ namespace Seasons
         {
             bool adoptingPosition = m_view.IsOwner() && !Sync.m_wasOwner && Sync.m_syncPosition;
             Vector3 position = adoptingPosition ? m_view.GetZDO().GetPosition() : Body.position;
-            if (Recovered || !m_view.IsOwner() || !ZoneSystem.instance || Time.time < NextRecovery ||
+            if (Recovered || !HasPhysicsAuthority || !ZoneSystem.instance || Time.time < NextRecovery ||
                 (Finite(position.y) && position.y >= -5000f) || !Finite(position.x) || !Finite(position.z))
                 return;
             NextRecovery = Time.time + 0.5f;
@@ -681,7 +700,11 @@ namespace Seasons
                 Body.angularVelocity = Vector3.zero;
             }
             Body.position = position;
-            m_view.GetZDO().SetPosition(position);
+            ZDO zdo = m_view.GetZDO();
+            uint revision = zdo.DataRevision;
+            zdo.SetPosition(position);
+            if (zdo.DataRevision == revision)
+                zdo.IncreaseDataRevision(); // Ownerless recovery also needs publication.
             RecoveryPending = adoptingPosition;
             Recovered = true;
         }
@@ -742,10 +765,11 @@ namespace Seasons
             if (Game.IsPaused() || Time.timeScale <= 0f)
                 diagnosticStepPending = false;
             ObserveOwner();
+            UpdateSimulationAuthority();
             RecoverInvalidHeight();
             if (Distant && (!BeyondWater() || (m_view.IsOwner() && !Sync.m_wasOwner)))
                 RestoreDistant();
-            if (!Distant && m_view.IsOwner())
+            if (!Distant && HasPhysicsAuthority)
             {
                 if (EnsureCenterWater())
                     RestoreGravity();
@@ -916,6 +940,8 @@ namespace Seasons
             LastRunFrame = Time.frameCount;
             LastRunFixedTime = Time.fixedTime;
             LastForceCalls = 0;
+            ObserveOwner();
+            UpdateSimulationAuthority();
             if (Game.IsPaused() || Time.timeScale <= 0f)
             {
                 diagnosticStepPending = false;
@@ -924,7 +950,6 @@ namespace Seasons
             }
             UpdatePhysicsMass();
             ObserveNextPhysicsStep();
-            ObserveOwner();
             RecoverInvalidHeight();
             if (BeyondWater() && (!m_view.IsOwner() || Sync.m_wasOwner))
             {
@@ -933,7 +958,7 @@ namespace Seasons
                 return;
             }
             RestoreDistant();
-            if (!m_view.IsOwner())
+            if (!HasPhysicsAuthority)
             {
                 RestoreGravity();
                 Status = WaveStatus.NonOwner;
@@ -947,6 +972,8 @@ namespace Seasons
                 return;
             }
             RestoreGravity();
+            if (FallbackSimulator)
+                Body.useGravity = Sync.m_useGravity;
             if (Body.isKinematic)
             {
                 Status = WaveStatus.Kinematic;
@@ -964,6 +991,8 @@ namespace Seasons
                 !Finite(Body.inertiaTensor) || !Finite(Physics.gravity) ||
                 m_floating.m_body != Body || collider.attachedRigidbody != Body)
             {
+                if (FallbackSimulator)
+                    WithdrawSimulationAuthority("Invalid physics body", 3.0);
                 Status = WaveStatus.InvalidBody;
                 return;
             }
@@ -989,6 +1018,7 @@ namespace Seasons
             Vector3 beforeForce = capture ? Body.GetAccumulatedForce(dt) : Vector3.zero;
             Vector3 beforeTorque = capture ? Body.GetAccumulatedTorque(dt) : Vector3.zero;
             ApplySurfacePhysics(dt, frame, settings, capture);
+            RecordFallbackPhysicsStep();
             if (capture)
             {
                 Diagnostics.ForceCalls = LastForceCalls;
@@ -1117,7 +1147,8 @@ namespace Seasons
             d.Captured = false;
             d.Frame = Time.frameCount;
             d.BodyId = Body.GetInstanceID();
-            d.Owner = m_view.GetZDO().GetOwner();
+            d.Owner = PhysicsOwner;
+            d.AuthorityToken = PhysicsAuthorityToken;
             d.FixedTime = Time.fixedTime;
             d.FixedDelta = dt;
             d.Settings = settings;
@@ -1173,8 +1204,8 @@ namespace Seasons
             LastPhysicsStep ??= new PhysicsStepDiagnostics();
             LastPhysicsStep.Captured = false;
             float elapsed = Time.fixedTime - d.FixedTime;
-            if (Distant || HoldingGravity || Body.isKinematic || BeyondWater() || !m_view.IsOwner() ||
-                m_view.GetZDO().GetOwner() != d.Owner || Body.GetInstanceID() != d.BodyId || elapsed <= 0f ||
+            if (Distant || HoldingGravity || Body.isKinematic || BeyondWater() || !HasPhysicsAuthority ||
+                PhysicsOwner != d.Owner || PhysicsAuthorityToken != d.AuthorityToken || Body.GetInstanceID() != d.BodyId || elapsed <= 0f ||
                 elapsed > Mathf.Max(d.FixedDelta, Time.fixedDeltaTime) * 1.5f + 0.001f)
                 return;
             PhysicsStepDiagnostics step = LastPhysicsStep;
@@ -1183,6 +1214,7 @@ namespace Seasons
             step.SourceFixedTime = d.FixedTime;
             step.ObservedFixedTime = Time.fixedTime;
             step.Owner = d.Owner;
+            step.AuthorityToken = d.AuthorityToken;
             step.Settings = d.Settings;
             step.SourceForce = d.SubmittedForce;
             step.SourceTorque = d.SubmittedTorque;
@@ -1256,6 +1288,7 @@ namespace Seasons
                 b.Append(HoverBlockStart).Append(' ').Append(Status).Append(" | Wind surface / dynamic forces | shared settings");
                 b.Append("\nOwner=").Append(m_view.GetZDO().GetOwner()).Append(" local=").Append(m_view.IsOwner());
                 b.Append(" distant=").Append(Distant).Append(" gravityHold=").Append(HoldingGravity);
+                AppendAuthorityDiagnostics(b);
                 b.Append("\nForce/torque calls=").Append(LastForceCalls).Append("/2 total=").Append(TotalForceCalls);
                 WaveDiagnostics d = Diagnostics;
                 if (d == null || !d.Captured)
@@ -1263,6 +1296,7 @@ namespace Seasons
                 else
                 {
                     b.Append("\nSample frame=").Append(d.Frame).Append(" fixed=").Append(Number(d.FixedTime));
+                    b.Append(" simulator=").Append(d.Owner).Append(" token=").Append(d.AuthorityToken);
                     b.Append(" age=").Append(Number(Mathf.Max(0f, Time.fixedTime - d.FixedTime), "F1")).Append("s frozen=").Append(FreezeDiagnostics);
                     b.Append("\nSample switches: ");
                     AppendSwitches(b, d.Settings);
@@ -1308,6 +1342,7 @@ namespace Seasons
                 if (step != null && step.Captured)
                 {
                     b.Append("\nPrevious step fixed=").Append(Number(step.SourceFixedTime)).Append(" -> ").Append(Number(step.ObservedFixedTime));
+                    b.Append(" simulator=").Append(step.Owner).Append(" token=").Append(step.AuthorityToken);
                     b.Append(" age=").Append(Number(Mathf.Max(0f, Time.fixedTime - step.ObservedFixedTime), "F1")).Append("s");
                     b.Append("\nPrevious switches: ");
                     AppendSwitches(b, step.Settings);
