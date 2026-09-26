@@ -87,7 +87,7 @@ namespace Seasons
         }
     }
 
-    public partial class IceFloeClimb
+    public partial class IceFloe
     {
         [Header("Background kinematic forecasts (shared peer-local settings)")]
         public static bool EnableBackgroundWaveForecast = true;
@@ -469,7 +469,7 @@ namespace Seasons
             b.Append("\nWorker sampledKnots=").Append(Interlocked.Read(ref FloeForecastWorker.Knots));
             b.Append(" total work/queue ms=").Append(Number((float)(Interlocked.Read(ref FloeForecastWorker.TotalWorkTicks) * 1000.0 / Stopwatch.Frequency)));
             b.Append('/').Append(Number((float)(Interlocked.Read(ref FloeForecastWorker.TotalQueueTicks) * 1000.0 / Stopwatch.Frequency)));
-            b.Append("\nOcean depth/offset=1/0 nativeWaterThrottling=").Append(SeasonalIceFloeWaves.NativeWaterThrottlingActive);
+            b.Append("\nOcean depth/offset=1/0 nativeWaterSampling=unchanged");
         }
     }
 }

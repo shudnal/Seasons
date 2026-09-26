@@ -71,6 +71,7 @@ namespace Seasons
         internal static int Epoch => Volatile.Read(ref epoch);
         internal static string StartupError => startupError;
         internal static int Queued { get { lock (gate) return pending.Count; } }
+        internal static bool Running => Volatile.Read(ref Active) != 0;
 
         internal static Ticket Submit(FloeWaveMath.Input input, double start, double end, double deadline,
             bool hasFirst, FloeWaveMath.Sample first)

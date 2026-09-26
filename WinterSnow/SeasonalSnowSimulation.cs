@@ -16,7 +16,7 @@ namespace Seasons
                 return;
             if (!EnsureSnowScene() || scene != simulationScene || simulationFrame == Time.frameCount)
                 return;
-            if (Game.IsPaused() || Time.timeScale <= 0f)
+            if (SeasonalSnow.WinterReady && (Game.IsPaused() || Time.timeScale <= 0f))
             {
                 ResetLiveWeather();
                 return;

@@ -410,15 +410,22 @@ namespace Seasons
         {
             FloeForecastWorker.Shutdown();
             SeasonalWorldMaintenance.Reset();
-            SeasonalIceFloeWaves.Reset();
             SeasonalIceFloes.Reset();
             SeasonalSnowController.Instance.StopSnowScene(ZNetScene.instance);
+            SeasonalSnowController.Instance.ResetLifecycle();
             Compatibility.MarketplaceCompat.ReleaseMap();
             SeasonalPlayerCapeSnow.Reset();
             SeasonalEnemySnow.Reset();
             SeasonalSnowMeshSettings.Reset();
             harmony?.UnpatchSelf();
         }
+
+        // On-demand snapshot for the in-game inspector/console. No scene walk or wakeup.
+        public static string GetSeasonalRuntimeStatus() =>
+            $"Snow: {SeasonalSnowController.Instance.GetLifecycleStatus()}\n" +
+            $"Floes: {SeasonalIceFloeWaves.GetLifecycleStatus()}\n" +
+            $"Placement: {SeasonalIceFloes.GetPlacementStatus()}\n" +
+            $"Cleanup: {SeasonalIceFloes.GetCleanupStatus()}";
 
         public static void LogInfo(object data)
         {

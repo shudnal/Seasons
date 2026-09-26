@@ -5,7 +5,7 @@ namespace Seasons
 {
     // Body mode is independent of the lease. Native ownership keeps dynamic contacts;
     // the ownerless lease still selects the single publisher of kinematic wave motion.
-    public partial class IceFloeClimb
+    public partial class IceFloe
     {
         [Header("Kinematic wave following (shared runtime setting)")]
         public static float KinematicResponseSeconds = 0.15f;

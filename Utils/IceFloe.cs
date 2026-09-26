@@ -2,7 +2,8 @@ using UnityEngine;
 
 namespace Seasons
 {
-    public partial class IceFloeClimb : MonoBehaviour, Hoverable, Interactable
+    [DefaultExecutionOrder(10000)]
+    public partial class IceFloe : MonoBehaviour, Hoverable, Interactable
     {
         public float m_useDistance = 3f;
         public float m_radius = 4f;
@@ -22,23 +23,23 @@ namespace Seasons
                 if (mass != 0f)
                     m_view.m_body.mass = mass;
             }
-            SeasonalIceFloeWaves.Track(m_floating);
+            SeasonalIceFloeWaves.Track(this);
         }
 
         private void OnEnable()
         {
             if (m_started)
-                SeasonalIceFloeWaves.Track(m_floating);
+                SeasonalIceFloeWaves.Track(this);
         }
 
-        private void OnDisable() => SeasonalIceFloeWaves.Untrack(m_floating);
-        private void OnDestroy() => SeasonalIceFloeWaves.Untrack(m_floating);
+        private void OnDisable() => SeasonalIceFloeWaves.Untrack(this);
+        private void OnDestroy() => SeasonalIceFloeWaves.Untrack(this);
 
         public bool Interact(Humanoid character, bool hold, bool alt)
         {
             if (hold || !InUseDistance(character))
                 return false;
-            SeasonalIceFloeWaves.PrepareInteraction(m_floating);
+            SeasonalIceFloeWaves.PrepareInteraction(this);
             character.transform.position = Vector3.Lerp(character.transform.position, transform.position, 0.35f) + Vector3.up;
             Physics.SyncTransforms();
             return false;

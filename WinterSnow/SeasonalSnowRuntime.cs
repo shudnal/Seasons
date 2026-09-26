@@ -308,6 +308,7 @@ namespace Seasons
 
         internal void RequestSnowRefresh(bool rules)
         {
+            ReconcileLifecycle();
             if (!SeasonalSnow.WinterReady || !EnsureSnowScene())
                 return;
             if (rules)

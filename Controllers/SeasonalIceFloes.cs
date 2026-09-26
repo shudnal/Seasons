@@ -98,6 +98,7 @@ namespace Seasons
         private static int cleanupPasses, lastRemovedFloes, lastResetMarkers;
         private static IEnumerator<Vector2s> loadedZones;
         private static ZoneSystem world;
+        private static SeasonalIceFloePlacementDriver driver;
         private static int zonePrefab;
         private static bool wanted, prefabChecked;
         // AddToSector runs before a new ZDO's prefab is initialized. Delay only this
@@ -117,21 +118,21 @@ namespace Seasons
                 LogWarning("Unable to initialize seasonal ice floes: the ice1 vegetation prefab was not found.");
                 return;
             }
-            ZNetView view = s_iceFloe.m_prefab.GetComponent<ZNetView>();
-            if (!view || !s_iceFloe.m_prefab.GetComponent<Rigidbody>())
+            if (!s_iceFloe.m_prefab.GetComponent<ZNetView>() || !s_iceFloe.m_prefab.GetComponent<Rigidbody>())
             {
                 s_iceFloe = null;
                 LogWarning("Unable to initialize seasonal ice floes: ice1 has no network view or rigidbody.");
                 return;
             }
             s_iceFloe.m_biome = Heightmap.Biome.Ocean;
-            view.m_syncInitialScale = true;
-            if (!s_iceFloe.m_prefab.TryGetComponent<IceFloeClimb>(out _))
-                s_iceFloe.m_prefab.AddComponent<IceFloeClimb>();
         }
 
         internal static void Reset()
         {
+            SeasonalIceFloeWaves.Reset();
+            if (driver)
+                driver.enabled = false;
+            driver = null;
             loadedZones?.Dispose();
             loadedZones = null;
             requests.Clear();
@@ -168,6 +169,66 @@ namespace Seasons
         }
 
         private static bool PlacementSeason() => SeasonState.IsActive && IsTimeForIceFloes();
+        internal static bool RuntimeWanted => world == ZoneSystem.instance && policyKnown && wanted;
+
+        private static void WakeDriver()
+        {
+            if (!world || !wanted || (requests.Count == 0 && loadedZones == null))
+                return;
+            if (!driver)
+                driver = world.gameObject.AddComponent<SeasonalIceFloePlacementDriver>();
+            driver.enabled = true;
+        }
+
+        private static void SleepDriver()
+        {
+            if (driver && requests.Count == 0 && loadedZones == null)
+                driver.enabled = false;
+        }
+
+        // Called only by season/config/world/zone notifications. No dormant Update poll.
+        internal static void ReconcilePolicy()
+        {
+            if (!SeasonState.WorldInitialized || !PeerReady() || !CleanupPolicyReady)
+                return;
+            bool nowWanted = PlacementSeason();
+            if (policyKnown && wanted == nowWanted)
+            {
+                if (wanted)
+                    WakeDriver();
+                return;
+            }
+            policyKnown = true;
+            wanted = nowWanted;
+            loadedZones?.Dispose();
+            loadedZones = null;
+            work.Clear();
+            settled.Clear();
+            requests.Clear();
+            requestSet.Clear();
+            if (!wanted)
+            {
+                initialExclusions.Clear();
+                if (driver)
+                    driver.enabled = false;
+                SeasonalIceFloeWaves.Reset();
+                cleanupRequested = ZNet.instance.IsServer();
+                if (cleanupRequested)
+                    CleanupAll();
+                return;
+            }
+            cleanupRequested = false;
+            if (!ZNet.instance.IsDedicated())
+            {
+                SeasonalIceFloeWaves.RefreshDistance();
+                loadedZones = world.m_zones.Keys.GetEnumerator();
+                // Previously loaded marked instances have no new Awake/Start notification.
+                // This is a single activation walk, never a dormant scanner.
+                foreach (IceFloe floe in UnityEngine.Object.FindObjectsOfType<IceFloe>())
+                    SeasonalIceFloeWaves.Track(floe);
+            }
+            WakeDriver();
+        }
 
         private static bool PlacementReady()
         {
@@ -179,7 +240,8 @@ namespace Seasons
 
         internal static bool CheckWaterVolume(WaterVolume water)
         {
-            if (!water || !water.m_heightmap || !ZNet.instance || ZNet.instance.IsDedicated() || !PlacementSeason())
+            if (!water || !water.m_heightmap || !ZNet.instance || ZNet.instance.IsDedicated() ||
+                !SeasonState.WorldInitialized || !PlacementSeason())
                 return true;
             if (!PeerReady())
                 return false;
@@ -206,8 +268,12 @@ namespace Seasons
 
         private static void RequestZone(Vector2s zone)
         {
+            ReconcilePolicy();
+            if (!SeasonState.WorldInitialized)
+                return;
             // Summer has no client placement; only the server deletes seasonal objects.
-            if (!PlacementSeason() || ZNet.instance.IsDedicated() || settled.Contains(zone) || !world.m_zones.ContainsKey(zone))
+            if (!wanted || !PlacementSeason() || ZNet.instance.IsDedicated() || settled.Contains(zone) ||
+                !world.m_zones.ContainsKey(zone))
                 return;
             ZDO control = CachedControl(zone);
             if (control != null && control.GetBool(SeasonsVars.s_iceFloesSpawned))
@@ -228,13 +294,17 @@ namespace Seasons
 
         private static void Queue(Vector2s zone)
         {
+            if (!wanted)
+                return;
             if (requestSet.Add(zone))
                 requests.Enqueue(zone);
+            WakeDriver();
         }
 
         private static void ObserveControl(ZDO zdo)
         {
-            if (!PeerReady() || ZNet.instance.IsDedicated() || zdo == null || zdo.GetPrefab() != zonePrefab || !zdo.IsValid())
+            if (!wanted || !SeasonState.WorldInitialized || !PeerReady() || ZNet.instance.IsDedicated() ||
+                zdo == null || zdo.GetPrefab() != zonePrefab || !zdo.IsValid())
                 return;
             Vector2s zone = ZoneSystem.GetZone(zdo.GetPosition());
             if (!world.m_zones.ContainsKey(zone))
@@ -244,15 +314,21 @@ namespace Seasons
         }
 
         private static bool CleanupPolicyReady => enableIceFloes != null &&
-            (!enableIceFloes.Value || SeasonState.IsActive);
+            (!enableIceFloes.Value || (SeasonState.IsActive && seasonState.GetCurrentDay() > 0));
         private static bool CleanupRequired => CleanupPolicyReady && !PlacementSeason();
 
         // Called by config/season updates. Coalesce callbacks until the next main-thread
         // update, then complete the whole operation, including unloaded ZDOs, in one call.
         internal static void RequestCleanup()
         {
-            if (PeerReady() && ZNet.instance.IsServer() && CleanupRequired && !cleanupRunning)
+            bool transition = !policyKnown || wanted != PlacementSeason();
+            ReconcilePolicy();
+            if (!transition && SeasonState.WorldInitialized && PeerReady() && ZNet.instance.IsServer() &&
+                CleanupRequired && !cleanupRunning)
+            {
                 cleanupRequested = true;
+                CleanupAll();
+            }
         }
 
         public static string GetCleanupStatus() =>
@@ -266,7 +342,7 @@ namespace Seasons
             $"dedicated={(ZNet.instance && ZNet.instance.IsDedicated())} enabled={enableIceFloes?.Value} " +
             $"season={seasonState?.GetCurrentSeason()} day={seasonState?.GetCurrentDay()} days={iceFloesInWinterDays?.Value} " +
             $"frozen={IsWaterSurfaceFrozen()} waterReady={waterStateInitialized} worldEdge={s_waterEdge} " +
-            $"wanted={wanted} prefabReady={(s_iceFloe?.m_prefab != null)} " +
+            $"wanted={wanted} driver={(driver && driver.enabled)} prefabReady={(s_iceFloe?.m_prefab != null)} " +
             $"amount={SeasonalIceFloeSettings.AmountPerZone} scale={SeasonalIceFloeSettings.Scale} " +
             $"queued={requests.Count} pending={work.Count} settled={settled.Count} " +
             $"discovering={(loadedZones != null)}";
@@ -361,23 +437,7 @@ namespace Seasons
         {
             if (!PeerReady() || !CleanupPolicyReady)
                 return;
-            bool nowWanted = PlacementSeason();
-            if (!policyKnown || wanted != nowWanted)
-            {
-                policyKnown = true;
-                wanted = nowWanted;
-                loadedZones?.Dispose();
-                loadedZones = null;
-                work.Clear();
-                settled.Clear();
-                requests.Clear();
-                requestSet.Clear();
-                if (!wanted)
-                    initialExclusions.Clear();
-                cleanupRequested = !wanted && ZNet.instance.IsServer();
-                if (wanted && !ZNet.instance.IsDedicated())
-                    loadedZones = world.m_zones.Keys.GetEnumerator();
-            }
+            ReconcilePolicy();
             // Removing disabled floes does not depend on biome readiness, placement budgets,
             // a terrain-loading screen or simulation time advancing in the config menu.
             if (cleanupRequested && !wanted)
@@ -387,7 +447,11 @@ namespace Seasons
             long deadline = Stopwatch.GetTimestamp() + (long)(Stopwatch.Frequency * ServiceMilliseconds / 1000d);
             DiscoverLoadedZones(deadline);
             if (!PlacementReady())
+            {
+                if (driver)
+                    driver.enabled = false;
                 return;
+            }
 
             int objects = ObjectBudget, candidates = CandidateBudget, instances = InstanceBudget;
             int attempts = Math.Min(RequestBudget, requests.Count);
@@ -489,6 +553,7 @@ namespace Seasons
                     LogWarning($"Seasonal ice floe placement stopped in {zone}: {exception}");
                 }
             }
+            SleepDriver();
         }
 
         private static bool FindControl(ZoneWork current, ref int budget, long deadline, out ZDO control)
@@ -786,11 +851,14 @@ namespace Seasons
                 zdo.Set(SeasonsVars.s_iceFloeWatermark, true);
                 current.Created.Add(zdo.m_uid);
                 view.m_distant = true;
+                view.m_syncInitialScale = true;
                 zdo.SetDistant(true);
                 view.SetLocalScale(new Vector3(scaleX, scaleY, scaleZ));
                 float health = iceFloesHealth.Value * scaleX * scaleY * scaleZ;
                 zdo.Set(SeasonsVars.s_iceFloeMass, view.m_body.mass * PowSquash(Mathf.Sqrt(Mathf.Abs(scaleX * scaleY * scaleZ)), 0.6f));
                 zdo.Set(ZDOVars.s_health, health + Game.m_worldLevel * health * Game.instance.m_worldLevelMineHPMultiplier);
+                if (!instance.TryGetComponent<IceFloe>(out _))
+                    instance.AddComponent<IceFloe>();
                 current.Exclusions.Add(new ZoneSystem.ClearArea(p, GetFloeSize(instance) + 0.5f));
                 return CandidateResult.Placed;
             }
@@ -820,7 +888,9 @@ namespace Seasons
         {
             private static void Postfix(Vector2s zoneID, ZoneSystem.SpawnMode mode)
             {
-                if (mode != ZoneSystem.SpawnMode.Full || !PeerReady() || ZNet.instance.IsDedicated() || !PlacementSeason())
+                ReconcilePolicy();
+                if (mode != ZoneSystem.SpawnMode.Full || !RuntimeWanted || !PeerReady() ||
+                    ZNet.instance.IsDedicated() || !PlacementSeason())
                     return;
                 initialExclusions[zoneID] = new List<ZoneSystem.ClearArea>(world.m_tempClearAreas);
                 RequestZone(zoneID);
@@ -835,6 +905,12 @@ namespace Seasons
                 PeerReady();
                 InitializePrefab(__instance);
             }
+        }
+
+        [HarmonyPatch(typeof(ZNet), nameof(ZNet.RPC_PeerInfo))]
+        private static class ZNet_PeerInfo_FloeLifecycle
+        {
+            private static void Postfix() => ReconcilePolicy();
         }
 
         [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.PokeLocalZone))]
@@ -862,7 +938,8 @@ namespace Seasons
         {
             private static void Postfix(ZDO __instance)
             {
-                if (ZoneSystem.instance && __instance.GetPrefab() == zonePrefab && PlacementSeason())
+                if (wanted && SeasonState.WorldInitialized && ZoneSystem.instance &&
+                    __instance.GetPrefab() == zonePrefab && PlacementSeason())
                     ObserveControl(__instance);
             }
         }
@@ -872,7 +949,8 @@ namespace Seasons
         {
             private static void Postfix(ZDOMan __instance, ZDO zdo, ZoneSystem.SectorIndex sectorIndex)
             {
-                if (__instance == ZDOMan.instance && world == ZoneSystem.instance && zdo != null)
+                if (wanted && work.Count != 0 && __instance == ZDOMan.instance &&
+                    world == ZoneSystem.instance && zdo != null)
                     InvalidatePendingSector(sectorIndex, zdo);
             }
         }
@@ -881,12 +959,6 @@ namespace Seasons
         private static class Heightmap_OnDestroy_FloePlacement
         {
             private static void Prefix(Heightmap __instance) => ForgetGeometry(__instance);
-        }
-
-        [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Update))]
-        private static class ZoneSystem_Update_Floes
-        {
-            private static void Postfix() => Update();
         }
 
         [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.OnDestroy))]
@@ -914,7 +986,10 @@ namespace Seasons
             {
                 ZDO zdo = ZNetView.m_initZDO;
                 if (zdo != null && zdo.GetPrefab() == s_iceFloePrefab && zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
+                {
                     __instance.m_distant = true;
+                    __instance.m_syncInitialScale = true;
+                }
             }
 
             private static void Postfix(ZNetView __instance)
@@ -929,9 +1004,15 @@ namespace Seasons
                 __instance.m_distant = true;
                 if (__instance.IsOwner())
                     zdo.SetDistant(true);
-                if (!__instance.TryGetComponent<IceFloeClimb>(out _))
-                    __instance.gameObject.AddComponent<IceFloeClimb>();
+                if (!__instance.TryGetComponent<IceFloe>(out _))
+                    __instance.gameObject.AddComponent<IceFloe>();
             }
         }
+    }
+
+    [DefaultExecutionOrder(1000)]
+    internal sealed class SeasonalIceFloePlacementDriver : MonoBehaviour
+    {
+        private void Update() => SeasonalIceFloes.Update();
     }
 }

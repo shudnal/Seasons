@@ -158,6 +158,9 @@ namespace Seasons
         private VisualState lastVisual;
         private ZNetScene visualScene;
         private ZNetScene stoppedScene;
+        private SeasonalSnowDriver driver;
+        private int lifetimeEpoch;
+        internal static bool VisualBridgeActive;
         private int lastVisualFrame = -1;
 
         private SeasonalSnowController() { }
@@ -165,6 +168,63 @@ namespace Seasons
         internal int RegisteredVisualCount => visuals.Count;
         internal int MaterialPoolCount => materials.PoolCount;
         internal int CreatedMaterialCount => materials.CreatedMaterialCount;
+        internal bool VisualsPending => firstVisual != null;
+
+        internal void ReconcileLifecycle()
+        {
+            ZNetScene scene = ZNetScene.instance;
+            if (!SeasonState.WorldInitialized || !scene || ReferenceEquals(scene, stoppedSnowScene))
+                return;
+            bool active = SeasonalSnow.WinterReady;
+            bool transitioning = endingSnowWinter || winterRunning || snowPieces.Count != 0 || visuals.Count != 0;
+            VisualBridgeActive = active || transitioning;
+            if (!active && !transitioning)
+            {
+                if (driver)
+                    driver.enabled = false;
+                return;
+            }
+            bool starting = !driver || !driver.enabled;
+            if (!driver || driver.gameObject != scene.gameObject)
+            {
+                driver = scene.GetComponent<SeasonalSnowDriver>();
+                if (!driver)
+                    driver = scene.gameObject.AddComponent<SeasonalSnowDriver>();
+            }
+            driver.enabled = true;
+            if (starting)
+                lifetimeEpoch++;
+        }
+
+        internal void CompleteDormancy()
+        {
+            if (SeasonalSnow.WinterReady || winterRunning || endingSnowWinter || snowPieces.Count != 0 || VisualsPending)
+                return;
+            // Hide/restore after the bounded visual queue is drained. Materials are
+            // disposed only after no renderer still points at a pooled variant.
+            ResetVisuals();
+            if (driver)
+                driver.enabled = false;
+            VisualBridgeActive = false;
+        }
+
+        internal void ResetLifecycle()
+        {
+            if (driver)
+                driver.enabled = false;
+            driver = null;
+            VisualBridgeActive = false;
+            ResetSnowRuntime();
+            ResetVisuals();
+        }
+
+        internal string GetLifecycleStatus() =>
+            $"state={(!SeasonalSnow.WinterReady && (endingSnowWinter || winterRunning || snowPieces.Count != 0) ? "teardown" : winterRunning ? "active" : SeasonalSnow.WinterReady ? "setup" : "dormant")} " +
+            $"driver={(driver && driver.enabled)} bridge={VisualBridgeActive} pieces={snowPieces.Count} regions={snowRegions.Count} " +
+            $"refresh={regionRefreshes.Count}/{pieceRefreshes.Count}/{geometryRefreshes.Count} " +
+            $"publish={snowPublications.Count} visualQueue={snowVisualChanges.Count}/{(VisualsPending ? 1 : 0)} " +
+            $"bindings={visuals.Count}/{ownedRenderers.Count} materials={materials.PoolCount}/{materials.CreatedMaterialCount} " +
+            $"heat={heatSources.Count}/{heatCells.Count} interactions={interactingPieces.Count} epoch={lifetimeEpoch}/{winterEpoch}";
 
         // Native visual callbacks only request the latest singleton-owned target.
         internal bool TryQueueCurrentVisual(WearNTear piece)
@@ -552,6 +612,10 @@ namespace Seasons
             if (!ReferenceEquals(scene, visualScene) && scene != ZNetScene.instance)
                 return;
             ResetVisuals();
+            if (driver)
+                driver.enabled = false;
+            driver = null;
+            VisualBridgeActive = false;
             stoppedScene = scene;
         }
 

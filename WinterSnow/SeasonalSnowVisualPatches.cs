@@ -1,5 +1,6 @@
 using HarmonyLib;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Reflection.Emit;
 using UnityEngine;
 using static Seasons.Seasons;
@@ -10,24 +11,40 @@ namespace Seasons
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateSnowVisual))]
     internal static class WearNTear_UpdateSnowVisual_PooledCaps
     {
-        [HarmonyPrefix, HarmonyPriority(Priority.Last)]
-        private static bool Prefix(WearNTear __instance)
+        private static bool RouteVisual(WearNTear piece)
         {
             SeasonalSnowController controller = SeasonalSnowController.Instance;
-            if (!SeasonalSnow.WinterReady && !controller.HasSnowRuntime(__instance) &&
-                !controller.HasSnowVisual(__instance))
+            if (!SeasonalSnow.WinterReady && !controller.HasSnowRuntime(piece) &&
+                !controller.HasSnowVisual(piece))
             {
-                // Ordinary summer callbacks do not need a prefab-name/rule lookup.
-                // Only an unexpected native value can require disabled or legacy cleanup.
-                if (__instance.m_snowBuildup > 0f || __instance.m_addPreSnow)
+                if (piece.m_snowBuildup > 0f || piece.m_addPreSnow)
                 {
-                    if (SeasonalSnowMeshSettings.TryApplyDisabledSnow(__instance))
-                        return false;
-                    SeasonalSnow.ClearInactiveLoadedSnow(__instance);
+                    if (SeasonalSnowMeshSettings.TryApplyDisabledSnow(piece))
+                        return true;
+                    SeasonalSnow.ClearInactiveLoadedSnow(piece);
                 }
-                return true;
+                return false;
             }
-            return !controller.TryQueueCurrentVisual(__instance);
+            return controller.TryQueueCurrentVisual(piece);
+        }
+
+        [HarmonyTranspiler]
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
+        {
+            // One native branch remains; dormant calls do not enter a Seasons helper.
+            List<CodeInstruction> code = new List<CodeInstruction>(instructions);
+            Label native = generator.DefineLabel();
+            code[0].labels.Add(native);
+            yield return new CodeInstruction(OpCodes.Ldsfld,
+                AccessTools.Field(typeof(SeasonalSnowController), nameof(SeasonalSnowController.VisualBridgeActive)));
+            yield return new CodeInstruction(OpCodes.Brfalse, native);
+            yield return new CodeInstruction(OpCodes.Ldarg_0);
+            yield return new CodeInstruction(OpCodes.Call,
+                AccessTools.Method(typeof(WearNTear_UpdateSnowVisual_PooledCaps), nameof(RouteVisual)));
+            yield return new CodeInstruction(OpCodes.Brfalse, native);
+            yield return new CodeInstruction(OpCodes.Ret);
+            foreach (CodeInstruction instruction in code)
+                yield return instruction;
         }
     }
 
@@ -49,20 +66,70 @@ namespace Seasons
         }
 
         [HarmonyTranspiler]
-        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
             var wetField = AccessTools.Field(typeof(WearNTear), nameof(WearNTear.m_wet));
             var getWetVisual = AccessTools.Method(typeof(WearNTear_UpdateWear_ExcludeSnowFromWetVisuals), nameof(GetWetVisual));
+            var bridge = AccessTools.Field(typeof(SeasonalSnowController), nameof(SeasonalSnowController.VisualBridgeActive));
+            var gameObject = AccessTools.PropertyGetter(typeof(Component), nameof(Component.gameObject));
+            FieldInfo[] caps =
+            {
+                AccessTools.Field(typeof(WearNTear), nameof(WearNTear.m_snow)),
+                AccessTools.Field(typeof(WearNTear), nameof(WearNTear.m_snowWorn)),
+                AccessTools.Field(typeof(WearNTear), nameof(WearNTear.m_snowBroken))
+            };
+            LocalBuilder piece = generator.DeclareLocal(typeof(WearNTear));
+            LocalBuilder wet = generator.DeclareLocal(typeof(GameObject));
+            LocalBuilder cap = generator.DeclareLocal(typeof(MeshRenderer));
             bool found = false;
             foreach (CodeInstruction instruction in instructions)
             {
                 if (instruction.LoadsField(wetField))
                 {
-                    // WearNTear -> GameObject has the same stack effect as the field load.
-                    // Retain labels and exception blocks on the replaced instruction.
-                    instruction.opcode = OpCodes.Call;
-                    instruction.operand = getWetVisual;
+                    Label useHelper = generator.DefineLabel();
+                    Label useNative = generator.DefineLabel();
+                    Label done = generator.DefineLabel();
+                    CodeInstruction start = new CodeInstruction(OpCodes.Stloc, piece);
+                    start.labels.AddRange(instruction.labels);
+                    start.blocks.AddRange(instruction.blocks);
+                    yield return start;
+                    yield return new CodeInstruction(OpCodes.Ldsfld, bridge);
+                    yield return new CodeInstruction(OpCodes.Brtrue, useHelper);
+                    yield return new CodeInstruction(OpCodes.Ldloc, piece);
+                    yield return new CodeInstruction(OpCodes.Ldfld, wetField);
+                    yield return new CodeInstruction(OpCodes.Stloc, wet);
+                    yield return new CodeInstruction(OpCodes.Ldloc, wet);
+                    yield return new CodeInstruction(OpCodes.Brfalse, useNative);
+                    foreach (FieldInfo field in caps)
+                    {
+                        Label nextCap = generator.DefineLabel();
+                        yield return new CodeInstruction(OpCodes.Ldloc, piece);
+                        yield return new CodeInstruction(OpCodes.Ldfld, field);
+                        yield return new CodeInstruction(OpCodes.Stloc, cap);
+                        yield return new CodeInstruction(OpCodes.Ldloc, cap);
+                        yield return new CodeInstruction(OpCodes.Brfalse, nextCap);
+                        yield return new CodeInstruction(OpCodes.Ldloc, cap);
+                        yield return new CodeInstruction(OpCodes.Callvirt, gameObject);
+                        yield return new CodeInstruction(OpCodes.Ldloc, wet);
+                        yield return new CodeInstruction(OpCodes.Ceq);
+                        yield return new CodeInstruction(OpCodes.Brtrue, useHelper);
+                        CodeInstruction next = new CodeInstruction(OpCodes.Nop);
+                        next.labels.Add(nextCap);
+                        yield return next;
+                    }
+                    CodeInstruction native = new CodeInstruction(OpCodes.Ldloc, wet);
+                    native.labels.Add(useNative);
+                    yield return native;
+                    yield return new CodeInstruction(OpCodes.Br, done);
+                    CodeInstruction helper = new CodeInstruction(OpCodes.Ldloc, piece);
+                    helper.labels.Add(useHelper);
+                    yield return helper;
+                    yield return new CodeInstruction(OpCodes.Call, getWetVisual);
+                    CodeInstruction end = new CodeInstruction(OpCodes.Nop);
+                    end.labels.Add(done);
+                    yield return end;
                     found = true;
+                    continue;
                 }
                 yield return instruction;
             }
@@ -104,17 +171,14 @@ namespace Seasons
             SeasonalSnowController.Instance.FilterMaterialManRenderers(__instance);
     }
 
-    [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.Update))]
-    internal static class ZNetScene_Update_SnowVisuals
+    [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.Awake))]
+    internal static class ZNetScene_Awake_SnowLifecycle
     {
         [HarmonyPostfix]
-        private static void Postfix(ZNetScene __instance)
+        private static void Postfix()
         {
-            // The native Update can return early while Harmony still runs postfixes.
-            if (Game.IsPaused() || UnityEngine.Time.timeScale <= 0f)
-                return;
-            SeasonalSnowController.Instance.UpdateSnowSimulation(__instance);
-            SeasonalSnowController.Instance.UpdateVisuals(__instance);
+            SeasonalSnowController.Instance.ReconcileLifecycle();
+            SeasonalIceFloes.ReconcilePolicy();
         }
     }
 
@@ -137,6 +201,29 @@ namespace Seasons
         {
             SeasonalSnowController.Instance.StopSnowScene(__instance);
             SeasonalSnowController.Instance.StopVisuals(__instance);
+        }
+    }
+
+    [DefaultExecutionOrder(1000)]
+    internal sealed class SeasonalSnowDriver : MonoBehaviour
+    {
+        private ZNetScene scene;
+
+        private void Awake() => scene = GetComponent<ZNetScene>();
+
+        private void Update()
+        {
+            if (SeasonalSnow.WinterReady && (Game.IsPaused() || Time.timeScale <= 0f))
+                return;
+            SeasonalSnowController controller = SeasonalSnowController.Instance;
+            if (SeasonalSnow.WinterReady)
+            {
+                controller.SnowSceneObjectsChanged();
+                controller.AttachedObjectUsed(Player.m_localPlayer);
+            }
+            controller.UpdateSnowSimulation(scene);
+            controller.UpdateVisuals(scene);
+            controller.CompleteDormancy();
         }
     }
 }

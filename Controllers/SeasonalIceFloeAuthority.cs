@@ -6,7 +6,7 @@ using UnityEngine;
 namespace Seasons
 {
     // Cooperative ZDO election, not a server arbiter or a replacement for native ownership.
-    public partial class IceFloeClimb
+    public partial class IceFloe
     {
         public enum FloeAuthorityMode
         {

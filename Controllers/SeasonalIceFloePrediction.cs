@@ -1,14 +1,11 @@
-using HarmonyLib;
 using System;
 using System.Collections.Generic;
-using System.Reflection;
-using System.Reflection.Emit;
 using System.Text;
 using UnityEngine;
 
 namespace Seasons
 {
-    public partial class IceFloeClimb
+    public partial class IceFloe
     {
         public enum FloeSurfaceMode { FullRate, Predicted, FarVisual }
 
@@ -373,7 +370,7 @@ namespace Seasons
                 return ForecastRebuildCause.Geometry;
             if (!(elapsed >= 0.0) || !(Mathf.Abs(SeasonalIceFloeWaves.WaveTime - forecastWaveTime - (float)elapsed) < 0.1f))
                 return ForecastRebuildCause.Clock;
-            if (forecastContext.Water != context.Water || forecastContext.WaterLevel != context.WaterLevel ||
+            if (forecastContext.WaterLevel != context.WaterLevel ||
                 forecastContext.Offset != context.Offset || forecastContext.UseWaves != context.UseWaves ||
                 forecastContext.HasWorldEdge != context.HasWorldEdge)
                 return ForecastRebuildCause.WaterContext;
@@ -625,7 +622,7 @@ namespace Seasons
             b.Append(" deferred/adopted=").Append(WindChangesDeferred).Append('/').Append(WindRefreshes);
             b.Append(" remaining=").Append(Number(forecastValid ? Mathf.Max(0f, forecastHorizon - PredictionAge) : 0f)).Append("s");
             b.Append("\nPrediction reason=").Append(PredictionInvalidation).Append(" fullWaterHeight=").Append(UseFullWaterHeight);
-            b.Append(" nativeWaterThrottling=").Append(SeasonalIceFloeWaves.NativeWaterThrottlingActive);
+            b.Append(" nativeWaterSampling=unchanged");
             b.Append("\nCache geometry/noise/knots/fallbacks=").Append(GeometryCacheBuilds).Append('/');
             b.Append(ScaleNoiseReuses).Append('/').Append(ForecastKnotsSampled).Append('/').Append(PredictionDirectFallbacks);
             b.Append(" lastBuildCause=").Append(LastForecastRebuildCause);
@@ -639,80 +636,6 @@ namespace Seasons
             b.Append(totals.WindResets).Append('/').Append(totals.SettingsResets).Append('/').Append(totals.AuthorityResets).Append('/');
             b.Append(totals.MotionResets).Append('/').Append(totals.ScheduledBuilds).Append('/').Append(totals.OtherBuilds);
             b.Append("\nAll floes wind deferred/adopted=").Append(totals.WindChangesDeferred).Append('/').Append(totals.WindRefreshes);
-        }
-    }
-}
-
-namespace Seasons
-{
-    internal static partial class SeasonalIceFloeWaves
-    {
-        internal static bool NativeWaterThrottlingActive { get; private set; }
-
-        private static float FloeWaterObservation(WaterVolume water, Vector3 position, float waveFactor, IWaterInteractable target)
-        {
-            if (target is Floating floating && floaters.TryGetValue(floating, out IceFloeClimb controller) &&
-                controller.WaveValid && controller.SurfaceMode != IceFloeClimb.FloeSurfaceMode.FullRate)
-            {
-                // Retain registration, Increment/Decrement and SetLiquidLevel callbacks.
-                // Only replace this duplicate wave query. Physics supplies its own current
-                // interpolated level before impact/surface effects; replicas need no waves.
-                float level = water.transform.position.y + water.m_surfaceOffset;
-                if (water.m_forceDepth < 0f && Utils.LengthXZ(position) > 10500f)
-                    level -= 100f;
-                return level;
-            }
-            return water.GetWaterSurface(position, waveFactor);
-        }
-
-        [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.UpdateFloaters))]
-        private static class WaterVolume_UpdateFloaters_FloeSampling
-        {
-            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, MethodBase __originalMethod)
-            {
-                List<CodeInstruction> code = new List<CodeInstruction>(instructions);
-                MethodInfo sample = AccessTools.Method(typeof(WaterVolume), nameof(WaterVolume.GetWaterSurface),
-                    new[] { typeof(Vector3), typeof(float) });
-                int local = -1;
-                MethodBody body = __originalMethod.GetMethodBody();
-                if (body != null)
-                {
-                    foreach (LocalVariableInfo variable in body.LocalVariables)
-                    {
-                        if (variable.LocalType != typeof(IWaterInteractable))
-                            continue;
-                        if (local >= 0)
-                        {
-                            local = -1;
-                            break;
-                        }
-                        local = variable.LocalIndex;
-                    }
-                }
-                int call = -1, count = 0;
-                for (int i = 0; i < code.Count; i++)
-                {
-                    if (sample != null && code[i].Calls(sample))
-                    {
-                        call = i;
-                        count++;
-                    }
-                }
-                if (local < 0 || count != 1 || code[call].blocks.Count != 0)
-                {
-                    Seasons.LogWarning("Floe water observation throttling was not applied: unexpected WaterVolume.UpdateFloaters IL. Native observations remain enabled.");
-                    NativeWaterThrottlingActive = false;
-                    return code;
-                }
-                CodeInstruction argument = new CodeInstruction(OpCodes.Ldloc, local);
-                argument.labels.AddRange(code[call].labels);
-                code[call].labels.Clear();
-                code.Insert(call, argument);
-                code[call + 1] = new CodeInstruction(OpCodes.Call,
-                    AccessTools.Method(typeof(SeasonalIceFloeWaves), nameof(FloeWaterObservation)));
-                NativeWaterThrottlingActive = true;
-                return code;
-            }
         }
     }
 }

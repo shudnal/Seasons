@@ -101,6 +101,7 @@ namespace Seasons
         public static string GetSeasonalFileName(Season season) => $"{season}.json";
 
         public static bool IsActive => seasonState != null && EnvMan.instance != null;
+        internal static bool WorldInitialized { get; set; }
 
         public static long GetDayLengthInSecondsEnvMan() => EnvMan.instance == null ? (dayLengthSec.Value != 0L ? dayLengthSec.Value : 1800L) : EnvMan.instance.m_dayLengthSec;
 
@@ -560,6 +561,7 @@ namespace Seasons
             }
 
             LoadingTips.UpdateLoadingTips();
+            SeasonalSnow.UpdateSeasonState();
         }
 
         public static void PrepareForExternalEnvironmentUpdate()
@@ -1781,6 +1783,7 @@ namespace Seasons
 
         public static void ResetCurrentSeasonDay()
         {
+            WorldInitialized = false;
             _pendingSeasonChange = 0;
             cacheRevision.AssignValueSafe(0u);
             currentSeasonDay.AssignValueSafe(0);
@@ -1813,6 +1816,7 @@ namespace Seasons
         {
             StartClutterUpdate();
             ZoneSystemVariantController.UpdateWaterState();
+            SeasonalSnow.UpdateSeasonState();
             seasonState.UpdateGlobalKeys();
             seasonState.UpdateWinterBloomEffect();
             UpdateCurrentEnvironment();

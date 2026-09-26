@@ -8,18 +8,20 @@ using static Seasons.ZoneSystemVariantController;
 
 namespace Seasons
 {
-    // Shared wave inputs and native callback routing. Per-floe physics belongs to IceFloeClimb.
+    // Shared wave inputs and the locally enabled participant driver. Per-floe physics belongs to IceFloe.
     internal static partial class SeasonalIceFloeWaves
     {
         internal struct SurfaceContext
         {
             internal float WaterLevel, Offset;
-            internal WaterVolume Water;
             internal bool UseWaves, HasWorldEdge;
         }
 
-        private static readonly Dictionary<Floating, IceFloeClimb> floaters = new Dictionary<Floating, IceFloeClimb>();
-        private static readonly Dictionary<ZSyncTransform, IceFloeClimb> syncs = new Dictionary<ZSyncTransform, IceFloeClimb>();
+        private static readonly List<IceFloe> participants = new List<IceFloe>();
+        private static readonly HashSet<IceFloe> membership = new HashSet<IceFloe>();
+        private static readonly List<IceFloe> phase = new List<IceFloe>();
+        private static SeasonalIceFloeDriver driver;
+        private static int lifetimeEpoch;
         private static WaterVolume oceanPrefab;
         private static int snapshotCycle = -1, snapshotFrame = -1;
         internal static Vector3 WindDirection { get; private set; }
@@ -52,34 +54,81 @@ namespace Seasons
             WaterDistanceSquared = WaterDistance * WaterDistance;
         }
 
-        internal static void Track(Floating floating)
+        internal static void Track(IceFloe controller)
         {
-            if (!floating || !floating.isActiveAndEnabled || floaters.ContainsKey(floating))
+            if (!controller || !controller.Started || !controller.isActiveAndEnabled ||
+                !SeasonalIceFloes.RuntimeWanted || membership.Contains(controller))
                 return;
-            IceFloeClimb controller = floating.GetComponent<IceFloeClimb>();
-            if (!controller || !controller.Started || !controller.isActiveAndEnabled || !controller.InitializeWaves(floating))
+            Floating floating = controller.m_floating;
+            ZSyncTransform sync = controller.GetComponent<ZSyncTransform>();
+            if (!floating || !floating.isActiveAndEnabled || !sync || !sync.isActiveAndEnabled ||
+                !Floating.Instances.Contains(floating) || !ZSyncTransform.Instances.Contains(sync) || !ZoneSystem.instance)
                 return;
-            floaters.Add(floating, controller);
-            syncs.Add(controller.Sync, controller);
+            if (!controller.InitializeWaves(floating))
+                return;
+            try
+            {
+                if (!driver)
+                    driver = ZoneSystem.instance.GetComponent<SeasonalIceFloeDriver>();
+                if (!driver)
+                    driver = ZoneSystem.instance.gameObject.AddComponent<SeasonalIceFloeDriver>();
+            }
+            catch
+            {
+                controller.ReleaseWaves();
+                throw;
+            }
+            // Native dispatch is by non-virtual IMonoUpdater methods. Remove only this
+            // marked instance, and call those methods in the same fixed/late phases below.
+            controller.NativeFloatingListed = Floating.Instances.Remove(floating);
+            controller.NativeSyncListed = ZSyncTransform.Instances.Remove(controller.Sync);
+            floating.CancelInvoke(nameof(Floating.TerrainCheck));
+            controller.NextTerrainCheckTime = Time.time + UnityEngine.Random.Range(10f, 30f);
+            participants.Add(controller);
+            membership.Add(controller);
+            if (driver)
+                driver.enabled = true;
         }
 
-        internal static void Untrack(Floating floating)
+        internal static void Untrack(IceFloe controller)
         {
-            if (ReferenceEquals(floating, null) || !floaters.TryGetValue(floating, out IceFloeClimb controller))
+            if (ReferenceEquals(controller, null) || !membership.Remove(controller))
                 return;
-            controller.ReleaseWaves();
-            floaters.Remove(floating);
-            syncs.Remove(controller.Sync);
+            participants.Remove(controller);
+            try
+            {
+                controller.ReleaseWaves();
+            }
+            finally
+            {
+                if (controller.NativeFloatingListed && controller.m_floating && controller.m_floating.isActiveAndEnabled &&
+                    !Floating.Instances.Contains(controller.m_floating))
+                    Floating.Instances.Add(controller.m_floating);
+                if (controller.NativeSyncListed && controller.Sync && controller.Sync.isActiveAndEnabled &&
+                    !ZSyncTransform.Instances.Contains(controller.Sync))
+                    ZSyncTransform.Instances.Add(controller.Sync);
+                if (controller.m_floating)
+                    controller.m_floating.InvokeRepeating(nameof(Floating.TerrainCheck), UnityEngine.Random.Range(10f, 30f), 30f);
+                controller.NativeFloatingListed = controller.NativeSyncListed = false;
+                if (participants.Count == 0 && driver)
+                    driver.enabled = false;
+            }
         }
 
         internal static void Reset()
         {
             ResetBackgroundWorld();
-            foreach (IceFloeClimb controller in floaters.Values)
-                if (controller)
-                    controller.ReleaseWaves();
-            floaters.Clear();
-            syncs.Clear();
+            while (participants.Count != 0)
+            {
+                try { Untrack(participants[participants.Count - 1]); }
+                catch (Exception exception) { Seasons.LogWarning($"Floe release failed: {exception}"); }
+            }
+            phase.Clear();
+            membership.Clear();
+            if (driver)
+                driver.enabled = false;
+            driver = null;
+            lifetimeEpoch++;
             WaterDistance = WaterDistanceSquared = 0f;
             oceanPrefab = null;
             snapshotCycle = snapshotFrame = -1;
@@ -122,7 +171,7 @@ namespace Seasons
             return snapshotValid = true;
         }
 
-        internal static bool TrySurfaceContext(IceFloeClimb controller, out SurfaceContext context)
+        internal static bool TrySurfaceContext(IceFloe controller, out SurfaceContext context)
         {
             context = default;
             if (!Snapshot())
@@ -136,7 +185,7 @@ namespace Seasons
             return true;
         }
 
-        internal static bool TrySurface(IceFloeClimb controller, Vector3 position, out float surface)
+        internal static bool TrySurface(IceFloe controller, Vector3 position, out float surface)
         {
             surface = -10000f;
             return TrySurfaceContext(controller, out SurfaceContext context) && TrySurface(context, position, out surface);
@@ -242,109 +291,89 @@ namespace Seasons
             return result * Mathf.Lerp(0f, wind.w, depth);
         }
 
-        internal static void PrepareInteraction(Floating floating)
+        internal static void PrepareInteraction(IceFloe controller)
         {
-            if (floating && floaters.TryGetValue(floating, out IceFloeClimb controller) && controller.WaveValid)
+            if (controller && controller.WaveValid)
                 controller.RestoreWaves();
         }
-
-        [HarmonyPatch(typeof(Floating), nameof(Floating.CustomFixedUpdate))]
-        private static class Floating_CustomFixedUpdate_IceFloeRotation
+        internal static void FixedStep(float dt)
         {
-            private static bool Prefix(Floating __instance, float fixedDeltaTime)
+            phase.Clear();
+            phase.AddRange(participants);
+            try
             {
-                if (!floaters.TryGetValue(__instance, out IceFloeClimb controller) || !controller.WaveValid)
-                    return true;
-                controller.SimulatePhysics(fixedDeltaTime);
-                return false; // Floating retains its lifecycle and water callbacks, not a second force driver.
-            }
-        }
-
-        [HarmonyPatch(typeof(Floating), nameof(Floating.OnEnable))]
-        private static class Floating_OnEnable_IceFloe
-        {
-            private static void Postfix(Floating __instance) => Track(__instance);
-        }
-        [HarmonyPatch(typeof(Floating), nameof(Floating.OnDisable))]
-        private static class Floating_OnDisable_IceFloe
-        {
-            private static void Postfix(Floating __instance) => Untrack(__instance);
-        }
-        [HarmonyPatch(typeof(Floating), nameof(Floating.SetLiquidLevel))]
-        private static class Floating_SetLiquidLevel_IceFloe
-        {
-            private static void Postfix(Floating __instance, float level, LiquidType type, Component liquidObj)
-            {
-                if (type == LiquidType.Water && floaters.TryGetValue(__instance, out IceFloeClimb controller) && controller.WaveValid)
-                    controller.ObserveWater(level, liquidObj);
-            }
-        }
-        [HarmonyPatch(typeof(Floating), nameof(Floating.TerrainCheck))]
-        private static class Floating_TerrainCheck_IceFloe
-        {
-            private static bool Prefix(Floating __instance) => !floaters.TryGetValue(__instance, out IceFloeClimb controller) ||
-                !controller.WaveValid || (!controller.Distant && !controller.Body.isKinematic);
-        }
-        [HarmonyPatch(typeof(ZSyncTransform), nameof(ZSyncTransform.OwnerSync))]
-        private static class ZSyncTransform_OwnerSync_IceFloe
-        {
-            private static bool Prefix(ZSyncTransform __instance, out bool __state)
-            {
-                __state = false;
-                if (!syncs.TryGetValue(__instance, out IceFloeClimb controller) || !controller.WaveValid)
-                    return true;
-                bool acquiring = controller.m_view.IsOwner() && !__instance.m_wasOwner;
-                controller.BeforeSync();
-                if (controller.Distant)
-                    return false;
-                controller.UpdateOwnerlessMotion();
-                __state = acquiring && (controller.HoldingGravity || controller.RecoveryPending);
-                return true;
-            }
-            private static void Postfix(ZSyncTransform __instance, bool __state)
-            {
-                if (!syncs.TryGetValue(__instance, out IceFloeClimb controller) || !controller.WaveValid)
-                    return;
-                if (__state)
+                for (int i = 0; i < phase.Count; ++i)
                 {
-                    controller.StopMotion();
-                    controller.RecoveryPending = false;
+                    IceFloe controller = phase[i];
+                    if (!membership.Contains(controller))
+                        continue;
+                    if (!controller || !controller.WaveValid)
+                    {
+                        Untrack(controller);
+                        continue;
+                    }
+                    controller.BeforeSync();
+                    if (!controller.Distant && !controller.OwnerlessKinematic)
+                        controller.Sync.ClientSync(dt);
+                    if (!controller.WaveValid)
+                    {
+                        Untrack(controller);
+                        continue;
+                    }
+                    controller.SimulatePhysics(dt);
                 }
-                controller.PublishFallbackPose();
             }
+            finally { phase.Clear(); }
         }
-        [HarmonyPatch(typeof(ZSyncTransform), nameof(ZSyncTransform.ClientSync))]
-        private static class ZSyncTransform_ClientSync_IceFloe
+
+        internal static void LateStep()
         {
-            private static bool Prefix(ZSyncTransform __instance)
+            phase.Clear();
+            phase.AddRange(participants);
+            try
             {
-                if (!syncs.TryGetValue(__instance, out IceFloeClimb controller) || !controller.WaveValid)
-                    return true;
-                controller.BeforeSync();
-                // Ownerless pose/scale reception runs once in LateUpdate without velocity
-                // writes to a kinematic body. Native owner and replica sync stay unchanged.
-                return !controller.Distant && !controller.OwnerlessKinematic;
+                for (int i = 0; i < phase.Count; ++i)
+                {
+                    IceFloe controller = phase[i];
+                    if (!membership.Contains(controller))
+                        continue;
+                    if (!controller || !controller.WaveValid)
+                    {
+                        Untrack(controller);
+                        continue;
+                    }
+                    bool acquiring = controller.m_view.IsOwner() && !controller.Sync.m_wasOwner;
+                    controller.BeforeSync();
+                    if (!controller.WaveValid)
+                    {
+                        Untrack(controller);
+                        continue;
+                    }
+                    if (Time.time >= controller.NextTerrainCheckTime)
+                    {
+                        controller.NextTerrainCheckTime = Time.time + 30f;
+                        if (!controller.Distant && !controller.Body.isKinematic)
+                            controller.m_floating.TerrainCheck();
+                    }
+                    if (controller.Distant)
+                        continue;
+                    controller.UpdateOwnerlessMotion();
+                    bool heldOnAcquire = acquiring && (controller.HoldingGravity || controller.RecoveryPending);
+                    controller.Sync.OwnerSync();
+                    if (heldOnAcquire)
+                    {
+                        controller.StopMotion();
+                        controller.RecoveryPending = false;
+                    }
+                    controller.PublishFallbackPose();
+                }
             }
+            finally { phase.Clear(); }
         }
-        [HarmonyPatch(typeof(Hud), nameof(Hud.UpdateCrosshair))]
-        private static class Hud_UpdateCrosshair_FloeDiagnostics
-        {
-            [HarmonyPriority(Priority.Last)]
-            private static void Postfix(Hud __instance, Player player)
-            {
-                if (!player || !__instance.m_hoverName || (TextViewer.instance && TextViewer.instance.IsVisible()))
-                    return;
-                GameObject target = player.GetHoverObject();
-                if (!target)
-                    return;
-                IceFloeClimb controller = target.GetComponentInParent<IceFloeClimb>();
-                if (!controller || !controller.ShowDiagnosticsInHover || target.GetComponentInParent<Hoverable>() is IceFloeClimb)
-                    return;
-                string text = __instance.m_hoverName.text ?? "";
-                controller.AppendHoverDiagnostics(ref text);
-                __instance.m_hoverName.text = text;
-            }
-        }
+
+        internal static string GetLifecycleStatus() =>
+            $"active={(driver && driver.enabled)} participants={participants.Count} phase={phase.Count} " +
+            $"workerQueued={FloeForecastWorker.Queued} workerRunning={FloeForecastWorker.Running} epoch={lifetimeEpoch}/{FloeForecastWorker.Epoch}";
         [HarmonyPatch(typeof(Water), nameof(Water.ApplySettings))]
         private static class Water_ApplySettings_Distance
         {
@@ -360,14 +389,16 @@ namespace Seasons
         {
             private static void Postfix() => RefreshDistance();
         }
-        [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.OnDestroy))]
-        private static class ZoneSystem_OnDestroy_Waves
-        {
-            private static void Prefix() => Reset();
-        }
     }
 
-    public partial class IceFloeClimb
+    [DefaultExecutionOrder(1000)]
+    internal sealed class SeasonalIceFloeDriver : MonoBehaviour
+    {
+        private void FixedUpdate() => SeasonalIceFloeWaves.FixedStep(Time.fixedDeltaTime);
+        private void LateUpdate() => SeasonalIceFloeWaves.LateStep();
+    }
+
+    public partial class IceFloe
     {
         public enum WaveStatus { Unregistered, Ready, Paused, Distant, NonOwner, NoWater, Kinematic, NoCollider, NoSurface, InvalidBody, Dry, PhysicsDisabled, ForcesSubmitted, NoHullGeometry, KinematicFollowing, KinematicReplica, KinematicWaiting }
 
@@ -423,10 +454,10 @@ namespace Seasons
         [Header("Live floe state")]
         public Rigidbody Body;
         public ZSyncTransform Sync;
+        internal bool NativeFloatingListed, NativeSyncListed;
+        internal float NextTerrainCheckTime;
         public Transform Root;
-        public WaterVolume Water;
-        public bool Registered, WaterObserved, Distant, HoldingGravity;
-        public float CallbackLevel = -10000f;
+        public bool Registered, Distant, HoldingGravity;
         public WaveStatus Status = WaveStatus.Unregistered;
         public int LastRunFrame = -1, LastForceCalls;
         public float LastRunFixedTime;
@@ -533,9 +564,7 @@ namespace Seasons
             Sync = sync;
             Root = floating.transform;
             Owner = view.GetZDO().GetOwner();
-            CallbackLevel = -10000f;
-            Water = null;
-            WaterObserved = Distant = HoldingGravity = Recovered = RecoveryPending = false;
+            Distant = HoldingGravity = Recovered = RecoveryPending = false;
             NextRecovery = 0f;
             BobFrame = -1;
             LastForceCalls = 0;
@@ -576,21 +605,9 @@ namespace Seasons
                 Body.mass = SourceMass;
             InvalidatePrediction("Component released");
             hullCached = false;
-            Registered = WaterObserved = false;
-            Water = null;
-            CallbackLevel = -10000f;
+            Registered = false;
             Status = WaveStatus.Unregistered;
             LastForceCalls = 0;
-        }
-
-        internal bool ContainsCenter(WaterVolume water) => water && water.isActiveAndEnabled &&
-            water.m_collider && water.m_collider.enabled && water.m_collider.bounds.Contains(Root.position);
-
-        internal void ObserveWater(float level, Component liquidObj)
-        {
-            CallbackLevel = level;
-            Water = liquidObj as WaterVolume;
-            WaterObserved = liquidObj is WaterVolume;
         }
 
         private bool BeyondWater()

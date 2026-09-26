@@ -103,7 +103,7 @@ namespace Seasons
 
         public static void Reset()
         {
-            SeasonalSnowController.Instance.ResetSnowRuntime();
+            SeasonalSnowController.Instance.ResetLifecycle();
             SeasonalSnowPrefabs.Clear();
             ReducedSnowBuildupPrefabs.Clear();
             ReducedSnowBuildupPrefabNames.Clear();

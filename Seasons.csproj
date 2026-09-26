@@ -81,7 +81,7 @@
     <Compile Include="CustomTextures.cs" />
     <Compile Include="Utils\CustomSyncedValuesSynchronizer.cs" />
     <Compile Include="Utils\GlobalSuppressions.cs" />
-    <Compile Include="Utils\IceFloeClimb.cs" />
+    <Compile Include="Utils\IceFloe.cs" />
     <Compile Include="Controllers\MinimapVariantController.cs" />
     <Compile Include="SeasonSettings\SeasonBiomeEnvironments.cs" />
     <Compile Include="SeasonSettings\SeasonBiomeSettings.cs" />

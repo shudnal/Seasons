@@ -470,11 +470,14 @@ namespace Seasons
         {
             SeasonalSnowMeshSettings.InitializeCopySources();
             seasonState = new SeasonState(initialize: true);
+            SeasonState.WorldInitialized = true;
             SeasonalIceFloeSettings.SaveDefaultSettings(Path.Combine(configDirectory, SeasonSettings.defaultsSubdirectory));
             SeasonalSnow.InitializePrefabs();
             Compatibility.EWDCompat.MarkWorldInitialized();
             SeasonSettings.SetupConfigWatcher(enabled: true);
             SeasonState.ReapplyEnvironmentStateAfterWorldInitialization();
+            SeasonalIceFloes.ReconcilePolicy();
+            SeasonalSnowController.Instance.ReconcileLifecycle();
         }
     }
 
