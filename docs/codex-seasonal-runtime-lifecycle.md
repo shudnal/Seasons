@@ -1,5 +1,8 @@
 # Task: remove dormant snow/floe work and localize active callbacks
 
+Implementation and before/after routing audit: [seasonal-runtime-lifecycle-implementation.md](seasonal-runtime-lifecycle-implementation.md).
+The implementation is statically inspected here; compilation and in-game verification remain with the maintainer.
+
 ## Execution and source baseline
 
 Implement this task in `shudnal/Seasons`, on top of `perf/snow-performance` (PR #45). The inspected code baseline is `a3e2775abd815680e795116ac87de016440e9379`. Fetch the current branch before editing, preserve newer maintainer changes, and record the actual implementation base. This document is an implementation brief, not a request for another proposal-only response.

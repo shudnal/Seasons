@@ -21,11 +21,12 @@ cleanup, background floe scan or terrain/biome-readiness gate. Terrain
 maintenance retains its own existing budgets and readiness checks. Placement
 also remains budgeted; its rules and density are not changed.
 
-Config/season callbacks coalesce a request for the next connected main-thread
-update; that update finishes the whole cleanup rather than spreading it over
-frames. Initial known ineligibility is observed too. An unknown season during
-startup is not treated as summer. A marked instance streamed in while cleanup
-is required requests another complete pass. This is not a recurring world scan.
+Config/season callbacks now reconcile on the connected main thread and finish
+the whole cleanup in that notification, without a `ZoneSystem.Update` floe
+postfix. Initial known ineligibility is observed after the current world season
+is initialized and its day is positive. An unknown day during startup is not
+treated as summer. A marked instance streamed in while cleanup is required
+requests another complete pass. This is not a recurring world scan.
 
 Only watermarked seasonal `ice1` records are deleted. Native ice without the
 seasonal watermark is untouched. Zone controllers survive; only our spawn marker
