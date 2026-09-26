@@ -17,7 +17,6 @@ namespace Seasons
         public static ConfigFile Configuration { get; private set; }
         private const string WorldSection = "Season - Winter ocean";
         private static readonly List<Action> applyRuntime = new List<Action>();
-        private static readonly List<ConfigDefinition> legacyDefinitions = new List<ConfigDefinition>();
         private static FileSystemWatcher watcher;
         private static int reloadRequested;
         private static float reloadAt = -1f;
@@ -29,25 +28,24 @@ namespace Seasons
             if (Configuration != null)
                 return;
             string path = Path.Combine(Paths.ConfigPath, FileName);
-            bool migrate = !File.Exists(path);
             bool mainSave = main.SaveOnConfigSet;
             main.SaveOnConfigSet = false;
             try
             {
                 Configuration = new ConfigFile(path, false, instance.Info.Metadata) { SaveOnConfigSet = false };
-                enableIceFloes = World(main, migrate, "Enable ice floes in winter", true,
+                enableIceFloes = World("Enable ice floes in winter", true,
                     "Enable seasonal ocean floes. Disabling removes marked floes and resets their placement markers on the server.");
-                iceFloesInWinterDays = World(main, migrate, "Fill the water with ice floes at given days from to", new Vector2(4f, 10f),
+                iceFloesInWinterDays = World("Fill the water with ice floes at given days from to", new Vector2(4f, 10f),
                     "Inclusive winter-day range for seasonal floes. Outside this interval the server removes them.", new OrderedRange(1f, 10000f, new Vector2(4f, 10f)));
-                amountOfIceFloesInWinterDays = World(main, migrate, "Amount of ice floes in one zone", new Vector2(10f, 15f),
+                amountOfIceFloesInWinterDays = World("Amount of ice floes in one zone", new Vector2(10f, 15f),
                     "Random number of placement attempts per 64x64 zone, not a world-wide limit. Obstacles and spacing may reduce the final count. Changes affect new placement; disable and re-enable floes to regenerate existing zones.",
                     new OrderedRange(0f, 10000f, new Vector2(10f, 15f), integers: true));
-                iceFloesScale = World(main, migrate, "Scale of ice floes", new Vector2(1.25f, 2.5f),
+                iceFloesScale = World("Scale of ice floes", new Vector2(1.25f, 2.5f),
                     "Random base scale range before the existing ocean-depth and vertical-scale adjustments. Applies to newly spawned floes; does not resize saved instances.",
                     new OrderedRange(0.1f, 10f, new Vector2(1.25f, 2.5f)));
-                iceFloesHealth = World(main, migrate, "Health of ice floes", 20f,
+                iceFloesHealth = World("Health of ice floes", 20f,
                     "Base health scaled by floe volume and world level during spawning. Existing floes require respawning to change health.", new FiniteRange(1f, 100000f, 20f));
-                logFloes = BindLegacy(main, migrate, "Test", "Log ice floes", false,
+                logFloes = Bind("Test", "Log ice floes", false,
                     "Log ice-floe placement and removal.", null, ConfigSyncMode.AlwaysClientControlled);
 
                 BindRuntime("Ice floes - Surface", "ProbeDistance", 2f, "Wind-aligned sampling half-distance in world meters.", v => IceFloeClimb.ProbeDistance = v, 0.25f, 20f);
@@ -74,6 +72,9 @@ namespace Seasons
                 BindRuntime("Ice floes - Tilt", "MaxSurfaceTilt", 45f, "Maximum target surface inclination in degrees; does not constrain collision rotation.", v => IceFloeClimb.MaxSurfaceTilt = v, 0f, 80f);
                 BindRuntime("Ice floes - Tilt", "YawDamping", 0.15f, "Yaw water-drag rate in inverse seconds.", v => IceFloeClimb.YawDamping = v, 0f, 10f);
                 BindRuntime("Ice floes - Motion", "KinematicResponseSeconds", 0.15f, "Response time for ownerless kinematic surface tracking.", v => IceFloeClimb.KinematicResponseSeconds = v, 0.02f, 1f);
+                BindRuntime("Ice floes - Authority", "KinematicPublishIntervalSeconds", 0.2f,
+                    "Seconds between ownerless kinematic ZDO pose publications, plus up to 0.02 seconds of per-floe staggering. Does not slow local motion or native-owned physics. 0.1 restores the previous rate. The upper bound preserves the existing 0.5-second replica velocity freshness window.",
+                    v => IceFloeClimb.KinematicPublishIntervalSeconds = v, 0.1f, 0.25f);
 
                 // Quality and participation are peer-local. Physical coefficients above are
                 // server-controlled so a normal ownership transfer does not change the model.
@@ -86,10 +87,8 @@ namespace Seasons
                 BindRuntime("Ice floes - Distant visual", "DistantBobPeriod", 6f, "Local distant-bob period in seconds.", v => IceFloeClimb.DistantBobPeriod = v, 2f, 30f, local: true);
                 BindRuntime("Ice floes - Authority", "EnableFallbackSimulation", true, "Allow this peer to participate in the existing ownerless election. Does not claim native ownership.", v => IceFloeClimb.EnableFallbackSimulation = v, local: true);
 
-                // Do not remove legacy settings until the replacement file was saved.
                 Configuration.Save();
-                foreach (ConfigDefinition definition in legacyDefinitions)
-                    main.Remove(definition);
+                RemoveObsoleteMainEntries(main);
                 main.Save();
             }
             finally
@@ -97,7 +96,6 @@ namespace Seasons
                 main.SaveOnConfigSet = mainSave;
                 if (Configuration != null)
                     Configuration.SaveOnConfigSet = true;
-                legacyDefinitions.Clear();
             }
             try
             {
@@ -119,22 +117,34 @@ namespace Seasons
             }
         }
 
-        private static ConfigEntry<T> World<T>(ConfigFile main, bool migrate, string name, T value, string description, AcceptableValueBase range = null) =>
-            BindLegacy(main, migrate, WorldSection, name, value, description, range, ConfigSyncMode.AlwaysServerControlled);
+        private static ConfigEntry<T> World<T>(string name, T value, string description, AcceptableValueBase range = null) =>
+            Bind(WorldSection, name, value, description, range, ConfigSyncMode.AlwaysServerControlled);
 
-        private static ConfigEntry<T> BindLegacy<T>(ConfigFile main, bool migrate, string section, string name, T value,
-            string description, AcceptableValueBase range, ConfigSyncMode mode)
-        {
-            ConfigDescription info = new ConfigDescription(description, range);
-            // Binding consumes any orphaned value left by the former main-config entry.
-            // The new default is used only when that legacy key was never saved.
-            ConfigEntry<T> old = main.Bind(section, name, value, info);
-            legacyDefinitions.Add(old.Definition);
-            ConfigEntry<T> entry = configSync.AddConfigEntry(Configuration, section, name, value, info,
+        private static ConfigEntry<T> Bind<T>(string section, string name, T value,
+            string description, AcceptableValueBase range, ConfigSyncMode mode) =>
+            configSync.AddConfigEntry(Configuration, section, name, value, new ConfigDescription(description, range),
                 syncMode: mode, serverControlledByDefault: mode != ConfigSyncMode.AlwaysClientControlled).SourceConfig;
-            if (migrate)
-                entry.Value = old.Value;
-            return entry;
+
+        private static void RemoveObsoleteMainEntries(ConfigFile main)
+        {
+            ConfigDefinition[] definitions =
+            {
+                new ConfigDefinition(WorldSection, "Enable ice floes in winter"),
+                new ConfigDefinition(WorldSection, "Fill the water with ice floes at given days from to"),
+                new ConfigDefinition(WorldSection, "Amount of ice floes in one zone"),
+                new ConfigDefinition(WorldSection, "Scale of ice floes"),
+                new ConfigDefinition(WorldSection, "Health of ice floes"),
+                new ConfigDefinition("Test", "Log ice floes")
+            };
+            foreach (ConfigDefinition definition in definitions)
+            {
+                // BepInEx retains unbound entries on Save. Consume this obsolete key as
+                // opaque text, then discard it through the public API. Never read its Value,
+                // register it with config sync, or copy it into the independent floe file.
+                main.Remove(definition);
+                main.Bind<string>(definition, string.Empty);
+                main.Remove(definition);
+            }
         }
 
         private static void BindRuntime(string section, string name, float value, string description, Action<float> apply,

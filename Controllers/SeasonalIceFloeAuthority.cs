@@ -17,10 +17,21 @@ namespace Seasons
         [Header("Fallback simulation (shared runtime setting, this peer only)")]
         public static bool EnableFallbackSimulation = true;
 
+        [Header("Kinematic publication (shared runtime setting)")]
+        [Tooltip("Interval between ownerless kinematic pose publications. Local motion still updates every rendered frame.")]
+        public static float KinematicPublishIntervalSeconds = 0.2f;
+
         private const double CandidateWaitSeconds = 1.0;
         private const double LeaseTimeoutSeconds = 3.0;
         private const double PublishIntervalSeconds = 0.1;
         private const double ClockToleranceSeconds = 1.0;
+
+        // Keep native/dynamic publication unchanged. The kinematic upper bound (including
+        // staggering) remains below the existing 0.5-second replica freshness window and
+        // well below the three-second lease timeout. The first publication is immediate.
+        private double CurrentPosePublishInterval => (OwnerlessKinematic
+            ? Setting(KinematicPublishIntervalSeconds, 0.2f, 0.1f, 0.25f)
+            : PublishIntervalSeconds) + electionPhase * 0.02;
         private static readonly int candidateKey = "SeasonsFloeCandidate".GetStableHashCode();
         private static readonly int candidateTokenKey = "SeasonsFloeCandidateToken".GetStableHashCode();
         private static readonly int simulatorKey = "SeasonsFloeSimulator".GetStableHashCode();
@@ -258,7 +269,7 @@ namespace Seasons
                     if (FallbackSimulator)
                     {
                         // The same peer remains physical authority. Keep its current pose and
-                        // momentum instead of adopting its own older 10 Hz lease publication.
+                        // momentum instead of adopting its own older lease publication.
                         Sync.m_wasOwner = true;
                         Sync.m_positionCached = Vector3.negativeInfinity;
                         Sync.m_velocityCached = Vector3.negativeInfinity;
@@ -479,7 +490,7 @@ namespace Seasons
             // rotation/velocity/heartbeat change to make vertical movement publishable.
             if (moved && zdo.DataRevision == revision)
                 zdo.IncreaseDataRevision();
-            nextPoseAt = now + PublishIntervalSeconds + electionPhase * 0.02;
+            nextPoseAt = now + CurrentPosePublishInterval;
             PosePublications++;
         }
 
@@ -509,6 +520,7 @@ namespace Seasons
             builder.Append(LeaseAcquisitions).Append('/').Append(LeaseReleases).Append(" reason=").Append(AuthorityReason);
             builder.Append("\nLease cache reads/reuses=").Append(LeaseRecordReads).Append('/').Append(LeaseRecordReuses);
             builder.Append(" publishNotDue=").Append(PosePublishNotDue);
+            builder.Append(" poseInterval=").Append(Number((float)CurrentPosePublishInterval));
         }
     }
 }
