@@ -352,6 +352,8 @@ namespace Seasons
 
         private void Awake()
         {
+            LocalizationManager.Localizer.Initialize();
+
             instance = this;
 
             Compatibility.MyLittleUICompat.CheckForCompatibility();
@@ -389,8 +391,6 @@ namespace Seasons
                 LoadIcons();
 
             seasonState = new SeasonState();
-
-            StartCoroutine(LocalizationManager.Localizer.Load());
         }
 
         private void FixedUpdate()
