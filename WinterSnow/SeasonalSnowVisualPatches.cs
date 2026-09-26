@@ -1,0 +1,142 @@
+using HarmonyLib;
+using System.Collections.Generic;
+using System.Reflection.Emit;
+using UnityEngine;
+using static Seasons.Seasons;
+
+namespace Seasons
+{
+    // Seasonal caps consume the singleton's value without substituting a native field.
+    [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateSnowVisual))]
+    internal static class WearNTear_UpdateSnowVisual_PooledCaps
+    {
+        [HarmonyPrefix, HarmonyPriority(Priority.Last)]
+        private static bool Prefix(WearNTear __instance)
+        {
+            SeasonalSnowController controller = SeasonalSnowController.Instance;
+            if (!SeasonalSnow.WinterReady && !controller.HasSnowRuntime(__instance) &&
+                !controller.HasSnowVisual(__instance))
+            {
+                // Ordinary summer callbacks do not need a prefab-name/rule lookup.
+                // Only an unexpected native value can require disabled or legacy cleanup.
+                if (__instance.m_snowBuildup > 0f || __instance.m_addPreSnow)
+                {
+                    if (SeasonalSnowMeshSettings.TryApplyDisabledSnow(__instance))
+                        return false;
+                    SeasonalSnow.ClearInactiveLoadedSnow(__instance);
+                }
+                return true;
+            }
+            return !controller.TryQueueCurrentVisual(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateWear))]
+    internal static class WearNTear_UpdateWear_ExcludeSnowFromWetVisuals
+    {
+        private static GameObject GetWetVisual(WearNTear piece)
+        {
+            GameObject wet = SeasonalSnowController.GetWetVisual(piece);
+            if (!wet)
+                return null;
+
+            // Disabled caps are usually unbound and therefore absent from the visual
+            // controller. Resolve the rule only for the rare direct wet/cap alias.
+            bool aliasesCap = (piece.m_snow && piece.m_snow.gameObject == wet) ||
+                (piece.m_snowWorn && piece.m_snowWorn.gameObject == wet) ||
+                (piece.m_snowBroken && piece.m_snowBroken.gameObject == wet);
+            return aliasesCap && SeasonalSnowMeshSettings.IsSnowDisabled(piece) ? null : wet;
+        }
+
+        [HarmonyTranspiler]
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        {
+            var wetField = AccessTools.Field(typeof(WearNTear), nameof(WearNTear.m_wet));
+            var getWetVisual = AccessTools.Method(typeof(WearNTear_UpdateWear_ExcludeSnowFromWetVisuals), nameof(GetWetVisual));
+            bool found = false;
+            foreach (CodeInstruction instruction in instructions)
+            {
+                if (instruction.LoadsField(wetField))
+                {
+                    // WearNTear -> GameObject has the same stack effect as the field load.
+                    // Retain labels and exception blocks on the replaced instruction.
+                    instruction.opcode = OpCodes.Call;
+                    instruction.operand = getWetVisual;
+                    found = true;
+                }
+                yield return instruction;
+            }
+            if (!found)
+                LogWarning("Failed to isolate WearNTear.UpdateWear wet visuals from managed snow caps.");
+        }
+    }
+
+    [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.Awake))]
+    internal static class WearNTear_Awake_PooledCaps
+    {
+        [HarmonyPostfix, HarmonyPriority(Priority.Last)]
+        private static void Postfix(WearNTear __instance)
+        {
+            // Cleanup does not require area readiness, roof casts or a winter runtime.
+            SeasonalSnow.ClearInactiveLoadedSnow(__instance);
+            if (!SeasonalSnow.WinterReady)
+                return;
+            // Native Awake hides caps after UpdateVisual and expands their bounds.
+            // Select saved data (including zero) before any prediction or ready-area work.
+            SeasonalSnow.CaptureInitialSnowVisual(__instance);
+            SeasonalSnowController.Instance.InvalidateVisual(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.OnDestroy))]
+    internal static class WearNTear_OnDestroy_PooledCaps
+    {
+        [HarmonyPrefix, HarmonyPriority(Priority.First)]
+        private static void Prefix(WearNTear __instance) =>
+            SeasonalSnowController.Instance.ReleaseVisual(__instance, hide: false, restoreNative: false);
+    }
+
+    [HarmonyPatch(typeof(MaterialMan.PropertyContainer), nameof(MaterialMan.PropertyContainer.RefreshRenderers))]
+    internal static class MaterialMan_RefreshRenderers_ExcludeSnowCaps
+    {
+        [HarmonyPostfix]
+        private static void Postfix(MaterialMan.PropertyContainer __instance) =>
+            SeasonalSnowController.Instance.FilterMaterialManRenderers(__instance);
+    }
+
+    [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.Update))]
+    internal static class ZNetScene_Update_SnowVisuals
+    {
+        [HarmonyPostfix]
+        private static void Postfix(ZNetScene __instance)
+        {
+            // The native Update can return early while Harmony still runs postfixes.
+            if (Game.IsPaused() || UnityEngine.Time.timeScale <= 0f)
+                return;
+            SeasonalSnowController.Instance.UpdateSnowSimulation(__instance);
+            SeasonalSnowController.Instance.UpdateVisuals(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.Shutdown))]
+    internal static class ZNetScene_Shutdown_SnowVisuals
+    {
+        [HarmonyPrefix]
+        private static void Prefix(ZNetScene __instance)
+        {
+            SeasonalSnowController.Instance.StopSnowScene(__instance);
+            SeasonalSnowController.Instance.StopVisuals(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.OnDestroy))]
+    internal static class ZNetScene_OnDestroy_SnowVisuals
+    {
+        [HarmonyPrefix]
+        private static void Prefix(ZNetScene __instance)
+        {
+            SeasonalSnowController.Instance.StopSnowScene(__instance);
+            SeasonalSnowController.Instance.StopVisuals(__instance);
+        }
+    }
+}

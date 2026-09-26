@@ -3,6 +3,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection.Emit;
 using UnityEngine;
 using static Heightmap;
 using static Seasons.Seasons;
@@ -29,6 +30,8 @@ namespace Seasons
             private readonly MaterialPropertyBlock m_properties = new MaterialPropertyBlock();
             private readonly Dictionary<int, PropertyState> m_ownedProperties = new Dictionary<int, PropertyState>();
             private readonly List<int> m_releasedProperties = new List<int>();
+            private bool m_propertiesChanged;
+            private int m_inactivePropertyCount;
             public bool m_useGlobalWind;
             public bool m_appliedGlobalWind;
             public float m_appliedSurfaceOffset;
@@ -78,13 +81,40 @@ namespace Seasons
                 m_colorBottomShallowFrozen = Color.Lerp(m_colorBottomShallow, Color.white, 0.5f);
             }
 
+            private bool ReleasedPropertiesChanged(Material material)
+            {
+                // MPB has no individual removal. Our released neutral overrides must
+                // still follow real material changes, without copying the block each frame.
+                foreach (KeyValuePair<int, PropertyState> entry in m_ownedProperties)
+                {
+                    PropertyState property = entry.Value;
+                    if (property.Active)
+                        continue;
+                    if (property.IsColor
+                        ? !material.GetColor(entry.Key).Equals(property.AppliedColor)
+                        : !material.GetFloat(entry.Key).Equals(property.AppliedFloat))
+                        return true;
+                }
+                return false;
+            }
+
             public void RestoreProperties(MeshRenderer renderer, bool inactiveOnly = false)
             {
-                if (renderer == null || renderer.sharedMaterial == null)
+                // The normal per-frame call has no work before any override was released,
+                // or while every owned override is active. Avoid even reading the renderer.
+                if (inactiveOnly && m_inactivePropertyCount == 0)
                     return;
+                if (renderer == null)
+                    return;
+                Material material = renderer.sharedMaterial;
+                if (material == null || (inactiveOnly && !ReleasedPropertiesChanged(material)))
+                    return;
+
+                // Explicit season/config restoration also starts the next edit from a fresh
+                // block. Recheck ownership before writing, preserving other mods' properties.
                 renderer.GetPropertyBlock(m_properties);
+                m_propertiesChanged = false;
                 m_releasedProperties.Clear();
-                bool changed = false;
                 foreach (KeyValuePair<int, PropertyState> entry in m_ownedProperties)
                 {
                     PropertyState property = entry.Value;
@@ -95,41 +125,64 @@ namespace Seasons
                         : m_properties.GetFloat(entry.Key).Equals(property.AppliedFloat));
                     if (!stillOwned)
                     {
+                        if (!property.Active)
+                            m_inactivePropertyCount--;
                         m_releasedProperties.Add(entry.Key);
                         continue;
                     }
 
                     if (property.IsColor)
                     {
-                        property.AppliedColor = property.HadOverride ? property.OriginalColor : renderer.sharedMaterial.GetColor(entry.Key);
-                        m_properties.SetColor(entry.Key, property.AppliedColor);
+                        property.AppliedColor = property.HadOverride ? property.OriginalColor : material.GetColor(entry.Key);
+                        if (!m_properties.GetColor(entry.Key).Equals(property.AppliedColor))
+                        {
+                            m_properties.SetColor(entry.Key, property.AppliedColor);
+                            m_propertiesChanged = true;
+                        }
                     }
                     else
                     {
-                        property.AppliedFloat = property.HadOverride ? property.OriginalFloat : renderer.sharedMaterial.GetFloat(entry.Key);
-                        m_properties.SetFloat(entry.Key, property.AppliedFloat);
+                        property.AppliedFloat = property.HadOverride ? property.OriginalFloat : material.GetFloat(entry.Key);
+                        if (!m_properties.GetFloat(entry.Key).Equals(property.AppliedFloat))
+                        {
+                            m_properties.SetFloat(entry.Key, property.AppliedFloat);
+                            m_propertiesChanged = true;
+                        }
                     }
-                    changed = true;
-                    property.Active = false;
+                    if (property.Active)
+                    {
+                        property.Active = false;
+                        m_inactivePropertyCount++;
+                    }
                     if (property.HadOverride)
+                    {
+                        m_inactivePropertyCount--;
                         m_releasedProperties.Add(entry.Key);
+                    }
                 }
                 foreach (int property in m_releasedProperties)
                     m_ownedProperties.Remove(property);
-                if (changed)
-                    renderer.SetPropertyBlock(m_properties);
+                ApplyProperties(renderer);
             }
 
             public void SetFloat(int property, float value)
             {
                 if (!m_ownedProperties.TryGetValue(property, out PropertyState state))
                 {
-                    state = new PropertyState { HadOverride = m_properties.HasProperty(property), OriginalFloat = m_properties.GetFloat(property) };
+                    state = new PropertyState { Active = true, HadOverride = m_properties.HasProperty(property), OriginalFloat = m_properties.GetFloat(property) };
                     m_ownedProperties.Add(property, state);
                 }
-                state.Active = true;
+                else if (!state.Active)
+                {
+                    state.Active = true;
+                    m_inactivePropertyCount--;
+                }
                 state.AppliedFloat = value;
-                m_properties.SetFloat(property, value);
+                if (!m_properties.HasProperty(property) || !m_properties.GetFloat(property).Equals(value))
+                {
+                    m_properties.SetFloat(property, value);
+                    m_propertiesChanged = true;
+                }
             }
 
             public void SetFloat(string property, float value) => SetFloat(Shader.PropertyToID(property), value);
@@ -139,15 +192,29 @@ namespace Seasons
                 int property = Shader.PropertyToID(propertyName);
                 if (!m_ownedProperties.TryGetValue(property, out PropertyState state))
                 {
-                    state = new PropertyState { IsColor = true, HadOverride = m_properties.HasProperty(property), OriginalColor = m_properties.GetColor(property) };
+                    state = new PropertyState { Active = true, IsColor = true, HadOverride = m_properties.HasProperty(property), OriginalColor = m_properties.GetColor(property) };
                     m_ownedProperties.Add(property, state);
                 }
-                state.Active = true;
+                else if (!state.Active)
+                {
+                    state.Active = true;
+                    m_inactivePropertyCount--;
+                }
                 state.AppliedColor = value;
-                m_properties.SetColor(property, value);
+                if (!m_properties.HasProperty(property) || !m_properties.GetColor(property).Equals(value))
+                {
+                    m_properties.SetColor(property, value);
+                    m_propertiesChanged = true;
+                }
             }
 
-            public void ApplyProperties(MeshRenderer renderer) => renderer.SetPropertyBlock(m_properties);
+            public void ApplyProperties(MeshRenderer renderer)
+            {
+                if (!m_propertiesChanged || renderer == null)
+                    return;
+                renderer.SetPropertyBlock(m_properties);
+                m_propertiesChanged = false;
+            }
         }
 
         private class FrozenOceanFishPositionGuard : MonoBehaviour
@@ -161,8 +228,10 @@ namespace Seasons
             public ZSyncTransform SyncTransform;
             public bool IsKinematic;
             public bool SyncIsKinematic;
+            public bool SyncBodyVelocity;
             public bool AppliedIsKinematic;
             public bool WasOwner;
+            public bool WasFrozen;
             public readonly Dictionary<GameObject, bool> WaterMasks = new Dictionary<GameObject, bool>();
 
             public void Restore()
@@ -171,6 +240,8 @@ namespace Seasons
                     Body.isKinematic = IsKinematic;
                 if (SyncTransform != null && SyncTransform.m_isKinematicBody == AppliedIsKinematic)
                     SyncTransform.m_isKinematicBody = SyncIsKinematic;
+                if (SyncTransform != null && AppliedIsKinematic && !SyncTransform.m_syncBodyVelocity)
+                    SyncTransform.m_syncBodyVelocity = SyncBodyVelocity;
                 foreach (KeyValuePair<GameObject, bool> mask in WaterMasks)
                     if (mask.Key != null && !mask.Key.activeSelf)
                         mask.Key.SetActive(mask.Value);
@@ -184,12 +255,9 @@ namespace Seasons
         private static WaterState s_waterPlaneState;
         public static float s_waterEdge;
         public static bool s_waterEdgeLocalPlayerState;
-        public static float s_waterDistance;
 
         public static readonly Dictionary<WaterVolume, WaterState> waterStates = new Dictionary<WaterVolume, WaterState>();
         
-        private static readonly List<ZDO> m_tempZDOList = new List<ZDO>();
-        private static readonly HashSet<ZoneSystem.SectorIndex> s_visitedSectorIndices = new HashSet<ZoneSystem.SectorIndex>();
         private static readonly List<Vector3> m_tempHits = new List<Vector3>();
 
         private static float s_freezeStatus = 0f;
@@ -236,8 +304,6 @@ namespace Seasons
         public readonly List<WaterVolume> waterVolumesCheckFloes = new List<WaterVolume>();
         
         private static readonly List<WaterVolume> tempWaterVolumesList = new List<WaterVolume>();
-        private static readonly List<ZoneSystem.ClearArea> m_tempClearAreas = new List<ZoneSystem.ClearArea>();
-        private static readonly List<GameObject> m_tempSpawnedObjects = new List<GameObject>();
         private static readonly List<Color32> s_tempColors = new List<Color32>();
         private static readonly List<Color32> s_smoothColors = new List<Color32>();
         private static readonly List<Heightmap> s_protectedHeightmaps = new List<Heightmap>();
@@ -273,8 +339,6 @@ namespace Seasons
 
         private void CreateDestroyFloes()
         {
-            m_tempClearAreas.Clear();
-
             if (!waterStateInitialized)
                 return;
 
@@ -302,19 +366,14 @@ namespace Seasons
             s_waterPlane = null;
             s_waterPlaneState = null;
             s_iceSurface = null;
-            s_iceFloe = null;
             s_freezeStatus = 0f;
             s_colliderHeight = 0f;
             waterStates.Clear();
             waterVolumesCheckFloes.Clear();
             tempWaterVolumesList.Clear();
-            m_tempZDOList.Clear();
             m_tempHits.Clear();
-            m_tempClearAreas.Clear();
-            m_tempSpawnedObjects.Clear();
             s_tempColors.Clear();
             s_smoothColors.Clear();
-            s_visitedSectorIndices.Clear();
             s_protectedHeightmaps.Clear();
             s_tempHeightmaps.Clear();
             CharacterExtentions_FrozenOceanSliding.ResetWorldState();
@@ -337,26 +396,6 @@ namespace Seasons
             Transform water = instance.m_zonePrefab.transform.Find("Water");
             if (water != null)
                 AddIceCollider(water);
-
-            s_iceFloe = instance.m_vegetation.Find(veg => veg.m_prefab?.name == _iceFloeName)?.Clone();
-            if (s_iceFloe?.m_prefab == null)
-            {
-                LogWarning("Unable to initialize seasonal ice floes: the ice1 vegetation prefab was not found.");
-                return;
-            }
-
-            s_iceFloe.m_biome = Biome.Ocean;
-            ZNetView floeView = s_iceFloe.m_prefab.GetComponent<ZNetView>();
-            if (floeView == null || s_iceFloe.m_prefab.GetComponent<Rigidbody>() == null)
-            {
-                LogWarning("Unable to initialize seasonal ice floes: the ice1 prefab has no network view or rigidbody.");
-                s_iceFloe = null;
-                return;
-            }
-            if (!s_iceFloe.m_prefab.TryGetComponent<IceFloeClimb>(out _))
-                s_iceFloe.m_prefab.AddComponent<IceFloeClimb>();
-
-            floeView.m_syncInitialScale = true;
         }
 
         public static void UpdateTerrainColor(Heightmap heightmap)
@@ -734,11 +773,15 @@ namespace Seasons
 
             FrozenShipState state = ship.GetComponent<FrozenShipState>();
             state?.Restore();
-            if (ZoneSystem.instance == null || ship.m_nview == null || !ship.m_nview.IsValid() || !ship.m_nview.IsOwner() || ship.m_body == null || !IsWaterSurfaceFrozen())
+            bool isOwner = ship.m_nview != null && ship.m_nview.IsValid() && ship.m_nview.IsOwner();
+            bool isFrozen = IsShipFreezeActive();
+            if (state != null)
+            {
+                state.WasOwner = isOwner;
+                state.WasFrozen = isFrozen;
+            }
+            if (!isOwner || ship.m_body == null || !isFrozen)
                 return;
-
-            List<MeshRenderer> watermask = ship.GetComponentsInChildren<MeshRenderer>(includeInactive: true)
-                .Where(renderer => renderer.sharedMaterial != null && renderer.sharedMaterial.shader != null && renderer.sharedMaterial.shader.name == "Custom/WaterMask").ToList();
 
             float positionDelta = ship.m_body.position.y - (WaterLevel + ship.m_waterLevelOffset);
             if (positionDelta > 0)
@@ -749,29 +792,47 @@ namespace Seasons
             state.IsKinematic = ship.m_body.isKinematic;
             state.SyncTransform = ship.GetComponent<ZSyncTransform>();
             state.SyncIsKinematic = state.SyncTransform != null && state.SyncTransform.m_isKinematicBody;
+            state.SyncBodyVelocity = state.SyncTransform != null && state.SyncTransform.m_syncBodyVelocity;
             state.AppliedIsKinematic = !placeShipAboveFrozenOcean.Value;
-            ship.m_body.WakeUp();
-            ship.m_body.isKinematic = !placeShipAboveFrozenOcean.Value;
+            state.WasOwner = isOwner;
+            state.WasFrozen = isFrozen;
+
+            // A frozen Karve can also need repositioning. Clear motion before freezing,
+            // never through Unity's unsupported velocity setters on a kinematic body.
+            if (!ship.m_body.isKinematic)
+            {
+                ship.m_body.linearVelocity = Vector3.zero;
+                ship.m_body.angularVelocity = Vector3.zero;
+            }
+            ship.m_body.isKinematic = state.AppliedIsKinematic;
+            if (!ship.m_body.isKinematic)
+                ship.m_body.WakeUp();
 
             if (state.SyncTransform != null)
+            {
                 state.SyncTransform.m_isKinematicBody = ship.m_body.isKinematic;
+                // OwnerSync restores saved velocities on ownership acquisition.
+                // The body must stay frozen until Seasons restores its dynamic policy.
+                if (state.AppliedIsKinematic)
+                    state.SyncTransform.m_syncBodyVelocity = false;
+            }
 
             if (placeShipAboveFrozenOcean.Value)
             {
                 ship.m_body.rotation = Quaternion.identity;
                 ship.m_body.position = new Vector3(ship.m_body.position.x, WaterLevel + ship.m_waterLevelOffset + 0.1f, ship.m_body.position.z);
-                ship.m_body.linearVelocity = Vector3.zero;
             }
             else if (frozenKarvePositionFix.Value && Utils.GetPrefabName(ship.name) == "Karve" && positionDelta <= -1.43f)
             {
                 ship.m_body.rotation = Quaternion.identity;
                 ship.m_body.position = new Vector3(ship.m_body.position.x, WaterLevel + ship.m_waterLevelOffset - 1.42f, ship.m_body.position.z);
-                ship.m_body.linearVelocity = Vector3.zero;
             }
             else if (positionDelta < -ship.m_waterLevelOffset * 1.5f && ship.m_body.isKinematic)
             {
-                foreach (MeshRenderer renderer in watermask)
+                foreach (MeshRenderer renderer in ship.GetComponentsInChildren<MeshRenderer>(includeInactive: true))
                 {
+                    if (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null || renderer.sharedMaterial.shader.name != "Custom/WaterMask")
+                        continue;
                     state.WaterMasks[renderer.gameObject] = renderer.gameObject.activeSelf;
                     renderer.gameObject.SetActive(false);
                 }
@@ -780,15 +841,22 @@ namespace Seasons
 
         public static void CheckShipOwnership(Ship ship)
         {
-            if (ship == null || ship.m_nview == null || !ship.m_nview.IsValid())
+            if (ship == null)
                 return;
             FrozenShipState state = ship.GetComponent<FrozenShipState>() ?? ship.gameObject.AddComponent<FrozenShipState>();
-            bool isOwner = ship.m_nview.IsOwner();
-            if (state.WasOwner == isOwner)
+            bool isOwner = ship.m_nview != null && ship.m_nview.IsValid() && ship.m_nview.IsOwner();
+            bool isFrozen = IsShipFreezeActive();
+            if (state.WasOwner == isOwner && state.WasFrozen == isFrozen)
                 return;
-            state.WasOwner = isOwner;
+            // A water update schedules placement through a coroutine. Restore on the
+            // first thawed fixed tick instead of waiting for that coroutine to resume.
             PlaceShip(ship);
         }
+
+        private static bool IsShipFreezeActive() => ZoneSystem.instance != null && UseTextureControllers() && SeasonState.IsActive && IsWaterSurfaceFrozen();
+
+        public static bool ShouldSkipFrozenShipPhysics(Ship ship) => ship.m_body != null && ship.m_body.isKinematic
+            && ship.TryGetComponent(out FrozenShipState state) && state.Body == ship.m_body && state.AppliedIsKinematic;
 
         public static void CheckIfFishAboveSurface(Fish fish)
         {
@@ -957,211 +1025,11 @@ namespace Seasons
 
         public static void CheckZDODatabase()
         {
-            if (ZNet.instance == null || !ZNet.instance.IsServer() || ZDOMan.instance == null)
-                return;
-
-            if (s_zoneCtrlPrefab == 0)
-                s_zoneCtrlPrefab = (ZoneSystem.instance == null ? "_ZoneCtrl" : Utils.GetPrefabName(ZoneSystem.instance.m_zoneCtrlPrefab)).GetStableHashCode();
-
-            if (s_terrainCompilerPrefab == 0)
-                s_terrainCompilerPrefab = "_TerrainCompiler".GetStableHashCode();
-
-            bool removeIceFloes = !IsTimeForIceFloes();
-            bool removeCultivatedGround = IsTimeToDecultivateGround();
-
-            if (!removeIceFloes && !removeCultivatedGround)
-                return;
-
-            int yearLength = seasonState.GetYearLengthInDays();
-            int worldDay = seasonState.GetCurrentWorldDay();
-
-            int floes = 0; int zones = 0; int terrains = 0;
-            foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values.ToArray())
-            {
-                if (removeIceFloes)
-                {
-                    if (zdo.GetPrefab() == s_iceFloePrefab && zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
-                    {
-                        RemoveObject(zdo, true);
-                        floes++;
-                    }
-
-                    if (zdo.GetPrefab() == s_zoneCtrlPrefab && zdo.GetBool(SeasonsVars.s_iceFloesSpawned) && (!zdo.HasOwner() || zdo.IsOwner()))
-                    {
-                        zdo.Set(SeasonsVars.s_iceFloesSpawned, false);
-                        zones++;
-                    }
-                }
-
-                if (removeCultivatedGround)
-                {
-                    if (zdo.GetPrefab() == s_terrainCompilerPrefab && TerrainDecultivation.IsDecultivationDue(zdo, worldDay, yearLength))
-                    {
-                        if (TerrainDecultivation.TryDecultivateGround(zdo, out bool changed))
-                        {
-                            zdo.Set(SeasonsVars.s_terrainDecultivated, worldDay);
-                            if (changed)
-                                terrains++;
-                        }
-                    }
-                }
-            }
-
-            LogFloeState($"Removed overworld floes:{floes}, Zones refreshed:{zones}");
-            LogInfo($"Terrains decultivated:{terrains}");
+            SeasonalWorldMaintenance.RequestWorldScan();
         }
 
-        public bool CheckWaterVolumeForIceFloes(WaterVolume waterVolume)
-        {
-            if (waterVolume == null || waterVolume.m_heightmap == null || s_iceFloe?.m_prefab == null)
-                return true;
-
-            Vector3 position = waterVolume.transform.position;
-            if (WorldGenerator.instance.GetBiome(position) != Biome.Ocean)
-                return true;
-
-            Vector2s zoneID = ZoneSystem.GetZone(position);
-
-            if (!ZoneSystem.instance.IsZoneLoaded(zoneID))
-                return false;
-
-            Vector3 zonePos = ZoneSystem.GetZonePos(zoneID);
-            SpawnSystem spawnSystem = SpawnSystem.m_instances.FirstOrDefault(ss => ss != null && ss.m_heightmap == waterVolume.m_heightmap);
-            if (spawnSystem == null || spawnSystem.m_nview == null || !spawnSystem.m_nview.IsValid() || !spawnSystem.m_nview.IsOwner())
-                return false;
-
-            ZDO zoneZDO = spawnSystem.m_nview.GetZDO();
-            if (!IsTimeForIceFloes())
-                zoneZDO.Set(SeasonsVars.s_iceFloesSpawned, false);
-
-            m_tempZDOList.Clear();
-            s_visitedSectorIndices.Clear();
-            ZDOMan.instance.FindObjects(zoneID, m_tempZDOList, s_visitedSectorIndices);
-            m_tempZDOList.RemoveAll(zdo => zdo.GetPrefab() != s_iceFloePrefab || !zdo.GetBool(SeasonsVars.s_iceFloeWatermark) || ZoneSystem.GetZone(zdo.GetPosition()) != zoneID);
-            
-            if (IsTimeForIceFloes() && m_tempZDOList.Count > 0)
-                return true;
-            else if (!IsTimeForIceFloes() && m_tempZDOList.Count == 0)
-                return true;
-            else if (!IsTimeForIceFloes() && m_tempZDOList.Count > 0)
-            {
-                LogFloeState($"Checking occasional floes: {m_tempZDOList.Count}");
-                foreach (ZDO zdo in m_tempZDOList)
-                    if (zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
-                        RemoveObject(zdo);
-            }
-            else if (IsTimeForIceFloes() && m_tempZDOList.Count == 0)
-            {
-                if (zoneZDO.GetBool(SeasonsVars.s_iceFloesSpawned))
-                    return true;
-
-                ZoneSystem.SpawnMode mode = ZNetScene.instance.IsAreaReady(position) ? ZoneSystem.SpawnMode.Full : ZoneSystem.SpawnMode.Ghost;
-
-                m_tempSpawnedObjects.Clear();
-
-                PlaceIceFloes(zoneID, zonePos, m_tempClearAreas, mode, m_tempSpawnedObjects);
-                zoneZDO.Set(SeasonsVars.s_iceFloesSpawned, true);
-                LogFloeState($"{zoneID} {zonePos} Spawned {mode} floes:{m_tempSpawnedObjects.Count}");
-                
-                if (mode == ZoneSystem.SpawnMode.Ghost)
-                    foreach (GameObject tempSpawnedObject in m_tempSpawnedObjects)
-                        Destroy(tempSpawnedObject);
-
-                m_tempSpawnedObjects.Clear();
-            }
-
-            return true;
-        }
-
-        public static void PlaceIceFloes(Vector2s zoneID, Vector3 zoneCenterPos, List<ZoneSystem.ClearArea> clearAreas, ZoneSystem.SpawnMode mode, List<GameObject> spawnedObjects)
-        {
-            UnityEngine.Random.State state = UnityEngine.Random.state;
-            int seed = WorldGenerator.instance.GetSeed();
-            float num = ZoneSystem.instance.m_zoneSize / 2f;
-
-            UnityEngine.Random.InitState(seed + zoneID.x * 4271 + zoneID.y * 9187 + s_iceFloePrefab + (SeasonState.IsActive ? seasonState.GetCurrentWorldDay() : 0));
-            try
-            {
-                int spawnCount = UnityEngine.Random.Range((int)amountOfIceFloesInWinterDays.Value.x, (int)amountOfIceFloesInWinterDays.Value.y + 1);
-                for (int i = 0; i < spawnCount; i++)
-                {
-                    Vector3 p = new Vector3(UnityEngine.Random.Range(zoneCenterPos.x - num, zoneCenterPos.x + num), 0f, UnityEngine.Random.Range(zoneCenterPos.z - num, zoneCenterPos.z + num));
-                    if (IsBeyondWorldEdge(p, 100f))
-                        continue;
-
-                    if (ZoneSystem.instance.InsideClearArea(clearAreas, p))
-                        continue;
-
-                    if (s_iceFloe.m_blockCheck && ZoneSystem.instance.IsBlocked(p))
-                        continue;
-
-                    ZoneSystem.instance.GetGroundData(ref p, out _, out var biome, out var biomeArea, out var hmap2);
-                    float num11 = p.y - ZoneSystem.instance.m_waterLevel;
-                    if (num11 < s_iceFloe.m_minAltitude || num11 > s_iceFloe.m_maxAltitude)
-                        continue;
-
-                    if ((s_iceFloe.m_biome & biome) == 0 || (s_iceFloe.m_biomeArea & biomeArea) == 0)
-                        continue;
-
-                    float oceanDepth = hmap2.GetOceanDepth(p);
-                    if (s_iceFloe.m_minOceanDepth != s_iceFloe.m_maxOceanDepth)
-                    {
-                        if (oceanDepth < s_iceFloe.m_minOceanDepth || oceanDepth > s_iceFloe.m_maxOceanDepth)
-                            continue;
-                    }
-
-                    float oceanDepthFactor = GetOceanDepthFactor(oceanDepth);
-
-                    float scaleX = UnityEngine.Random.Range(iceFloesScale.Value.x, iceFloesScale.Value.y) * oceanDepthFactor;
-                    float scaleY = PowSquash(UnityEngine.Random.Range(iceFloesScale.Value.x, iceFloesScale.Value.y), 0.6f); // Squash a bit to prevent extra thick or thin
-                    float scaleZ = UnityEngine.Random.Range(iceFloesScale.Value.x, iceFloesScale.Value.y) * oceanDepthFactor;
-
-                    float halfX = s_floeSize.x * scaleX / 2;
-                    float halfZ = s_floeSize.y * scaleZ / 2;
-                    float radius = Mathf.Sqrt(halfX * halfX + halfZ * halfZ) + 0.2f;
-
-                    if (clearAreas.Any(area => IsInside(area, p, radius)))
-                        continue;
-
-                    if (s_iceFloe.m_snapToWater)
-                        p.y = ZoneSystem.instance.m_waterLevel - _winterWaterSurfaceOffset;
-
-                    if (mode == ZoneSystem.SpawnMode.Ghost)
-                        ZNetView.StartGhostInit();
-
-                    GameObject gameObject;
-                    try
-                    {
-                        gameObject = Instantiate(s_iceFloe.m_prefab, p, Quaternion.Euler(0, UnityEngine.Random.Range(0, 360), 0));
-                    }
-                    finally
-                    {
-                        if (mode == ZoneSystem.SpawnMode.Ghost)
-                            ZNetView.FinishGhostInit();
-                    }
-
-                    ZNetView netView = gameObject.GetComponent<ZNetView>();
-
-                    netView.SetLocalScale(new Vector3(scaleX, scaleY, scaleZ));
-
-                    float health = iceFloesHealth.Value * scaleX * scaleY * scaleZ;
-
-                    ZDO zdo = netView.GetZDO();
-                    zdo.Set(SeasonsVars.s_iceFloeWatermark, true);
-                    zdo.Set(SeasonsVars.s_iceFloeMass, netView.m_body.mass * PowSquash(Mathf.Sqrt(Mathf.Abs(scaleX * scaleY * scaleZ)), 0.6f));
-                    zdo.Set(ZDOVars.s_health, health + Game.m_worldLevel * health * Game.instance.m_worldLevelMineHPMultiplier);
-
-                    if (mode == ZoneSystem.SpawnMode.Ghost)
-                        spawnedObjects.Add(gameObject);
-
-                    clearAreas.Add(new ZoneSystem.ClearArea(p, GetFloeSize(gameObject) + 0.5f));
-                }
-            }
-            finally
-            {
-                UnityEngine.Random.state = state;
-            }
-        }
+        public bool CheckWaterVolumeForIceFloes(WaterVolume waterVolume) =>
+            SeasonalIceFloes.CheckWaterVolume(waterVolume);
 
         public static float PowSquash(float x, float gamma = 0.5f) => Mathf.Pow(Mathf.Max(0f, x), gamma);
 
@@ -1221,7 +1089,7 @@ namespace Seasons
             return 5.8f;
         }
 
-        private static void RemoveObject(ZDO zdo, bool force = false)
+        internal static void RemoveObject(ZDO zdo, bool force = false)
         {
             if (zdo == null || !zdo.IsValid())
                 return;
@@ -1851,105 +1719,42 @@ namespace Seasons
         }
     }
 
-    [HarmonyPatch(typeof(Floating), nameof(Floating.CustomFixedUpdate))]
-    public static class Floating_CustomFixedUpdate_IceFloeRotation
-    {
-        private class FloeSyncState : MonoBehaviour
-        {
-            public ZSyncTransform Sync;
-            public bool SyncPosition;
-            public bool SyncVelocity;
-            public bool AppliedPosition;
-            public bool AppliedVelocity;
-            public bool Applied;
-
-            public void Restore()
-            {
-                if (!Applied || Sync == null)
-                    return;
-                if (Sync.m_syncPosition == AppliedPosition)
-                    Sync.m_syncPosition = SyncPosition;
-                if (Sync.m_syncBodyVelocity == AppliedVelocity)
-                    Sync.m_syncBodyVelocity = SyncVelocity;
-                Applied = false;
-            }
-        }
-
-        private static readonly Vector3[] positions = new Vector3[4];
-        private static void AddWaveForce(Floating floating, float fixedDeltaTime)
-        {
-            floating.m_body.WakeUp();
-
-            foreach (Vector3 position in positions)
-            {
-                float depthDelta = position.y - Floating.GetLiquidLevel(position);
-                float forceAmount = 0.5f * Mathf.Clamp01(Mathf.Abs(depthDelta / 4f)) * (fixedDeltaTime * 50f) * Mathf.Abs(depthDelta);
-                Vector3 force = depthDelta < 0f ? Vector3.up * (forceAmount * 0.6f) : Vector3.down * forceAmount;
-                floating.m_body.AddForceAtPosition(force * 0.02f * floating.m_body.mass * 0.25f, position, ForceMode.Impulse);
-            }
-        }
-
-        private static float Dampen(float value) => value / (1f + Mathf.Abs(value));
-
-        private static bool Prefix(Floating __instance, float fixedDeltaTime)
-        {
-            FloeSyncState state = __instance.GetComponent<FloeSyncState>();
-            bool wasSyncPosition = state == null || state.Sync == null || state.Sync.m_syncPosition;
-            state?.Restore();
-            if (!GameCamera.instance || __instance.m_nview is not ZNetView nview || !nview.IsValid() || nview.GetZDO()?.GetPrefab() != s_iceFloePrefab || !__instance.m_body)
-                return true;
-
-            if (!nview.GetZDO().GetBool(SeasonsVars.s_iceFloeWatermark) || !nview.IsOwner())
-                return true;
-
-            ZSyncTransform syncTransform = __instance.GetComponent<ZSyncTransform>();
-            if (syncTransform == null || __instance.m_collider == null)
-                return true;
-            state ??= __instance.gameObject.AddComponent<FloeSyncState>();
-            state.Sync = syncTransform;
-            state.SyncPosition = syncTransform.m_syncPosition;
-            state.SyncVelocity = syncTransform.m_syncBodyVelocity;
-            state.Applied = true;
-            bool inActiveWaterDistance = Utils.DistanceXZ(GameCamera.instance.transform.position, __instance.transform.position) < s_waterDistance;
-            syncTransform.m_syncBodyVelocity = inActiveWaterDistance || !__instance.HaveLiquidLevel();
-
-            syncTransform.m_syncPosition = syncTransform.m_syncBodyVelocity;
-            state.AppliedPosition = syncTransform.m_syncPosition;
-            state.AppliedVelocity = syncTransform.m_syncBodyVelocity;
-            if (!wasSyncPosition && syncTransform.m_syncPosition)
-                syncTransform.SyncNow();
-
-            if (!syncTransform.m_syncPosition && __instance.HaveLiquidLevel() && !inActiveWaterDistance)
-            {
-                __instance.m_body.Sleep();
-                __instance.transform.position = new Vector3(__instance.transform.position.x, WaterLevel + __instance.m_waterLevelOffset + Dampen(__instance.m_waterLevel - WaterLevel), __instance.transform.position.z);
-                return false;
-            }
-
-            if (!nview.IsOwner() || !__instance.HaveLiquidLevel())
-                return true;
-
-            Vector3 wind = WaterVolume.s_globalWindAlpha == 0f
-                ? WaterVolume.s_globalWind1
-                : Vector4.Lerp(WaterVolume.s_globalWind1, WaterVolume.s_globalWind2, WaterVolume.s_globalWindAlpha);
-
-            Vector3 windSide = Vector3.Cross(wind, __instance.transform.up);
-            Vector3 center = __instance.m_body.worldCenterOfMass;
-
-            positions[0] = __instance.m_collider.ClosestPoint(center + wind * 100f);
-            positions[1] = __instance.m_collider.ClosestPoint(center - wind * 100f);
-            positions[2] = __instance.m_collider.ClosestPoint(center + windSide * 100f);
-            positions[3] = __instance.m_collider.ClosestPoint(center - windSide * 100f);
-
-            AddWaveForce(__instance, fixedDeltaTime);
-
-            return true;
-        }
-    }
-
     [HarmonyPatch(typeof(Ship), nameof(Ship.CustomFixedUpdate))]
     public static class Ship_CustomFixedUpdate_FrozenShip
     {
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
+        {
+            List<CodeInstruction> codes = new List<CodeInstruction>(instructions);
+            var bodyField = AccessTools.Field(typeof(Ship), nameof(Ship.m_body));
+            var centerGetter = AccessTools.PropertyGetter(typeof(Rigidbody), nameof(Rigidbody.worldCenterOfMass));
+            var skipPhysics = AccessTools.Method(typeof(ZoneSystemVariantController), nameof(ShouldSkipFrozenShipPhysics));
+            for (int i = 2; i < codes.Count; ++i)
+            {
+                if (!codes[i].Calls(centerGetter) || codes[i - 1].opcode != OpCodes.Ldfld
+                    || !Equals(codes[i - 1].operand, bodyField) || codes[i - 2].opcode != OpCodes.Ldarg_0)
+                    continue;
+
+                // In 1.0.15 this is the beginning of the buoyancy/force/damping tail.
+                // Controls, sail/rudder visuals, damage and speed bookkeeping stay native.
+                int physicsStart = i - 2;
+                Label continuePhysics = generator.DefineLabel();
+                CodeInstruction checkShip = new CodeInstruction(OpCodes.Ldarg_0);
+                checkShip.labels.AddRange(codes[physicsStart].labels);
+                codes[physicsStart].labels.Clear();
+                codes[physicsStart].labels.Add(continuePhysics);
+                codes.InsertRange(physicsStart, new[]
+                {
+                    checkShip,
+                    new CodeInstruction(OpCodes.Call, skipPhysics),
+                    new CodeInstruction(OpCodes.Brfalse, continuePhysics),
+                    new CodeInstruction(OpCodes.Ret)
+                });
+                return codes;
+            }
+
+            throw new InvalidOperationException("Could not locate Ship.CustomFixedUpdate physics boundary for frozen ships.");
+        }
+
         private static void Prefix(Ship __instance, ref float ___m_disableLevel, ref float? __state)
         {
             __state = null;
@@ -2078,7 +1883,6 @@ namespace Seasons
         {
             var water = __instance.transform.Find("WaterPlane").Find("watersurface");
             Material waterMaterial = water.GetComponent<MeshRenderer>().sharedMaterial;
-            s_waterDistance = waterMaterial.GetFloat("_VisibleMaxDistance");
             s_waterEdge = waterMaterial.GetFloat("_WaterEdge");
             s_waterEdgeLocalPlayerState = false;
         }

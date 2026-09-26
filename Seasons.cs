@@ -37,6 +37,7 @@ namespace Seasons
         private static ConfigEntry<bool> loggingEnabled;
         public static ConfigEntry<long> dayLengthSec;
         public static ConfigEntry<bool> enableLoadingTips;
+        public static ConfigEntry<bool> preventLookVectorConsoleSpam;
 
         public static ConfigEntry<CacheFormat> cacheStorageFormat;
         public static ConfigEntry<bool> logTime;
@@ -96,6 +97,7 @@ namespace Seasons
         public static ConfigEntry<bool> cultivatedGroundTurnsIntoDirtInWinter;
 
         public static ConfigEntry<bool> enableSeasonalSnow;
+        public static ConfigEntry<bool> showSnowDiagnosticsOnHover;
         public static ConfigEntry<Vector2> seasonalSnowBuildup;
         public static ConfigEntry<Vector2> reducedSeasonalSnowBuildup;
         public static ConfigEntry<float> seasonalSnowAccumulationSpeed;
@@ -106,18 +108,17 @@ namespace Seasons
         public static ConfigEntry<float> seasonalSnowInteractiveObjectMeltMultiplier;
         public static ConfigEntry<float> seasonalSnowLeakyPieceMeltMultiplier;
         public static ConfigEntry<float> seasonalSnowRoofPieceMeltMultiplier;
+        public static ConfigEntry<float> seasonalSnowCoveredPieceMeltMultiplier;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
         public static ConfigEntry<bool> enableIceFloes;
         public static ConfigEntry<Vector2> iceFloesInWinterDays;
-        public static ConfigEntry<Vector2> amountOfIceFloesInWinterDays;
         public static ConfigEntry<bool> enableNightMusicOnFrozenOcean;
         public static ConfigEntry<float> frozenOceanSlipperiness;
         public static ConfigEntry<bool> enableVanillaSlippingOnShallowFrozenWater;
         public static ConfigEntry<bool> placeShipAboveFrozenOcean;
         public static ConfigEntry<bool> placeFloatingContainersAboveFrozenOcean;
-        public static ConfigEntry<Vector2> iceFloesScale;
         public static ConfigEntry<float> iceFloesHealth;
 
         public static ConfigEntry<string> summerHeatCoolingFoods;
@@ -245,7 +246,8 @@ namespace Seasons
         private const int syncPriorityCustomClutterSettings = Priority.VeryHigh - 8;
         private const int syncPriorityCustomBiomeSettings = Priority.VeryHigh - 9;
         private const int syncPrioritySeasonalSnow = Priority.VeryHigh - 10;
-        private const int syncPrioritySeasonsSettings = Priority.VeryHigh - 11;
+        private const int syncPrioritySeasonalIceFloes = Priority.VeryHigh - 11;
+        private const int syncPrioritySeasonsSettings = Priority.VeryHigh - 12;
 
         private const int syncPriorityCustomMaterialSettings = Priority.Low + 3;
         private const int syncPriorityCustomColorSettings = Priority.Low + 2;
@@ -266,6 +268,7 @@ namespace Seasons
         public static readonly CustomSyncedValue<string> customBiomeSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom biome settings JSON", "", syncPriorityCustomBiomeSettings);
 
         public static readonly CustomSyncedValue<string> seasonalSnowJSON = new CustomSyncedValue<string>(configSync, "Seasonal snow JSON", "", syncPrioritySeasonalSnow);
+        public static readonly CustomSyncedValue<string> seasonalIceFloesJSON = new CustomSyncedValue<string>(configSync, "Seasonal ice floes JSON", "", syncPrioritySeasonalIceFloes);
 
         public static readonly CustomSyncedValue<Dictionary<int, string>> seasonsSettingsJSON = new CustomSyncedValue<Dictionary<int, string>>(configSync, "Seasons settings JSON", new Dictionary<int, string>(), syncPrioritySeasonsSettings, DictionaryContentComparer<int, string>.Instance);
 
@@ -349,12 +352,15 @@ namespace Seasons
 
         private void Awake()
         {
+            LocalizationManager.Localizer.Initialize();
+
             instance = this;
 
             Compatibility.MyLittleUICompat.CheckForCompatibility();
 
             ConfigInit();
             _ = configSync.AddLockingConfigEntry(configLocked);
+            LocalizationManager.Localizer.ApplyCurrentLocalization();
 
             Compatibility.EpicLootCompat.CheckForCompatibility();
             Compatibility.MarketplaceCompat.CheckForCompatibility();
@@ -365,6 +371,7 @@ namespace Seasons
 
             currentSeasonDay.ValueChanged += new Action(SeasonState.OnSeasonDayChange);
             seasonalSnowJSON.ValueChanged += new Action(SeasonalSnowSettings.ApplySynchronizedSettings);
+            seasonalIceFloesJSON.ValueChanged += new Action(SeasonalIceFloeSettings.ApplySynchronizedSettings);
 
             customBiomeSettingsJSON.ValueChanged += new Action(SeasonState.UpdateBiomeSettings);
             customClutterSettingsJSON.ValueChanged += new Action(SeasonState.UpdateClutterSettings);
@@ -386,8 +393,6 @@ namespace Seasons
                 LoadIcons();
 
             seasonState = new SeasonState();
-
-            StartCoroutine(LocalizationManager.Localizer.Load());
         }
 
         private void FixedUpdate()
@@ -403,6 +408,11 @@ namespace Seasons
 
         private void OnDestroy()
         {
+            FloeForecastWorker.Shutdown();
+            SeasonalWorldMaintenance.Reset();
+            SeasonalIceFloeWaves.Reset();
+            SeasonalIceFloes.Reset();
+            SeasonalSnowController.Instance.StopSnowScene(ZNetScene.instance);
             Compatibility.MarketplaceCompat.ReleaseMap();
             SeasonalPlayerCapeSnow.Reset();
             SeasonalEnemySnow.Reset();
@@ -432,6 +442,8 @@ namespace Seasons
             loggingEnabled = config("General", "Logging enabled", defaultValue: false, "Enable logging.", synchronizedSetting: false);
             dayLengthSec = serverConfig("General", "Day length in seconds", defaultValue: 1800L, "Day length in seconds. Vanilla - 1800 seconds. Set to 0 to disable.");
             enableLoadingTips = config("General", "Loading tips enabled", defaultValue: true, "Show seasonal tips on loading screen.", synchronizedSetting: false);
+            preventLookVectorConsoleSpam = config("General", "Prevent Look Rotation Viewing Vector Is Zero console message", defaultValue: true,
+                "If a shield takes damage from an indirect hit with a missing direction, the Look Rotation Viewing Vector Is Zero message will no longer be shown in the log file or console.");
 
             enableLoadingTips.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
 
@@ -560,19 +572,19 @@ namespace Seasons
 
             enableSeasonalSnow = serverConfig("Season - Winter snow", "Enable seasonal snow", defaultValue: true,
                 "Enable seasonal snow buildup on supported pieces outside Deep North. Per-piece rules and creature/cape material ranges are configured in Seasonal snow.json.");
-            seasonalSnowBuildup = serverConfig("Season - Winter snow", "Snow buildup limits", defaultValue: new Vector2(0.51f, 0.99f),
-                "Minimum and maximum seasonal snow buildup for supported pieces outside Deep North. Values are clamped to 0..1 and the smaller value is used as minimum. The applied maximum is limited to 0.99 to prevent vanilla heavy snow damage.");
+            seasonalSnowBuildup = serverConfig("Season - Winter snow", "Snow buildup limits", defaultValue: new Vector2(0.51f, 1f),
+                "Discovery seed and maximum seasonal snow buildup for supported pieces outside Deep North. Values are clamped to 0..1 and the smaller value is used as the one-time seed. Construction and subsequent growth start from their current level.");
             reducedSeasonalSnowBuildup = serverConfig("Season - Winter snow", "Reduced snow buildup limits", defaultValue: new Vector2(0.3f, 0.6f),
                 "Alternative minimum and maximum seasonal snow buildup intended for flat pieces where a thick snow mesh looks unnatural.");
             seasonalSnowAccumulationSpeed = serverConfig("Season - Winter snow", "Snow accumulation speed", defaultValue: 1f,
-                "Multiplier for seasonal snow accumulation from weather. 1 is the default rate, 0 disables accumulation above the configured minimum.");
+                "Multiplier for seasonal snow accumulation from weather. 1 is the default rate, 0 disables weather accumulation. The minimum is applied only when discovering an existing exposed piece.");
             seasonalSnowHeatSourceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - all heat sources", defaultValue: 1f,
                 "Global multiplier for seasonal snow melting from active heat sources. 1 uses the balanced default rate, 0 disables heat-based melting.");
             seasonalSnowHeatDistanceMultipliers = serverConfig("Season - Winter snow", "Snow melt speed multiplier - heat distance scaling", defaultValue: new Vector2(2f, 0.5f),
                 "Near and far heat-melting multipliers. The first value applies at 1 meter or closer, the second at the configured maximum heat-source distance, with linear scaling between them.");
             seasonalSnowHeatSourceCheckDistance = serverConfig("Season - Winter snow", "Snow melt heat source check distance", defaultValue: 3f,
                 "Maximum center-to-center distance in meters for active heat sources to melt seasonal snow. Values below 1 are treated as 1. A piece still counts as heated when its position is inside an active heat area.");
-            seasonalSnowSelfHeatMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - self-heating pieces", defaultValue: 5f,
+            seasonalSnowSelfHeatMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - self-heating pieces", defaultValue: 2f,
                 "Additional heat-melting speed for pieces that produce their own heat while active, such as kilns and smelters.");
             seasonalSnowInteractiveObjectMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - interactive objects", defaultValue: 5f,
                 "Controls how quickly snow melts while an object is actively used, including crafting stations, chairs, beds and similar objects.");
@@ -580,19 +592,29 @@ namespace Seasons
                 "Additional heat-melting speed for pieces that let rain through, such as open floors and similar building parts.");
             seasonalSnowRoofPieceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - roof pieces", defaultValue: 0f,
                 "Controls heat-based melting on roof pieces. 0 keeps snow on roofs even when a fire is nearby.");
+            seasonalSnowCoveredPieceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - covered pieces", defaultValue: 2f,
+                "Melts existing snow under a newly added roof at 0.0018 buildup per active second times this value. Independent of fireplace and roof-piece multipliers. Zero stops covered melting but still blocks snowfall.");
+
+            showSnowDiagnosticsOnHover = clientConfig("Season - Winter snow", "Show snow diagnostics on hover", defaultValue: false,
+                "Shows technical seasonal snow runtime information while hovering a building piece.");
+            showSnowDiagnosticsOnHover.SettingChanged += (sender, args) => SeasonalSnowDiagnostics.ClearCache();
 
             enableSeasonalSnow.SettingChanged += (sender, args) => SeasonalSnow.OnEnabledConfigChanged();
             seasonalSnowBuildup.SettingChanged += (sender, args) => SeasonalSnow.OnSnowRangeConfigChanged();
             reducedSeasonalSnowBuildup.SettingChanged += (sender, args) => SeasonalSnow.OnSnowRangeConfigChanged();
             seasonalSnowAccumulationSpeed.SettingChanged += (sender, args) => SeasonalSnow.OnAccumulationSpeedConfigChanged();
+            seasonalSnowHeatSourceMeltMultiplier.SettingChanged += (sender, args) => SeasonalSnow.OnHeatConfigChanged();
+            seasonalSnowHeatDistanceMultipliers.SettingChanged += (sender, args) => SeasonalSnow.OnHeatConfigChanged(rebuildLinks: true);
+            seasonalSnowHeatSourceCheckDistance.SettingChanged += (sender, args) => SeasonalSnow.OnHeatConfigChanged(rebuildLinks: true, reindexSources: true);
+            seasonalSnowSelfHeatMultiplier.SettingChanged += (sender, args) => SeasonalSnow.OnHeatConfigChanged(rebuildLinks: true);
+            seasonalSnowInteractiveObjectMeltMultiplier.SettingChanged += (sender, args) => SeasonalSnow.OnHeatConfigChanged();
+            seasonalSnowLeakyPieceMeltMultiplier.SettingChanged += (sender, args) => SeasonalSnow.OnHeatConfigChanged();
+            seasonalSnowRoofPieceMeltMultiplier.SettingChanged += (sender, args) => SeasonalSnow.OnHeatConfigChanged();
+            seasonalSnowCoveredPieceMeltMultiplier.SettingChanged += (sender, args) => SeasonalSnow.OnHeatConfigChanged();
 
             enableFrozenWater = serverConfig("Season - Winter ocean", "Enable frozen water", defaultValue: true, "Enable frozen water in winter");
             waterFreezesInWinterDays = serverConfig("Season - Winter ocean", "Freeze the water at given days from to", defaultValue: new Vector2(6f, 9f), "Water will freeze in the first set day of winter and will be unfrozen after second set day");
-            enableIceFloes = serverConfig("Season - Winter ocean", "Enable ice floes in winter", defaultValue: true, "Enable ice floes in winter");
-            iceFloesInWinterDays = serverConfig("Season - Winter ocean", "Fill the water with ice floes at given days from to", defaultValue: new Vector2(4f, 10f), "Ice floes will be spawned in the first set day of winter and will be removed after second set day");
-            amountOfIceFloesInWinterDays = serverConfig("Season - Winter ocean", "Amount of ice floes in one zone", defaultValue: new Vector2(10f, 20f), "Game will take random value between set numbers and will try to spawn that amount of ice floes in one zone (square 64x64)");
-            iceFloesScale = serverConfig("Season - Winter ocean", "Scale of ice floes", defaultValue: new Vector2(0.75f, 2f), "Size of spawned ice floe random to XYZ axes");
-            iceFloesHealth = serverConfig("Season - Winter ocean", "Health of ice floes", defaultValue: 20f, "Health of ice floe of average size. Health changes proportionally the volume of an ice floe. Floes respawn is required to apply changes.");
+            SeasonalIceFloeSettings.Initialize(Config);
             enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
             frozenOceanSlipperiness = serverConfig("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1f, "Slipperiness factor of the frozen ocean surface");
             enableVanillaSlippingOnShallowFrozenWater = serverConfig("Season - Winter ocean", "Enable vanilla slipping on shallow frozen water", defaultValue: true,
@@ -604,7 +626,6 @@ namespace Seasons
             enableIceFloes.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             waterFreezesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             iceFloesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
-            amountOfIceFloesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             placeShipAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateShipsPositions();
             placeFloatingContainersAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateFloatingPositions();
 
@@ -779,7 +800,6 @@ namespace Seasons
 
             cacheStorageFormat = clientConfig("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading of single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
             logTime = clientConfig("Test", "Log time", defaultValue: false, "Log time info on state update");
-            logFloes = clientConfig("Test", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying");
             logControllersTime = clientConfig("Test", "Log prefab caching time", defaultValue: false, "Log elapsed time of prefabs caching process in descending order");
             plainsSwampBorderFix = clientConfig("Test", "Plains Swamp border fix", defaultValue: true, "Fix clipping into ground on Plains - Swamp border");
             frozenKarvePositionFix = serverConfig("Test", "Fix position for frozen Karve", defaultValue: false, "Make Karve storage always available if frozen. If Karve is below certain level it will be pushed to the surface.");
@@ -839,8 +859,8 @@ namespace Seasons
         private void LoadIcons()
         {
             LoadIcon("season_spring.png", ref iconSpring);
-            LoadIcon("season_summer.png", ref iconSummer);
             LoadIcon("season_fall.png", ref iconFall);
+            LoadIcon("season_summer.png", ref iconSummer);
             LoadIcon("season_winter.png", ref iconWinter);
             LoadIcon("valheim_warm.png", ref iconWarm);
 
@@ -1179,6 +1199,18 @@ namespace Seasons
             }
 
             LogInfo($"Replanted {prefab}");
+        }
+
+        [HarmonyPatch(typeof(SE_Shield), nameof(SE_Shield.OnDamaged))]
+        public static class SE_Shield_OnDamaged_PreventEffectSpam
+        {
+            [HarmonyPriority(Priority.Last)]
+            private static bool Prefix(ref HitData hit)
+            {
+                if (preventLookVectorConsoleSpam.Value && hit != null && hit.m_dir.sqrMagnitude < 0.1f)
+                    hit.m_dir = Vector3.down;
+                return true;
+            }
         }
     }
 }

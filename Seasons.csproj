@@ -55,6 +55,19 @@
     <Compile Include="SummerHeat\SummerHeatController.cs" />
     <Compile Include="SummerHeat\SummerHeatState.cs" />
     <Compile Include="SummerHeat\SummerHeatVisuals.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowStorage.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowDiagnostics.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowLiveWeather.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowState.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowRuntime.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowSimulation.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowHeat.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowInteraction.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowGeometry.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowSimulationPatches.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowMaterials.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowController.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowVisualPatches.cs" />
     <Compile Include="WinterSnow\SeasonalSnowSettings.cs" />
     <Compile Include="WinterSnow\SeasonalSnowMaterialRules.cs" />
     <Compile Include="WinterSnow\SeasonalSnow.cs" />
@@ -95,6 +108,16 @@
     <Compile Include="Controllers\FrozenOceanSliding.cs" />
     <Compile Include="Controllers\PrefabVariantController.cs" />
     <Compile Include="Controllers\ZoneSystemVariantController.cs" />
+    <Compile Include="Controllers\SeasonalIceFloeSettings.cs" />
+    <Compile Include="Controllers\SeasonalIceFloes.cs" />
+    <Compile Include="Controllers\SeasonalIceFloeWaves.cs" />
+    <Compile Include="Controllers\SeasonalIceFloePrediction.cs" />
+    <Compile Include="Controllers\SeasonalIceFloeWaveMath.cs" />
+    <Compile Include="Controllers\SeasonalIceFloeWorker.cs" />
+    <Compile Include="Controllers\SeasonalIceFloeBackground.cs" />
+    <Compile Include="Controllers\SeasonalIceFloeAuthority.cs" />
+    <Compile Include="Controllers\SeasonalIceFloeMotion.cs" />
+    <Compile Include="Controllers\SeasonalWorldMaintenance.cs" />
     <Compile Include="Utils\ItemNameTokens.cs" />
     <Compile Include="Utils\LocalizationManager.cs" />
     <Compile Include="Utils\StatusEffectHud.cs" />
@@ -303,3 +326,4 @@
     </PostBuildEvent>
   </PropertyGroup>
 </Project>
+

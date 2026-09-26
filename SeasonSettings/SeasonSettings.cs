@@ -25,6 +25,7 @@ namespace Seasons
         public const string customClutterSettingsFileName = "Custom clutter settings.json";
         public const string customBiomesSettingsFileName = "Custom biome settings.json";
         public const string seasonalSnowFileName = "Seasonal snow.json";
+        public const string seasonalIceFloesFileName = "Seasonal ice floes.json";
         public const int nightLentghDefault = 30;
         public const string itemDropNameTorch = "$item_torch";
         public const string itemNameTorch = "Torch";
@@ -196,7 +197,8 @@ namespace Seasons
                 customGrassSettingsFileName,
                 customClutterSettingsFileName,
                 customBiomesSettingsFileName,
-                seasonalSnowFileName
+                seasonalSnowFileName,
+                seasonalIceFloesFileName
             })
             {
                 ReadConfigFile(filename, Path.Combine(configDirectory, filename), initial: true);
@@ -236,7 +238,8 @@ namespace Seasons
         private static void ReadConfigs(object sender, FileSystemEventArgs eargs)
         {
             ReadConfigFile(eargs.Name, eargs.FullPath);
-            if (eargs is RenamedEventArgs renamed)
+            if (eargs is RenamedEventArgs renamed &&
+                !renamed.OldName.Equals(renamed.Name, StringComparison.OrdinalIgnoreCase))
             {
                 if (GetSyncedValueToAssign(renamed.OldName, out CustomSyncedValue<string> syncedValue, out string logMessage))
                 {
@@ -346,6 +349,11 @@ namespace Seasons
             {
                 customSyncedValue = seasonalSnowJSON;
                 logMessage = "Seasonal snow settings file loaded";
+            }
+            else if (filename.Equals(seasonalIceFloesFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                customSyncedValue = seasonalIceFloesJSON;
+                logMessage = "Seasonal ice-floe settings file loaded";
             }
             else
             {
@@ -462,6 +470,7 @@ namespace Seasons
         {
             SeasonalSnowMeshSettings.InitializeCopySources();
             seasonState = new SeasonState(initialize: true);
+            SeasonalIceFloeSettings.SaveDefaultSettings(Path.Combine(configDirectory, SeasonSettings.defaultsSubdirectory));
             SeasonalSnow.InitializePrefabs();
             Compatibility.EWDCompat.MarkWorldInitialized();
             SeasonSettings.SetupConfigWatcher(enabled: true);
@@ -472,6 +481,13 @@ namespace Seasons
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.OnDestroy))]
     public static class ZoneSystem_OnDestroy_DisableConfigWatcher
     {
+        [HarmonyPrefix]
+        private static void Prefix()
+        {
+            // Persist while the season calendar is still available to the snow runtime.
+            SeasonalSnowController.Instance.StopSnowScene(ZNetScene.instance);
+        }
+
         private static void Postfix()
         {
             SeasonSettings.SetupConfigWatcher(enabled: false);
