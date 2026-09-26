@@ -111,6 +111,7 @@
     <Compile Include="Controllers\SeasonalIceFloeSettings.cs" />
     <Compile Include="Controllers\SeasonalIceFloes.cs" />
     <Compile Include="Controllers\SeasonalIceFloeWaves.cs" />
+    <Compile Include="Controllers\SeasonalIceFloeWater.cs" />
     <Compile Include="Controllers\SeasonalIceFloePrediction.cs" />
     <Compile Include="Controllers\SeasonalIceFloeWaveMath.cs" />
     <Compile Include="Controllers\SeasonalIceFloeWorker.cs" />

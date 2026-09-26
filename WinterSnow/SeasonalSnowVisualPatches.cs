@@ -72,6 +72,10 @@ namespace Seasons
             var getWetVisual = AccessTools.Method(typeof(WearNTear_UpdateWear_ExcludeSnowFromWetVisuals), nameof(GetWetVisual));
             var bridge = AccessTools.Field(typeof(SeasonalSnowController), nameof(SeasonalSnowController.VisualBridgeActive));
             var gameObject = AccessTools.PropertyGetter(typeof(Component), nameof(Component.gameObject));
+            var unityAlive = AccessTools.Method(typeof(UnityEngine.Object), "op_Implicit",
+                new[] { typeof(UnityEngine.Object) });
+            var unityEqual = AccessTools.Method(typeof(UnityEngine.Object), "op_Equality",
+                new[] { typeof(UnityEngine.Object), typeof(UnityEngine.Object) });
             FieldInfo[] caps =
             {
                 AccessTools.Field(typeof(WearNTear), nameof(WearNTear.m_snow)),
@@ -99,6 +103,7 @@ namespace Seasons
                     yield return new CodeInstruction(OpCodes.Ldfld, wetField);
                     yield return new CodeInstruction(OpCodes.Stloc, wet);
                     yield return new CodeInstruction(OpCodes.Ldloc, wet);
+                    yield return new CodeInstruction(OpCodes.Call, unityAlive);
                     yield return new CodeInstruction(OpCodes.Brfalse, useNative);
                     foreach (FieldInfo field in caps)
                     {
@@ -107,11 +112,12 @@ namespace Seasons
                         yield return new CodeInstruction(OpCodes.Ldfld, field);
                         yield return new CodeInstruction(OpCodes.Stloc, cap);
                         yield return new CodeInstruction(OpCodes.Ldloc, cap);
+                        yield return new CodeInstruction(OpCodes.Call, unityAlive);
                         yield return new CodeInstruction(OpCodes.Brfalse, nextCap);
                         yield return new CodeInstruction(OpCodes.Ldloc, cap);
                         yield return new CodeInstruction(OpCodes.Callvirt, gameObject);
                         yield return new CodeInstruction(OpCodes.Ldloc, wet);
-                        yield return new CodeInstruction(OpCodes.Ceq);
+                        yield return new CodeInstruction(OpCodes.Call, unityEqual);
                         yield return new CodeInstruction(OpCodes.Brtrue, useHelper);
                         CodeInstruction next = new CodeInstruction(OpCodes.Nop);
                         next.labels.Add(nextCap);

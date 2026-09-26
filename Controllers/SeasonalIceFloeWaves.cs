@@ -86,6 +86,7 @@ namespace Seasons
             controller.NextTerrainCheckTime = Time.time + UnityEngine.Random.Range(10f, 30f);
             participants.Add(controller);
             membership.Add(controller);
+            SeasonalIceFloeWater.Admit(controller);
             if (driver)
                 driver.enabled = true;
         }
@@ -101,6 +102,7 @@ namespace Seasons
             }
             finally
             {
+                SeasonalIceFloeWater.Release(controller);
                 if (controller.NativeFloatingListed && controller.m_floating && controller.m_floating.isActiveAndEnabled &&
                     !Floating.Instances.Contains(controller.m_floating))
                     Floating.Instances.Add(controller.m_floating);
@@ -125,6 +127,7 @@ namespace Seasons
             }
             phase.Clear();
             membership.Clear();
+            SeasonalIceFloeWater.Reset();
             if (driver)
                 driver.enabled = false;
             driver = null;
@@ -313,6 +316,8 @@ namespace Seasons
                         continue;
                     }
                     controller.BeforeSync();
+                    if (!membership.Contains(controller) || !controller || !controller.WaveValid)
+                        continue;
                     if (!controller.Distant && !controller.OwnerlessKinematic)
                         controller.Sync.ClientSync(dt);
                     if (!controller.WaveValid)
@@ -358,6 +363,8 @@ namespace Seasons
                     if (controller.Distant)
                         continue;
                     controller.UpdateOwnerlessMotion();
+                    if (!membership.Contains(controller) || !controller || !controller.WaveValid)
+                        continue;
                     bool heldOnAcquire = acquiring && (controller.HoldingGravity || controller.RecoveryPending);
                     controller.Sync.OwnerSync();
                     if (heldOnAcquire)
@@ -373,6 +380,7 @@ namespace Seasons
 
         internal static string GetLifecycleStatus() =>
             $"active={(driver && driver.enabled)} participants={participants.Count} phase={phase.Count} " +
+            $"waterManaged={SeasonalIceFloeWater.ManagedCount} waterVolumes={SeasonalIceFloeWater.VolumeCount} " +
             $"workerQueued={FloeForecastWorker.Queued} workerRunning={FloeForecastWorker.Running} epoch={lifetimeEpoch}/{FloeForecastWorker.Epoch}";
         [HarmonyPatch(typeof(Water), nameof(Water.ApplySettings))]
         private static class Water_ApplySettings_Distance
@@ -800,6 +808,7 @@ namespace Seasons
             float surface = context.WaterLevel + context.Offset;
             if (context.HasWorldEdge && Utils.LengthXZ(Baseline) > 10500f)
                 surface -= 100f;
+            m_floating.m_waterLevel = surface + bob;
             // Use the collider waterline in EVERY mode. The old distant path added the
             // native offset to a bottom pivot and left the whole floe above the sea.
             TargetY = surface + Setting(HeightOffset, 0f, -10f, 10f) + bob +

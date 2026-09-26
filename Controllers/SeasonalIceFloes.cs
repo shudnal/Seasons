@@ -101,6 +101,7 @@ namespace Seasons
         private static SeasonalIceFloePlacementDriver driver;
         private static int zonePrefab;
         private static bool wanted, prefabChecked;
+        private static SeasonalIceFloeCleanupOnce cleanupOnce;
         // AddToSector runs before a new ZDO's prefab is initialized. Delay only this
         // candidate's matching-zone notifications until its exact ZDO is known.
         private static ZoneWork creatingFloe;
@@ -130,6 +131,7 @@ namespace Seasons
         internal static void Reset()
         {
             SeasonalIceFloeWaves.Reset();
+            SeasonalIceFloeWater.ResetWorld();
             if (driver)
                 driver.enabled = false;
             driver = null;
@@ -148,6 +150,9 @@ namespace Seasons
             world = null;
             zonePrefab = 0;
             wanted = prefabChecked = false;
+            if (cleanupOnce)
+                cleanupOnce.enabled = false;
+            cleanupOnce = null;
             creatingFloe = null;
             creationSectorZdo = null;
             creationHasOtherAdds = false;
@@ -203,6 +208,7 @@ namespace Seasons
             loadedZones?.Dispose();
             loadedZones = null;
             work.Clear();
+            controllers.Clear();
             settled.Clear();
             requests.Clear();
             requestSet.Clear();
@@ -224,8 +230,13 @@ namespace Seasons
                 loadedZones = world.m_zones.Keys.GetEnumerator();
                 // Previously loaded marked instances have no new Awake/Start notification.
                 // This is a single activation walk, never a dormant scanner.
-                foreach (IceFloe floe in UnityEngine.Object.FindObjectsOfType<IceFloe>())
-                    SeasonalIceFloeWaves.Track(floe);
+                SeasonalIceFloeWater.BeginBulkAdmission();
+                try
+                {
+                    foreach (IceFloe floe in UnityEngine.Object.FindObjectsOfType<IceFloe>())
+                        SeasonalIceFloeWaves.Track(floe);
+                }
+                finally { SeasonalIceFloeWater.EndBulkAdmission(); }
             }
             WakeDriver();
         }
@@ -974,8 +985,26 @@ namespace Seasons
             {
                 if (zdo != null && zdo.GetPrefab() == s_iceFloePrefab &&
                     zdo.GetBool(SeasonsVars.s_iceFloeWatermark))
-                    RequestCleanup();
+                {
+                    if (!SeasonState.WorldInitialized || !CleanupRequired || !ZNet.instance ||
+                        !ZNet.instance.IsServer() || !ZNetScene.instance)
+                        return;
+                    // The native CreateObjectsSorted list can still contain other
+                    // soon-to-be-deleted ZDOs. Leave its current traversal intact.
+                    cleanupRequested = true;
+                    if (!cleanupOnce)
+                        cleanupOnce = ZNetScene.instance.gameObject.AddComponent<SeasonalIceFloeCleanupOnce>();
+                    cleanupOnce.enabled = true;
+                }
             }
+        }
+
+        internal static void CompleteScheduledCleanup()
+        {
+            if (cleanupOnce)
+                cleanupOnce.enabled = false;
+            if (cleanupRequested)
+                RequestCleanup();
         }
 
         [HarmonyPatch(typeof(ZNetView), nameof(ZNetView.Awake))]
@@ -1014,5 +1043,11 @@ namespace Seasons
     internal sealed class SeasonalIceFloePlacementDriver : MonoBehaviour
     {
         private void Update() => SeasonalIceFloes.Update();
+    }
+
+    [DefaultExecutionOrder(10000)]
+    internal sealed class SeasonalIceFloeCleanupOnce : MonoBehaviour
+    {
+        private void Update() => SeasonalIceFloes.CompleteScheduledCleanup();
     }
 }

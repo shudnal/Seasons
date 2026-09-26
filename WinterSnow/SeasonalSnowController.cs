@@ -180,6 +180,8 @@ namespace Seasons
             VisualBridgeActive = active || transitioning;
             if (!active && !transitioning)
             {
+                ResetVisuals();
+                SeasonalSnowMeshSettings.RetireSeasonalBindings();
                 if (driver)
                     driver.enabled = false;
                 return;
@@ -193,7 +195,11 @@ namespace Seasons
             }
             driver.enabled = true;
             if (starting)
+            {
                 lifetimeEpoch++;
+                if (active)
+                    SeasonalSnowMeshSettings.ApplyToLoadedInstances(updateCopies: true);
+            }
         }
 
         internal void CompleteDormancy()
@@ -203,6 +209,7 @@ namespace Seasons
             // Hide/restore after the bounded visual queue is drained. Materials are
             // disposed only after no renderer still points at a pooled variant.
             ResetVisuals();
+            SeasonalSnowMeshSettings.RetireSeasonalBindings();
             if (driver)
                 driver.enabled = false;
             VisualBridgeActive = false;
@@ -216,6 +223,7 @@ namespace Seasons
             VisualBridgeActive = false;
             ResetSnowRuntime();
             ResetVisuals();
+            SeasonalSnowMeshSettings.RetireSeasonalBindings();
         }
 
         internal string GetLifecycleStatus() =>
@@ -223,7 +231,7 @@ namespace Seasons
             $"driver={(driver && driver.enabled)} bridge={VisualBridgeActive} pieces={snowPieces.Count} regions={snowRegions.Count} " +
             $"refresh={regionRefreshes.Count}/{pieceRefreshes.Count}/{geometryRefreshes.Count} " +
             $"publish={snowPublications.Count} visualQueue={snowVisualChanges.Count}/{(VisualsPending ? 1 : 0)} " +
-            $"bindings={visuals.Count}/{ownedRenderers.Count} materials={materials.PoolCount}/{materials.CreatedMaterialCount} " +
+            $"bindings={visuals.Count}/{ownedRenderers.Count} {SeasonalSnowMeshSettings.BindingStatus} materials={materials.PoolCount}/{materials.CreatedMaterialCount} " +
             $"heat={heatSources.Count}/{heatCells.Count} interactions={interactingPieces.Count} epoch={lifetimeEpoch}/{winterEpoch}";
 
         // Native visual callbacks only request the latest singleton-owned target.

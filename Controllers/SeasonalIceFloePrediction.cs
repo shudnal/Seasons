@@ -111,6 +111,11 @@ namespace Seasons
         private Collider hullCollider;
         private Transform hullParent;
         private Vector3 hullLocalScale;
+        private Transform hullShapeParent;
+        private Vector3 hullShapePosition, hullShapeScale;
+        private Quaternion hullShapeRotation;
+        private Mesh hullMesh;
+        private Bounds hullSourceBounds;
         private uint hullGeometryRevision;
         private bool hullCached;
         private HullShape hullShape;
@@ -146,8 +151,7 @@ namespace Seasons
             pendingForecastCause = cause;
         }
 
-        // Geometry is immutable for the known ice prefab except scale. Do not rebuild
-        // a transform chain or query collider bounds on every physics step.
+        // Explicit rebuild remains available when another component changes shape.
         public void RebuildHullGeometry()
         {
             hullCached = false;
@@ -170,16 +174,25 @@ namespace Seasons
             Vector3 scale = Root.lossyScale;
             Vector3 localScale = Root.localScale;
             Transform parent = Root.parent;
+            Transform shape = collider ? collider.transform : null;
+            Mesh mesh = collider is MeshCollider meshCollider ? meshCollider.sharedMesh : null;
+            Bounds bounds;
+            if (collider is BoxCollider box)
+                bounds = new Bounds(box.center, box.size);
+            else if (mesh)
+                bounds = mesh.bounds;
+            else
+                return false;
             if (!Finite(scale) || !Finite(localScale))
                 return false;
             if (!hullCached || hullCollider != collider || hullParent != parent ||
-                !hullLocalScale.Equals(localScale) || !SameWorldScale(hullScale, scale))
+                !hullLocalScale.Equals(localScale) || !SameWorldScale(hullScale, scale) ||
+                hullShapeParent != shape.parent || !hullShapePosition.Equals(shape.localPosition) ||
+                !hullShapeRotation.Equals(shape.localRotation) || !hullShapeScale.Equals(shape.localScale) ||
+                hullMesh != mesh || !hullSourceBounds.Equals(bounds))
             {
                 if (!TryHullGeometry(collider, out HullGeometry original))
                     return false;
-                Bounds bounds = collider is BoxCollider box ? new Bounds(box.center, box.size) :
-                    ((MeshCollider)collider).sharedMesh.bounds;
-                Transform shape = collider.transform;
                 Quaternion undo = Quaternion.Inverse(Root.rotation);
                 hullCenterOffset = undo * (shape.TransformPoint(bounds.center) - Root.position);
                 hullX = undo * shape.TransformVector(Vector3.right * bounds.extents.x);
@@ -191,6 +204,12 @@ namespace Seasons
                 hullLocalScale = localScale;
                 hullParent = parent;
                 hullCollider = collider;
+                hullShapeParent = shape.parent;
+                hullShapePosition = shape.localPosition;
+                hullShapeRotation = shape.localRotation;
+                hullShapeScale = shape.localScale;
+                hullMesh = mesh;
+                hullSourceBounds = bounds;
                 hullCached = true;
                 hullGeometryRevision++;
                 GeometryCacheBuilds++;
@@ -212,6 +231,9 @@ namespace Seasons
             hull.TopY = hull.Center.y + halfHeight;
             return Finite(hull.Center) && Finite(halfHeight);
         }
+
+        internal bool PrepareInactiveHull() => m_floating && m_floating.m_collider &&
+            ReadHullGeometry(m_floating.m_collider, out _);
 
         private void RefreshFloeState()
         {

@@ -1,5 +1,36 @@
 # Seasonal snow and floe runtime lifecycle
 
+## Review follow-up: lifecycle and geometry (base `7d71142`)
+
+`SeasonalIceFloeWater` now takes ownership of managed floes at admission. A
+single volume/list pass retires pre-existing entries during bulk activation;
+individual later admissions inspect existing volumes once. Retirement removes
+only the marked Floating entry and balances its native water counter. Sparse
+`WaterVolume` enter/exit hooks prevent a managed floe from being re-added,
+including in dynamic mode. Candidate overlapping volumes survive collider
+deactivation; release tests actual collider penetration, restores each live
+native list entry/counter/level once, and late triggers cannot double count it.
+Volume destruction drops candidate references. The existing custom surface
+sets Floating's live water level; unrelated interactables use unmodified native
+`UpdateFloaters`. This water isolation is independent of the render toggle.
+
+Floe policy now clears its zone-controller cache on feature deactivation.
+Snow's finite retirement also restores transforms, removes owned copied caps,
+and clears seasonal disabled/ignored/instance bindings while retaining donor
+and rule definitions for reactivation. Configured permanent native-cap bans
+remain event-driven and do not retain a seasonal binding. Status includes these
+auxiliary counts. The wet/cap IL bridge uses Unity object validity and equality
+operators for destroyed managed wrappers. Kinematic hull reads accept the cached
+mesh/transform when the child collider is inactive; dynamic force checks still
+require the active collider. Creation-triggered one-pass floe cleanup uses one
+scheduled Update after the native `CreateObjectsSorted` traversal, avoiding
+destruction of later entries still in its temporary list. The component then
+disables itself; season/config cleanup remains synchronous.
+
+These are static source findings, not in-game acceptance. The maintainer must
+check overlapping water volumes, late exits, disable/re-enable, permanent native
+snow, remote ownership, and the paused/transition behavior in Valheim.
+
 Implementation base: `b5ce33e` on `perf/snow-performance`. Native source inspected at
 `shudnal/assemblies_combined` `5a2365409cff644d6adaccd2b308178cc4179b19`;
 the relevant native files have no diff from the brief's `d1374bfd` reference.

@@ -192,7 +192,7 @@ namespace Seasons
 
         private static bool TryCopySnowMesh(WearNTear instance)
         {
-            if (!instance || instance.m_snow || CopySources.Count == 0 ||
+            if (!SeasonalSnow.WinterReady || !instance || instance.m_snow || CopySources.Count == 0 ||
                 !copySourceScene || copySourceScene != ZNetScene.instance ||
                 !instance.gameObject.scene.IsValid())
                 return false;
@@ -223,7 +223,7 @@ namespace Seasons
 
         private static bool UpdateCopiedSnowMesh(WearNTear instance)
         {
-            if (!instance || !instance.gameObject.scene.IsValid() ||
+            if (!SeasonalSnow.WinterReady || !instance || !instance.gameObject.scene.IsValid() ||
                 !copySourceScene || copySourceScene != ZNetScene.instance)
                 return false;
 
@@ -299,6 +299,8 @@ namespace Seasons
             new Dictionary<string, TransformOverride>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<WearNTear, InstanceState> Instances =
             new Dictionary<WearNTear, InstanceState>();
+        internal static string BindingStatus =>
+            $"snowAux={Instances.Count}/{CopiedInstances.Count}/{DisabledInstances.Count}/{IgnoredInstances.Count}";
 
         public static void RebuildConfiguration()
         {
@@ -372,7 +374,10 @@ namespace Seasons
             if (!IsSnowDisabled(instance))
                 return false;
 
-            DisabledInstances.Add(instance);
+            if (SeasonalSnow.WinterReady)
+                DisabledInstances.Add(instance);
+            else
+                DisabledInstances.Remove(instance);
             instance.m_snowBuildup = 0f;
             instance.m_addPreSnow = false;
             instance.m_heavySnow = false;
@@ -402,6 +407,21 @@ namespace Seasons
             // Never mutate shared prefab assets: each instance owns its original transforms.
             if (!instance || !instance.gameObject.scene.IsValid())
                 return;
+
+            if (!SeasonalSnow.WinterReady)
+            {
+                RestoreTransforms(instance);
+                IgnoredInstances.Remove(instance);
+                DisabledInstances.Remove(instance);
+                if (CopiedInstances.ContainsKey(instance))
+                {
+                    RemoveCopiedSnowMesh(instance);
+                    RefreshRendererCaches(instance);
+                }
+                // A permanent native-cap ban does not need a seasonal binding.
+                TryApplyDisabledSnow(instance);
+                return;
+            }
 
             if (TryApplyDisabledSnow(instance))
             {
@@ -548,9 +568,8 @@ namespace Seasons
             }
         }
 
-        public static void Reset()
+        internal static void RetireSeasonalBindings()
         {
-            SeasonalSnowController.Instance.ResetVisuals();
             foreach (InstanceState state in Instances.Values)
                 state.Restore();
             Instances.Clear();
@@ -561,6 +580,12 @@ namespace Seasons
                 RemoveCopiedSnowMesh(instance);
                 RefreshRendererCaches(instance);
             }
+        }
+
+        public static void Reset()
+        {
+            SeasonalSnowController.Instance.ResetVisuals();
+            RetireSeasonalBindings();
             CopySources.Clear();
             SnowTemplates.Clear();
             copySourceScene = null;

@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 namespace Seasons
 {
@@ -11,6 +12,7 @@ namespace Seasons
         public ZNetView m_view;
         private bool m_started;
         internal bool Started => m_started;
+        internal readonly HashSet<WaterVolume> ManagedWaterVolumes = new HashSet<WaterVolume>();
 
         public void Start()
         {
@@ -33,7 +35,11 @@ namespace Seasons
         }
 
         private void OnDisable() => SeasonalIceFloeWaves.Untrack(this);
-        private void OnDestroy() => SeasonalIceFloeWaves.Untrack(this);
+        private void OnDestroy()
+        {
+            SeasonalIceFloeWaves.Untrack(this);
+            SeasonalIceFloeWater.ForgetPending(m_floating);
+        }
 
         public bool Interact(Humanoid character, bool hold, bool alt)
         {

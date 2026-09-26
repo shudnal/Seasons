@@ -147,8 +147,8 @@ namespace Seasons
             }
             RecoverInvalidHeight();
             Collider collider = m_floating.m_collider;
-            if (!collider || !collider.enabled || !collider.gameObject.activeInHierarchy ||
-                collider.attachedRigidbody != Body || !ReadHullGeometry(collider, out HullGeometry hull))
+            if (!collider || (collider.enabled && collider.gameObject.activeInHierarchy &&
+                collider.attachedRigidbody != Body) || !ReadHullGeometry(collider, out HullGeometry hull))
             {
                 FailKinematicMotion(WaveStatus.NoHullGeometry);
                 return;
