@@ -10,7 +10,11 @@ only the marked Floating entry and balances its native water counter. Sparse
 including in dynamic mode. Candidate overlapping volumes survive collider
 deactivation; release tests actual collider penetration, restores each live
 native list entry/counter/level once, and late triggers cannot double count it.
-Volume destruction drops candidate references. The existing custom surface
+Volume destruction drops candidate references. Release during a disabled water
+volume records one pending native restoration for its `OnEnable` boundary;
+destroyed floes and volumes remove that pending reference. A new admission
+reclaims the pending candidate, and only world teardown discards remaining
+pending entries. The existing custom surface
 sets Floating's live water level; unrelated interactables use unmodified native
 `UpdateFloaters`. This water isolation is independent of the render toggle.
 
@@ -31,7 +35,82 @@ These are static source findings, not in-game acceptance. The maintainer must
 check overlapping water volumes, late exits, disable/re-enable, permanent native
 snow, remote ownership, and the paused/transition behavior in Valheim.
 
-Implementation base: `b5ce33e` on `perf/snow-performance`. Native source inspected at
+## Review follow-up: 32 metre instanced floe visuals
+
+The synchronized `Seasonal ice floes.json` now has one opt-in field:
+`rendering.enableInstancedRendering` (default `false`). It follows the existing
+`seasonalIceFloesJSON.ValueChanged` route. Toggling it retires visual slots and
+does not alter placement, authority, forecasts, forces, root scale or ZDO
+publication. Dedicated peers never create a render driver or materials.
+
+`SeasonalIceFloeBatching` adapts KG-BatchRenderer 1.4.0's key, persistent
+bucket, last-slot swap removal and grouped draw loop. Provenance and the selected
+reference code are in `reference/kg-batchrenderer-core.md`. The definition is
+prepared from the known `ice1/default` MeshFilter, MeshRenderer and MeshCollider
+once, including its actual submeshes, shared materials, renderer settings and
+`root.worldToLocalMatrix * default.localToWorldMatrix`. Thus `default`'s local
+scale of four and each root's full, possibly nonuniform scale appear exactly
+once in `root.localToWorldMatrix * visualLocalMatrix`. One managed instancing
+material copy per distinct source material is shared across slots and disposed
+when empty; source assets are never destroyed. Custom per-renderer property
+blocks or unsupported probe overrides keep that instance on native rendering.
+The definition refreshes on the ordinary JSON and season/day lifecycle events,
+not by a material-array query in every frame.
+
+| Motion transition | Ordering and retained state |
+| --- | --- |
+| Dynamic native to managed ownerless/FarVisual | Validate template and graphics support, cache active hull shape and COM/inertia, create a cell slot with the current pose, freeze the pre-hide physical values, then hide only `default`. Water isolation already belongs to the floe session. |
+| Kinematic or FarVisual movement | Existing simulator/replica/bob writes the body pose; `SeasonalIceFloeDriver.LateStep` then updates its matrix slot. FarVisual tilt does not reassign cells for an ordinary pivot shift. |
+| Kinematic to FarVisual and back | The slot stays assigned while the mode changes if renewed authority remains ownerless kinematic; a native dynamic destination retires it in the same state refresh. |
+| Batch to native dynamics | Swap-remove the slot and repair the moved handle; reactivate the owned child, restore automatic or manual COM/inertia mode, then restore native body collisions/velocities. Native force work sees an active collider. |
+| JSON toggle off, unload, feature exit or world reset | Slots are removed synchronously, surviving owned child state is restored, empty buckets/material copies are released and the render driver is disabled. Worker/session invalidation remains in the floe lifecycle. |
+
+World cells use `FloorToInt(anchor.x / 32)` and `FloorToInt(anchor.z / 32)`,
+including negative coordinates. The anchor comes from the cached geometric hull
+center; ordinary kinematic rocking does not move it. A real XZ relocation
+reassigns the cell. Matrix lists persist, are updated in place, and are split
+into at most 500 instances per submission. `Graphics.RenderMeshInstanced` derives
+aggregate mesh bounds; no square cell bounds or camera-selection/culling policy
+is supplied. The one render driver draws in late execution order for all cameras,
+including paused frames, and stops when the last slot leaves. A failed template
+admission stays on native visuals; a graphics exception restores all slots once
+and disables instancing until the next configuration/session boundary.
+
+The on-demand status now reports native and batched floe counts, water-owned
+memberships, cells, matrices, submissions, rejected admissions, render-driver
+state, and snow auxiliary registries. These are maintained counts; status does
+not discover objects. Dormant native snow IL bridges still execute a static
+field branch, and sparse water trigger patches still run on trigger boundaries.
+There is no new `WaterVolume.UpdateFloaters` per-interactable helper or
+Patch/Unpatch cycle.
+
+Static inspection checked the Unity 6 `Graphics.RenderMeshInstanced` list/ref
+signature, `RenderParams` fields, `Renderer.GetSharedMaterials`, Rigidbody
+automatic COM/inertia APIs, and `Physics.ComputePenetration` in the current
+assembly set. Syntax, project entries, JSON and diff consistency were inspected.
+No mod compilation, test harness, game run, FPS/profiler or network measurement
+was performed. The maintainer should check in this order:
+
+1. Winter Ocean with identical loaded floes, batching off then on: compare
+   uninstrumented FPS, render CPU/GPU and submissions, with waterline, poses,
+   scales and motion unchanged.
+2. Ownerless simulator, replica/waiting pose and FarVisual: verify each current
+   smoothed pose, pause drawing, freefly rotation, negative/crossed cell edges
+   and large tilted anisotropic floes without clipped bounds.
+3. Approach/depart by player and ship and separate overlapping floes: contacts
+   and climbing return with dynamic `default`, with no gap, double draw or new
+   impulse; check native owner priority and fallback leases.
+4. With batching both off and on, inspect water-volume membership/counters
+   through disabled `default`/collider, overlapping volumes, late exits and
+   reactivation. No duplicate native water sampling should return.
+5. Toggle JSON, disable floes, change winter day/frozen-water policy, destroy a
+   floe, unload and change world: verify immediate slot retirement, one-pass
+   marked-ZDO cleanup, no ghost draw or retained feature-only registry.
+6. Check permanent native snow and unmarked Deep North ice, then a second
+   client and dedicated server for remote poses, ownership, settings sync and
+   headless resource absence.
+
+Implementation base: `7d71142` on `perf/snow-performance`. Native source inspected at
 `shudnal/assemblies_combined` `5a2365409cff644d6adaccd2b308178cc4179b19`;
 the relevant native files have no diff from the brief's `d1374bfd` reference.
 This document describes the implementation, its remaining native bridge cost,
@@ -81,8 +160,8 @@ the game is paused; an active winter simulation still respects pause.
 | Shared native route before | Responsibility | Route now and activation | Deactivation / residual cost |
 | --- | --- | --- | --- |
 | `ZSyncTransform.ClientSync` and `OwnerSync` Harmony hooks on all transforms | Floe state refresh, suppression, acquisition, ownerless pose and publication | `SeasonalIceFloeDriver` calls native sync for its marked participant list in fixed/late phases | Driver disabled and native list membership restored on release. No sync hook or lookup on unrelated transforms. Native direct `SyncNow` and character-parent sync remain native; no known floe call site uses those paths. |
-| `Floating.CustomFixedUpdate`, `OnEnable`, `OnDisable`, `TerrainCheck`, `SetLiquidLevel` hooks on all floaters | Forces, registration, recovery suppression, water observation | `IceFloe` owns registration; shared driver calls force solver and scheduled native terrain recovery. Native water trigger registration/level updates remain intact. | No floe helper on ordinary items. `TerrainCheck` invoke is restored on release. Water observation fields unused by the fixed Ocean sampler were removed. |
-| `WaterVolume.UpdateFloaters` transpiler calling `FloeWaterObservation` for every interactable | Avoid duplicate floe wave sampling | Native `GetWaterSurface` is restored for all interactables; floe forces continue to use the accepted fixed Ocean sampler | No Seasons call or type/registry lookup for ordinary water interactables. This gives marked floes their native liquid-level calculation again; compare water cost in game. |
+| `Floating.CustomFixedUpdate`, `OnEnable`, `OnDisable`, `TerrainCheck`, `SetLiquidLevel` hooks on all floaters | Forces, registration, recovery suppression, water observation | `IceFloe` owns registration; shared driver calls force solver and scheduled native terrain recovery. Scoped water admission retires its native water membership. | No floe helper on ordinary items. `TerrainCheck` invoke and eligible native water membership are restored on release. Water observation fields unused by the fixed Ocean sampler were removed. |
+| `WaterVolume.UpdateFloaters` transpiler calling `FloeWaterObservation` for every interactable | Avoid duplicate floe wave sampling | The native loop stays unchanged; managed floes are explicitly absent from its `m_inWater` list. Sparse `OnTriggerEnter`/`OnTriggerExit` boundaries maintain candidates and counters. | No Seasons call or type/registry lookup inside `UpdateFloaters`. Unmanaged objects retain native water sampling. A released surviving floe rejoins an overlapping volume once. |
 | `Hud.UpdateCrosshair` floe postfix | Diagnostics on child hover targets | `IceFloe.GetHoverText` retains direct component hover diagnostics | No global hover lookup; child objects with a different Hoverable no longer append floe diagnostics. |
 | `ZoneSystem.Update` floe postfix | Policy checks, loaded-zone walk, placement, cleanup | Config/season/zone notifications reconcile policy; enabled placement component services bounded work | Disabled with no cursor/queue. One-time cleanup is immediate. `SeasonalWorldMaintenance` retains its separate terrain Update route. |
 | `ZNetScene.Update` snow postfix | Simulation and visual queue | Enabled `SeasonalSnowDriver` on the scene | Disabled after retirement/visual release; no dormant scene postfix. |
@@ -99,7 +178,9 @@ The remaining branch instructions are real native cost, so this is not a claim o
 literal zero added instructions. The static bridge branches avoid callback
 dispatch to Seasons and lookup on ordinary dormant frames. Floe direct
 `Floating.SetLiquidLevel` and native liquid registration still run for every
-interactable as part of Valheim, independent of this mod.
+interactable as part of Valheim, independent of this mod. Seasonal floes managed
+by the scoped water owner are absent from `WaterVolume.m_inWater`; sparse trigger
+patches still add a boundary branch when water events occur.
 
 `SeasonalPlayerCapeSnow` follows live environment snow on the player's cape,
 including native snowy biomes; `SeasonalEnemySnow` applies snow to creature

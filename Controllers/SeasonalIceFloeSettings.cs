@@ -183,6 +183,7 @@ namespace Seasons
             IceFloe.DistantBobAmplitude = current.client.distantBobAmplitude;
             IceFloe.DistantBobPeriod = current.client.distantBobPeriod;
             IceFloe.EnableFallbackSimulation = current.client.enableFallbackSimulation;
+            SeasonalIceFloeBatching.Configure(current.rendering.enableInstancedRendering);
             IceFloe.InvalidateSharedMotionSettings();
         }
     }
@@ -199,6 +200,13 @@ namespace Seasons
         public MotionSettings motion = new MotionSettings();
         public AuthoritySettings authority = new AuthoritySettings();
         public ClientSettings client = new ClientSettings();
+        public RenderingSettings rendering = new RenderingSettings();
+
+        [Serializable]
+        public sealed class RenderingSettings
+        {
+            public bool enableInstancedRendering;
+        }
 
         [Serializable]
         public sealed class NumericRange
@@ -300,6 +308,7 @@ namespace Seasons
             motion ??= new MotionSettings();
             authority ??= new AuthoritySettings();
             client ??= new ClientSettings();
+            rendering ??= new RenderingSettings();
             surface.probeDistance = Number(surface.probeDistance, 2f, 0.25f, 20f);
             surface.secondarySwellWeight = Number(surface.secondarySwellWeight, 1f, 0f, 1f);
             buoyancy.massMultiplier = Number(buoyancy.massMultiplier, 4f, 0.25f, 20f);

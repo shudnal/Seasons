@@ -235,6 +235,8 @@ namespace Seasons
         internal bool PrepareInactiveHull() => m_floating && m_floating.m_collider &&
             ReadHullGeometry(m_floating.m_collider, out _);
 
+        internal Vector3 CurrentHullAnchor => Body.position + Body.rotation * hullCenterOffset;
+
         private void RefreshFloeState()
         {
             ZDO zdo = m_view.GetZDO();
@@ -272,9 +274,12 @@ namespace Seasons
                 AuthorityReason = "Local bob outside visible waves; no pose publication";
                 return;
             }
-            if (Distant)
+            bool returningFromDistant = Distant;
+            if (returningFromDistant)
             {
-                RestoreDistant();
+                // Resolve the renewed authority in this same call before
+                // deciding whether the FarVisual slot needs native geometry.
+                RestoreDistant(preserveVisualBatch: true);
                 RestoreGravity();
             }
             SurfaceMode = InActivePhysicsArea || !EnableWavePrediction ? FloeSurfaceMode.FullRate : FloeSurfaceMode.Predicted;
@@ -292,6 +297,8 @@ namespace Seasons
                 PredictionSeconds = Mathf.Lerp(minimum, maximum, fraction);
             }
             RefreshAuthority(zdo, force: true);
+            if (returningFromDistant && SeasonalIceFloeBatching.BatchedCount != 0)
+                SeasonalIceFloeBatching.Reconcile(this);
         }
 
         private void RefreshAuthority(ZDO zdo, bool force = false)

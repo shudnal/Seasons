@@ -92,10 +92,12 @@ namespace Seasons
             InvalidatePrediction("Ownerless kinematic motion started");
         }
 
-        private void RestoreOwnerlessBody()
+        private void RestoreOwnerlessBody(bool keepVisualBatch = false)
         {
             if (!OwnerlessKinematic)
                 return;
+            if (!keepVisualBatch)
+                SeasonalIceFloeBatching.ReturnNative(this);
             ReleaseBackgroundForecast();
             OwnerlessKinematic = false;
             scaleSourceValid = false;

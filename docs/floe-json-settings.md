@@ -84,6 +84,11 @@ and base health apply to newly generated floes, not existing objects. To
 regenerate a population, disable and then re-enable floes during eligible winter
 days. Keep the existing full default example for the remaining fields.
 
+The lifecycle follow-up adds `rendering.enableInstancedRendering` to the same
+advanced JSON object, defaulting to `false`. It affects only local visuals for
+managed kinematic/FarVisual floes. It uses the existing synchronized ValueChanged
+handler and neither respawns floes nor changes the three main cfg controls.
+
 Two placement blockers were corrected during this review:
 
 1. After terrain, biome, altitude and ocean-depth eligibility had already passed,

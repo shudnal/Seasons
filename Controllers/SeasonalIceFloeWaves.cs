@@ -22,6 +22,7 @@ namespace Seasons
         private static readonly List<IceFloe> phase = new List<IceFloe>();
         private static SeasonalIceFloeDriver driver;
         private static int lifetimeEpoch;
+        internal static int ParticipantCount => participants.Count;
         private static WaterVolume oceanPrefab;
         private static int snapshotCycle = -1, snapshotFrame = -1;
         internal static Vector3 WindDirection { get; private set; }
@@ -98,6 +99,7 @@ namespace Seasons
             participants.Remove(controller);
             try
             {
+                SeasonalIceFloeBatching.ReturnNative(controller);
                 controller.ReleaseWaves();
             }
             finally
@@ -119,6 +121,7 @@ namespace Seasons
 
         internal static void Reset()
         {
+            SeasonalIceFloeBatching.Reset();
             ResetBackgroundWorld();
             while (participants.Count != 0)
             {
@@ -361,7 +364,11 @@ namespace Seasons
                             controller.m_floating.TerrainCheck();
                     }
                     if (controller.Distant)
+                    {
+                        if (SeasonalIceFloeBatching.Configured || SeasonalIceFloeBatching.BatchedCount != 0)
+                            SeasonalIceFloeBatching.Reconcile(controller);
                         continue;
+                    }
                     controller.UpdateOwnerlessMotion();
                     if (!membership.Contains(controller) || !controller || !controller.WaveValid)
                         continue;
@@ -373,6 +380,9 @@ namespace Seasons
                         controller.RecoveryPending = false;
                     }
                     controller.PublishFallbackPose();
+                    if (membership.Contains(controller) && controller && controller.WaveValid &&
+                        (SeasonalIceFloeBatching.Configured || SeasonalIceFloeBatching.BatchedCount != 0))
+                        SeasonalIceFloeBatching.Reconcile(controller);
                 }
             }
             finally { phase.Clear(); }
@@ -381,7 +391,9 @@ namespace Seasons
         internal static string GetLifecycleStatus() =>
             $"active={(driver && driver.enabled)} participants={participants.Count} phase={phase.Count} " +
             $"waterManaged={SeasonalIceFloeWater.ManagedCount} waterVolumes={SeasonalIceFloeWater.VolumeCount} " +
-            $"workerQueued={FloeForecastWorker.Queued} workerRunning={FloeForecastWorker.Running} epoch={lifetimeEpoch}/{FloeForecastWorker.Epoch}";
+            $"waterPending={SeasonalIceFloeWater.PendingCount} " +
+            $"{SeasonalIceFloeBatching.Status} workerQueued={FloeForecastWorker.Queued} " +
+            $"workerRunning={FloeForecastWorker.Running} epoch={lifetimeEpoch}/{FloeForecastWorker.Epoch}";
         [HarmonyPatch(typeof(Water), nameof(Water.ApplySettings))]
         private static class Water_ApplySettings_Distance
         {
@@ -666,10 +678,12 @@ namespace Seasons
             HoldingGravity = false;
         }
 
-        private void RestoreDistant()
+        private void RestoreDistant(bool preserveVisualBatch = false)
         {
             if (!Distant)
                 return;
+            if (!preserveVisualBatch)
+                SeasonalIceFloeBatching.ReturnNative(this);
             bool sameOwner = m_view && m_view.IsValid() && m_view.IsOwner() &&
                 m_view.GetZDO().GetOwner() == distantOwner && m_view.GetZDO().OwnerRevision == distantOwnerRevision;
             ZDO zdo = m_view && m_view.IsValid() ? m_view.GetZDO() : null;
@@ -764,7 +778,7 @@ namespace Seasons
         {
             if (Distant)
                 return;
-            RestoreOwnerlessBody();
+            RestoreOwnerlessBody(keepVisualBatch: true);
             Baseline = Body.position;
             distantRotation = Body.rotation;
             distantVelocity = Body.isKinematic ? Vector3.zero : Body.linearVelocity;

@@ -1810,6 +1810,8 @@ namespace Seasons
                 seasonState.StartSeasonChange();
             else if (dayChanged)
                 OnDayChange();
+            if (seasonChanged || dayChanged)
+                SeasonalIceFloeBatching.RefreshSourceMaterials();
         }
 
         private static void OnDayChange()

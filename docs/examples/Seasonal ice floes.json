@@ -53,5 +53,8 @@
     "distantBobAmplitude": 0.08,
     "distantBobPeriod": 6.0,
     "enableFallbackSimulation": true
+  },
+  "rendering": {
+    "enableInstancedRendering": false
   }
 }
