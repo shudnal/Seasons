@@ -1,0 +1,57 @@
+{
+  "amountPerZone": {
+    "min": 10.0,
+    "max": 15.0
+  },
+  "scale": {
+    "min": 1.25,
+    "max": 2.5
+  },
+  "surface": {
+    "probeDistance": 2.0,
+    "scaleProbeDistance": false,
+    "secondarySwellWeight": 1.0,
+    "useFullWaterHeight": true
+  },
+  "buoyancy": {
+    "applyBuoyancy": true,
+    "applyVerticalWaterDamping": true,
+    "applyHorizontalWaterDamping": true,
+    "massMultiplier": 4.0,
+    "hullThickness": 1.0,
+    "relativeDensity": 0.9,
+    "restingSubmergence": 0.7,
+    "heightOffset": 0.0,
+    "verticalDampingRatio": 1.0,
+    "maxWaterDragAcceleration": 6.0,
+    "horizontalDamping": 0.15
+  },
+  "tilt": {
+    "applySurfaceAlignment": true,
+    "applyTiltDamping": true,
+    "applyYawDamping": true,
+    "tiltFrequency": 0.65,
+    "tiltDampingRatio": 1.0,
+    "maxTiltAcceleration": 1.5,
+    "maxSurfaceTilt": 45.0,
+    "yawDamping": 0.15
+  },
+  "motion": {
+    "kinematicResponseSeconds": 0.15
+  },
+  "authority": {
+    "kinematicPublishIntervalSeconds": 0.2
+  },
+  "client": {
+    "enableWavePrediction": true,
+    "minimumPredictionSeconds": 0.1,
+    "maximumPredictionSeconds": 2.0,
+    "predictionKnotSeconds": 0.25,
+    "predictionPositionTolerance": 0.5,
+    "enableBackgroundWaveForecast": true,
+    "backgroundForecastSeconds": 10.0,
+    "distantBobAmplitude": 0.08,
+    "distantBobPeriod": 6.0,
+    "enableFallbackSimulation": true
+  }
+}

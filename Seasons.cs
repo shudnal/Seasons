@@ -114,13 +114,11 @@ namespace Seasons
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
         public static ConfigEntry<bool> enableIceFloes;
         public static ConfigEntry<Vector2> iceFloesInWinterDays;
-        public static ConfigEntry<Vector2> amountOfIceFloesInWinterDays;
         public static ConfigEntry<bool> enableNightMusicOnFrozenOcean;
         public static ConfigEntry<float> frozenOceanSlipperiness;
         public static ConfigEntry<bool> enableVanillaSlippingOnShallowFrozenWater;
         public static ConfigEntry<bool> placeShipAboveFrozenOcean;
         public static ConfigEntry<bool> placeFloatingContainersAboveFrozenOcean;
-        public static ConfigEntry<Vector2> iceFloesScale;
         public static ConfigEntry<float> iceFloesHealth;
 
         public static ConfigEntry<string> summerHeatCoolingFoods;
@@ -248,7 +246,8 @@ namespace Seasons
         private const int syncPriorityCustomClutterSettings = Priority.VeryHigh - 8;
         private const int syncPriorityCustomBiomeSettings = Priority.VeryHigh - 9;
         private const int syncPrioritySeasonalSnow = Priority.VeryHigh - 10;
-        private const int syncPrioritySeasonsSettings = Priority.VeryHigh - 11;
+        private const int syncPrioritySeasonalIceFloes = Priority.VeryHigh - 11;
+        private const int syncPrioritySeasonsSettings = Priority.VeryHigh - 12;
 
         private const int syncPriorityCustomMaterialSettings = Priority.Low + 3;
         private const int syncPriorityCustomColorSettings = Priority.Low + 2;
@@ -269,6 +268,7 @@ namespace Seasons
         public static readonly CustomSyncedValue<string> customBiomeSettingsJSON = new CustomSyncedValue<string>(configSync, "Custom biome settings JSON", "", syncPriorityCustomBiomeSettings);
 
         public static readonly CustomSyncedValue<string> seasonalSnowJSON = new CustomSyncedValue<string>(configSync, "Seasonal snow JSON", "", syncPrioritySeasonalSnow);
+        public static readonly CustomSyncedValue<string> seasonalIceFloesJSON = new CustomSyncedValue<string>(configSync, "Seasonal ice floes JSON", "", syncPrioritySeasonalIceFloes);
 
         public static readonly CustomSyncedValue<Dictionary<int, string>> seasonsSettingsJSON = new CustomSyncedValue<Dictionary<int, string>>(configSync, "Seasons settings JSON", new Dictionary<int, string>(), syncPrioritySeasonsSettings, DictionaryContentComparer<int, string>.Instance);
 
@@ -371,6 +371,7 @@ namespace Seasons
 
             currentSeasonDay.ValueChanged += new Action(SeasonState.OnSeasonDayChange);
             seasonalSnowJSON.ValueChanged += new Action(SeasonalSnowSettings.ApplySynchronizedSettings);
+            seasonalIceFloesJSON.ValueChanged += new Action(SeasonalIceFloeSettings.ApplySynchronizedSettings);
 
             customBiomeSettingsJSON.ValueChanged += new Action(SeasonState.UpdateBiomeSettings);
             customClutterSettingsJSON.ValueChanged += new Action(SeasonState.UpdateClutterSettings);
@@ -405,11 +406,9 @@ namespace Seasons
             }
         }
 
-        private void Update() => SeasonalIceFloeSettings.Update();
-
         private void OnDestroy()
         {
-            SeasonalIceFloeSettings.Dispose();
+            FloeForecastWorker.Shutdown();
             SeasonalWorldMaintenance.Reset();
             SeasonalIceFloeWaves.Reset();
             SeasonalIceFloes.Reset();
@@ -627,7 +626,6 @@ namespace Seasons
             enableIceFloes.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             waterFreezesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             iceFloesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
-            amountOfIceFloesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             placeShipAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateShipsPositions();
             placeFloatingContainersAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateFloatingPositions();
 

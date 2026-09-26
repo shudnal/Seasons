@@ -25,6 +25,7 @@ namespace Seasons
         public const string customClutterSettingsFileName = "Custom clutter settings.json";
         public const string customBiomesSettingsFileName = "Custom biome settings.json";
         public const string seasonalSnowFileName = "Seasonal snow.json";
+        public const string seasonalIceFloesFileName = "Seasonal ice floes.json";
         public const int nightLentghDefault = 30;
         public const string itemDropNameTorch = "$item_torch";
         public const string itemNameTorch = "Torch";
@@ -196,7 +197,8 @@ namespace Seasons
                 customGrassSettingsFileName,
                 customClutterSettingsFileName,
                 customBiomesSettingsFileName,
-                seasonalSnowFileName
+                seasonalSnowFileName,
+                seasonalIceFloesFileName
             })
             {
                 ReadConfigFile(filename, Path.Combine(configDirectory, filename), initial: true);
@@ -236,10 +238,13 @@ namespace Seasons
         private static void ReadConfigs(object sender, FileSystemEventArgs eargs)
         {
             ReadConfigFile(eargs.Name, eargs.FullPath);
-            if (eargs is RenamedEventArgs renamed)
+            if (eargs is RenamedEventArgs renamed &&
+                !renamed.OldName.Equals(renamed.Name, StringComparison.OrdinalIgnoreCase))
             {
                 if (GetSyncedValueToAssign(renamed.OldName, out CustomSyncedValue<string> syncedValue, out string logMessage))
                 {
+                    if (renamed.OldName.Equals(seasonalIceFloesFileName, StringComparison.OrdinalIgnoreCase))
+                        SeasonalIceFloeSettings.ApplyLocalSettings("");
                     syncedValue.AssignValueSafeIfChanged("");
                     LogInfo(logMessage + " defaults");
                 }
@@ -250,7 +255,7 @@ namespace Seasons
             }
         }
 
-        private static void ReadConfigFile(string filename, string fullname, bool initial = false)
+        internal static void ReadConfigFile(string filename, string fullname, bool initial = false)
         {
             if (!GetSyncedValueToAssign(filename, out CustomSyncedValue<string> syncedValue, out string logMessage))
             {
@@ -269,9 +274,17 @@ namespace Seasons
                 if (!initial)
                     LogWarning($"Error reading file ({fullname})! Error: {e.Message}");
 
+                // A temporary editor lock must not reset working floe settings. A removed
+                // override still follows the common empty-payload/defaults path.
+                if (filename.Equals(seasonalIceFloesFileName, StringComparison.OrdinalIgnoreCase) && File.Exists(fullname))
+                    return;
                 content = "";
                 logMessage += " defaults";
             }
+
+            if (filename.Equals(seasonalIceFloesFileName, StringComparison.OrdinalIgnoreCase) &&
+                !SeasonalIceFloeSettings.ApplyLocalSettings(content))
+                return;
 
             if (initial)
                 syncedValue.AssignValueSafeAndNotify(content);
@@ -346,6 +359,11 @@ namespace Seasons
             {
                 customSyncedValue = seasonalSnowJSON;
                 logMessage = "Seasonal snow settings file loaded";
+            }
+            else if (filename.Equals(seasonalIceFloesFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                customSyncedValue = seasonalIceFloesJSON;
+                logMessage = "Seasonal ice-floe settings file loaded";
             }
             else
             {
@@ -462,6 +480,7 @@ namespace Seasons
         {
             SeasonalSnowMeshSettings.InitializeCopySources();
             seasonState = new SeasonState(initialize: true);
+            SeasonalIceFloeSettings.SaveDefaultSettings(Path.Combine(configDirectory, SeasonSettings.defaultsSubdirectory));
             SeasonalSnow.InitializePrefabs();
             Compatibility.EWDCompat.MarkWorldInitialized();
             SeasonSettings.SetupConfigWatcher(enabled: true);

@@ -674,8 +674,8 @@ namespace Seasons
             {
                 UnityEngine.Random.InitState(WorldGenerator.instance.GetSeed() + current.Zone.x * 4271 +
                     current.Zone.y * 9187 + s_iceFloePrefab + (SeasonState.IsActive ? seasonState.GetCurrentWorldDay() : 0));
-                current.Remaining = UnityEngine.Random.Range((int)amountOfIceFloesInWinterDays.Value.x,
-                    (int)amountOfIceFloesInWinterDays.Value.y + 1);
+                current.Remaining = UnityEngine.Random.Range((int)SeasonalIceFloeSettings.AmountPerZone.x,
+                    (int)SeasonalIceFloeSettings.AmountPerZone.y + 1);
                 current.RandomState = UnityEngine.Random.state;
                 current.RandomReady = true;
             }
@@ -734,9 +734,10 @@ namespace Seasons
                 return CandidateResult.Deferred;
 
             float depthFactor = GetOceanDepthFactor(oceanDepth);
-            float scaleX = UnityEngine.Random.Range(iceFloesScale.Value.x, iceFloesScale.Value.y) * depthFactor;
-            float scaleY = PowSquash(UnityEngine.Random.Range(iceFloesScale.Value.x, iceFloesScale.Value.y), 0.6f);
-            float scaleZ = UnityEngine.Random.Range(iceFloesScale.Value.x, iceFloesScale.Value.y) * depthFactor;
+            Vector2 scaleRange = SeasonalIceFloeSettings.Scale;
+            float scaleX = UnityEngine.Random.Range(scaleRange.x, scaleRange.y) * depthFactor;
+            float scaleY = PowSquash(UnityEngine.Random.Range(scaleRange.x, scaleRange.y), 0.6f);
+            float scaleZ = UnityEngine.Random.Range(scaleRange.x, scaleRange.y) * depthFactor;
             float halfX = s_floeSize.x * scaleX / 2;
             float halfZ = s_floeSize.y * scaleZ / 2;
             float radius = Mathf.Sqrt(halfX * halfX + halfZ * halfZ) + 0.2f;
