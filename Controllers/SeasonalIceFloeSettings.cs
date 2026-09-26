@@ -51,7 +51,7 @@ namespace Seasons
                 BindRuntime("Ice floes - Surface", "ProbeDistance", 2f, "Wind-aligned sampling half-distance in world meters.", v => IceFloeClimb.ProbeDistance = v, 0.25f, 20f);
                 BindRuntime("Ice floes - Surface", "ScaleProbeDistance", false, "Scale sampling distances with the floe's horizontal scale.", v => IceFloeClimb.ScaleProbeDistance = v);
                 BindRuntime("Ice floes - Surface", "SecondarySwellWeight", 1f, "Weight of the four secondary large-wave terms used for tilt. Short ripples are excluded from tilt.", v => IceFloeClimb.SecondarySwellWeight = v, 0f, 1f);
-                BindRuntime("Ice floes - Surface", "UseFullWaterHeight", true, "Use complete native wave height for immersion while retaining filtered large-wave tilt.", v => IceFloeClimb.UseFullWaterHeight = v);
+                BindRuntime("Ice floes - Surface", "UseFullWaterHeight", true, "Use full-spectrum Ocean wave height at normalized depth 1 and surface offset 0, with filtered large-wave tilt.", v => IceFloeClimb.UseFullWaterHeight = v);
                 BindRuntime("Ice floes - Buoyancy", "ApplyBuoyancy", true, "Enable dynamic buoyancy. This switch does not disable kinematic visual tracking.", v => IceFloeClimb.ApplyBuoyancy = v);
                 BindRuntime("Ice floes - Buoyancy", "ApplyVerticalWaterDamping", true, "Damp dynamic vertical motion relative to water.", v => IceFloeClimb.ApplyVerticalWaterDamping = v);
                 BindRuntime("Ice floes - Buoyancy", "ApplyHorizontalWaterDamping", true, "Damp dynamic horizontal motion.", v => IceFloeClimb.ApplyHorizontalWaterDamping = v);
@@ -78,9 +78,15 @@ namespace Seasons
 
                 // Quality and participation are peer-local. Physical coefficients above are
                 // server-controlled so a normal ownership transfer does not change the model.
+                BindRuntime("Ice floes - Background", "EnableBackgroundWaveForecast", true,
+                    "Build rolling forecasts for locally simulated ownerless kinematic floes on one background thread. Disable for the synchronous reference path. Native dynamic physics and foreign replicas are not sent to the worker.",
+                    v => IceFloeClimb.EnableBackgroundWaveForecast = v, local: true);
+                BindRuntime("Ice floes - Background", "BackgroundForecastSeconds", 10f,
+                    "Desired stable-wind reserve in server-world seconds. Filled gradually in one-second blocks; urgent coverage wins. Wind changes use short replacements instead of waiting for this entire reserve.",
+                    v => IceFloeClimb.BackgroundForecastSeconds = v, 2f, 10f, local: true);
                 BindRuntime("Ice floes - Prediction", "EnableWavePrediction", true, "Reuse distant surface forecasts instead of recalculating every update.", v => IceFloeClimb.EnableWavePrediction = v, local: true);
-                BindRuntime("Ice floes - Prediction", "MinimumPredictionSeconds", 0.1f, "Minimum distant forecast horizon in server-world seconds.", v => IceFloeClimb.MinimumPredictionSeconds = v, 0.05f, 2f, local: true);
-                BindRuntime("Ice floes - Prediction", "MaximumPredictionSeconds", 2f, "Maximum forecast horizon. The effective minimum is bounded by this value.", v => IceFloeClimb.MaximumPredictionSeconds = v, 0.1f, 2f, local: true);
+                BindRuntime("Ice floes - Prediction", "MinimumPredictionSeconds", 0.1f, "Minimum synchronous forecast horizon. Also controls distance-based background wind refreshes, with a 0.5-second refresh floor.", v => IceFloeClimb.MinimumPredictionSeconds = v, 0.05f, 2f, local: true);
+                BindRuntime("Ice floes - Prediction", "MaximumPredictionSeconds", 2f, "Maximum synchronous horizon and distance-based background wind refresh interval. Background reserve is configured separately.", v => IceFloeClimb.MaximumPredictionSeconds = v, 0.1f, 2f, local: true);
                 BindRuntime("Ice floes - Prediction", "PredictionKnotSeconds", 0.25f, "Maximum spacing between forecast knots in seconds.", v => IceFloeClimb.PredictionKnotSeconds = v, 0.1f, 0.25f, local: true);
                 BindRuntime("Ice floes - Prediction", "PredictionPositionTolerance", 0.5f, "Maximum unpredicted horizontal displacement before rebuilding a forecast, in meters.", v => IceFloeClimb.PredictionPositionTolerance = v, 0.1f, 2f, local: true);
                 BindRuntime("Ice floes - Distant visual", "DistantBobAmplitude", 0.08f, "Local bob amplitude beyond visible waves, in meters. Never published to ZDO.", v => IceFloeClimb.DistantBobAmplitude = v, 0f, 0.25f, local: true);
@@ -222,6 +228,7 @@ namespace Seasons
 
         internal static void Dispose()
         {
+            FloeForecastWorker.Shutdown();
             watcher?.Dispose();
             watcher = null;
             Interlocked.Exchange(ref reloadRequested, 0);

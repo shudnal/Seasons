@@ -74,6 +74,7 @@ namespace Seasons
 
         internal static void Reset()
         {
+            ResetBackgroundWorld();
             foreach (IceFloeClimb controller in floaters.Values)
                 if (controller)
                     controller.ReleaseWaves();
@@ -126,12 +127,12 @@ namespace Seasons
             context = default;
             if (!Snapshot())
                 return false;
-            WaterVolume water = controller.ContainsCenter(controller.Water) ? controller.Water : null;
-            context.Water = water;
-            context.WaterLevel = water ? water.transform.position.y : ZoneSystem.instance.m_waterLevel;
-            context.Offset = water ? water.m_surfaceOffset : oceanPrefab.m_surfaceOffset - (IsWaterSurfaceFrozen() ? _winterWaterSurfaceOffset : 0f);
-            context.UseWaves = water ? water.m_useGlobalWind : oceanPrefab.m_useGlobalWind && !IsWaterSurfaceFrozen();
-            context.HasWorldEdge = (water ? water.m_forceDepth : oceanPrefab.m_forceDepth) < 0f;
+            // Fixed Ocean approximation agreed for seasonal floes. Do not select a
+            // local volume, read surface offsets, or query Depth for this sampler.
+            context.WaterLevel = ZoneSystem.instance.m_waterLevel;
+            context.Offset = 0f;
+            context.UseWaves = !IsWaterSurfaceFrozen();
+            context.HasWorldEdge = true;
             return true;
         }
 
@@ -202,8 +203,8 @@ namespace Seasons
             return WaterLevelValid(surface);
         }
 
-        // Heave must follow the actual full surface, not the deliberately low-pass tilt
-        // plane. Native water depth/wind blending are retained when a volume is available.
+        // Full-spectrum Ocean heave, separate from the low-pass tilt plane. Depth is
+        // always 1 and surface offset is zero; the game's two wind states still blend.
         internal static bool TryWaterlineSurface(SurfaceContext context, Vector3 point, float timeOffset, out float surface)
         {
             surface = -10000f;
@@ -212,20 +213,13 @@ namespace Seasons
             float wave = 0f;
             if (context.UseWaves && !IsWaterSurfaceFrozen())
             {
-                WaterVolume water = context.Water ? context.Water : oceanPrefab;
-                if (!water)
+                if (!oceanPrefab)
                     return false;
-                float depth = context.Water ? water.Depth(point) : 1f;
-                if (!Finite(depth))
-                    return false;
-                if (depth != 0f)
-                {
-                    float big = 1f - (float)WorldGenerator.DeepNorthWaveFade(point.x, point.z);
-                    float time = (WaveTime + timeOffset) % 86400f;
-                    float first = FullWave(water, point, depth, WaterWind1, time, big);
-                    wave = WaterWindBlend == 0f ? first : Mathf.LerpUnclamped(first,
-                        FullWave(water, point, depth, WaterWind2, time, big), WaterWindBlend);
-                }
+                float big = 1f - (float)WorldGenerator.DeepNorthWaveFade(point.x, point.z);
+                float time = (WaveTime + timeOffset) % 86400f;
+                float first = FullWave(oceanPrefab, point, 1f, WaterWind1, time, big);
+                wave = WaterWindBlend == 0f ? first : Mathf.LerpUnclamped(first,
+                    FullWave(oceanPrefab, point, 1f, WaterWind2, time, big), WaterWindBlend);
             }
             surface = context.WaterLevel + context.Offset + wave;
             if (context.HasWorldEdge && Utils.LengthXZ(point) > 10500f)
@@ -686,6 +680,7 @@ namespace Seasons
 
         internal void RestoreWaves()
         {
+            ReleaseBackgroundForecast();
             diagnosticStepPending = false;
             RestoreDistant();
             RestoreGravity();
@@ -1291,6 +1286,8 @@ namespace Seasons
             DistantBobAmplitude = 0.08f;
             DistantBobPeriod = 6f;
             KinematicResponseSeconds = 0.15f;
+            EnableBackgroundWaveForecast = true;
+            BackgroundForecastSeconds = 10f;
             // Apply mass through the normal lifecycle on the next callback, not inside the inspector.
         }
 
@@ -1331,7 +1328,10 @@ namespace Seasons
                 b.Append("\nOwner=").Append(m_view.GetZDO().GetOwner()).Append(" local=").Append(m_view.IsOwner());
                 b.Append(" distant=").Append(Distant).Append(" gravityHold=").Append(HoldingGravity);
                 AppendAuthorityDiagnostics(b);
-                AppendPredictionDiagnostics(b);
+                if (UsingBackgroundForecast)
+                    AppendBackgroundDiagnostics(b);
+                else
+                    AppendPredictionDiagnostics(b);
                 AppendMotionDiagnostics(b);
                 b.Append("\nForce/torque calls=").Append(LastForceCalls).Append("/2 total=").Append(TotalForceCalls);
                 WaveDiagnostics d = Diagnostics;

@@ -96,6 +96,7 @@ namespace Seasons
         {
             if (!OwnerlessKinematic)
                 return;
+            ReleaseBackgroundForecast();
             OwnerlessKinematic = false;
             scaleSourceValid = false;
             scaleSource = null;
@@ -140,6 +141,7 @@ namespace Seasons
             UpdatePhysicsMass();
             if (!HasCurrentFallbackLease())
             {
+                ReleaseBackgroundForecast();
                 UpdateKinematicReplica(dt, now);
                 return;
             }
@@ -152,10 +154,22 @@ namespace Seasons
                 return;
             }
             SurfaceSettings settings = ReadKinematicSettings();
+            backgroundPending = false;
             if (!SeasonalIceFloeWaves.TrySurfaceContext(this, out SeasonalIceFloeWaves.SurfaceContext context) ||
-                !TryScheduledSurfaceFrame(context, settings, hull, out SurfaceFrame frame))
+                !TryKinematicSurfaceFrame(context, settings, hull, out SurfaceFrame frame))
             {
-                FailKinematicMotion(WaveStatus.NoSurface);
+                if (backgroundPending)
+                {
+                    // A queued forecast is not a lost lease or missing water. Keep this
+                    // pose without extrapolating; publish zero velocities and renew normally.
+                    KinematicVelocity = KinematicAngularVelocity = Vector3.zero;
+                    Body.useGravity = false;
+                    m_floating.SetSurfaceEffect(false);
+                    Status = WaveStatus.KinematicWaiting;
+                    RecordFallbackMotionStep();
+                }
+                else
+                    FailKinematicMotion(WaveStatus.NoSurface);
                 return;
             }
             RestoreGravity();
@@ -187,6 +201,8 @@ namespace Seasons
                 BeginDiagnostics(dt, frame, settings, context);
                 WaveDiagnostics d = Diagnostics;
                 d.Kinematic = true;
+                if (UsingBackgroundForecast && oceanInputsValid)
+                    d.WindIntensity = oceanCurve.Input.Wind.Tilt.Intensity;
                 d.Velocity = KinematicVelocity;
                 d.AngularVelocity = KinematicAngularVelocity;
                 d.SampleVelocity = KinematicVelocity + Vector3.Cross(KinematicAngularVelocity, hull.Center - beforeCom);
@@ -214,6 +230,7 @@ namespace Seasons
 
         private void FailKinematicMotion(WaveStatus status)
         {
+            ReleaseBackgroundForecast();
             Status = status;
             KinematicVelocity = KinematicAngularVelocity = Vector3.zero;
             m_floating.SetSurfaceEffect(false);
