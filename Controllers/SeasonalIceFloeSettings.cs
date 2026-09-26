@@ -14,7 +14,6 @@ namespace Seasons
     {
         private const string WorldSection = "Season - Winter ocean";
         private static IceFloeConfiguration current = new IceFloeConfiguration();
-        private static IceFloeConfiguration.ClientSettings local = new IceFloeConfiguration.ClientSettings();
         private static bool initialized;
         private static readonly JsonSerializerSettings serializerSettings = new JsonSerializerSettings
         {
@@ -121,25 +120,6 @@ namespace Seasons
             return settings;
         }
 
-        // Called by the existing JSON watcher on the main thread, before sync assignment.
-        // Only the local file controls the client section; a server payload cannot replace it.
-        internal static bool ApplyLocalSettings(string json)
-        {
-            try
-            {
-                IceFloeConfiguration settings = ReadSettings(json);
-                local = settings.client;
-                ApplyClientValues();
-                IceFloeClimb.InvalidateSharedMotionSettings();
-                return true;
-            }
-            catch (Exception exception)
-            {
-                LogWarning($"Error parsing local seasonal ice-floe settings; previous values retained: {exception.Message}");
-                return false;
-            }
-        }
-
         public static void ApplySynchronizedSettings()
         {
             IceFloeConfiguration settings;
@@ -159,14 +139,6 @@ namespace Seasons
                 ZoneSystemVariantController.UpdateWaterState();
             LogInfo(string.IsNullOrWhiteSpace(seasonalIceFloesJSON.Value)
                 ? "Seasonal ice-floe settings loaded defaults" : "Seasonal ice-floe settings updated");
-        }
-
-        /// <summary>Read the override through the shared JSON loading and synchronization path.</summary>
-        public static void Reload()
-        {
-            if (!string.IsNullOrEmpty(configDirectory))
-                SeasonSettings.ReadConfigFile(SeasonSettings.seasonalIceFloesFileName,
-                    Path.Combine(configDirectory, SeasonSettings.seasonalIceFloesFileName));
         }
 
         /// <summary>Reapply effective JSON values after temporary inspector edits. No file or pose writes.</summary>
@@ -199,22 +171,19 @@ namespace Seasons
             IceFloeClimb.YawDamping = current.tilt.yawDamping;
             IceFloeClimb.KinematicResponseSeconds = current.motion.kinematicResponseSeconds;
             IceFloeClimb.KinematicPublishIntervalSeconds = current.authority.kinematicPublishIntervalSeconds;
-            ApplyClientValues();
+            // All fields come from the same effective CustomSyncedValue payload.
+            // The client group describes runtime tuning, not a separate local source.
+            IceFloeClimb.EnableWavePrediction = current.client.enableWavePrediction;
+            IceFloeClimb.MinimumPredictionSeconds = current.client.minimumPredictionSeconds;
+            IceFloeClimb.MaximumPredictionSeconds = current.client.maximumPredictionSeconds;
+            IceFloeClimb.PredictionKnotSeconds = current.client.predictionKnotSeconds;
+            IceFloeClimb.PredictionPositionTolerance = current.client.predictionPositionTolerance;
+            IceFloeClimb.EnableBackgroundWaveForecast = current.client.enableBackgroundWaveForecast;
+            IceFloeClimb.BackgroundForecastSeconds = current.client.backgroundForecastSeconds;
+            IceFloeClimb.DistantBobAmplitude = current.client.distantBobAmplitude;
+            IceFloeClimb.DistantBobPeriod = current.client.distantBobPeriod;
+            IceFloeClimb.EnableFallbackSimulation = current.client.enableFallbackSimulation;
             IceFloeClimb.InvalidateSharedMotionSettings();
-        }
-
-        private static void ApplyClientValues()
-        {
-            IceFloeClimb.EnableWavePrediction = local.enableWavePrediction;
-            IceFloeClimb.MinimumPredictionSeconds = local.minimumPredictionSeconds;
-            IceFloeClimb.MaximumPredictionSeconds = local.maximumPredictionSeconds;
-            IceFloeClimb.PredictionKnotSeconds = local.predictionKnotSeconds;
-            IceFloeClimb.PredictionPositionTolerance = local.predictionPositionTolerance;
-            IceFloeClimb.EnableBackgroundWaveForecast = local.enableBackgroundWaveForecast;
-            IceFloeClimb.BackgroundForecastSeconds = local.backgroundForecastSeconds;
-            IceFloeClimb.DistantBobAmplitude = local.distantBobAmplitude;
-            IceFloeClimb.DistantBobPeriod = local.distantBobPeriod;
-            IceFloeClimb.EnableFallbackSimulation = local.enableFallbackSimulation;
         }
     }
 

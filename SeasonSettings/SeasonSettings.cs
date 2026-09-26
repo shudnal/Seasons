@@ -243,8 +243,6 @@ namespace Seasons
             {
                 if (GetSyncedValueToAssign(renamed.OldName, out CustomSyncedValue<string> syncedValue, out string logMessage))
                 {
-                    if (renamed.OldName.Equals(seasonalIceFloesFileName, StringComparison.OrdinalIgnoreCase))
-                        SeasonalIceFloeSettings.ApplyLocalSettings("");
                     syncedValue.AssignValueSafeIfChanged("");
                     LogInfo(logMessage + " defaults");
                 }
@@ -255,7 +253,7 @@ namespace Seasons
             }
         }
 
-        internal static void ReadConfigFile(string filename, string fullname, bool initial = false)
+        private static void ReadConfigFile(string filename, string fullname, bool initial = false)
         {
             if (!GetSyncedValueToAssign(filename, out CustomSyncedValue<string> syncedValue, out string logMessage))
             {
@@ -274,17 +272,9 @@ namespace Seasons
                 if (!initial)
                     LogWarning($"Error reading file ({fullname})! Error: {e.Message}");
 
-                // A temporary editor lock must not reset working floe settings. A removed
-                // override still follows the common empty-payload/defaults path.
-                if (filename.Equals(seasonalIceFloesFileName, StringComparison.OrdinalIgnoreCase) && File.Exists(fullname))
-                    return;
                 content = "";
                 logMessage += " defaults";
             }
-
-            if (filename.Equals(seasonalIceFloesFileName, StringComparison.OrdinalIgnoreCase) &&
-                !SeasonalIceFloeSettings.ApplyLocalSettings(content))
-                return;
 
             if (initial)
                 syncedValue.AssignValueSafeAndNotify(content);

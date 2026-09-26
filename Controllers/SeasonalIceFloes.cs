@@ -212,7 +212,7 @@ namespace Seasons
             ZDO control = CachedControl(zone);
             if (control != null && control.GetBool(SeasonsVars.s_iceFloesSpawned))
             {
-                StopZone(zone);
+                StopZone(zone, settledLocally: false);
                 return; // Check the persistent completion marker before creating or inspecting work.
             }
             if (control != null && !AllowedControl(control))
@@ -259,6 +259,17 @@ namespace Seasons
             $"server={(ZNet.instance && ZNet.instance.IsServer())} cleanupRequired={CleanupRequired} " +
             $"pending={cleanupRequested} running={cleanupRunning} passes={cleanupPasses} " +
             $"lastRemovedFloes={lastRemovedFloes} lastResetMarkers={lastResetMarkers}";
+
+        // On-demand observation only; this does not schedule, reset or run placement.
+        public static string GetPlacementStatus() =>
+            $"connected={ZNet.GetConnectionStatus()} server={(ZNet.instance && ZNet.instance.IsServer())} " +
+            $"dedicated={(ZNet.instance && ZNet.instance.IsDedicated())} enabled={enableIceFloes?.Value} " +
+            $"season={seasonState?.GetCurrentSeason()} day={seasonState?.GetCurrentDay()} days={iceFloesInWinterDays?.Value} " +
+            $"frozen={IsWaterSurfaceFrozen()} waterReady={waterStateInitialized} worldEdge={s_waterEdge} " +
+            $"wanted={wanted} prefabReady={(s_iceFloe?.m_prefab != null)} " +
+            $"amount={SeasonalIceFloeSettings.AmountPerZone} scale={SeasonalIceFloeSettings.Scale} " +
+            $"queued={requests.Count} pending={work.Count} settled={settled.Count} " +
+            $"discovering={(loadedZones != null)}";
 
         private static void CleanupAll()
         {
@@ -394,7 +405,7 @@ namespace Seasons
                 ZDO control = CachedControl(zone);
                 if (control != null && control.GetBool(SeasonsVars.s_iceFloesSpawned))
                 {
-                    StopZone(zone);
+                    StopZone(zone, settledLocally: false);
                     continue;
                 }
                 if (control != null && !AllowedControl(control))
@@ -426,7 +437,7 @@ namespace Seasons
                     continue;
                 if (control.GetBool(SeasonsVars.s_iceFloesSpawned))
                 {
-                    StopZone(zone);
+                    StopZone(zone, settledLocally: false);
                     continue;
                 }
                 if (!AllowedControl(control))
@@ -455,7 +466,7 @@ namespace Seasons
                         // state for owner zero too. Normal replication sends it without SetOwner.
                         if (!control.GetBool(SeasonsVars.s_iceFloesSpawned))
                             control.Set(SeasonsVars.s_iceFloesSpawned, 1, okForNotOwner: true);
-                        StopZone(zone);
+                        StopZone(zone, settledLocally: false);
                         continue;
                     }
                     candidates--;
@@ -660,11 +671,16 @@ namespace Seasons
             return false;
         }
 
-        private static void StopZone(Vector2s zone)
+        private static void StopZone(Vector2s zone, bool settledLocally = true)
         {
             work.Remove(zone);
             initialExclusions.Remove(zone);
-            settled.Add(zone);
+            // Completed placement is already cached in the ZDO marker. Do not cache
+            // that result a second time: a server cleanup can later clear the marker.
+            if (settledLocally)
+                settled.Add(zone);
+            else
+                settled.Remove(zone);
         }
 
         private static void InitializeRandom(ZoneWork current)
@@ -728,10 +744,9 @@ namespace Seasons
             if (s_iceFloe.m_minOceanDepth != s_iceFloe.m_maxOceanDepth &&
                 (oceanDepth < s_iceFloe.m_minOceanDepth || oceanDepth > s_iceFloe.m_maxOceanDepth))
                 return CandidateResult.Skipped;
-            Vector3 waterProbe = new Vector3(p.x, world.m_waterLevel, p.z);
-            float water = Floating.GetLiquidLevel(waterProbe, type: LiquidType.Water);
-            if (water <= -10000f || float.IsNaN(water) || float.IsInfinity(water))
-                return CandidateResult.Deferred;
+            // Ocean biome, terrain depth and altitude were checked above. Placement
+            // uses the world's sea level, not the presence of a rendered WaterVolume.
+            // The latter may be absent for loaded distant zones (including freefly).
 
             float depthFactor = GetOceanDepthFactor(oceanDepth);
             Vector2 scaleRange = SeasonalIceFloeSettings.Scale;

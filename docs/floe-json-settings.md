@@ -1,16 +1,15 @@
 # Ice-floe JSON settings
 
-Date: 2026-09-26. Base: `76c4f9ae6cedca515c064fa24cc0fcfcb25a81c2`,
-PR #45, `perf/snow-performance`.
+Base: `eec493e596d5231378ae7c07208865c62f7fa3f2`, PR #45,
+`perf/snow-performance`. Date: 2026-09-26.
 
-This is the current configuration contract. It supersedes the separate-cfg
-instructions in `floe-runtime-config-and-overhead.md` and the configuration
-section of `floe-background-forecast.md`. It does not change the motion model.
+This is the current configuration contract. It replaces the separate-cfg
+instructions and the previously introduced split between local and synchronized
+fields of the floe JSON. It does not change the accepted movement model.
 
 ## Main config
 
-The three basic controls remain in `BepInEx/config/shudnal.Seasons.cfg` under
-their original section and key names, with these defaults:
+The three basic controls remain in `BepInEx/config/shudnal.Seasons.cfg`:
 
 ```ini
 [Season - Winter ocean]
@@ -19,37 +18,59 @@ Fill the water with ice floes at given days from to = {"x":4.0,"y":10.0}
 Health of ice floes = 20
 ```
 
-They retain server control and the existing enable/day change callbacks.
-`[Test] / Log ice floes` also returns to the main cfg as a local diagnostic
-switch. Amount and scale are no longer bound in the main config.
+They retain server control and the existing enable/day callbacks. `[Test] / Log
+ice floes` is a local diagnostic switch. Amount and scale are not main-config
+entries. The retired `shudnal.Seasons.IceFloes.cfg` is not read or recreated;
+startup removes that exact old file without migrating any values.
 
-`shudnal.Seasons.IceFloes.cfg` is no longer created, loaded, synchronized or
-watched. Startup deletes that exact obsolete file without reading its values.
-Failure to delete it is logged, but it remains unused. Only obsolete amount and
-scale keys are removed from the main cfg; unrelated keys are not removed.
-There is no migration from the retired file to either the main cfg or JSON.
-Existing values already stored under the restored main-config keys remain valid.
-
-## JSON override and default template
-
-This follows the other Seasons JSON settings:
+## One JSON synchronization path
 
 ```text
-Editable override:
 BepInEx/config/shudnal.Seasons/Seasonal ice floes.json
-
-Generated reference template:
 BepInEx/config/shudnal.Seasons/Default settings/Seasonal ice floes.json
 ```
 
-World initialization exports the complete template with the shipped defaults.
-Do not edit the reference copy: it is regenerated. Copy it one directory up to
-create an override, or create a smaller JSON object containing only the fields
-you need. The editable override is never overwritten by default export.
-An absent or empty override uses defaults. Missing properties and null sections
-also retain defaults. Deleting or renaming the override away restores defaults.
+The second path is the generated reference template. Copy it one directory up
+and edit that copy; reference export does not overwrite the override.
 
-For example:
+The lifecycle is identical to `seasonalSnowJSON` and the other custom values:
+
+```text
+shared JSON watcher or initial read
+  -> GetSyncedValueToAssign
+  -> AssignValueSafeAndNotify (initial) / AssignValueSafeIfChanged (changes)
+  -> seasonalIceFloesJSON.ValueChanged
+  -> SeasonalIceFloeSettings.ApplySynchronizedSettings
+  -> all runtime fields
+```
+
+`ReadConfigs` and `ReadConfigFile` contain no ice-floe filename checks, parsing,
+local application, early-return exceptions, or custom rename handling. The only
+floe filename comparison is the ordinary filename-to-CustomSyncedValue mapping,
+next to the snow mapping. File read failures, deletion, rename, initial loading
+and server synchronization follow the common implementation.
+
+There is one effective JSON configuration. The `client` object is retained as a
+field group, not a synchronization exception: its fields now come from the same
+effective `seasonalIceFloesJSON.Value` as all other fields. A server payload
+therefore also controls prediction/background options, distant bob and fallback
+participation. Local watcher events cannot independently apply this section
+before the synchronized value. No parallel local snapshot or dedicated Reload
+entry point remains.
+
+Parsing and numeric normalization happen in the ValueChanged handler. Invalid
+JSON is logged and leaves the previous applied settings in place, like snow
+settings; it is not specially intercepted by the file watcher. Missing fields
+use shipped defaults, and an empty effective payload restores defaults. Removing
+an override follows the common empty-payload path. No second ConfigFile, watcher,
+thread, queue, networking layer, or configuration migration is added.
+
+`SeasonalIceFloeSettings.ApplyConfiguredRuntimeValues()` can reapply the last
+effective configuration after temporary inspector edits. It does not read files,
+write a pose or bypass synchronization. The existing inspector runtime fields
+remain transient diagnostics, not another persistent settings source.
+
+## Defaults and placement
 
 ```json
 {
@@ -58,66 +79,48 @@ For example:
 }
 ```
 
-Amount is the random number of placement attempts per zone, not a global cap.
-Existing exclusions can reduce the resulting count. Amount, scale and base
-health affect subsequent spawning only. To regenerate the same ocean, disable
-floes with the main-config switch, then re-enable during eligible winter days.
-The immediate cleanup algorithm is unchanged.
+Amount specifies placement attempts per zone, not a global cap. Amount, scale
+and base health apply to newly generated floes, not existing objects. To
+regenerate a population, disable and then re-enable floes during eligible winter
+days. Keep the existing full default example for the remaining fields.
 
-The complete example is in `examples/Seasonal ice floes.json`. JSON property
-names use lower camel case. Unknown properties or invalid JSON are rejected
-with a warning; previously applied settings are retained. Numeric inputs are
-normalized to the same finite ranges as the prior cfg controls. Each successful
-load starts from defaults, not from the previously loaded override, so removing
-a property restores its default rather than retaining a hidden old value.
+Two placement blockers were corrected during this review:
 
-## Shared and local settings
+1. After terrain, biome, altitude and ocean-depth eligibility had already passed,
+   placement still called `Floating.GetLiquidLevel` solely as a readiness gate.
+   Missing local water volumes returned an invalid height and deferred the same
+   candidate indefinitely. This contradicts the accepted fixed Ocean sampler.
+   That gate is removed; placement still validates terrain and Ocean eligibility
+   and uses the world's sea level. Other objects' water sampling is unchanged.
+2. A completed zone was cached both in its ZDO marker and in the local `settled`
+   set. A subsequently cleared server marker could remain hidden by that local
+   cache. Completed zones now use the existing marker as their sole completion
+   cache; the local set remains only for the existing local stop conditions.
+   Marked zones still do not spawn duplicates, and valid markers are not erased.
 
-The existing JSON watcher, main-thread dispatch and ConditionalConfigSync
-custom-value path are reused. There is no second ConfigFile, dedicated file
-watcher, per-frame config polling or new synchronization protocol.
+These are source-confirmed blocking paths, not a runtime attribution of the
+maintainer's report to either one. No log or live placement state was supplied.
+The existing immediate cleanup, placement budgets and biome/depth exclusions
+remain in place. Frozen ocean and out-of-period winter days still intentionally
+prevent spawning.
 
-Top-level `amountPerZone`, `scale`, `surface`, `buoyancy`, `tilt`, `motion` and
-`authority` are shared settings. Their effective payload follows the same
-server synchronization as the other Seasons JSON files.
-
-The `client` section is applied only from this machine's local JSON file.
-Receiving a server JSON does not replace it. It preserves the previous local
-prediction quality, background enable/reserve, distant bob and fallback
-participation settings. The server's copy of this section is not an instruction
-for other clients. It is valid to supply only `client` locally while using the
-server's shared settings.
-
-New JSON values update the shared runtime fields on the main thread, without
-resetting object poses or accessing live objects from the forecast worker.
-Config reload does not directly restart that worker; its existing input and
-mode checks continue to govern the next forecast/motion call.
-
-Manual main-thread inspector actions remain available:
+For an on-demand main-thread placement observation use:
 
 ```csharp
-Seasons.SeasonalIceFloeSettings.Reload();
-Seasons.SeasonalIceFloeSettings.ApplyConfiguredRuntimeValues();
+Seasons.SeasonalIceFloes.GetPlacementStatus()
 ```
 
-The first reads the override through the shared JSON loader. The second
-reapplies the last effective shared JSON plus local client settings after
-transient inspector experiments. Neither writes a cfg or resets a body pose.
-`IceFloeClimb.ResetSurfacePhysicsSettings()` remains a separate diagnostic action
-restoring its compiled baseline, not a persistent JSON editor.
+It reports connection/server role, enable/season/day/frozen state, initialized
+water state and world edge, prefab availability, amount/scale and placement
+queue sizes. It does not run or reset placement and adds no per-frame logging.
 
-## Scope and verification
+## Verification boundary
 
-The accepted defaults are unchanged: amount 10..15, scale 1.25..2.5, 70-percent
-collider waterline, 0.2-second kinematic publication interval and ten-second
-background reserve. All former tuning fields are represented in the JSON model.
-
-Wave formulas, physics/kinematics, ownership election, network pose handling,
-forecast threading and cleanup were not changed. Worker shutdown was moved from
-the deleted cfg-watcher cleanup to the plugin's existing OnDestroy path.
-
-Validation is limited to exact source/blob checks, source/diff review, syntax
-structure, JSON example structure, runtime-field/default mapping and an
-accidental-Cyrillic scan. No mod build, automated mod tests, Valheim run or
-performance measurement was performed. Runtime JSON reload and multiplayer
-synchronization still need maintainer verification.
+Input source hashes were matched against the current branch, including the
+previously delivered archive now committed as eec493e. Static checks cover the
+small diff, balanced C# syntax structure, unified JSON routing, runtime-field
+coverage, removal of the spawn water-query gate and accidental Cyrillic text.
+No mod build, game execution, physics simulation or automated mod tests were
+performed. Runtime spawning and network settings application still require
+maintainer confirmation. No numerical physics, kinematic, worker, publication,
+version, package or dependency changes are included.
