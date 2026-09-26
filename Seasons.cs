@@ -360,6 +360,7 @@ namespace Seasons
 
             ConfigInit();
             _ = configSync.AddLockingConfigEntry(configLocked);
+            LocalizationManager.Localizer.ApplyCurrentLocalization();
 
             Compatibility.EpicLootCompat.CheckForCompatibility();
             Compatibility.MarketplaceCompat.CheckForCompatibility();
