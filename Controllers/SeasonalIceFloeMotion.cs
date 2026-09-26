@@ -19,6 +19,48 @@ namespace Seasons
         private int kinematicFrame = -1;
         private const float ReplicaResponseSeconds = 0.1f;
 
+        private static int sharedMotionSettingsFrame = -1;
+        private static SurfaceSettings sharedMotionSettings;
+        private static float sharedUnscaledThickness;
+        private static float sharedBlendDelta = -1f, sharedBlendResponse;
+        private static float sharedMotionBlend, sharedReplicaBlend;
+        private ZDO scaleSource;
+        private ZDOID scaleSourceId;
+        private uint scaleSourceRevision;
+        private Vector3 synchronizedLocalScale;
+        private bool scaleSourceValid;
+
+        internal static void InvalidateSharedMotionSettings() => sharedMotionSettingsFrame = -1;
+
+        private SurfaceSettings ReadKinematicSettings()
+        {
+            if (sharedMotionSettingsFrame != Time.frameCount)
+            {
+                // All runtime coefficients are shared. Validate them once for kinematic
+                // work, but NEVER reuse the first floe's scaled displacement thickness.
+                sharedMotionSettings = ReadSettings();
+                sharedUnscaledThickness = Setting(HullThickness, 1f, 0.1f, 10f);
+                sharedMotionSettingsFrame = Time.frameCount;
+            }
+            SurfaceSettings settings = sharedMotionSettings;
+            float scaleY = Setting(Mathf.Abs(Root.lossyScale.y), 1f, 0.01f, 100f);
+            settings.Thickness = Mathf.Clamp(sharedUnscaledThickness * scaleY, 0.05f, 100f);
+            return settings;
+        }
+
+        private static float MotionBlend(float dt, bool replica = false)
+        {
+            float response = Setting(KinematicResponseSeconds, 0.15f, 0.02f, 1f);
+            if (sharedBlendDelta != dt || sharedBlendResponse != response)
+            {
+                sharedBlendDelta = dt;
+                sharedBlendResponse = response;
+                sharedMotionBlend = 1f - Mathf.Exp(-dt / response);
+                sharedReplicaBlend = 1f - Mathf.Exp(-dt / ReplicaResponseSeconds);
+            }
+            return replica ? sharedReplicaBlend : sharedMotionBlend;
+        }
+
         private void UpdateOwnerlessBodyMode(ZDO zdo)
         {
             if (Distant)
@@ -45,6 +87,7 @@ namespace Seasons
             Body.interpolation = RigidbodyInterpolation.None;
             Sync.m_isKinematicBody = true;
             OwnerlessKinematic = true;
+            scaleSourceValid = false;
             kinematicFrame = -1;
             InvalidatePrediction("Ownerless kinematic motion started");
         }
@@ -54,6 +97,8 @@ namespace Seasons
             if (!OwnerlessKinematic)
                 return;
             OwnerlessKinematic = false;
+            scaleSourceValid = false;
+            scaleSource = null;
             if (Body)
             {
                 Body.isKinematic = false;
@@ -106,7 +151,7 @@ namespace Seasons
                 FailKinematicMotion(WaveStatus.NoHullGeometry);
                 return;
             }
-            SurfaceSettings settings = ReadSettings();
+            SurfaceSettings settings = ReadKinematicSettings();
             if (!SeasonalIceFloeWaves.TrySurfaceContext(this, out SeasonalIceFloeWaves.SurfaceContext context) ||
                 !TryScheduledSurfaceFrame(context, settings, hull, out SurfaceFrame frame))
             {
@@ -119,8 +164,7 @@ namespace Seasons
             Vector3 beforePosition = Body.position;
             Vector3 beforeCom = Body.worldCenterOfMass;
             Vector3 comOffset = Quaternion.Inverse(beforeRotation) * (beforeCom - beforePosition);
-            float response = Setting(KinematicResponseSeconds, 0.15f, 0.02f, 1f);
-            float blend = 1f - Mathf.Exp(-dt / response);
+            float blend = MotionBlend(dt);
             Quaternion rotation = Quaternion.Slerp(beforeRotation,
                 Quaternion.FromToRotation(beforeRotation * Vector3.up, frame.Normal) * beforeRotation, blend);
             float targetHeight = frame.Height + settings.HeightOffset +
@@ -182,6 +226,12 @@ namespace Seasons
             if (!Sync.m_syncScale)
                 return;
             ZDO zdo = m_view.GetZDO();
+            Vector3 localScale = Root.localScale;
+            // Saved scale does not change with every visual pose update. Still notice
+            // manual/local scale edits even when no new ZDO revision has arrived.
+            if (scaleSourceValid && ReferenceEquals(scaleSource, zdo) && scaleSourceId == zdo.m_uid &&
+                scaleSourceRevision == zdo.DataRevision && synchronizedLocalScale.Equals(localScale))
+                return;
             Vector3 scale = zdo.GetVec3(ZDOVars.s_scaleHash, Vector3.zero);
             if (scale != Vector3.zero && Finite(scale))
             {
@@ -194,6 +244,11 @@ namespace Seasons
                 if (Finite(scalar) && scalar > 0f && !Root.localScale.Equals(Vector3.one * scalar))
                     Root.localScale = Vector3.one * scalar;
             }
+            scaleSource = zdo;
+            scaleSourceId = zdo.m_uid;
+            scaleSourceRevision = zdo.DataRevision;
+            synchronizedLocalScale = Root.localScale;
+            scaleSourceValid = true;
         }
 
         private void UpdateKinematicReplica(float dt, double now)
@@ -220,7 +275,7 @@ namespace Seasons
                 ? zdo.GetVec3(ZDOVars.s_bodyAVelHash, Vector3.zero) : Vector3.zero;
             // Only smooth the received pose. No water calculations, local impulses or
             // unlimited extrapolation of a stalled publisher on a replica.
-            float blend = 1f - Mathf.Exp(-dt / ReplicaResponseSeconds);
+            float blend = MotionBlend(dt, replica: true);
             Body.position = Vector3.Lerp(Body.position, target, blend);
             Body.rotation = Quaternion.Slerp(Body.rotation, rotation, blend);
             Body.useGravity = false;

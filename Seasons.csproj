@@ -108,6 +108,7 @@
     <Compile Include="Controllers\FrozenOceanSliding.cs" />
     <Compile Include="Controllers\PrefabVariantController.cs" />
     <Compile Include="Controllers\ZoneSystemVariantController.cs" />
+    <Compile Include="Controllers\SeasonalIceFloeSettings.cs" />
     <Compile Include="Controllers\SeasonalIceFloes.cs" />
     <Compile Include="Controllers\SeasonalIceFloeWaves.cs" />
     <Compile Include="Controllers\SeasonalIceFloePrediction.cs" />

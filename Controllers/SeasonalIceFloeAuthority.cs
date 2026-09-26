@@ -54,12 +54,38 @@ namespace Seasons
             internal int NativeRevision;
         }
 
-        private static LeaseRecord ReadLease(ZDO zdo) => new LeaseRecord
+        public long LeaseRecordReads, LeaseRecordReuses, PosePublishNotDue;
+        private ZDO cachedLeaseZdo;
+        private ZDOID cachedLeaseId;
+        private uint cachedLeaseRevision;
+        private bool cachedLeaseValid;
+        private LeaseRecord cachedLease;
+
+        private LeaseRecord ReadLease(ZDO zdo)
         {
-            Candidate = zdo.GetLong(candidateKey), CandidateToken = zdo.GetLong(candidateTokenKey),
-            Simulator = zdo.GetLong(simulatorKey), Token = zdo.GetLong(simulatorTokenKey),
-            Heartbeat = zdo.GetLong(simulatorHeartbeatKey), NativeRevision = zdo.GetInt(simulatorNativeRevisionKey)
-        };
+            // Cache decoded fields, NEVER the right to simulate. Native ownership and the
+            // current server clock are still checked by LiveLease immediately before use.
+            // Object identity plus UID protects against pooled ZDO reuse. Every normal
+            // local Set/remote data update changes DataRevision before the next callback.
+            if (cachedLeaseValid && ReferenceEquals(cachedLeaseZdo, zdo) &&
+                cachedLeaseId == zdo.m_uid && cachedLeaseRevision == zdo.DataRevision)
+            {
+                LeaseRecordReuses++;
+                return cachedLease;
+            }
+            cachedLease = new LeaseRecord
+            {
+                Candidate = zdo.GetLong(candidateKey), CandidateToken = zdo.GetLong(candidateTokenKey),
+                Simulator = zdo.GetLong(simulatorKey), Token = zdo.GetLong(simulatorTokenKey),
+                Heartbeat = zdo.GetLong(simulatorHeartbeatKey), NativeRevision = zdo.GetInt(simulatorNativeRevisionKey)
+            };
+            cachedLeaseZdo = zdo;
+            cachedLeaseId = zdo.m_uid;
+            cachedLeaseRevision = zdo.DataRevision;
+            cachedLeaseValid = true;
+            LeaseRecordReads++;
+            return cachedLease;
+        }
 
         private static bool TryAuthorityTime(out double now)
         {
@@ -85,6 +111,8 @@ namespace Seasons
 
         private void InitializeSimulationAuthority()
         {
+            cachedLeaseValid = false;
+            cachedLeaseZdo = null;
             LocalSimulationPeer = ZDOMan.GetSessionID();
             ulong peer = unchecked((ulong)LocalSimulationPeer);
             uint hash = unchecked((uint)m_view.GetZDO().m_uid.GetHashCode());
@@ -182,7 +210,7 @@ namespace Seasons
         private void WithdrawSimulationAuthority(string reason, double cooldown = 0.0)
         {
             bool hadClaim = FallbackSimulator || localCandidateToken != 0;
-            if (TryLiveAuthorityZdo(out ZDO zdo))
+            if (hadClaim && TryLiveAuthorityZdo(out ZDO zdo))
                 ClearOwnedLeaseFields(zdo);
             StopLocalFallback();
             localCandidateToken = observedCandidatePeer = observedCandidateToken = 0;
@@ -418,8 +446,16 @@ namespace Seasons
 
         internal void PublishFallbackPose()
         {
-            if (!leasePoseReady || HoldingGravity || !HasCurrentFallbackLease() || !TryAuthorityTime(out double now) ||
-                now < nextPoseAt || now - lastPhysicsTime > 0.5)
+            if (!leasePoseReady || HoldingGravity || !TryAuthorityTime(out double now) || now - lastPhysicsTime > 0.5)
+                return;
+            // Most LateUpdate calls are between publications. Do the cheap deadline check
+            // before camera/range and lease lookups, but revalidate fully before any write.
+            if (now < nextPoseAt)
+            {
+                PosePublishNotDue++;
+                return;
+            }
+            if (!HasCurrentFallbackLease())
                 return;
             ZDO zdo = m_view.GetZDO();
             Vector3 position = Body.position;
@@ -471,6 +507,8 @@ namespace Seasons
             builder.Append(" announcements=").Append(CandidateAnnouncements);
             builder.Append(" publications=").Append(PosePublications).Append(" acquired/released=");
             builder.Append(LeaseAcquisitions).Append('/').Append(LeaseReleases).Append(" reason=").Append(AuthorityReason);
+            builder.Append("\nLease cache reads/reuses=").Append(LeaseRecordReads).Append('/').Append(LeaseRecordReuses);
+            builder.Append(" publishNotDue=").Append(PosePublishNotDue);
         }
     }
 }

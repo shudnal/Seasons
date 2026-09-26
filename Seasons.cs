@@ -404,8 +404,11 @@ namespace Seasons
             }
         }
 
+        private void Update() => SeasonalIceFloeSettings.Update();
+
         private void OnDestroy()
         {
+            SeasonalIceFloeSettings.Dispose();
             SeasonalWorldMaintenance.Reset();
             SeasonalIceFloeWaves.Reset();
             SeasonalIceFloes.Reset();
@@ -611,11 +614,7 @@ namespace Seasons
 
             enableFrozenWater = serverConfig("Season - Winter ocean", "Enable frozen water", defaultValue: true, "Enable frozen water in winter");
             waterFreezesInWinterDays = serverConfig("Season - Winter ocean", "Freeze the water at given days from to", defaultValue: new Vector2(6f, 9f), "Water will freeze in the first set day of winter and will be unfrozen after second set day");
-            enableIceFloes = serverConfig("Season - Winter ocean", "Enable ice floes in winter", defaultValue: true, "Enable ice floes in winter");
-            iceFloesInWinterDays = serverConfig("Season - Winter ocean", "Fill the water with ice floes at given days from to", defaultValue: new Vector2(4f, 10f), "Ice floes will be spawned in the first set day of winter and will be removed after second set day");
-            amountOfIceFloesInWinterDays = serverConfig("Season - Winter ocean", "Amount of ice floes in one zone", defaultValue: new Vector2(10f, 20f), "Game will take random value between set numbers and will try to spawn that amount of ice floes in one zone (square 64x64)");
-            iceFloesScale = serverConfig("Season - Winter ocean", "Scale of ice floes", defaultValue: new Vector2(0.75f, 2f), "Size of spawned ice floe random to XYZ axes");
-            iceFloesHealth = serverConfig("Season - Winter ocean", "Health of ice floes", defaultValue: 20f, "Health of ice floe of average size. Health changes proportionally the volume of an ice floe. Floes respawn is required to apply changes.");
+            SeasonalIceFloeSettings.Initialize(Config);
             enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
             frozenOceanSlipperiness = serverConfig("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1f, "Slipperiness factor of the frozen ocean surface");
             enableVanillaSlippingOnShallowFrozenWater = serverConfig("Season - Winter ocean", "Enable vanilla slipping on shallow frozen water", defaultValue: true,
@@ -802,7 +801,6 @@ namespace Seasons
 
             cacheStorageFormat = clientConfig("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading of single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
             logTime = clientConfig("Test", "Log time", defaultValue: false, "Log time info on state update");
-            logFloes = clientConfig("Test", "Log ice floes", defaultValue: false, "Log ice floes spawning/destroying");
             logControllersTime = clientConfig("Test", "Log prefab caching time", defaultValue: false, "Log elapsed time of prefabs caching process in descending order");
             plainsSwampBorderFix = clientConfig("Test", "Plains Swamp border fix", defaultValue: true, "Fix clipping into ground on Plains - Swamp border");
             frozenKarvePositionFix = serverConfig("Test", "Fix position for frozen Karve", defaultValue: false, "Make Karve storage always available if frozen. If Karve is below certain level it will be pushed to the surface.");
