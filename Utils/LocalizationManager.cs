@@ -5,9 +5,7 @@ using BepInEx.Configuration;
 using HarmonyLib;
 using JetBrains.Annotations;
 using Newtonsoft.Json;
-using Splatform;
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -104,16 +102,27 @@ public class Localizer
             localizationObjects.Remove(reference);
     }
 
-    public static IEnumerator Load()
+    private static bool initialized;
+
+    public static void Initialize()
     {
-        yield return new WaitUntil(() => PlatformManager.DistributionPlatform != null && PlatformInitializer.PreferencesInitialized);
+        if (initialized)
+            return;
 
-        // Prevent NRE if language has not been set explicitly yet
-        // It will fall into English anyway
-        if (string.IsNullOrEmpty(PlatformPrefs.GetString("language", "")))
-            PlatformPrefs.SetString("language", defaultLanguage);
+        if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null)
+        {
+            initialized = true;
+            return;
+        }
 
-        LoadLocalization(Localization.instance, Localization.instance.GetSelectedLanguage());
+        Harmony harmony = new("org.bepinex.helpers.LocalizationManager");
+        harmony.Patch(
+            AccessTools.DeclaredMethod(typeof(Localization), nameof(Localization.SetupLanguage)),
+            postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Localizer), nameof(LoadLocalization))));
+        initialized = true;
+
+        if (Localization.m_instance != null)
+            LoadLocalization(Localization.m_instance, Localization.m_instance.GetSelectedLanguage());
     }
 
     private static void LoadLocalization(Localization __instance, string language)
@@ -188,11 +197,6 @@ public class Localizer
             UpdatePlaceholderText(__instance, s.Key);
     }
 
-    static Localizer()
-    {
-        Harmony harmony = new("org.bepinex.helpers.LocalizationManager");
-        harmony.Patch(AccessTools.DeclaredMethod(typeof(Localization), nameof(Localization.LoadCSV)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Localizer), nameof(LoadLocalization))));
-    }
 
     private static byte[]? LoadTranslationFromAssembly(string language)
     {
