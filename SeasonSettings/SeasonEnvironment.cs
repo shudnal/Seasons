@@ -634,7 +634,6 @@ namespace Seasons
                     m_snowBuildup = 0.2f,
                     m_lightIntensityDay = 2f,
                     m_ambColorDay = "#98B1CBFF",
-                    //m_ambientOcclusionColor = "#98B1CBFF",
                     m_fogColorDay = "#3D555CFF",
                },
                 new SeasonEnvironment
