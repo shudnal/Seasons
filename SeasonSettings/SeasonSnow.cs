@@ -91,6 +91,7 @@ namespace Seasons
             if (!loadDefaults)
                 return;
 
+            // Vanilla
             pieces.Add("wood_floor_1x1", new PieceSnow(buildup: SnowBuildup.Reduced));
             pieces.Add("wood_floor", new PieceSnow(buildup: SnowBuildup.Reduced, position: new SnowPosition(y: -0.19f)));
             pieces.Add("wood_stair", new PieceSnow(buildup: SnowBuildup.Reduced));
@@ -129,8 +130,6 @@ namespace Seasons
             pieces.Add("stone_fence", new PieceSnow(copyFrom: "stone_wall_2x1", position: new SnowPosition(y: 0.19f), scale: new SnowScale(x: 1.9f, y: 1.0f, z: 0.75f)));
             pieces.Add("wood_fence_gate", new PieceSnow(buildup: SnowBuildup.Disabled));
 
-
-            // Roof, gable and cross variants verified in game by the maintainer.
             // Clay pieces.
             pieces.Add("BCP_Clay2_Roof45", new PieceSnow(copyFrom: "piece_grausten_roof_45"));
             pieces.Add("BCP_Clay2_Roof45Arch", new PieceSnow(copyFrom: "piece_grausten_roof_45_arch"));
@@ -249,7 +248,7 @@ namespace Seasons
             pieces.Add("rae_stone_wall_roof_x", new PieceSnow(copyFrom: "wood_wall_roof_top_45", scale: new SnowScale(x: 0.95f, z: 1.5f)));
             pieces.Add("rae_stone_wall_roof_xs", new PieceSnow(copyFrom: "wood_wall_roof_top", scale: new SnowScale(x: 0.95f, z: 1.5f)));
 
-            // Additional construction variants accepted by the maintainer.
+            // Additional construction variants
             pieces.Add("BCP_ClayArch_Bottom", new PieceSnow(copyFrom: "ashwood_arch_bottom"));
             pieces.Add("BCP_ClayArch_Top", new PieceSnow(copyFrom: "ashwood_arch_top"));
             pieces.Add("BCP_ClayBeam1m", new PieceSnow(copyFrom: "ashwood_beam_1m", position: new SnowPosition(z: -0.001f)));
@@ -287,8 +286,8 @@ namespace Seasons
             pieces.Add("BFP_ClayFloorTriangle", new PieceSnow(buildup: SnowBuildup.Reduced, copyFrom: "blackmarble_floor_triangle"));
             pieces.Add("BFP_ClayPillar", new PieceSnow(copyFrom: "stone_pillar"));
             pieces.Add("BFP_ClayStair", new PieceSnow(buildup: SnowBuildup.Reduced, copyFrom: "blackmarble_stair"));
-            pieces.Add("BFP_ClayTileFloor1x1", new PieceSnow(copyFrom: "blackmarble_tile_floor_1x1"));
-            pieces.Add("BFP_ClayTileFloor2x2", new PieceSnow(copyFrom: "blackmarble_tile_floor_2x2"));
+            pieces.Add("BFP_ClayTileFloor1x1", new PieceSnow(buildup: SnowBuildup.Reduced, copyFrom: "blackmarble_tile_floor_1x1"));
+            pieces.Add("BFP_ClayTileFloor2x2", new PieceSnow(buildup: SnowBuildup.Reduced, copyFrom: "blackmarble_tile_floor_2x2"));
             pieces.Add("BFP_ClayTileWall1x1", new PieceSnow(copyFrom: "blackmarble_tile_wall_1x1", position: new SnowPosition(x: -0.01914843f, y: 0.22483902f)));
             pieces.Add("BFP_ClayTileWall2x2", new PieceSnow(copyFrom: "blackmarble_tile_wall_2x2", position: new SnowPosition(x: -0.00107443f, y: 0.7735491f, z: 0.08772652f)));
             pieces.Add("BFP_ClayTileWall2x4", new PieceSnow(copyFrom: "blackmarble_tile_wall_2x4", position: new SnowPosition(x: 0.01196333f, y: 1.76693439f, z: 0.10621258f)));
@@ -321,7 +320,7 @@ namespace Seasons
             pieces.Add("Piece_hardwood_pillarbeam_medium_bal", new PieceSnow(copyFrom: "Piece_grausten_pillarbeam_medium"));
             pieces.Add("Piece_hardwood_pillarbeam_small_bal", new PieceSnow(copyFrom: "Piece_grausten_pillarbeam_small"));
             pieces.Add("blackmarble_2x2x1_bal", new PieceSnow(copyFrom: "blackmarble_2x2x1"));
-            pieces.Add("blackmarble_floor4m_bal", new PieceSnow(copyFrom: "stone_floor"));
+            pieces.Add("blackmarble_floor4m_bal", new PieceSnow(buildup: SnowBuildup.Reduced, copyFrom: "stone_floor"));
             pieces.Add("finewood_arch_bottom_bal", new PieceSnow(copyFrom: "ashwood_arch_bottom"));
             pieces.Add("finewood_arch_top_bal", new PieceSnow(copyFrom: "ashwood_arch_top"));
             pieces.Add("gabro_wall2x1_bal", new PieceSnow(copyFrom: "stone_wall_2x1"));
@@ -409,6 +408,7 @@ namespace Seasons
             pieces.Add("wood_spiralstair_right_bal", new PieceSnow(buildup: SnowBuildup.Reduced, copyFrom: "piece_dvergr_spiralstair_right"));
             pieces.Add("wood_stair_1m", new PieceSnow(buildup: SnowBuildup.Reduced, copyFrom: "wood_stair"));
 
+            // Vanilla
             creatureMaterials.Add("Abomination_mat", new MaterialSnow(0.7f, 0.8f));
             creatureMaterials.Add("goblin_armor", new MaterialSnow(0.65f, 0.79f));
             creatureMaterials.Add("BruteArmor_mat", new MaterialSnow(0.65f, 0.79f));
