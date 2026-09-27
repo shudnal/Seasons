@@ -324,7 +324,7 @@ namespace Seasons
             pieces.Add("finewood_arch_bottom_bal", new PieceSnow(copyFrom: "ashwood_arch_bottom"));
             pieces.Add("finewood_arch_top_bal", new PieceSnow(copyFrom: "ashwood_arch_top"));
             pieces.Add("gabro_wall2x1_bal", new PieceSnow(copyFrom: "stone_wall_2x1"));
-            pieces.Add("grausten_round_column_bal", new PieceSnow(copyFrom: "blackmarble_column_2"));
+            pieces.Add("grausten_round_column_bal", new PieceSnow(buildup: SnowBuildup.Reduced, copyFrom: "blackmarble_column_2"));
             pieces.Add("ig_tall_stairs", new PieceSnow(buildup: SnowBuildup.Reduced, copyFrom: "wood_stair"));
             pieces.Add("iron_beam_long", new PieceSnow(copyFrom: "wood_beam"));
             pieces.Add("iron_beam_short", new PieceSnow(copyFrom: "wood_beam_1"));
