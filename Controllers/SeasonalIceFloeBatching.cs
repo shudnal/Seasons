@@ -12,7 +12,7 @@ namespace Seasons
     // specific to Seasons' marked ice1 instances.
     internal static class SeasonalIceFloeBatching
     {
-        private const float CellInverse = 1f / 32f;
+        private const float CellInverse = 1f / 96f;
         private const int ChunkCapacity = 500; // Below Unity's 511 default two-matrix limit.
 
         private readonly struct BatchKey : IEquatable<BatchKey>
