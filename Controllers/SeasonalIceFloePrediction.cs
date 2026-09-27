@@ -38,14 +38,14 @@ namespace Seasons
 
         [Header("Prediction cache diagnostics")]
         public ForecastRebuildCause LastForecastRebuildCause;
-        public long GeometryCacheBuilds, ScaleNoiseReuses, ForecastKnotsSampled, PredictionDirectFallbacks;
+        public long GeometryCacheBuilds, ForecastKnotsSampled, PredictionDirectFallbacks;
 
         // Main-thread counters only. Reading them never queries water or instruments every
         // floe. The aggregate remains useful while detailed per-object capture is disabled.
         public sealed class FloePredictionCounters
         {
             public long DirectFrames, ForecastBuilds, ForecastHits, SampledKnots;
-            public long HullRebuilds, ScaleNoiseReuses, SameFrameFallbacks;
+            public long HullRebuilds, SameFrameFallbacks;
             public long GeometryResets, ClockResets, WaterResets, WindResets, SettingsResets;
             public long AuthorityResets, MotionResets, ScheduledBuilds, OtherBuilds;
             public long WindChangesDeferred, WindRefreshes;
@@ -108,14 +108,6 @@ namespace Seasons
         private int authorityFrame = -1;
 
         private Vector3 hullCenterOffset, hullX, hullY, hullZ, hullScale;
-        private Collider hullCollider;
-        private Transform hullParent;
-        private Vector3 hullLocalScale;
-        private Transform hullShapeParent;
-        private Vector3 hullShapePosition, hullShapeScale;
-        private Quaternion hullShapeRotation;
-        private Mesh hullMesh;
-        private Bounds hullSourceBounds;
         private uint hullGeometryRevision;
         private bool hullCached;
         private HullShape hullShape;
@@ -134,7 +126,8 @@ namespace Seasons
             forecastValid = hullCached = false;
             forecastCount = 0;
             hullGeometryRevision = 0;
-            hullParent = null;
+            scaleSourceValid = false;
+            scaleSource = null;
             pendingForecastCause = ForecastRebuildCause.Empty;
             WindRefreshPending = false;
             DistanceToReference = DistanceToPlayer = float.NaN;
@@ -151,48 +144,33 @@ namespace Seasons
             pendingForecastCause = cause;
         }
 
-        // Explicit rebuild remains available when another component changes shape.
+        // The seasonal ice1 shape is immutable after admission. Inspector or integration
+        // edits must explicitly invalidate it; ordinary rocking never inspects the mesh.
         public void RebuildHullGeometry()
         {
+            // Restore the collider's automatic COM/inertia before a new scale/shape is
+            // applied. Re-admission will capture the new physical values, not stale ones.
+            SeasonalIceFloeBatching.ReturnNative(this);
             hullCached = false;
+            scaleSourceValid = false;
+            ReleaseBackgroundForecast();
             InvalidatePrediction("Geometry rebuild requested", ForecastRebuildCause.Geometry);
         }
-
-        // lossyScale is decomposed from a floating-point world matrix. Rotation can
-        // perturb its least significant bits without any actual scale edit. Compare to
-        // the last accepted scale (not the last observation) so real cumulative changes
-        // still invalidate the cache. Explicit local-scale edits/reparenting remain exact.
-        private static bool SameWorldScale(Vector3 a, Vector3 b) =>
-            SameScaleComponent(a.x, b.x) && SameScaleComponent(a.y, b.y) && SameScaleComponent(a.z, b.z);
-
-        private static bool SameScaleComponent(float a, float b) =>
-            Finite(a) && Finite(b) && Mathf.Abs(a - b) <= 0.00001f + 0.0001f * Mathf.Max(Mathf.Abs(a), Mathf.Abs(b));
 
         private bool ReadHullGeometry(Collider collider, out HullGeometry hull)
         {
             hull = default;
-            Vector3 scale = Root.lossyScale;
-            Vector3 localScale = Root.localScale;
-            Transform parent = Root.parent;
-            Transform shape = collider ? collider.transform : null;
-            Mesh mesh = collider is MeshCollider meshCollider ? meshCollider.sharedMesh : null;
-            Bounds bounds;
-            if (collider is BoxCollider box)
-                bounds = new Bounds(box.center, box.size);
-            else if (mesh)
-                bounds = mesh.bounds;
-            else
-                return false;
-            if (!Finite(scale) || !Finite(localScale))
-                return false;
-            if (!hullCached || hullCollider != collider || hullParent != parent ||
-                !hullLocalScale.Equals(localScale) || !SameWorldScale(hullScale, scale) ||
-                hullShapeParent != shape.parent || !hullShapePosition.Equals(shape.localPosition) ||
-                !hullShapeRotation.Equals(shape.localRotation) || !hullShapeScale.Equals(shape.localScale) ||
-                hullMesh != mesh || !hullSourceBounds.Equals(bounds))
+            if (!hullCached)
             {
-                if (!TryHullGeometry(collider, out HullGeometry original))
+                if (!collider || (collider.enabled && collider.gameObject.activeInHierarchy &&
+                    collider.attachedRigidbody != Body))
                     return false;
+                Vector3 scale = Root.lossyScale;
+                if (!Finite(scale) || !TryHullGeometry(collider, out HullGeometry original))
+                    return false;
+                Bounds bounds = collider is BoxCollider box ? new Bounds(box.center, box.size) :
+                    ((MeshCollider)collider).sharedMesh.bounds;
+                Transform shape = collider.transform;
                 Quaternion undo = Quaternion.Inverse(Root.rotation);
                 hullCenterOffset = undo * (shape.TransformPoint(bounds.center) - Root.position);
                 hullX = undo * shape.TransformVector(Vector3.right * bounds.extents.x);
@@ -201,26 +179,14 @@ namespace Seasons
                 hullThickness = original.Thickness;
                 hullShape = original.Shape;
                 hullScale = scale;
-                hullLocalScale = localScale;
-                hullParent = parent;
-                hullCollider = collider;
-                hullShapeParent = shape.parent;
-                hullShapePosition = shape.localPosition;
-                hullShapeRotation = shape.localRotation;
-                hullShapeScale = shape.localScale;
-                hullMesh = mesh;
-                hullSourceBounds = bounds;
                 hullCached = true;
                 hullGeometryRevision++;
                 GeometryCacheBuilds++;
                 PredictionPerformance.HullRebuilds++;
-                InvalidatePrediction("Geometry or scale changed", ForecastRebuildCause.Geometry);
+                InvalidatePrediction("Geometry prepared", ForecastRebuildCause.Geometry);
             }
-            else if (!hullScale.Equals(scale))
-            {
-                ScaleNoiseReuses++;
-                PredictionPerformance.ScaleNoiseReuses++;
-            }
+            // Only the world-space pose changes between reads. No sharedMesh, bounds,
+            // parent, child transform or scale comparison is needed for the cached shape.
             Quaternion rotation = Body.rotation;
             hull.Shape = hullShape;
             hull.Center = Body.position + rotation * hullCenterOffset;
@@ -240,6 +206,7 @@ namespace Seasons
         private void RefreshFloeState()
         {
             ZDO zdo = m_view.GetZDO();
+            SynchronizeFloeScale(zdo);
             bool paused = Game.IsPaused() || Time.timeScale <= 0f;
             int frame = Time.frameCount;
             long owner = zdo.GetOwner();
@@ -298,7 +265,10 @@ namespace Seasons
             }
             RefreshAuthority(zdo, force: true);
             if (returningFromDistant && SeasonalIceFloeBatching.BatchedCount != 0)
+            {
+                SeasonalIceFloeBatching.UpdateAnchor(this);
                 SeasonalIceFloeBatching.Reconcile(this);
+            }
         }
 
         private void RefreshAuthority(ZDO zdo, bool force = false)
@@ -651,15 +621,15 @@ namespace Seasons
             b.Append(" deferred/adopted=").Append(WindChangesDeferred).Append('/').Append(WindRefreshes);
             b.Append(" remaining=").Append(Number(forecastValid ? Mathf.Max(0f, forecastHorizon - PredictionAge) : 0f)).Append("s");
             b.Append("\nPrediction reason=").Append(PredictionInvalidation).Append(" fullWaterHeight=").Append(UseFullWaterHeight);
-            b.Append(" nativeWaterSampling=unchanged");
-            b.Append("\nCache geometry/noise/knots/fallbacks=").Append(GeometryCacheBuilds).Append('/');
-            b.Append(ScaleNoiseReuses).Append('/').Append(ForecastKnotsSampled).Append('/').Append(PredictionDirectFallbacks);
+            b.Append(" geometryValidation=explicit");
+            b.Append("\nCache geometry/knots/fallbacks=").Append(GeometryCacheBuilds).Append('/');
+            b.Append(ForecastKnotsSampled).Append('/').Append(PredictionDirectFallbacks);
             b.Append(" lastBuildCause=").Append(LastForecastRebuildCause);
             FloePredictionCounters totals = PredictionPerformance;
             b.Append("\nAll floes since reset: direct/builds/hits/knots=").Append(totals.DirectFrames).Append('/');
             b.Append(totals.ForecastBuilds).Append('/').Append(totals.ForecastHits).Append('/').Append(totals.SampledKnots);
-            b.Append(" hull/noise/fallbacks=").Append(totals.HullRebuilds).Append('/');
-            b.Append(totals.ScaleNoiseReuses).Append('/').Append(totals.SameFrameFallbacks);
+            b.Append(" hull/fallbacks=").Append(totals.HullRebuilds).Append('/');
+            b.Append(totals.SameFrameFallbacks);
             b.Append("\nBuild causes geometry/clock/water/wind/settings/authority/motion/scheduled/other=");
             b.Append(totals.GeometryResets).Append('/').Append(totals.ClockResets).Append('/').Append(totals.WaterResets).Append('/');
             b.Append(totals.WindResets).Append('/').Append(totals.SettingsResets).Append('/').Append(totals.AuthorityResets).Append('/');

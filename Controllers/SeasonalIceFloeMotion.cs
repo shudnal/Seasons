@@ -43,7 +43,7 @@ namespace Seasons
                 sharedMotionSettingsFrame = Time.frameCount;
             }
             SurfaceSettings settings = sharedMotionSettings;
-            float scaleY = Setting(Mathf.Abs(Root.lossyScale.y), 1f, 0.01f, 100f);
+            float scaleY = Setting(Mathf.Abs(hullScale.y), 1f, 0.01f, 100f);
             settings.Thickness = Mathf.Clamp(sharedUnscaledThickness * scaleY, 0.05f, 100f);
             return settings;
         }
@@ -134,7 +134,7 @@ namespace Seasons
             kinematicFrame = Time.frameCount;
             if (m_view.GetZDO().HasOwner())
                 return; // Never overwrite a newly acquired native owner's pose.
-            SynchronizeOwnerlessScale();
+            Sync.m_lastUpdateFrame = Time.frameCount;
             float dt = Time.deltaTime;
             if (!Finite(dt) || dt <= 0f || !Body.isKinematic)
                 return;
@@ -149,8 +149,7 @@ namespace Seasons
             }
             RecoverInvalidHeight();
             Collider collider = m_floating.m_collider;
-            if (!collider || (collider.enabled && collider.gameObject.activeInHierarchy &&
-                collider.attachedRigidbody != Body) || !ReadHullGeometry(collider, out HullGeometry hull))
+            if (!ReadHullGeometry(collider, out HullGeometry hull))
             {
                 FailKinematicMotion(WaveStatus.NoHullGeometry);
                 return;
@@ -239,34 +238,35 @@ namespace Seasons
             WithdrawSimulationAuthority("Kinematic surface unavailable", LeaseTimeoutSeconds);
         }
 
-        private void SynchronizeOwnerlessScale()
+        private void SynchronizeFloeScale(ZDO zdo)
         {
-            Sync.m_lastUpdateFrame = Time.frameCount;
             if (!Sync.m_syncScale)
                 return;
-            ZDO zdo = m_view.GetZDO();
-            Vector3 localScale = Root.localScale;
-            // Saved scale does not change with every visual pose update. Still notice
-            // manual/local scale edits even when no new ZDO revision has arrived.
             if (scaleSourceValid && ReferenceEquals(scaleSource, zdo) && scaleSourceId == zdo.m_uid &&
-                scaleSourceRevision == zdo.DataRevision && synchronizedLocalScale.Equals(localScale))
+                scaleSourceRevision == zdo.DataRevision)
                 return;
+
+            // Inspect scale data only when the network payload changes. A pose/lease
+            // revision alone does not invalidate geometry or re-read the Unity hierarchy.
+            Vector3 previous = scaleSourceValid ? synchronizedLocalScale : Root.localScale;
             Vector3 scale = zdo.GetVec3(ZDOVars.s_scaleHash, Vector3.zero);
-            if (scale != Vector3.zero && Finite(scale))
+            if (scale == Vector3.zero || !Finite(scale))
             {
-                if (!Root.localScale.Equals(scale))
-                    Root.localScale = scale;
+                float scalar = zdo.GetFloat(ZDOVars.s_scaleScalarHash, float.NaN);
+                scale = Finite(scalar) && scalar > 0f ? Vector3.one * scalar : previous;
             }
-            else
+            if (!previous.Equals(scale))
             {
-                float scalar = zdo.GetFloat(ZDOVars.s_scaleScalarHash, Root.localScale.x);
-                if (Finite(scalar) && scalar > 0f && !Root.localScale.Equals(Vector3.one * scalar))
-                    Root.localScale = Vector3.one * scalar;
+                RebuildHullGeometry();
+                // The native owner publishes its own local scale. Never overwrite it
+                // with an older ZDO snapshot; just invalidate after the published edit.
+                if (!zdo.IsOwner())
+                    Root.localScale = scale;
             }
             scaleSource = zdo;
             scaleSourceId = zdo.m_uid;
             scaleSourceRevision = zdo.DataRevision;
-            synchronizedLocalScale = Root.localScale;
+            synchronizedLocalScale = scale;
             scaleSourceValid = true;
         }
 
@@ -295,8 +295,14 @@ namespace Seasons
             // Only smooth the received pose. No water calculations, local impulses or
             // unlimited extrapolation of a stalled publisher on a replica.
             float blend = MotionBlend(dt, replica: true);
-            Body.position = Vector3.Lerp(Body.position, target, blend);
+            Vector3 previousPosition = Body.position;
+            Vector3 position = Vector3.Lerp(previousPosition, target, blend);
+            Body.position = position;
             Body.rotation = Quaternion.Slerp(Body.rotation, rotation, blend);
+            // A received horizontal move is a real relocation. Simulator rocking holds
+            // its hull center fixed and does not need a cell calculation every frame.
+            if (previousPosition.x != position.x || previousPosition.z != position.z)
+                SeasonalIceFloeBatching.UpdateAnchor(this);
             Body.useGravity = false;
             KinematicVelocity = Finite(velocity) ? velocity : Vector3.zero;
             KinematicAngularVelocity = Finite(omega) ? omega : Vector3.zero;

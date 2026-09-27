@@ -15,7 +15,7 @@ namespace Seasons
         private const float CellInverse = 1f / 96f;
         private const int ChunkCapacity = 500; // Below Unity's 511 default two-matrix limit.
 
-        private readonly struct BatchKey : IEquatable<BatchKey>
+        internal readonly struct BatchKey : IEquatable<BatchKey>
         {
             internal readonly int CellX, CellZ;
             internal BatchKey(int x, int z) { CellX = x; CellZ = z; }
@@ -24,10 +24,11 @@ namespace Seasons
             public override int GetHashCode() => (CellX * 397) ^ CellZ;
         }
 
-        private sealed class Bucket
+        internal sealed class Bucket
         {
             internal readonly List<Matrix4x4> Matrices = new List<Matrix4x4>(32);
             internal readonly List<IceFloe> Instances = new List<IceFloe>(32);
+            internal int DrawIndex;
         }
 
         private sealed class Definition
@@ -51,17 +52,13 @@ namespace Seasons
             internal GameObject ProbeOverride;
         }
 
-        private sealed class Slot
+        internal sealed class Slot
         {
             internal BatchKey Key;
             internal int Index;
-            internal Vector3 Anchor;
-            internal Vector3 RootAnchor;
+            internal Bucket Bucket;
             internal GameObject Visual;
-            internal MeshRenderer Renderer;
-            internal MeshFilter Filter;
-            internal MeshCollider Collider;
-            internal bool OriginalActive, OriginalRenderer, OriginalCollider;
+            internal bool OriginalActive;
             internal bool AutoCenter, AutoInertia;
             internal Vector3 Center, Inertia;
             internal Quaternion InertiaRotation;
@@ -123,6 +120,7 @@ namespace Seasons
                 driver.enabled = false;
             DisposeDefinition();
             buckets.Clear();
+            drawBuckets.Clear();
             matrixCount = lastSubmissions = 0;
         }
 
@@ -141,8 +139,7 @@ namespace Seasons
             new BatchKey(Mathf.FloorToInt(anchor.x * CellInverse), Mathf.FloorToInt(anchor.z * CellInverse));
 
         private static bool Eligible(IceFloe floe) => configured && !failed && floe && floe.WaveValid &&
-            (floe.OwnerlessKinematic || floe.Distant) && floe.Body && floe.Body.isKinematic &&
-            floe.m_view && floe.m_view.IsValid() && ZNet.instance && !ZNet.instance.IsDedicated();
+            (floe.OwnerlessKinematic || floe.Distant) && floe.Body.isKinematic;
 
         internal static void Reconcile(IceFloe floe)
         {
@@ -152,10 +149,11 @@ namespace Seasons
                 ReturnNative(floe);
                 return;
             }
-            if (rejected.Contains(floe))
-                return;
-            if (!slots.TryGetValue(floe, out Slot slot))
+            Slot slot = floe.RenderSlot;
+            if (slot == null)
             {
+                if (rejected.Contains(floe))
+                    return;
                 bool admitted;
                 try { admitted = TryAdmit(floe); }
                 catch (Exception exception)
@@ -170,42 +168,27 @@ namespace Seasons
                     rejected.Add(floe);
                     return;
                 }
-                slot = slots[floe];
+                slot = floe.RenderSlot;
             }
-            if (!slot.Visual || slot.Visual.activeSelf || !slot.Renderer || !slot.Renderer.enabled ||
-                !slot.Collider || !slot.Collider.enabled || floe.m_floating.m_collider != slot.Collider ||
-                !slot.Filter || slot.Filter.sharedMesh != definition.Mesh ||
-                slot.Visual.transform.localPosition != definition.LocalPosition ||
-                slot.Visual.transform.localRotation != definition.LocalRotation ||
-                slot.Visual.transform.localScale != definition.LocalScale)
-            {
-                ReturnNative(floe);
-                floe.RebuildHullGeometry();
-                rejected.Add(floe);
+            // The visual definition was validated at admission. Only write the current
+            // matrix into its stable slot; do not re-inspect default or classify its cell.
+            slot.Bucket.Matrices[slot.Index] = floe.Root.localToWorldMatrix * definition.LocalOffset;
+        }
+
+        internal static void UpdateAnchor(IceFloe floe)
+        {
+            Slot slot = floe.RenderSlot;
+            if (slot == null)
                 return;
-            }
-            // FarVisual flattens an off-center root. Its changing hull-center XZ
-            // is ordinary tilt, not a new world-cell assignment.
-            Vector3 rootDelta = floe.Body.position - slot.RootAnchor;
-            bool relocated = rootDelta.x * rootDelta.x + rootDelta.z * rootDelta.z > 16f;
-            Vector3 anchor = floe.Distant && !relocated ? slot.Anchor : floe.CurrentHullAnchor;
-            BatchKey next = Cell(anchor);
+            BatchKey next = Cell(floe.CurrentHullAnchor);
             if (!next.Equals(slot.Key))
-            {
-                MoveCell(floe, slot, next, anchor);
-                slot.RootAnchor = floe.Body.position;
-            }
-            else if (floe.Distant && relocated)
-            {
-                slot.Anchor = anchor;
-                slot.RootAnchor = floe.Body.position;
-            }
-            buckets[slot.Key].Matrices[slot.Index] = floe.Root.localToWorldMatrix * definition.LocalOffset;
+                MoveCell(floe, slot, next);
         }
 
         private static bool TryAdmit(IceFloe floe)
         {
-            if (!SystemInfo.supportsInstancing || !floe.PrepareInactiveHull())
+            if (!ZNet.instance || ZNet.instance.IsDedicated() || !SystemInfo.supportsInstancing ||
+                !floe.PrepareInactiveHull())
                 return false;
             Transform child = floe.Root.Find("default");
             if (!child || child.parent != floe.Root || child.childCount != 0)
@@ -239,14 +222,12 @@ namespace Seasons
             }
             Slot slot = new Slot
             {
-                Visual = visual, Renderer = renderer, Filter = filter, Collider = collider,
-                OriginalActive = visual.activeSelf, OriginalRenderer = renderer.enabled,
-                OriginalCollider = collider.enabled, AutoCenter = floe.Body.automaticCenterOfMass,
+                Visual = visual, OriginalActive = visual.activeSelf,
+                AutoCenter = floe.Body.automaticCenterOfMass,
                 AutoInertia = floe.Body.automaticInertiaTensor, Center = floe.Body.centerOfMass,
-                Inertia = floe.Body.inertiaTensor, InertiaRotation = floe.Body.inertiaTensorRotation,
-                Anchor = floe.CurrentHullAnchor, RootAnchor = floe.Body.position
+                Inertia = floe.Body.inertiaTensor, InertiaRotation = floe.Body.inertiaTensorRotation
             };
-            slot.Key = Cell(slot.Anchor);
+            slot.Key = Cell(floe.CurrentHullAnchor);
             AddSlot(floe, slot);
             // Freeze the established dynamic shape's COM/inertia while Unity sees
             // no collider. Restore the original automatic/manual mode on exit.
@@ -353,45 +334,62 @@ namespace Seasons
         private static void AddSlot(IceFloe floe, Slot slot)
         {
             if (!buckets.TryGetValue(slot.Key, out Bucket bucket))
-                buckets.Add(slot.Key, bucket = new Bucket());
+            {
+                bucket = new Bucket { DrawIndex = drawBuckets.Count };
+                buckets.Add(slot.Key, bucket);
+                drawBuckets.Add(bucket);
+            }
+            slot.Bucket = bucket;
             slot.Index = bucket.Matrices.Count;
             bucket.Matrices.Add(floe.Root.localToWorldMatrix * definition.LocalOffset);
             bucket.Instances.Add(floe);
             slots.Add(floe, slot);
+            floe.RenderSlot = slot;
             matrixCount++;
         }
 
         private static void RemoveSlot(IceFloe floe, Slot slot)
         {
-            Bucket bucket = buckets[slot.Key];
+            Bucket bucket = slot.Bucket;
             int last = bucket.Matrices.Count - 1;
             if (slot.Index != last)
             {
                 bucket.Matrices[slot.Index] = bucket.Matrices[last];
                 IceFloe moved = bucket.Instances[last];
                 bucket.Instances[slot.Index] = moved;
-                slots[moved].Index = slot.Index;
+                moved.RenderSlot.Index = slot.Index;
             }
             bucket.Matrices.RemoveAt(last);
             bucket.Instances.RemoveAt(last);
             if (bucket.Matrices.Count == 0)
+            {
                 buckets.Remove(slot.Key);
+                int lastBucket = drawBuckets.Count - 1;
+                Bucket moved = drawBuckets[lastBucket];
+                drawBuckets[bucket.DrawIndex] = moved;
+                moved.DrawIndex = bucket.DrawIndex;
+                drawBuckets.RemoveAt(lastBucket);
+            }
             slots.Remove(floe);
+            floe.RenderSlot = null;
+            slot.Bucket = null;
             matrixCount--;
         }
 
-        private static void MoveCell(IceFloe floe, Slot slot, BatchKey next, Vector3 anchor)
+        private static void MoveCell(IceFloe floe, Slot slot, BatchKey next)
         {
             RemoveSlot(floe, slot);
             slot.Key = next;
-            slot.Anchor = anchor;
             AddSlot(floe, slot);
         }
 
         internal static void ReturnNative(IceFloe floe)
         {
             rejected.Remove(floe);
-            if (ReferenceEquals(floe, null) || !slots.TryGetValue(floe, out Slot slot))
+            if (ReferenceEquals(floe, null))
+                return;
+            Slot slot = floe.RenderSlot;
+            if (slot == null)
                 return;
             RemoveSlot(floe, slot);
             if (floe && slot.Visual)
@@ -432,8 +430,6 @@ namespace Seasons
             }
             lastDrawFrame = Time.frameCount;
             lastSubmissions = 0;
-            drawBuckets.Clear();
-            drawBuckets.AddRange(buckets.Values);
             try
             {
                 foreach (Bucket bucket in drawBuckets)
@@ -458,8 +454,13 @@ namespace Seasons
                 LogWarning($"Seasonal floe instancing stopped; native visuals restored: {exception}");
                 RetireAll();
             }
-            finally { drawBuckets.Clear(); }
         }
+    }
+
+    public partial class IceFloe
+    {
+        // A live slot is owned by the instance lifecycle, not rediscovered in dictionaries.
+        internal SeasonalIceFloeBatching.Slot RenderSlot;
     }
 
     [DefaultExecutionOrder(20000)]
