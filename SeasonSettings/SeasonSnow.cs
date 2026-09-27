@@ -25,6 +25,8 @@ namespace Seasons
             public SnowPosition position;
             public SnowScale scale;
 
+            public bool ShouldSerializebuildup() => buildup != SnowBuildup.Seasonal;
+
             public PieceSnow(SnowBuildup buildup = SnowBuildup.Seasonal, string copyFrom = null,
                 SnowPosition position = null, SnowScale scale = null)
             {
