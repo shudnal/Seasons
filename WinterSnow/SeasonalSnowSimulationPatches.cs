@@ -90,15 +90,54 @@ namespace Seasons
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.SetHealthVisual))]
     internal static class WearNTear_SetHealthVisual_SnowGeometry
     {
-        [HarmonyPrefix]
-        private static void Prefix(WearNTear __instance, out int __state) =>
-            __state = SeasonalSnowController.Instance.ObservesSnowGeometry
-                ? SeasonalSnowController.HealthGeometryMask(__instance) : -1;
-        [HarmonyPostfix]
-        private static void Postfix(WearNTear __instance, int __state)
+        private static int Capture(WearNTear piece) =>
+            SeasonalSnowController.Instance.ObservesSnowGeometry
+                ? SeasonalSnowController.HealthGeometryMask(piece) : -1;
+
+        private static void Changed(WearNTear piece, int previous) =>
+            SeasonalSnowController.Instance.HealthGeometryChanged(piece, previous);
+
+        [HarmonyTranspiler]
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
-            if (__state >= 0)
-                SeasonalSnowController.Instance.HealthGeometryChanged(__instance, __state);
+            LocalBuilder previous = generator.DeclareLocal(typeof(int));
+            Label native = generator.DefineLabel();
+            // The sentinel also covers activation during a native callback: no entry
+            // observation means no matching exit notification for that invocation.
+            yield return new CodeInstruction(OpCodes.Ldc_I4_M1);
+            yield return new CodeInstruction(OpCodes.Stloc, previous);
+            yield return new CodeInstruction(OpCodes.Ldsfld,
+                AccessTools.Field(typeof(SeasonalSnowController), nameof(SeasonalSnowController.VisualBridgeActive)));
+            yield return new CodeInstruction(OpCodes.Brfalse, native);
+            yield return new CodeInstruction(OpCodes.Ldarg_0);
+            yield return new CodeInstruction(OpCodes.Call,
+                AccessTools.Method(typeof(WearNTear_SetHealthVisual_SnowGeometry), nameof(Capture)));
+            yield return new CodeInstruction(OpCodes.Stloc, previous);
+            CodeInstruction entry = new CodeInstruction(OpCodes.Nop);
+            entry.labels.Add(native);
+            yield return entry;
+
+            foreach (CodeInstruction instruction in instructions)
+            {
+                if (instruction.opcode == OpCodes.Ret)
+                {
+                    Label done = generator.DefineLabel();
+                    CodeInstruction check = new CodeInstruction(OpCodes.Ldloc, previous);
+                    check.labels.AddRange(instruction.labels);
+                    check.blocks.AddRange(instruction.blocks);
+                    instruction.labels.Clear();
+                    instruction.blocks.Clear();
+                    instruction.labels.Add(done);
+                    yield return check;
+                    yield return new CodeInstruction(OpCodes.Ldc_I4_0);
+                    yield return new CodeInstruction(OpCodes.Blt, done);
+                    yield return new CodeInstruction(OpCodes.Ldarg_0);
+                    yield return new CodeInstruction(OpCodes.Ldloc, previous);
+                    yield return new CodeInstruction(OpCodes.Call,
+                        AccessTools.Method(typeof(WearNTear_SetHealthVisual_SnowGeometry), nameof(Changed)));
+                }
+                yield return instruction;
+            }
         }
     }
 

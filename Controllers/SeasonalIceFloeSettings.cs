@@ -200,7 +200,7 @@ namespace Seasons
         public MotionSettings motion = new MotionSettings();
         public AuthoritySettings authority = new AuthoritySettings();
         public ClientSettings client = new ClientSettings();
-        public RenderingSettings rendering = new RenderingSettings();
+        public RenderingSettings rendering = new RenderingSettings() { enableInstancedRendering = true };
 
         [Serializable]
         public sealed class RenderingSettings

@@ -3,6 +3,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Reflection.Emit;
 using UnityEngine;
 using static Heightmap;
@@ -1570,15 +1571,34 @@ namespace Seasons
         }
     }
 
-    [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.CalcWave), new Type[] { typeof(Vector3), typeof(float), typeof(float), typeof(float), typeof(float) })]
+    [HarmonyPatch]
     public static class WaterVolume_CalcWave_FrozenOceanNoWaves
     {
-        private static bool Prefix(ref float __result)
+        private static IEnumerable<MethodBase> TargetMethods()
         {
-            if (!IsWaterSurfaceFrozen())
-                return true;
-            __result = 0f;
-            return false;
+            yield return AccessTools.Method(typeof(WaterVolume), nameof(WaterVolume.CalcWave),
+                new[] { typeof(Vector3), typeof(float), typeof(float), typeof(float), typeof(float) });
+            yield return AccessTools.Method(typeof(WaterVolume), nameof(WaterVolume.CalcWave),
+                new[] { typeof(Vector3), typeof(float), typeof(Vector4), typeof(float), typeof(float), typeof(float) });
+        }
+
+        [HarmonyTranspiler]
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
+        {
+            // Read the existing policy directly. Thawed water never calls a Seasons helper.
+            // Keep this gate outside the original labels and exception regions.
+            Label native = generator.DefineLabel();
+            yield return new CodeInstruction(OpCodes.Ldsfld,
+                AccessTools.Field(typeof(ZoneSystemVariantController), "s_freezeStatus"));
+            yield return new CodeInstruction(OpCodes.Ldc_R4, 1f);
+            yield return new CodeInstruction(OpCodes.Bne_Un, native);
+            yield return new CodeInstruction(OpCodes.Ldc_R4, 0f);
+            yield return new CodeInstruction(OpCodes.Ret);
+            CodeInstruction entry = new CodeInstruction(OpCodes.Nop);
+            entry.labels.Add(native);
+            yield return entry;
+            foreach (CodeInstruction instruction in instructions)
+                yield return instruction;
         }
     }
 
@@ -1673,18 +1693,6 @@ namespace Seasons
                 return;
 
             CheckIfFishAboveSurface(__instance);
-        }
-    }
-
-    [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.CalcWave), new Type[] { typeof(Vector3), typeof(float), typeof(Vector4), typeof(float), typeof(float), typeof(float) })]
-    public static class WaterVolume_CalcWave_FrozenOceanPreventWaves
-    {
-        private static bool Prefix(ref float __result)
-        {
-            if (!IsWaterSurfaceFrozen())
-                return true;
-            __result = 0f;
-            return false;
         }
     }
 

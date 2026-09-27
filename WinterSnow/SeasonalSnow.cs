@@ -625,6 +625,24 @@ namespace Seasons
         {
             RefreshWeatherTimeline();
             SeasonalSnowController.Instance.RequestSnowRefresh(rules: true);
+            if (Enabled || !ZNet.instance || !ZNet.instance.IsServer() || ZDOMan.instance == null)
+                return;
+
+            // Disabling is a world-data reset, not just a loaded-visual transition.
+            // Otherwise an unloaded snapshot can still match this winter on re-enable.
+            // Clear metadata in place; do not instantiate objects or claim ownership.
+            foreach (ZDO zdo in ZDOMan.instance.m_objectsByID.Values)
+            {
+                if (zdo == null || !zdo.IsValid())
+                    continue;
+                bool legacy = SeasonalSnowStorage.HasLegacyState(zdo);
+                if (!legacy && !SeasonalSnowStorage.HasSavedValue(zdo) && !SeasonalSnowStorage.HasEpoch(zdo))
+                    continue;
+                // Unmarked native snow is never selected. Only legacy seasonal data
+                // used native keys; preserve permanent Deep North snow even there.
+                SeasonalSnowStorage.Clear(zdo,
+                    clearNative: legacy && GetBiome(zdo.GetPosition()) != Heightmap.Biome.DeepNorth);
+            }
         }
 
         public static void OnSnowRangeConfigChanged() =>
