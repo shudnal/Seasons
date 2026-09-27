@@ -351,7 +351,7 @@ namespace Seasons
             pieces.Add("rae_WoodPoleBig_4m", new PieceSnow(copyFrom: "wood_pole2"));
             pieces.Add("rae_crystal_beam_long", new PieceSnow(copyFrom: "wood_beam"));
             pieces.Add("rae_crystal_beam_short", new PieceSnow(copyFrom: "wood_beam_1"));
-            pieces.Add("rae_crystal_floorslab", new PieceSnow(copyFrom: "stone_floor"));
+            pieces.Add("rae_crystal_floorslab", new PieceSnow(buildup: SnowBuildup.Reduced, copyFrom: "stone_floor"));
             pieces.Add("rae_crystal_pole_long", new PieceSnow(copyFrom: "wood_pole2"));
             pieces.Add("rae_crystal_pole_short", new PieceSnow(copyFrom: "wood_pole"));
             pieces.Add("rae_darkwood_gate_crystal", new PieceSnow(copyFrom: "darkwood_gate"));
@@ -360,8 +360,8 @@ namespace Seasons
             pieces.Add("refined_stakewall_1", new PieceSnow(copyFrom: "stake_wall"));
             pieces.Add("stone_beam_long", new PieceSnow(copyFrom: "wood_beam"));
             pieces.Add("stone_beam_short", new PieceSnow(copyFrom: "wood_beam_1"));
-            pieces.Add("stone_floor4m_bal", new PieceSnow(copyFrom: "stone_floor"));
-            pieces.Add("stone_floor_1_new", new PieceSnow(copyFrom: "stone_floor"));
+            pieces.Add("stone_floor4m_bal", new PieceSnow(buildup: SnowBuildup.Reduced, copyFrom: "stone_floor"));
+            pieces.Add("stone_floor_1_new", new PieceSnow(buildup: SnowBuildup.Reduced, copyFrom: "stone_floor"));
             pieces.Add("stone_floor_triangle_bal", new PieceSnow(buildup: SnowBuildup.Reduced, copyFrom: "blackmarble_floor_triangle"));
             pieces.Add("stone_pole_long", new PieceSnow(copyFrom: "wood_pole2"));
             pieces.Add("stone_pole_short", new PieceSnow(copyFrom: "wood_pole"));
