@@ -445,7 +445,7 @@ namespace Seasons
                         for (int material = 0; material < definition.Params.Length; ++material)
                         {
                             int submesh = Mathf.Min(material, definition.Mesh.subMeshCount - 1);
-                            Graphics.RenderMeshInstanced(ref definition.Params[material], definition.Mesh,
+                            Graphics.RenderMeshInstanced(in definition.Params[material], definition.Mesh,
                                 submesh, bucket.Matrices, chunk, start);
                             lastSubmissions++;
                         }

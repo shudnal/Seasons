@@ -233,7 +233,7 @@ namespace Seasons
                 SeasonalIceFloeWater.BeginBulkAdmission();
                 try
                 {
-                    foreach (IceFloe floe in UnityEngine.Object.FindObjectsOfType<IceFloe>())
+                    foreach (IceFloe floe in UnityEngine.Object.FindObjectsByType<IceFloe>(FindObjectsSortMode.InstanceID))
                         SeasonalIceFloeWaves.Track(floe);
                 }
                 finally { SeasonalIceFloeWater.EndBulkAdmission(); }
