@@ -112,7 +112,7 @@ namespace Seasons
             pieces.Add("Piece_grausten_floor_2x2", new PieceSnow(buildup: SnowBuildup.Reduced));
             pieces.Add("Piece_grausten_floor_4x4", new PieceSnow(buildup: SnowBuildup.Reduced, position: new SnowPosition(y: -0.02f)));
             pieces.Add("Piece_grausten_stone_ladder", new PieceSnow(buildup: SnowBuildup.Reduced));
-            pieces.Add("charcoal_kiln", new PieceSnow(buildup: SnowBuildup.Reduced));
+            pieces.Add("charcoal_kiln", new PieceSnow(buildup: SnowBuildup.Reduced, position: new SnowPosition(y: 1.5f), scale: new SnowScale(y: 3.5f)));
             pieces.Add("piece_beehive", new PieceSnow(buildup: SnowBuildup.Reduced));
             pieces.Add("stone_pile", new PieceSnow(buildup: SnowBuildup.Reduced));
             pieces.Add("flint_pile", new PieceSnow(buildup: SnowBuildup.Reduced));
