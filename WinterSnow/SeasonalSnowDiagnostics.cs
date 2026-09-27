@@ -92,7 +92,7 @@ namespace Seasons
 
     internal sealed partial class SeasonalSnowController
     {
-        // Reads existing caches and save fields only. In particular, do not use the
+        // Reads existing state, transforms and save fields only. In particular, do not use the
         // registration, biome resolution, readiness, heat or visual request paths here.
         internal string ReadSnowDiagnostics(WearNTear piece)
         {
@@ -112,6 +112,7 @@ namespace Seasons
             DiagnosticLine(text, "Identity: {0} #{1} | ZDO={2} owner={3} local={4} biome={5}",
                 Utils.GetPrefabName(piece.gameObject), piece.GetInstanceID(),
                 zdo != null ? zdo.m_uid.ToString() : "<none>", zdo != null ? zdo.GetOwner() : 0L, localOwner, biome);
+            AppendSnowMeshDiagnostics(text, piece, visual);
 
             if (state != null)
             {
@@ -181,6 +182,39 @@ namespace Seasons
                     visual.TargetSnow, visual.TargetLevel, visual.Applied ? visual.Applied.name : "<none>", visual.AppliedLevel, visual.HasApplied);
             return text.ToString().TrimEnd('\n');
         }
+
+        private static void AppendSnowMeshDiagnostics(StringBuilder text, WearNTear piece, VisualState visual)
+        {
+            // Prefer the applied cap: Target may still be waiting in the visual queue.
+            MeshRenderer cap = visual?.Applied;
+            if (!IsDiagnosticCapActive(cap) ||
+                (cap != piece.m_snow && cap != piece.m_snowWorn && cap != piece.m_snowBroken))
+            {
+                cap = IsDiagnosticCapActive(piece.m_snowBroken) ? piece.m_snowBroken :
+                    IsDiagnosticCapActive(piece.m_snowWorn) ? piece.m_snowWorn :
+                    IsDiagnosticCapActive(piece.m_snow) ? piece.m_snow : null;
+            }
+            if (!cap)
+            {
+                DiagnosticLine(text, "Snow mesh: <none active>");
+                return;
+            }
+
+            string variant = cap == piece.m_snow ? "normal" : cap == piece.m_snowWorn ? "worn" : "broken";
+            MeshFilter filter = cap.GetComponent<MeshFilter>();
+            Mesh mesh = filter ? filter.sharedMesh : null;
+            Transform transform = cap.transform;
+            // These are the local values edited by Seasonal snow.json, not world/lossy values.
+            Vector3 position = transform.localPosition;
+            Vector3 scale = transform.localScale;
+            DiagnosticLine(text, "Snow mesh: {0} | cap={1} ({2}) | local position=({3:0.#####}, {4:0.#####}, {5:0.#####}) scale=({6:0.#####}, {7:0.#####}, {8:0.#####})",
+                mesh ? mesh.name : "<none>", cap.name, variant,
+                position.x, position.y, position.z, scale.x, scale.y, scale.z);
+        }
+
+        // Cap-root activity also covers caps whose root renderer is disabled by LOD selection.
+        // Camera visibility must not change which transform the diagnostics report.
+        private static bool IsDiagnosticCapActive(MeshRenderer cap) => cap && cap.gameObject.activeInHierarchy;
 
         private static void DiagnosticLine(StringBuilder text, string format, params object[] values) =>
             text.AppendFormat(CultureInfo.InvariantCulture, format, values).Append('\n');
