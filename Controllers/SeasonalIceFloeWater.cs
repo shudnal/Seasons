@@ -237,6 +237,10 @@ namespace Seasons
         {
             private static void Postfix(WaterVolume __instance)
             {
+                // Disabled volumes keep m_inWater while absent from Instances, so
+                // admission could not retire their existing managed entries.
+                if (managed.Count != 0)
+                    RetireMembers(__instance);
                 if (!pendingRestore.TryGetValue(__instance, out HashSet<Floating> pending))
                     return;
                 pendingRestore.Remove(__instance);

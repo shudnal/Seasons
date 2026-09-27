@@ -123,6 +123,7 @@ namespace Seasons
         {
             SeasonalIceFloeBatching.Reset();
             ResetBackgroundWorld();
+            IceFloe.ResetDistantBobFrame();
             while (participants.Count != 0)
             {
                 try { Untrack(participants[participants.Count - 1]); }
@@ -562,6 +563,48 @@ namespace Seasons
         private const string HoverBlockStart = "\n\n<size=70%><color=#88CCEE>Floe physics</color>";
         private const float SurfaceDerivativeStep = 0.05f;
 
+        // FarVisual shares one scalar oscillator per frame, not a water/physics sample.
+        private struct DistantBobFrame
+        {
+            internal float Surface, HeightOffset, SubmergenceOffset, Blend, Sine, Cosine;
+        }
+
+        private static DistantBobFrame distantBob;
+        private static int distantBobFrame = -1;
+        private static bool distantBobReady;
+        private float distantPhaseSine, distantPhaseCosine, distantPivotOffset, distantEdgeOffset;
+        private uint distantHullRevision;
+        private bool distantFlat;
+
+        internal static void ResetDistantBobFrame()
+        {
+            distantBobFrame = -1;
+            distantBobReady = false;
+            distantBob = default;
+        }
+
+        private static bool PrepareDistantBobFrame()
+        {
+            if (distantBobFrame == Time.frameCount)
+                return distantBobReady;
+            distantBobFrame = Time.frameCount;
+            distantBobReady = false;
+            if (Game.IsPaused() || Time.timeScale <= 0f || !ZNet.instance || !ZoneSystem.instance)
+                return false;
+            if (!TryAuthorityTime(out double now))
+                return false;
+            float amplitude = IsWaterSurfaceFrozen() ? 0f : Setting(DistantBobAmplitude, 0.08f, 0f, 0.25f);
+            float period = Setting(DistantBobPeriod, 6f, 2f, 30f);
+            double angle = now * (2d * Math.PI / period);
+            distantBob.Surface = ZoneSystem.instance.m_waterLevel;
+            distantBob.HeightOffset = Setting(HeightOffset, 0f, -10f, 10f);
+            distantBob.SubmergenceOffset = 0.5f - Setting(RestingSubmergence, 0.7f, 0.1f, 0.95f);
+            distantBob.Blend = 1f - Mathf.Exp(-Time.deltaTime / 0.2f);
+            distantBob.Sine = amplitude * (float)Math.Sin(angle);
+            distantBob.Cosine = amplitude * (float)Math.Cos(angle);
+            return distantBobReady = WaterValid(distantBob.Surface);
+        }
+
         internal bool WaveValid => this && Registered && m_floating && Body && Sync && Root && m_view && m_view.IsValid();
         private static bool Finite(float value) => SeasonalIceFloeWaves.Finite(value);
         private static bool Finite(Vector3 value) => SeasonalIceFloeWaves.Finite(value);
@@ -793,6 +836,12 @@ namespace Seasons
             if (forward.sqrMagnitude < 0.000001f)
                 forward = Vector3.forward;
             distantFlatRotation = Quaternion.LookRotation(forward.normalized, Vector3.up);
+            distantFlat = false;
+            distantHullRevision = uint.MaxValue;
+            distantEdgeOffset = Utils.LengthXZ(Baseline) > 10500f ? -100f : 0f;
+            double phase = electionPhase * 2d * Math.PI;
+            distantPhaseSine = (float)Math.Sin(phase);
+            distantPhaseCosine = (float)Math.Cos(phase);
             WithdrawSimulationAuthority("Outside visible waves");
             Distant = true;
             HoldGravity();
@@ -805,31 +854,37 @@ namespace Seasons
 
         private void ApplyBob()
         {
-            if (!Distant || BobFrame == Time.frameCount || Game.IsPaused() || Time.timeScale <= 0f)
+            if (!Distant || BobFrame == Time.frameCount || !PrepareDistantBobFrame())
                 return;
             BobFrame = Time.frameCount;
-            Camera camera = GameCamera.instance ? GameCamera.instance.m_camera : null;
-            if (!camera || (camera.transform.position - Baseline).sqrMagnitude > camera.farClipPlane * camera.farClipPlane ||
-                !TryAuthorityTime(out double now) || !SeasonalIceFloeWaves.TrySurfaceContext(this, out SeasonalIceFloeWaves.SurfaceContext context))
+            // Initial entry and explicit scale/shape edits are the only geometry work.
+            if (!hullCached && !PrepareInactiveHull())
                 return;
-            float blend = 1f - Mathf.Exp(-Time.deltaTime / 0.2f);
-            Body.rotation = Quaternion.Slerp(Body.rotation, distantFlatRotation, blend);
-            if (!m_floating.m_collider || !ReadHullGeometry(m_floating.m_collider, out HullGeometry hull))
-                return;
-            float amplitude = context.UseWaves ? Setting(DistantBobAmplitude, 0.08f, 0f, 0.25f) : 0f;
-            float period = Setting(DistantBobPeriod, 6f, 2f, 30f);
-            float bob = amplitude * (float)Math.Sin(now * (2.0 * Math.PI / period) + electionPhase * 2.0 * Math.PI);
-            float surface = context.WaterLevel + context.Offset;
-            if (context.HasWorldEdge && Utils.LengthXZ(Baseline) > 10500f)
-                surface -= 100f;
+            if (distantHullRevision != hullGeometryRevision)
+            {
+                distantPivotOffset = (distantFlatRotation * hullCenterOffset).y;
+                distantHullRevision = hullGeometryRevision;
+            }
+            float pivotOffset = distantPivotOffset;
+            if (!distantFlat)
+            {
+                Quaternion rotation = Quaternion.Slerp(Body.rotation, distantFlatRotation, distantBob.Blend);
+                // Finish the one-time flattening transition; do not keep writing rotation.
+                distantFlat = Mathf.Abs(Quaternion.Dot(rotation, distantFlatRotation)) >= 0.9999999f;
+                if (distantFlat)
+                    rotation = distantFlatRotation;
+                Body.rotation = rotation;
+                pivotOffset = (rotation * hullCenterOffset).y;
+            }
+            // sin(t + phase) = sin(t)cos(phase) + cos(t)sin(phase).
+            // The current time, period, settings and trigonometry are shared by all floes.
+            float bob = distantBob.Sine * distantPhaseCosine + distantBob.Cosine * distantPhaseSine;
+            float surface = distantBob.Surface + distantEdgeOffset;
             m_floating.m_waterLevel = surface + bob;
-            // Use the collider waterline in EVERY mode. The old distant path added the
-            // native offset to a bottom pivot and left the whole floe above the sea.
-            TargetY = surface + Setting(HeightOffset, 0f, -10f, 10f) + bob +
-                (0.5f - Setting(RestingSubmergence, 0.7f, 0.1f, 0.95f)) * hull.Thickness -
-                (hull.Center.y - Body.position.y);
+            TargetY = surface + distantBob.HeightOffset + bob +
+                distantBob.SubmergenceOffset * hullThickness - pivotOffset;
             Vector3 position = Baseline;
-            position.y = Mathf.Lerp(Body.position.y, TargetY, blend);
+            position.y = Mathf.Lerp(Body.position.y, TargetY, distantBob.Blend);
             if (Finite(position))
                 Body.position = position;
         }
@@ -1218,7 +1273,7 @@ namespace Seasons
             d.FixedTime = Time.fixedTime;
             d.FixedDelta = dt;
             d.Settings = settings;
-            d.ForceCalls = 0;
+            d.ForceCalls = LastForceCalls;
             d.WaveTime = SeasonalIceFloeWaves.WaveTime;
             d.WindIntensity = SeasonalIceFloeWaves.WindIntensity;
             d.Mass = Body.mass;
@@ -1373,6 +1428,8 @@ namespace Seasons
                 else
                     AppendPredictionDiagnostics(b);
                 AppendMotionDiagnostics(b);
+                if (Distant)
+                    b.Append("\nFar bob=shared oscillator flat=").Append(distantFlat).Append(" targetY=").Append(Number(TargetY));
                 b.Append("\nForce/torque calls=").Append(LastForceCalls).Append("/2 total=").Append(TotalForceCalls);
                 WaveDiagnostics d = Diagnostics;
                 if (d == null || !d.Captured)

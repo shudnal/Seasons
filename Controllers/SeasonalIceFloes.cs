@@ -75,7 +75,6 @@ namespace Seasons
             internal ZDOID Control;
             internal Heightmap Terrain;
             internal readonly SectorCursor Cursor = new SectorCursor();
-            internal readonly List<ZoneSystem.ClearArea> Exclusions = new List<ZoneSystem.ClearArea>();
             internal readonly HashSet<ZDOID> Created = new HashSet<ZDOID>();
             internal bool Inspected, StaticMissing, Ghost, RandomReady;
             internal int Remaining;
@@ -85,6 +84,9 @@ namespace Seasons
 
         private enum CandidateResult { Skipped, Placed, Deferred }
 
+        // Shared by every placement job for this winter session. Completing or unloading
+        // one zone must not erase the occupied circles seen by its neighbours.
+        private static readonly List<ZoneSystem.ClearArea> placementExclusions = new List<ZoneSystem.ClearArea>();
         private static readonly Queue<Vector2s> requests = new Queue<Vector2s>();
         private static readonly HashSet<Vector2s> requestSet = new HashSet<Vector2s>();
         private static readonly Dictionary<Vector2s, ZoneWork> work = new Dictionary<Vector2s, ZoneWork>();
@@ -142,6 +144,7 @@ namespace Seasons
             work.Clear();
             controllers.Clear();
             initialExclusions.Clear();
+            placementExclusions.Clear();
             settled.Clear();
             cleanupFloes.Clear();
             cleanupMarkers.Clear();
@@ -205,6 +208,7 @@ namespace Seasons
             }
             policyKnown = true;
             wanted = nowWanted;
+            placementExclusions.Clear();
             loadedZones?.Dispose();
             loadedZones = null;
             work.Clear();
@@ -356,7 +360,7 @@ namespace Seasons
             $"wanted={wanted} driver={(driver && driver.enabled)} prefabReady={(s_iceFloe?.m_prefab != null)} " +
             $"amount={SeasonalIceFloeSettings.AmountPerZone} scale={SeasonalIceFloeSettings.Scale} " +
             $"queued={requests.Count} pending={work.Count} settled={settled.Count} " +
-            $"discovering={(loadedZones != null)}";
+            $"discovering={(loadedZones != null)} exclusions={placementExclusions.Count}";
 
         private static void CleanupAll()
         {
@@ -678,12 +682,12 @@ namespace Seasons
             Queue(current.Zone);
         }
 
-        private static void AddExclusion(ZoneWork current, ZoneSystem.ClearArea area)
+        private static void AddExclusion(ZoneSystem.ClearArea area)
         {
-            foreach (ZoneSystem.ClearArea existing in current.Exclusions)
+            foreach (ZoneSystem.ClearArea existing in placementExclusions)
                 if (existing.m_center == area.m_center && existing.m_radius == area.m_radius)
                     return;
-            current.Exclusions.Add(area);
+            placementExclusions.Add(area);
         }
 
         private static bool InspectPlacement(ZoneWork current, ref int budget, long deadline)
@@ -691,12 +695,12 @@ namespace Seasons
             if (initialExclusions.TryGetValue(current.Zone, out List<ZoneSystem.ClearArea> exclusions))
             {
                 foreach (ZoneSystem.ClearArea area in exclusions)
-                    AddExclusion(current, area);
+                    AddExclusion(area);
                 initialExclusions.Remove(current.Zone);
             }
             if (world.m_locationInstances.TryGetValue(current.Zone, out ZoneSystem.LocationInstance location) &&
                 location.m_placed && location.m_location != null && location.m_location.m_clearArea)
-                AddExclusion(current, new ZoneSystem.ClearArea(location.m_position, location.m_location.m_exteriorRadius));
+                AddExclusion(new ZoneSystem.ClearArea(location.m_position, location.m_location.m_exteriorRadius));
             while (budget > 0 && BeforeDeadline(deadline))
             {
                 if (!current.Cursor.Next(current.Zone, out ZDO zdo))
@@ -731,7 +735,7 @@ namespace Seasons
                 {
                     ZoneSystem.ZoneLocation settings = world.GetLocation(locationHash);
                     if (settings != null && settings.m_clearArea)
-                        AddExclusion(current, new ZoneSystem.ClearArea(zdo.GetPosition(), settings.m_exteriorRadius));
+                        AddExclusion(new ZoneSystem.ClearArea(zdo.GetPosition(), settings.m_exteriorRadius));
                     LocationProxy proxy = view ? view.GetComponent<LocationProxy>() : null;
                     if (!proxy || proxy.m_locationNeedsSpawn || !proxy.m_instance)
                         current.StaticMissing = true;
@@ -804,7 +808,7 @@ namespace Seasons
             float halfZone = world.m_zoneSize / 2f;
             Vector3 p = new Vector3(UnityEngine.Random.Range(center.x - halfZone, center.x + halfZone), 0f,
                 UnityEngine.Random.Range(center.z - halfZone, center.z + halfZone));
-            if (IsBeyondWorldEdge(p, 100f) || world.InsideClearArea(current.Exclusions, p) ||
+            if (IsBeyondWorldEdge(p, 100f) || world.InsideClearArea(placementExclusions, p) ||
                 (s_iceFloe.m_blockCheck && world.IsBlocked(p)))
                 return CandidateResult.Skipped;
             world.GetGroundData(ref p, out _, out Heightmap.Biome biome, out Heightmap.BiomeArea biomeArea, out Heightmap hmap);
@@ -832,7 +836,7 @@ namespace Seasons
             float halfX = s_floeSize.x * scaleX / 2;
             float halfZ = s_floeSize.y * scaleZ / 2;
             float radius = Mathf.Sqrt(halfX * halfX + halfZ * halfZ) + 0.2f;
-            foreach (ZoneSystem.ClearArea area in current.Exclusions)
+            foreach (ZoneSystem.ClearArea area in placementExclusions)
                 if (IsInside(area, p, radius))
                     return CandidateResult.Skipped;
             if (s_iceFloe.m_snapToWater)
@@ -870,7 +874,7 @@ namespace Seasons
                 zdo.Set(ZDOVars.s_health, health + Game.m_worldLevel * health * Game.instance.m_worldLevelMineHPMultiplier);
                 if (!instance.TryGetComponent<IceFloe>(out _))
                     instance.AddComponent<IceFloe>();
-                current.Exclusions.Add(new ZoneSystem.ClearArea(p, GetFloeSize(instance) + 0.5f));
+                placementExclusions.Add(new ZoneSystem.ClearArea(p, GetFloeSize(instance) + 0.5f));
                 return CandidateResult.Placed;
             }
             finally
