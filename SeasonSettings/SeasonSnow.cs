@@ -129,6 +129,126 @@ namespace Seasons
             pieces.Add("stone_fence", new PieceSnow(copyFrom: "stone_wall_2x1", position: new SnowPosition(y: 0.19f), scale: new SnowScale(x: 1.9f, y: 1.0f, z: 0.75f)));
             pieces.Add("wood_fence_gate", new PieceSnow(buildup: SnowBuildup.Disabled));
 
+
+            // Roof, gable and cross variants verified in game by the maintainer.
+            // Clay pieces.
+            pieces.Add("BCP_Clay2_Roof45", new PieceSnow(copyFrom: "piece_grausten_roof_45"));
+            pieces.Add("BCP_Clay2_Roof45Arch", new PieceSnow(copyFrom: "piece_grausten_roof_45_arch"));
+            pieces.Add("BCP_Clay2_Roof45Arch_Corner", new PieceSnow(copyFrom: "piece_grausten_roof_45_arch_corner"));
+            pieces.Add("BCP_Clay2_Roof45Arch_Corner2", new PieceSnow(copyFrom: "piece_grausten_roof_45_arch_corner2"));
+            pieces.Add("BCP_Clay2_Roof45_Corner", new PieceSnow(copyFrom: "piece_grausten_roof_45_corner"));
+            pieces.Add("BCP_Clay2_Roof45_Corner2", new PieceSnow(copyFrom: "piece_grausten_roof_45_corner2"));
+            pieces.Add("BCP_ClayWall_Cross26", new PieceSnow(copyFrom: "ashwood_wall_cross_26"));
+            pieces.Add("BCP_ClayWall_Cross26Alt", new PieceSnow(copyFrom: "wood_wall_roof_top"));
+            pieces.Add("BCP_ClayWall_Cross45", new PieceSnow(copyFrom: "ashwood_wall_cross_45"));
+            pieces.Add("BCP_ClayWall_Cross45Alt", new PieceSnow(copyFrom: "wood_wall_roof_top_45"));
+            pieces.Add("BCP_ClayWall_Roof26", new PieceSnow(copyFrom: "ashwood_wall_roof_26"));
+            pieces.Add("BCP_ClayWall_Roof26UpsideDown", new PieceSnow(copyFrom: "ashwood_wall_roof_26_upsidedown"));
+            pieces.Add("BCP_ClayWall_Roof45", new PieceSnow(copyFrom: "wood_wall_roof_45"));
+            pieces.Add("BCP_ClayWall_Roof45UpsideDown", new PieceSnow(copyFrom: "ashwood_wall_roof_45_upsidedown"));
+
+            // Core wood pieces.
+            pieces.Add("BCW_CoreWood_Roof26", new PieceSnow(copyFrom: "wood_roof"));
+            pieces.Add("BCW_CoreWood_Roof45", new PieceSnow(copyFrom: "wood_roof_45"));
+            pieces.Add("BCW_CoreWood_RoofICorner26", new PieceSnow(copyFrom: "wood_roof_icorner"));
+            pieces.Add("BCW_CoreWood_RoofICorner45", new PieceSnow(copyFrom: "wood_roof_icorner_45"));
+            pieces.Add("BCW_CoreWood_RoofOCorner26", new PieceSnow(copyFrom: "wood_roof_ocorner"));
+            pieces.Add("BCW_CoreWood_RoofOCorner45", new PieceSnow(copyFrom: "wood_roof_ocorner_45"));
+            pieces.Add("BCW_CoreWood_RoofTop26", new PieceSnow(copyFrom: "wood_roof_top"));
+            pieces.Add("BCW_CoreWood_RoofTop45", new PieceSnow(copyFrom: "wood_roof_top_45"));
+            pieces.Add("BCW_CoreWood_WallRoof26", new PieceSnow(copyFrom: "wood_wall_roof_a"));
+            pieces.Add("BCW_CoreWood_WallRoof45", new PieceSnow(copyFrom: "wood_wall_roof_45"));
+            pieces.Add("BCW_CoreWood_WallRoofTop26", new PieceSnow(copyFrom: "wood_wall_roof_top"));
+            pieces.Add("BCW_CoreWood_WallRoofTop45", new PieceSnow(copyFrom: "wood_wall_roof_top_45"));
+            pieces.Add("BCW_CoreWood_WallRoof_UpsideDown26", new PieceSnow(copyFrom: "wood_wall_roof_upsidedown"));
+            pieces.Add("BCW_CoreWood_WallRoof_UpsideDown45", new PieceSnow(copyFrom: "wood_wall_roof_45_upsidedown"));
+
+            // Fine wood, clay and stone pieces.
+            pieces.Add("BFP_ClayRoof26", new PieceSnow(copyFrom: "darkwood_roof"));
+            pieces.Add("BFP_ClayRoof45", new PieceSnow(copyFrom: "darkwood_roof_45"));
+            pieces.Add("BFP_ClayRoofICorner26", new PieceSnow(copyFrom: "darkwood_roof_icorner"));
+            pieces.Add("BFP_ClayRoofICorner45", new PieceSnow(copyFrom: "darkwood_roof_icorner_45"));
+            pieces.Add("BFP_ClayRoofOCorner26", new PieceSnow(copyFrom: "darkwood_roof_ocorner"));
+            pieces.Add("BFP_ClayRoofOCorner45", new PieceSnow(copyFrom: "darkwood_roof_ocorner_45"));
+            pieces.Add("BFP_ClayRoofTop26", new PieceSnow(copyFrom: "darkwood_roof_top"));
+            pieces.Add("BFP_ClayRoofTop45", new PieceSnow(copyFrom: "darkwood_roof_top_45"));
+            pieces.Add("BFP_FineWoodRoof26", new PieceSnow(copyFrom: "wood_roof"));
+            pieces.Add("BFP_FineWoodRoof45", new PieceSnow(copyFrom: "wood_roof_45"));
+            pieces.Add("BFP_FineWoodRoofCross26", new PieceSnow(copyFrom: "wood_wall_roof_top"));
+            pieces.Add("BFP_FineWoodRoofCross45", new PieceSnow(copyFrom: "wood_wall_roof_top_45"));
+            pieces.Add("BFP_FineWoodRoofICorner26", new PieceSnow(copyFrom: "wood_roof_icorner"));
+            pieces.Add("BFP_FineWoodRoofICorner45", new PieceSnow(copyFrom: "wood_roof_icorner_45"));
+            pieces.Add("BFP_FineWoodRoofOCorner26", new PieceSnow(copyFrom: "wood_roof_ocorner"));
+            pieces.Add("BFP_FineWoodRoofOCorner45", new PieceSnow(copyFrom: "wood_roof_ocorner_45"));
+            pieces.Add("BFP_FineWoodRoofTop26", new PieceSnow(copyFrom: "wood_roof_top"));
+            pieces.Add("BFP_FineWoodRoofTop45", new PieceSnow(copyFrom: "wood_roof_top_45"));
+            pieces.Add("BFP_FineWoodWallRoof26", new PieceSnow(copyFrom: "wood_wall_roof_a"));
+            pieces.Add("BFP_FineWoodWallRoof26_UpsideDown", new PieceSnow(copyFrom: "wood_wall_roof_upsidedown"));
+            pieces.Add("BFP_FineWoodWallRoof45", new PieceSnow(copyFrom: "wood_wall_roof_45"));
+            pieces.Add("BFP_FineWoodWallRoof45_UpsideDown", new PieceSnow(copyFrom: "wood_wall_roof_45_upsidedown"));
+            pieces.Add("BFP_StoneRoof26", new PieceSnow(copyFrom: "darkwood_roof"));
+            pieces.Add("BFP_StoneRoof45", new PieceSnow(copyFrom: "darkwood_roof_45"));
+            pieces.Add("BFP_StoneRoofICorner26", new PieceSnow(copyFrom: "darkwood_roof_icorner"));
+            pieces.Add("BFP_StoneRoofICorner45", new PieceSnow(copyFrom: "darkwood_roof_icorner_45"));
+            pieces.Add("BFP_StoneRoofOCorner26", new PieceSnow(copyFrom: "darkwood_roof_ocorner"));
+            pieces.Add("BFP_StoneRoofOCorner45", new PieceSnow(copyFrom: "darkwood_roof_ocorner_45"));
+            pieces.Add("BFP_StoneRoofTop26", new PieceSnow(copyFrom: "darkwood_roof_top"));
+            pieces.Add("BFP_StoneRoofTop45", new PieceSnow(copyFrom: "darkwood_roof_top_45"));
+
+            // Balrond roof variants.
+            pieces.Add("ashwood_roof26_bal", new PieceSnow(copyFrom: "wood_roof"));
+            pieces.Add("ashwood_roof45_bal", new PieceSnow(copyFrom: "wood_roof_45"));
+            pieces.Add("ashwood_roof_icorner_45_bal", new PieceSnow(copyFrom: "wood_roof_icorner_45"));
+            pieces.Add("ashwood_roof_ocorner_45_bal", new PieceSnow(copyFrom: "wood_roof_ocorner_45"));
+            pieces.Add("ashwood_roof_top45_bal", new PieceSnow(copyFrom: "wood_roof_top_45"));
+            pieces.Add("core_wood_roof26_bal", new PieceSnow(copyFrom: "wood_roof"));
+            pieces.Add("darkwood_roof_quarter_26_bal", new PieceSnow(copyFrom: "darkwood_roof"));
+            pieces.Add("darkwood_roof_quarter_45_bal", new PieceSnow(copyFrom: "darkwood_roof_45"));
+            pieces.Add("darkwood_roof_top_half_45_bal", new PieceSnow(copyFrom: "darkwood_roof_top_45"));
+            pieces.Add("darkwood_roof_top_half_bal", new PieceSnow(copyFrom: "darkwood_roof_top"));
+            pieces.Add("fineood_wall_roof_26_bal", new PieceSnow(copyFrom: "ashwood_wall_roof_26"));
+            pieces.Add("finewood_wall_roof_26_upsidedown_bal", new PieceSnow(copyFrom: "ashwood_wall_roof_26_upsidedown"));
+            pieces.Add("finewood_wall_roof_45_bal", new PieceSnow(copyFrom: "wood_wall_roof_45"));
+            pieces.Add("finewood_wall_roof_45_upsidedown_bal", new PieceSnow(copyFrom: "ashwood_wall_roof_45_upsidedown"));
+            pieces.Add("piece_grausten_roof_45_top_bal", new PieceSnow(copyFrom: "wood_roof_top_45"));
+            pieces.Add("piece_hardwood_roof_45_arch_bal", new PieceSnow(copyFrom: "piece_grausten_roof_45_arch"));
+            pieces.Add("piece_hardwood_roof_45_arch_corner2_bal", new PieceSnow(copyFrom: "piece_grausten_roof_45_arch_corner2"));
+            pieces.Add("piece_hardwood_roof_45_arch_corner_bal", new PieceSnow(copyFrom: "piece_grausten_roof_45_arch_corner"));
+            pieces.Add("piece_hardwood_roof_45_bal", new PieceSnow(copyFrom: "piece_grausten_roof_45"));
+            pieces.Add("piece_hardwood_roof_45_corner2_bal", new PieceSnow(copyFrom: "piece_grausten_roof_45_corner2"));
+            pieces.Add("piece_hardwood_roof_45_corner_bal", new PieceSnow(copyFrom: "piece_grausten_roof_45_corner"));
+            pieces.Add("piece_hardwood_roof_45_top_bal", new PieceSnow(copyFrom: "wood_roof_top_45"));
+            pieces.Add("wood_roof_top_half_45_bal", new PieceSnow(copyFrom: "wood_roof_top_45"));
+            pieces.Add("wood_roof_top_half_bal", new PieceSnow(copyFrom: "wood_roof_top"));
+            pieces.Add("wood_roof_top_quarter_45_bal", new PieceSnow(copyFrom: "wood_roof_45"));
+            pieces.Add("wood_roof_top_quarter_bal", new PieceSnow(copyFrom: "wood_roof"));
+
+            // Copper roofs.
+            pieces.Add("copper_roof", new PieceSnow(copyFrom: "darkwood_roof"));
+            pieces.Add("copper_roof_45", new PieceSnow(copyFrom: "darkwood_roof_45"));
+            pieces.Add("copper_roof_icorner", new PieceSnow(copyFrom: "darkwood_roof_icorner"));
+            pieces.Add("copper_roof_icorner_45", new PieceSnow(copyFrom: "darkwood_roof_icorner_45"));
+            pieces.Add("copper_roof_ocorner", new PieceSnow(copyFrom: "darkwood_roof_ocorner"));
+            pieces.Add("copper_roof_ocorner_45", new PieceSnow(copyFrom: "darkwood_roof_ocorner_45"));
+            pieces.Add("copper_roof_top", new PieceSnow(copyFrom: "darkwood_roof_top"));
+            pieces.Add("copper_roof_top_45", new PieceSnow(copyFrom: "darkwood_roof_top_45"));
+
+            // OdinArchitect roof variants.
+            pieces.Add("rae_big_wood_roof", new PieceSnow(copyFrom: "wood_roof"));
+            pieces.Add("rae_big_wood_roof_46", new PieceSnow(copyFrom: "wood_roof_45"));
+            pieces.Add("rae_big_wood_roof_icorner", new PieceSnow(copyFrom: "wood_roof_icorner"));
+            pieces.Add("rae_big_wood_roof_icorner_46", new PieceSnow(copyFrom: "wood_roof_icorner_45"));
+            pieces.Add("rae_big_wood_roof_ocorner", new PieceSnow(copyFrom: "wood_roof_ocorner"));
+            pieces.Add("rae_big_wood_roof_ocorner_46", new PieceSnow(copyFrom: "wood_roof_ocorner_45"));
+            pieces.Add("rae_big_wood_roof_top", new PieceSnow(copyFrom: "wood_roof_top"));
+            pieces.Add("rae_big_wood_roof_top_46", new PieceSnow(copyFrom: "wood_roof_top_45"));
+            pieces.Add("rae_stone_wall_roof", new PieceSnow(copyFrom: "wood_wall_roof_a"));
+            pieces.Add("rae_stone_wall_roof45", new PieceSnow(copyFrom: "wood_wall_roof_45"));
+            pieces.Add("rae_stone_wall_roof46_alt", new PieceSnow(copyFrom: "wood_wall_roof_45_upsidedown"));
+            pieces.Add("rae_stone_wall_roof_alt", new PieceSnow(copyFrom: "wood_wall_roof_upsidedown"));
+            pieces.Add("rae_stone_wall_roof_x", new PieceSnow(copyFrom: "wood_wall_roof_top_45"));
+            pieces.Add("rae_stone_wall_roof_xs", new PieceSnow(copyFrom: "wood_wall_roof_top"));
+
             creatureMaterials.Add("Abomination_mat", new MaterialSnow(0.7f, 0.8f));
             creatureMaterials.Add("goblin_armor", new MaterialSnow(0.65f, 0.79f));
             creatureMaterials.Add("BruteArmor_mat", new MaterialSnow(0.65f, 0.79f));
