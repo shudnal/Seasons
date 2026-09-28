@@ -1,6 +1,5 @@
 using BepInEx;
 using BepInEx.Configuration;
-using ConditionalConfigSync;
 using Newtonsoft.Json;
 using System;
 using System.IO;
@@ -31,24 +30,12 @@ namespace Seasons
         {
             if (initialized)
                 return;
-            enableIceFloes = configSync.AddConfigEntry(main, WorldSection, "Enable ice floes in winter", true,
-                new ConfigDescription("Enable seasonal ocean floes. Disabling removes marked floes and resets their placement markers on the server. Advanced settings are in Seasonal ice floes.json."),
-                syncMode: ConfigSyncMode.AlwaysServerControlled, serverControlledByDefault: true).SourceConfig;
-            iceFloesInWinterDays = configSync.AddConfigEntry(main, WorldSection, "Fill the water with ice floes at given days from to", new Vector2(4f, 10f),
-                new ConfigDescription("Inclusive winter-day range for seasonal floes. Outside this interval the server removes them.", new WinterDayRange()),
-                syncMode: ConfigSyncMode.AlwaysServerControlled, serverControlledByDefault: true).SourceConfig;
-            iceFloesHealth = configSync.AddConfigEntry(main, WorldSection, "Health of ice floes", 20f,
-                new ConfigDescription("Base health scaled by floe volume and world level during spawning. Existing floes require respawning to change health.", new HealthRange()),
-                syncMode: ConfigSyncMode.AlwaysServerControlled, serverControlledByDefault: true).SourceConfig;
-            logFloes = configSync.AddConfigEntry(main, "Test", "Log ice floes", false,
-                new ConfigDescription("Log ice-floe placement and removal."),
-                syncMode: ConfigSyncMode.AlwaysClientControlled).SourceConfig;
             RemoveObsoleteConfiguration(main);
             ApplyConfiguredRuntimeValues();
             initialized = true;
         }
 
-        private sealed class WinterDayRange : AcceptableValueBase
+        internal sealed class WinterDayRange : AcceptableValueBase
         {
             internal WinterDayRange() : base(typeof(Vector2)) { }
             public override object Clamp(object value)
@@ -63,7 +50,7 @@ namespace Seasons
             public override string ToDescriptionString() => "# Ordered minimum/maximum range: 1 to 10000";
         }
 
-        private sealed class HealthRange : AcceptableValueBase
+        internal sealed class HealthRange : AcceptableValueBase
         {
             internal HealthRange() : base(typeof(float)) { }
             public override object Clamp(object value) => value is float number && !float.IsNaN(number) && !float.IsInfinity(number)
