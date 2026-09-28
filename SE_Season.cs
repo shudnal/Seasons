@@ -60,7 +60,7 @@ namespace Seasons
                 _sb.AppendFormat("{0} / {1}\n", $"$hud_mapday {seasonState.GetCurrentDay()}".Localize(), seasonState.GetDaysInSeason());
 
             if (seasonsTimerFormatInRaven.Value == TimerFormat.TimeToEnd || seasonsTimerFormatInRaven.Value == TimerFormat.CurrentDayAndTimeToEnd)
-                _sb.AppendFormat("{0}: {1}\n", MessageNextSeason(), TimerString(seasonState.GetTimeToCurrentSeasonEnd()));
+                _sb.AppendFormat("{0}: {1}\n", MessageNextSeasonToken(), TimerString(seasonState.GetTimeToCurrentSeasonEnd()));
 
             string statsTooltip = base.GetTooltipString();
             if (statsTooltip.Length > 0)
@@ -150,7 +150,8 @@ namespace Seasons
             (Player.m_localPlayer?.GetSEMan().GetStatusEffect(SeasonsVars.s_statusEffectSeasonHash) as SE_Season)?.Setup(Player.m_localPlayer);
         }
 
-        private static string MessageNextSeason() => GetSeasonIsComing(seasonState.GetNextSeason()).Localize();
+        private static string MessageNextSeasonToken() => GetSeasonIsComing(seasonState.GetNextSeason());
+        private static string MessageNextSeason() => MessageNextSeasonToken().Localize();
     
         private static string TimerString(double seconds, bool icon = false)
         {
