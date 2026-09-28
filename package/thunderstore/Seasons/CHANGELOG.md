@@ -1,3 +1,6 @@
+# 1.10.1
+* fixed compatibility with Drop That and other loot mods when seasonal meat drop multipliers are active; configured drops, conditions, modifiers and limits now keep their original drop references
+
 # 1.10.0
 
 ## Snow

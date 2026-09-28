@@ -679,40 +679,51 @@ namespace Seasons
         [HarmonyPatch(typeof(CharacterDrop), nameof(CharacterDrop.GenerateDropList))]
         public static class CharacterDrop_GenerateDropList_MeatDrop
         {
-            private static void Prefix(CharacterDrop __instance, ref List<CharacterDrop.Drop> ___m_drops, ref List<CharacterDrop.Drop> __state)
+            private readonly struct DropAmounts
+            {
+                internal readonly CharacterDrop.Drop Drop;
+                internal readonly int Minimum;
+                internal readonly int Maximum;
+
+                internal DropAmounts(CharacterDrop.Drop drop)
+                {
+                    Drop = drop;
+                    Minimum = drop.m_amountMin;
+                    Maximum = drop.m_amountMax;
+                }
+            }
+
+            [HarmonyPriority(Priority.Last)]
+            private static void Prefix(CharacterDrop __instance, List<CharacterDrop.Drop> ___m_drops, ref List<DropAmounts> __state)
             {
                 float multiplier = Mathf.Max(0f, seasonState.GetMeatFromAnimalsMultiplier());
-                if (multiplier == 1f)
+                if (multiplier == 1f || IsProtectedPosition(__instance.transform.position))
                     return;
 
-                if (IsProtectedPosition(__instance.transform.position))
-                    return;
-
-                __state = ___m_drops;
-                ___m_drops = __state.Select(drop => new CharacterDrop.Drop
-                {
-                    m_prefab = drop.m_prefab,
-                    m_amountMin = drop.m_amountMin,
-                    m_amountMax = drop.m_amountMax,
-                    m_chance = drop.m_chance,
-                    m_onePerPlayer = drop.m_onePerPlayer,
-                    m_levelMultiplier = drop.m_levelMultiplier,
-                    m_dontScale = drop.m_dontScale
-                }).ToList();
                 foreach (CharacterDrop.Drop drop in ___m_drops)
                 {
-                    if (drop.m_prefab == null || !ControlMeatDrop(drop.m_prefab))
+                    if (drop?.m_prefab == null || !ControlMeatDrop(drop.m_prefab))
                         continue;
 
+                    // Keep the original Drop instance. Other loot mods can attach
+                    // configuration to CharacterDrop.Drop by reference.
+                    __state ??= new List<DropAmounts>();
+                    __state.Add(new DropAmounts(drop));
                     drop.m_amountMin = Mathf.CeilToInt(drop.m_amountMin * multiplier);
                     drop.m_amountMax = Mathf.Max(drop.m_amountMin, Mathf.CeilToInt(drop.m_amountMax * multiplier));
                 }
             }
 
-            private static void Finalizer(ref List<CharacterDrop.Drop> ___m_drops, List<CharacterDrop.Drop> __state)
+            private static void Finalizer(List<DropAmounts> __state)
             {
-                if (__state != null)
-                    ___m_drops = __state;
+                if (__state == null)
+                    return;
+
+                foreach (DropAmounts state in __state)
+                {
+                    state.Drop.m_amountMin = state.Minimum;
+                    state.Drop.m_amountMax = state.Maximum;
+                }
             }
         }
 
