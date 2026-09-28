@@ -23,7 +23,6 @@
 * existing custom snow JSON files are not overwritten and do not automatically gain the new piece rules. Back up your customizations and merge them into the updated reference file, or remove the custom file to use the new defaults
 * snow and floe JSON changes reload during play and synchronize from the server.
 * floe amount, scale and base health changes apply to newly spawned floes. To regenerate them, disable and re-enable floes during their configured winter days while the ocean is not frozen
-* update Seasons on both the server and all clients to 1.10.0
 
 # 1.9.2
 * moved per-piece snow rules and creature/cape material ranges into `Seasonal snow.json`, with server synchronization and a complete editable default file; the old string settings are no longer used
