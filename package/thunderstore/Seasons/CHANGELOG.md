@@ -21,7 +21,7 @@
 * per-piece snow buildup, copied caps, position/scale adjustments and creature/cape snow settings are in `BepInEx/config/shudnal.Seasons/Seasonal snow.json`. General snow controls remain in the main cfg under `Season - Winter snow`
 * complete reference JSON files are generated in `BepInEx/config/shudnal.Seasons/Default settings/`. Copy a file one directory up to customize it; do not edit the generated reference files
 * existing custom snow JSON files are not overwritten and do not automatically gain the new piece rules. Back up your customizations and merge them into the updated reference file, or remove the custom file to use the new defaults
-* snow and floe JSON changes reload during play and synchronize from the server. Old floe amount/scale cfg entries and the experimental `shudnal.Seasons.IceFloes.cfg` are no longer used; reapply those customizations in the new floe JSON
+* snow and floe JSON changes reload during play and synchronize from the server.
 * floe amount, scale and base health changes apply to newly spawned floes. To regenerate them, disable and re-enable floes during their configured winter days while the ocean is not frozen
 * update Seasons on both the server and all clients to 1.10.0
 
