@@ -410,7 +410,7 @@ namespace Seasons
             pieces.Add("fineood_wall_roof_26_bal", new PieceSnow(buildup: SnowBuildup.Reduced, copyFrom: "ashwood_wall_roof_26"));
             pieces.Add("finewood_wall_roof_26_upsidedown_bal", new PieceSnow(buildup: SnowBuildup.Reduced, copyFrom: "ashwood_wall_roof_26_upsidedown"));
             pieces.Add("finewood_wall_roof_45_bal", new PieceSnow(buildup: SnowBuildup.Reduced, copyFrom: "wood_wall_roof_45"));
-            pieces.Add("finewood_wall_roof_45_upsidedown_bal", new PieceSnow(buildup: SnowBuildup.Reduced, copyFrom: "wood_wall_roof_45_upsidedown"));
+            pieces.Add("finewood_wall_roof_45_upsidedown_bal", new PieceSnow(buildup: SnowBuildup.Reduced, copyFrom: "ashwood_wall_roof_45_upsidedown"));
             pieces.Add("piece_grausten_roof_45_top_bal", new PieceSnow(copyFrom: "wood_roof_top_45"));
             pieces.Add("piece_hardwood_roof_45_arch_bal", new PieceSnow(copyFrom: "piece_grausten_roof_45_arch"));
             pieces.Add("piece_hardwood_roof_45_arch_corner2_bal", new PieceSnow(copyFrom: "piece_grausten_roof_45_arch_corner2"));
