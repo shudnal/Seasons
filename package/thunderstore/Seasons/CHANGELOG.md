@@ -1,3 +1,7 @@
+# 1.10.2
+* fixed the Raven menu season timer not showing correctly in Chinese, Japanese and Korean when seasonal stat control is disabled
+* fixed Seasons localization sometimes not being applied on game launch when used with Smoothbrain skill mods, CreatureLevelAndLootControl and other mods loading localization during startup
+
 # 1.10.1
 * fixed compatibility with Drop That and other loot mods when seasonal meat drop multipliers are active; configured drops, conditions, modifiers and limits now keep their original drop references
 

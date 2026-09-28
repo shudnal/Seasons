@@ -119,6 +119,9 @@ public class Localizer
         harmony.Patch(
             AccessTools.DeclaredMethod(typeof(Localization), nameof(Localization.SetupLanguage)),
             postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Localizer), nameof(LoadLocalization))));
+        harmony.Patch(
+            AccessTools.DeclaredMethod(typeof(FejdStartup), nameof(FejdStartup.SetupGui)),
+            postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Localizer), nameof(ApplyCurrentLocalization))));
         localizationEnabled = true;
     }
 
@@ -210,6 +213,10 @@ public class Localizer
         loadedTexts[language] = localizationTexts;
         foreach (KeyValuePair<string, string> s in localizationTexts)
             UpdatePlaceholderText(__instance, s.Key);
+
+        // AddWord replaces translations but does not invalidate Valheim's localized-string cache.
+        // Other mods can request our tokens before this plugin has finished loading them.
+        __instance.m_cache.EvictAll();
     }
 
 
