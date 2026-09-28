@@ -270,6 +270,37 @@ namespace Seasons
             return true;
         }
 
+        internal static void ProcessQueuedTerrain(ZDO zdo)
+        {
+            // Resolve live authority/day again when the bounded queue reaches this ID.
+            if (!SeasonState.IsActive || !ZoneSystemVariantController.IsTimeToDecultivateGround()
+                || zdo == null || !zdo.IsValid() || ZDOMan.instance == null || ZDOMan.instance.GetZDO(zdo.m_uid) != zdo
+                || (!zdo.IsOwner() && (zdo.HasOwner() || ZNet.instance == null || !ZNet.instance.IsServer()))
+                || WorldGenerator.instance?.m_world?.m_biomeData?.IsReady != true)
+                return;
+
+            int worldDay = Seasons.seasonState.GetCurrentWorldDay();
+            if (!IsDecultivationDue(zdo, worldDay, Seasons.seasonState.GetYearLengthInDays()))
+                return;
+            TerrainComp compiler = TerrainComp.s_instances.Find(instance => instance != null && instance.m_nview != null && instance.m_nview.GetZDO() == zdo);
+            if (compiler != null && (!compiler.m_initialized
+                || (failedAttempts.TryGetValue(compiler, out FailedAttempt previous) && previous.Revision == zdo.DataRevision && previous.WorldDay == worldDay)))
+                return;
+
+            if (TryDecultivateGround(zdo, out _))
+            {
+                zdo.Set(SeasonsVars.s_terrainDecultivated, worldDay);
+                if (compiler != null)
+                    failedAttempts.Remove(compiler);
+            }
+            else if (compiler != null)
+            {
+                FailedAttempt failed = failedAttempts.GetValue(compiler, _ => new FailedAttempt());
+                failed.Revision = zdo.DataRevision;
+                failed.WorldDay = worldDay;
+            }
+        }
+
         [HarmonyLib.HarmonyPatch(typeof(TerrainComp), nameof(TerrainComp.Update))]
         private static class TerrainComp_Update_DecultivateOwnedTerrain
         {
@@ -288,17 +319,7 @@ namespace Seasons
                     || (failedAttempts.TryGetValue(__instance, out FailedAttempt previous) && previous.Revision == zdo.DataRevision && previous.WorldDay == worldDay))
                     return;
 
-                if (TryDecultivateGround(zdo, out _))
-                {
-                    zdo.Set(SeasonsVars.s_terrainDecultivated, worldDay);
-                    failedAttempts.Remove(__instance);
-                }
-                else
-                {
-                    FailedAttempt failed = failedAttempts.GetValue(__instance, _ => new FailedAttempt());
-                    failed.Revision = zdo.DataRevision;
-                    failed.WorldDay = worldDay;
-                }
+                SeasonalWorldMaintenance.RequestTerrain(zdo);
             }
         }
     }

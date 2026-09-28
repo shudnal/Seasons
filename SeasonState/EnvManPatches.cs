@@ -78,7 +78,65 @@ namespace Seasons
             private static void Postfix()
             {
                 totalSecondsCached = 0;
-                SeasonState.ReleaseUnusedEnvironmentTextures();
+            }
+        }
+
+        [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.AppendEnvironment))]
+        public static class EnvMan_AppendEnvironment_TextureRetirement
+        {
+            private static void Prefix(EnvMan __instance, EnvSetup env, out bool __state)
+            {
+                SeasonState.BeginEnvironmentTextureUpdate();
+                __state = true;
+                SeasonState.RetireEnvironmentTexture(__instance.GetEnv(env.m_name)?.m_auroraGradientTexture);
+            }
+
+            private static void Finalizer(bool __state)
+            {
+                if (__state)
+                    SeasonState.EndEnvironmentTextureUpdate();
+            }
+        }
+
+        [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.InitializeEnvironment))]
+        public static class EnvMan_InitializeEnvironment_TextureRetirement
+        {
+            private static void Prefix(EnvSetup env, out bool __state)
+            {
+                SeasonState.BeginEnvironmentTextureUpdate();
+                __state = true;
+                SeasonState.RetireEnvironmentTexture(env?.m_auroraGradientTexture);
+            }
+
+            private static void Finalizer(bool __state)
+            {
+                if (__state)
+                    SeasonState.EndEnvironmentTextureUpdate();
+            }
+        }
+
+        [HarmonyPatch]
+        public static class EnvMan_EnvironmentTransition_TextureRetirement
+        {
+            private static IEnumerable<MethodBase> TargetMethods()
+            {
+                yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.QueueEnvironment), new[] { typeof(EnvSetup) });
+                yield return AccessTools.Method(typeof(EnvMan), nameof(EnvMan.InterpolateEnvironment), new[] { typeof(float) });
+            }
+
+            [HarmonyPriority(Priority.Last)]
+            private static void Postfix(EnvMan __instance)
+            {
+                SeasonState.CheckEnvironmentTextureTransition(__instance);
+            }
+        }
+
+        [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.OnDestroy))]
+        public static class EnvMan_OnDestroy_TextureRetirement
+        {
+            private static void Postfix()
+            {
+                SeasonState.ReleaseEnvironmentTexturesOnWorldShutdown();
             }
         }
 
@@ -128,9 +186,11 @@ namespace Seasons
                 if (secondUpdated != (secondUpdated = DateTime.Now.Second) || timeForSeasonToChange || forceSeasonChange)
                 {
                     totalSecondsCached = (int)seasonState.GetTotalSeconds();
-                    seasonState.UpdateState(timeForSeasonToChange, forceSeasonChange);
+                    // Delimit the observed live weather interval before UpdateState
+                    // can rebuild the timeline, including small explicit time skips.
                     if (updateLoadedSeasonalSnow)
                         SeasonalSnow.ReconcileLoadedSnowAfterTimeSkip();
+                    seasonState.UpdateState(timeForSeasonToChange, forceSeasonChange);
                 }
             }
         }
@@ -212,7 +272,6 @@ namespace Seasons
             }
             private static void Postfix(bool __state)
             {
-                SeasonState.ReleaseUnusedEnvironmentTextures();
                 if (__state != SeasonState.IsCold())
                     seasonState.CheckOverheatStatus(Player.m_localPlayer);
             }

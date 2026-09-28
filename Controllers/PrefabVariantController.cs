@@ -22,7 +22,7 @@ namespace Seasons
             public Season season;
             public bool updateSeasonalMaterials = true;
 
-            public readonly static Dictionary<Tuple<Material, CachedMaterial>, MaterialVariants> s_materialVariants = new Dictionary<Tuple<Material, CachedMaterial>, MaterialVariants>();
+            public readonly static Dictionary<(Material Material, CachedMaterial Context), MaterialVariants> s_materialVariants = new Dictionary<(Material, CachedMaterial), MaterialVariants>();
 
             private readonly static List<Material> s_tempMaterials = new List<Material>();
 
@@ -36,7 +36,7 @@ namespace Seasons
 
                 updateSeasonalMaterials = true;
 
-                s_materialVariants[Tuple.Create(m_originalMaterial, context)] = this;
+                s_materialVariants[(m_originalMaterial, context)] = this;
             }
 
             public void InitializeTextureVariants(Dictionary<string, int> cachedTextures)
@@ -112,7 +112,7 @@ namespace Seasons
 
             public static MaterialVariants GetMaterialVariants(Material material, CachedMaterial context)
             {
-                if (s_materialVariants.TryGetValue(Tuple.Create(material, context), out MaterialVariants materialVariants))
+                if (s_materialVariants.TryGetValue((material, context), out MaterialVariants materialVariants))
                     return materialVariants;
 
                 return new MaterialVariants(material, context);
@@ -190,15 +190,8 @@ namespace Seasons
 
                     foreach (KeyValuePair<string, CachedRenderer> rendererPath in controller.renderersInHierarchy)
                     {
-                        string path = rendererPath.Key;
-                        if (path.Contains(m_prefabName))
-                        {
-                            path = rendererPath.Key.Substring(rendererPath.Key.IndexOf(m_prefabName) + m_prefabName.Length);
-                            if (path.StartsWith("/"))
-                                path = path.Substring(1);
-                        }
-
-                        string[] transformPath = path.Split(new char[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+                        string path = GetRelativePath(rendererPath.Key, m_prefabName);
+                        string[] transformPath = GetRendererPathSegments(path);
 
                         s_tempRenderers.Clear();
                         CheckRenderersInHierarchy(m_gameObject.transform, rendererPath.Value.type, transformPath, 0, s_tempRenderers);
@@ -382,7 +375,7 @@ namespace Seasons
             private void AddLODGroupMaterialVariants(LODGroup lodGroup, Dictionary<int, List<CachedRenderer>> lodLevelMaterials)
             {
                 LOD[] LODs = lodGroup.GetLODs();
-                for (int lodLevel = 0; lodLevel < lodGroup.lodCount; lodLevel++)
+                for (int lodLevel = 0; lodLevel < LODs.Length; lodLevel++)
                 {
                     if (!lodLevelMaterials.TryGetValue(lodLevel, out List<CachedRenderer> cachedRenderers))
                         continue;
@@ -395,45 +388,63 @@ namespace Seasons
                         if (renderer == null)
                             continue;
 
-                        foreach (CachedRenderer cachedRenderer in cachedRenderers.Where(cr => cr.type == renderer.GetType().Name && cr.name == renderer.name))
-                            AddMaterialVariants(renderer, cachedRenderer);
+                        string rendererType = renderer.GetType().Name;
+                        string rendererName = renderer.name;
+                        foreach (CachedRenderer cachedRenderer in cachedRenderers)
+                            if (cachedRenderer.type == rendererType && cachedRenderer.name == rendererName)
+                                AddMaterialVariants(renderer, cachedRenderer);
                     }
                 }
             }
 
             private void AddMaterialVariants(Renderer renderer, CachedRenderer cachedRenderer)
             {
-                for (int i = 0; i < renderer.sharedMaterials.Length; i++)
+                if (cachedRenderer.materials.Count == 0)
+                    return;
+
+                // Binding is synchronous and does not apply materials. Keep its scratch
+                // list separate from ApplySharedMaterial's list and release references afterwards.
+                s_bindingMaterials.Clear();
+                renderer.GetSharedMaterials(s_bindingMaterials);
+                try
                 {
-                    Material material = renderer.sharedMaterials[i];
-
-                    if (material == null)
-                        continue;
-
-                    foreach (KeyValuePair<string, CachedMaterial> cachedRendererMaterial in cachedRenderer.materials)
+                    for (int i = 0; i < s_bindingMaterials.Count; i++)
                     {
-                        if (cachedRendererMaterial.Value.textureProperties.Count > 0 || cachedRendererMaterial.Value.colorVariants.Count > 0)
+                        Material material = s_bindingMaterials[i];
+                        if (material == null || material.shader == null)
+                            continue;
+
+                        string materialName = material.name;
+                        string shaderName = material.shader.name;
+                        foreach (KeyValuePair<string, CachedMaterial> cachedRendererMaterial in cachedRenderer.materials)
                         {
-                            if (material.name.StartsWith(cachedRendererMaterial.Key) && (material.shader.name == cachedRendererMaterial.Value.shaderName))
+                            if (cachedRendererMaterial.Value.textureProperties.Count > 0 || cachedRendererMaterial.Value.colorVariants.Count > 0)
                             {
-                                if (!m_materialVariants.TryGetValue(renderer, out Dictionary<int, MaterialVariants> materialIndex))
+                                if (materialName.StartsWith(cachedRendererMaterial.Key) && shaderName == cachedRendererMaterial.Value.shaderName)
                                 {
-                                    materialIndex = new Dictionary<int, MaterialVariants>();
-                                    m_materialVariants.Add(renderer, materialIndex);
+                                    if (!m_materialVariants.TryGetValue(renderer, out Dictionary<int, MaterialVariants> materialIndex))
+                                    {
+                                        materialIndex = new Dictionary<int, MaterialVariants>();
+                                        m_materialVariants.Add(renderer, materialIndex);
+                                    }
+
+                                    if (!materialIndex.TryGetValue(i, out MaterialVariants materialVariants))
+                                    {
+                                        materialVariants = MaterialVariants.GetMaterialVariants(material, cachedRendererMaterial.Value);
+                                        materialIndex.Add(i, materialVariants);
+                                    }
+
+                                    materialVariants.InitializeTextureVariants(cachedRendererMaterial.Value.textureProperties);
+
+                                    materialVariants.InitializeColorVariants(cachedRendererMaterial.Value.colorVariants);
                                 }
-
-                                if (!materialIndex.TryGetValue(i, out MaterialVariants materialVariants))
-                                {
-                                    materialVariants = MaterialVariants.GetMaterialVariants(material, cachedRendererMaterial.Value);
-                                    materialIndex.Add(i, materialVariants);
-                                }
-
-                                materialVariants.InitializeTextureVariants(cachedRendererMaterial.Value.textureProperties);
-
-                                materialVariants.InitializeColorVariants(cachedRendererMaterial.Value.colorVariants);
                             }
                         }
                     }
+                }
+                finally
+                {
+                    s_bindingMaterials.Clear();
                 }
             }
 
@@ -535,6 +546,11 @@ namespace Seasons
         private static readonly MaterialPropertyBlock s_matBlock = new MaterialPropertyBlock();
 
         private static readonly List<Renderer> s_tempRenderers = new List<Renderer>();
+        private static readonly List<Material> s_bindingMaterials = new List<Material>();
+        // Cache only immutable path text/segments, never transforms from an instance.
+        private static readonly Dictionary<(string Path, string Prefab), string> s_relativePaths = new Dictionary<(string, string), string>();
+        private static readonly Dictionary<string, string[]> s_rendererPathSegments = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        private static readonly char[] s_pathSeparators = { '/' };
         private static readonly List<Color> s_tempColors = new List<Color>();
         private static readonly Dictionary<string, string> s_tempPrefabNames = new Dictionary<string, string>();
         private static readonly List<GameObject> s_tempObjects = new List<GameObject>();
@@ -566,6 +582,9 @@ namespace Seasons
             RevertPrefabsState();
             m_prefabVariants.Clear();
             s_tempRenderers.Clear();
+            s_bindingMaterials.Clear();
+            s_relativePaths.Clear();
+            s_rendererPathSegments.Clear();
             s_tempColors.Clear();
             s_tempPrefabNames.Clear();
             s_tempObjects.Clear();
@@ -662,7 +681,10 @@ namespace Seasons
 
         private static string GetRelativePath(string rendererPath, string prefabName)
         {
-            string path = rendererPath;
+            if (s_relativePaths.TryGetValue((rendererPath, prefabName), out string path))
+                return path;
+
+            path = rendererPath;
             if (path.Contains(prefabName))
             {
                 path = rendererPath.Substring(rendererPath.IndexOf(prefabName) + prefabName.Length);
@@ -670,7 +692,18 @@ namespace Seasons
                     path = path.Substring(1);
             }
 
+            s_relativePaths.Add((rendererPath, prefabName), path);
             return path;
+        }
+
+        private static string[] GetRendererPathSegments(string path)
+        {
+            if (!s_rendererPathSegments.TryGetValue(path, out string[] segments))
+            {
+                segments = path.Split(s_pathSeparators, StringSplitOptions.RemoveEmptyEntries);
+                s_rendererPathSegments.Add(path, segments);
+            }
+            return segments;
         }
 
         public static void UpdatePrefabColors()
@@ -763,6 +796,8 @@ namespace Seasons
 
             instance.RevertPrefabsState();
             MaterialVariants.Clear();
+            s_relativePaths.Clear();
+            s_rendererPathSegments.Clear();
 
             List<PrefabVariant> listToRemove = new List<PrefabVariant>();
             foreach (PrefabVariant prefabVariant in instance.m_prefabVariants.Values)

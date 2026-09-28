@@ -1,3 +1,29 @@
+# 1.10.0
+
+## Snow
+* major optimization for seasonal snow, especially on large bases with many snow-covered pieces; reduced overhead outside winter and when seasonal snow is disabled
+* improved snow accumulation and melting when loading areas, sleeping and skipping time, and more consistent behavior around shelters and active heat sources
+* added snow caps for 385 additional build pieces from ClayBuildPieces, CoreWoodPieces, FineWoodBuildPieces, Balrond Constructions, OdinArchitect, MissingPieces and More Gates Extended; supported pieces include roofs, walls, beams, pillars, floors, stairs, gates and storage furniture
+* added reduced snow buildup rules for 195 more vanilla pieces. Most non-roof pieces now receive thinner snow, while roofs, roundpole fences (`wood_fence`) and crafting stations such as workbenches retain the normal seasonal maximum
+* adjusted snow-cap placement and size on numerous vanilla and modded pieces; the default snow configuration now contains 618 piece rules
+* added optional snow hover diagnostics showing the active snow cap and its current position and scale, making custom snow placement easier to adjust
+
+## Ice floes
+* major rework for ice floes physics: floes now tilt with the waves and sit more naturally in the water, while retaining physical interaction with players, creatures, ships and nearby floes
+* improved distant movement and transitions when approaching or leaving floes; distant floes stay at the water surface instead of hanging above it where waves are no longer visible
+* major performance improvements for large numbers of floes and long view distances, including smoother reactions to changing wind
+* larger floes and fewer placement attempts per ocean zone by default: scale 1.25-2.5 and 10-15 attempts per zone, not a world-wide limit
+* improved placement spacing and prevention of duplicate spawns
+* floes are removed promptly when disabled, when the ocean freezes, or when their configured winter period ends
+
+## Configuration and server upgrades
+* advanced floe settings, including amount, size and movement, now use `BepInEx/config/shudnal.Seasons/Seasonal ice floes.json`. The enable switch, winter day range and base health remain in `BepInEx/config/shudnal.Seasons.cfg` under `Season - Winter ocean`
+* per-piece snow buildup, copied caps, position/scale adjustments and creature/cape snow settings are in `BepInEx/config/shudnal.Seasons/Seasonal snow.json`. General snow controls remain in the main cfg under `Season - Winter snow`
+* complete reference JSON files are generated in `BepInEx/config/shudnal.Seasons/Default settings/`. Copy a file one directory up to customize it; do not edit the generated reference files
+* existing custom snow JSON files are not overwritten and do not automatically gain the new piece rules. Back up your customizations and merge them into the updated reference file, or remove the custom file to use the new defaults
+* snow and floe JSON changes reload during play and synchronize from the server.
+* floe amount, scale and base health changes apply to newly spawned floes. To regenerate them, disable and re-enable floes during their configured winter days while the ocean is not frozen
+
 # 1.9.2
 * moved per-piece snow rules and creature/cape material ranges into `Seasonal snow.json`, with server synchronization and a complete editable default file; the old string settings are no longer used
 * added snow cap copying, per-axis position and scale overrides, and separate modes to ignore seasonal handling or completely disable snow; stone fences are supported, stave gate caps adjusted and wooden fence gate caps disabled by default

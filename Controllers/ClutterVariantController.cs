@@ -711,7 +711,7 @@ namespace Seasons
 
             bloom.m_prefab = s_forestBloom;
             bloom.m_fractalTresholdMin = 0;
-            bloom.m_fractalTresholdMax = 0.5f;
+            bloom.m_fractalTresholdMax = 0.35f;
 
             ClutterSystem.instance.m_clutter.Add(bloom);
         }
@@ -745,7 +745,7 @@ namespace Seasons
 
             bloom.m_prefab = s_swampBloom;
             bloom.m_fractalTresholdMin = 0;
-            bloom.m_fractalTresholdMax = 0.5f;
+            bloom.m_fractalTresholdMax = 0.35f;
 
             ClutterSystem.instance.m_clutter.Add(bloom);
         }
