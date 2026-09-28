@@ -424,7 +424,7 @@ namespace Seasons
         public enum WaveStatus { Unregistered, Ready, Paused, Distant, NonOwner, NoWater, Kinematic, NoCollider, NoSurface, InvalidBody, Dry, PhysicsDisabled, ForcesSubmitted, NoHullGeometry, KinematicFollowing, KinematicReplica, KinematicWaiting }
 
         [Header("Local diagnostics (not saved or synchronized)")]
-        public bool ShowDiagnosticsInHover = true;
+        public bool ShowDiagnosticsInHover = false;
         public bool DiagnosticsEnabled;
         public bool FreezeDiagnostics;
 
@@ -449,8 +449,8 @@ namespace Seasons
         [Range(0.5f, 0.99f)] public static float RelativeDensity = 0.9f;
         [Tooltip("Additional world-space correction of the collider waterline. Positive raises the floe. Floating.m_waterLevelOffset is not added.")]
         public static float HeightOffset;
-        [Tooltip("Nominal fraction of collider thickness below water. 0.7 submerges 70%; independent of the pivot, COM and legacy Floating offset.")]
-        [Range(0.1f, 0.95f)] public static float RestingSubmergence = 0.7f;
+        [Tooltip("Nominal fraction of collider thickness below water. 0.6 submerges 60%; independent of the pivot, COM and legacy Floating offset.")]
+        [Range(0.1f, 0.95f)] public static float RestingSubmergence = 0.6f;
         [Tooltip("Damping ratio relative to moving water. 1 is the small-motion critical-damping reference, not an absolute velocity brake.")]
         public static float VerticalDampingRatio = 1f;
         [Tooltip("Limit on vertical water-drag acceleration, m/s^2. Buoyancy is separately limited by displaced volume.")]
