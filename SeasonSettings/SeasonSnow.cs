@@ -124,7 +124,7 @@ namespace Seasons
             pieces.Add("piece_chest_barrel", new PieceSnow(buildup: SnowBuildup.Reduced));
             pieces.Add("skull_pile", new PieceSnow(buildup: SnowBuildup.Reduced));
             pieces.Add("stone_arch", new PieceSnow(buildup: SnowBuildup.Reduced, position: new SnowPosition(y: 0.46f)));
-            pieces.Add("smelter", new PieceSnow(position: new SnowPosition(y: 3.8f)));
+            pieces.Add("smelter", new PieceSnow(buildup: SnowBuildup.Reduced, position: new SnowPosition(y: 3.8f)));
             pieces.Add("piece_bed02", new PieceSnow(buildup: SnowBuildup.Reduced, position: new SnowPosition(y: 0.24f)));
             pieces.Add("bed", new PieceSnow(buildup: SnowBuildup.Reduced, position: new SnowPosition(y: 0.14f)));
             pieces.Add("piece_chest_grausten", new PieceSnow(buildup: SnowBuildup.Reduced, position: new SnowPosition(y: 0.75f)));
