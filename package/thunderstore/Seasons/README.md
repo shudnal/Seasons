@@ -367,6 +367,8 @@ You better test it yourself to find out how it actually looks.
 
 Settings "lightIntensityDayMultiplier" and "lightIntensityNightMultiplier" controls how much light will come from sun and moon. Less luminanceMultiplier and more lightIntensityNightMultiplier makes nights more realistic, moonlit swamp looks terrific.
 
+"screenColorTemperature" applies a subtle seasonal color-temperature offset to the rendered game world. Positive values make the image warmer and negative values make it cooler. It uses the current camera color temperature as the baseline and does not accumulate when settings are reapplied.
+
 ### Some explanations and ideas behind default settings
 * Spring is default 
 * Summer has more light at night

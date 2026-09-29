@@ -875,6 +875,8 @@ namespace Seasons
                 seasonLightings = new SeasonLightings(loadDefaults: true);
                 LogInfo($"Custom lightings loaded defaults");
             }
+
+            SeasonalScreenColorTemperature.Apply();
         }
 
         public static void UpdateStats()
@@ -1494,6 +1496,7 @@ namespace Seasons
             UpdateBiomesSetup();
             UpdateGlobalKeys();
             UpdateWinterBloomEffect();
+            SeasonalScreenColorTemperature.Apply();
             ZoneSystemVariantController.UpdateWaterState();
             UpdateCurrentEnvironment();
             SeasonalSnow.UpdateSeasonState();

@@ -113,6 +113,7 @@
     <Compile Include="Controllers\SeasonalIceFloeWaves.cs" />
     <Compile Include="Controllers\SeasonalIceFloeWater.cs" />
     <Compile Include="Controllers\SeasonalIceFloeBatching.cs" />
+    <Compile Include="Controllers\SeasonalScreenColorTemperature.cs" />
     <Compile Include="Controllers\SeasonalIceFloePrediction.cs" />
     <Compile Include="Controllers\SeasonalIceFloeWaveMath.cs" />
     <Compile Include="Controllers\SeasonalIceFloeWorker.cs" />
@@ -133,6 +134,10 @@
     <Reference Include="assembly_guiutils_publicized, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\Assemblies\stable\publicized_assemblies\assembly_guiutils_publicized.dll</HintPath>
+    </Reference>
+    <Reference Include="assembly_postprocessing, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\Assemblies\stable\assembly_postprocessing.dll</HintPath>
     </Reference>
     <Reference Include="assembly_utils_publicized, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
@@ -162,6 +167,11 @@
       <HintPath>..\Assemblies\stable\Splatform.dll</HintPath>
     </Reference>
     <Reference Include="System" />
+    <Reference Include="Unity.Postprocessing.Runtime, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\Assemblies\stable\Unity.Postprocessing.Runtime.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="Unity.TextMeshPro, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\Assemblies\stable\Unity.TextMeshPro.dll</HintPath>
@@ -328,4 +338,3 @@
     </PostBuildEvent>
   </PropertyGroup>
 </Project>
-

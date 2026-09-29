@@ -24,6 +24,8 @@ namespace Seasons
 
             public float lightIntensityDayMultiplier = 1.0f;
             public float lightIntensityNightMultiplier = 1.0f;
+
+            public float screenColorTemperature = 0.0f;
         }
 
         public SeasonLightingSettings Spring = new SeasonLightingSettings();
@@ -48,6 +50,7 @@ namespace Seasons
             Summer.night.fogDensityMultiplier = 0.9f;
 
             Summer.lightIntensityNightMultiplier = 0.9f;
+            Summer.screenColorTemperature = 4.0f;
 
             Fall.morning.luminanceMultiplier = 0.95f;
             Fall.morning.fogDensityMultiplier = 1.1f;
@@ -59,6 +62,7 @@ namespace Seasons
             Fall.night.fogDensityMultiplier = 1.3f;
 
             Fall.lightIntensityNightMultiplier = 1.2f;
+            Fall.screenColorTemperature = -2.0f;
 
             Winter.indoors.luminanceMultiplier = 0.9f;
             Winter.indoors.fogDensityMultiplier = 1.1f;
@@ -73,6 +77,7 @@ namespace Seasons
             Winter.night.fogDensityMultiplier = 1.7f;
 
             Winter.lightIntensityNightMultiplier = 1.5f;
+            Winter.screenColorTemperature = -5.0f;
         }
 
         public SeasonLightingSettings GetSeasonLighting(Season season)

@@ -413,6 +413,7 @@ namespace Seasons
             SeasonalIceFloes.Reset();
             SeasonalSnowController.Instance.StopSnowScene(ZNetScene.instance);
             SeasonalSnowController.Instance.ResetLifecycle();
+            SeasonalScreenColorTemperature.Reset();
             Compatibility.MarketplaceCompat.ReleaseMap();
             SeasonalPlayerCapeSnow.Reset();
             SeasonalEnemySnow.Reset();
@@ -466,7 +467,7 @@ namespace Seasons
 
             controlEnvironments.SettingChanged += (sender, args) => SeasonState.UpdateEnvironmentControlState();
             controlRandomEvents.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
-            controlLightings.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
+            controlLightings.SettingChanged += (sender, args) => { SeasonalScreenColorTemperature.Apply(); LoadingTips.UpdateLoadingTips(); };
             controlStats.SettingChanged += (sender, args) => { SE_Season.UpdateSeasonStatusEffectStats(); LoadingTips.UpdateLoadingTips(); };
             controlGrass.SettingChanged += (sender, args) => { ClutterVariantController.UpdateGrassOnSettingChanged(); LoadingTips.UpdateLoadingTips(); };
             controlTraders.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
