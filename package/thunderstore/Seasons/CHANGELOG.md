@@ -1,3 +1,7 @@
+# 1.10.3
+* added subtle seasonal screen color temperature changes through `Custom lightings.json`: summer is slightly warmer, while fall and winter are cooler by default; the HUD and other screen-space UI are unaffected
+* fixed winter Snow and SnowStorm weather losing the vanilla Freezing effect
+
 # 1.10.2
 * fixed the Raven menu season timer not showing correctly in Chinese, Japanese and Korean when seasonal stat control is disabled
 * fixed Seasons localization sometimes not being applied on game launch when used with Smoothbrain skill mods, CreatureLevelAndLootControl and other mods loading localization during startup
