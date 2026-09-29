@@ -674,13 +674,16 @@ namespace Seasons
                     m_name = "Snow Winter",
                     m_cloneFrom = "Snow",
                     m_snowBuildup = 0.2f,
+                    m_isFreezing = true,
                 },
                 new SeasonEnvironment
                 {
                     m_name = "SnowStorm Winter",
                     m_cloneFrom = "SnowStorm",
                     m_snowBuildup = 0.4f,
-                }
+                    m_isFreezing = true,
+                    m_isColdAtNight = true,
+               }
             };
         }
 
