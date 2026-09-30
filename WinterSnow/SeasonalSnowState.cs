@@ -62,6 +62,7 @@ namespace Seasons
             internal bool Leaky;
             internal bool HaveOrigin;
             internal bool GeometryCaptured;
+            internal SnowValueDiagnostics ValueDiagnostics;
             internal int DiagnosticCoverHints;
             internal long DiagnosticCoverChecks;
             internal int GeometryRevision = -1;

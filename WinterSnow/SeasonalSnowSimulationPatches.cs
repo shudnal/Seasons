@@ -596,13 +596,10 @@ namespace Seasons
         {
             List<CodeInstruction> code = new List<CodeInstruction>(instructions);
             var isBurning = AccessTools.Method(typeof(Fireplace), nameof(Fireplace.IsBurning));
-            int matches = 0;
-            foreach (CodeInstruction instruction in code)
-                if (instruction.Calls(isBurning))
-                    matches++;
-            if (matches != 1)
+            int lastCall = code.FindLastIndex(instruction => instruction.Calls(isBurning));
+            if (lastCall < 0)
             {
-                Seasons.LogWarning("Could not observe Fireplace.UpdateState for seasonal snow: expected one IsBurning call.");
+                Seasons.LogWarning("Could not observe Fireplace.UpdateState for seasonal snow: no IsBurning call found.");
                 return code;
             }
 
@@ -610,9 +607,14 @@ namespace Seasons
             LocalBuilder observed = generator.DeclareLocal(typeof(bool));
             var active = AccessTools.Field(typeof(SeasonalSnowController), nameof(SeasonalSnowController.VisualBridgeActive));
             var notify = AccessTools.Method(typeof(Fireplace_UpdateState_SnowHeat), nameof(StateApplied));
-            List<CodeInstruction> result = new List<CodeInstruction>(code.Count + 24);
-            foreach (CodeInstruction instruction in code)
+            List<CodeInstruction> result = new List<CodeInstruction>(code.Count + 26);
+            // An early return may bypass the selected call. Do not report a sample
+            // unless that last call site was actually reached by this invocation.
+            result.Add(new CodeInstruction(OpCodes.Ldc_I4_0));
+            result.Add(new CodeInstruction(OpCodes.Stloc, observed));
+            for (int i = 0; i < code.Count; ++i)
             {
+                CodeInstruction instruction = code[i];
                 if (instruction.opcode == OpCodes.Ret)
                 {
                     Label done = generator.DefineLabel();
@@ -631,9 +633,9 @@ namespace Seasons
                     result.Add(new CodeInstruction(OpCodes.Call, notify));
                 }
                 result.Add(instruction);
-                if (instruction.Calls(isBurning))
+                if (i == lastCall)
                 {
-                    // Preserve the native branch value; only copy its already computed result.
+                    // Observe only the last matching call site, preserving its native value.
                     result.Add(new CodeInstruction(OpCodes.Dup));
                     result.Add(new CodeInstruction(OpCodes.Stloc, burning));
                     result.Add(new CodeInstruction(OpCodes.Ldc_I4_1));

@@ -118,6 +118,7 @@ namespace Seasons
             {
                 DiagnosticLine(text, "Runtime: valid={0} confirmed={1} simulates={2} bucket={3} | Snow={4:F5} [{5:F2}, {6:F2}]",
                     state.Valid, state.Confirmed, state.Simulates, state.Bucket, state.Snow, state.Minimum, state.Maximum);
+                AppendSnowValueDiagnostics(text, state);
                 DiagnosticLine(text, "State: saved={0} construction={1} epoch={2} | publish={3} initial={4} ownerless={5}",
                     state.Saved, state.Construction, state.Epoch, state.MayPublish, state.AllowInitialPublication, state.AllowOwnerlessPublication);
                 DiagnosticLine(text, "Queues: refresh={0} ({1}) publish={2}/{3} visual={4}/{5}",
@@ -219,6 +220,74 @@ namespace Seasons
 
         private static void DiagnosticLine(StringBuilder text, string format, params object[] values) =>
             text.AppendFormat(CultureInfo.InvariantCulture, format, values).Append('\n');
+
+        [Flags]
+        private enum SnowValueCause : ushort
+        {
+            None = 0, PendingInitialization = 1, SavedSnapshot = 2, NewConstruction = 4,
+            InitialBaseline = 8, CoveredInitialization = 16, WinterReset = 32,
+            WeatherCatchUp = 64, Accumulation = 128, Melting = 256, ShieldClear = 512,
+            RangeClamp = 1024, WinterEnd = 2048
+        }
+
+        private sealed class SnowValueDiagnostics
+        {
+            internal bool InitialObserved, ChangeObserved;
+            internal SnowValueCause InitialCause, LastCause;
+            internal float InitialValue, InitialAt, PreviousValue, Value, ChangedAt;
+        }
+
+        private static void RecordInitialSnowValue(SnowPiece state, SnowValueCause cause)
+        {
+            if (!CollectSnowDiagnostics)
+                return;
+            SnowValueDiagnostics trace = state.ValueDiagnostics ??= new SnowValueDiagnostics();
+            trace.InitialObserved = true;
+            trace.InitialCause = cause;
+            trace.InitialValue = state.Snow;
+            trace.InitialAt = Time.unscaledTime;
+        }
+
+        private static void RecordSnowValueChange(SnowPiece state, float previous, SnowValueCause cause)
+        {
+            // A refresh or accepted snapshot with the same value must not erase the
+            // last real change. In particular, a loaded zero is not a new clearing event.
+            if (!CollectSnowDiagnostics || previous.Equals(state.Snow))
+                return;
+            SnowValueDiagnostics trace = state.ValueDiagnostics ??= new SnowValueDiagnostics();
+            trace.ChangeObserved = true;
+            trace.LastCause = cause;
+            trace.PreviousValue = previous;
+            trace.Value = state.Snow;
+            trace.ChangedAt = Time.unscaledTime;
+        }
+
+        private static void RecordRefreshedSnowValue(SnowPiece state, float previous, float target,
+            SnowValueCause cause, bool shielded)
+        {
+            if (!CollectSnowDiagnostics || previous.Equals(state.Snow))
+                return;
+            if (shielded)
+                cause = SnowValueCause.ShieldClear;
+            else if (!state.Snow.Equals(target))
+                cause |= SnowValueCause.RangeClamp;
+            RecordSnowValueChange(state, previous, cause);
+        }
+
+        private static void AppendSnowValueDiagnostics(StringBuilder text, SnowPiece state)
+        {
+            SnowValueDiagnostics trace = state.ValueDiagnostics;
+            if (trace == null || !trace.InitialObserved)
+                DiagnosticLine(text, "Initial snow: not observed (diagnostics enabled after registration)");
+            else
+                DiagnosticLine(text, "Initial snow: {0} | value={1:F5} age={2:F2}s",
+                    trace.InitialCause, trace.InitialValue, Time.unscaledTime - trace.InitialAt);
+            if (trace == null || !trace.ChangeObserved)
+                DiagnosticLine(text, "Last snow change: none observed");
+            else
+                DiagnosticLine(text, "Last snow change: {0} | {1:F5} -> {2:F5} age={3:F2}s",
+                    trace.LastCause, trace.PreviousValue, trace.Value, Time.unscaledTime - trace.ChangedAt);
+        }
 
         internal enum SnowGeometryCause : byte
         {

@@ -270,10 +270,14 @@ namespace Seasons
             bool acceptSnapshot = (newEpoch || !state.Confirmed || snapshotChanged) && snapshot.AppliesTo(epoch);
             if (acceptSnapshot || ownershipChanged)
                 state.ReplacedWeatherUntil = 0d;
+            // Capture after the integration above: its change has its own cause.
+            float previousSnow = state.Snow;
+            SnowValueCause valueCause = newEpoch ? SnowValueCause.WinterReset : SnowValueCause.None;
             float target = newEpoch ? 0f : state.Snow;
             if (acceptSnapshot)
             {
                 target = snapshot.Value;
+                valueCause = SnowValueCause.SavedSnapshot;
                 state.Saved = state.AppearanceChosen = true;
             }
             else if (newEpoch)
@@ -292,6 +296,7 @@ namespace Seasons
                 {
                     target = state.Construction ? 0f :
                         state.Minimum + SeasonalSnow.GetCumulativeSnowGainAt(state.Biome, now);
+                    valueCause = state.Construction ? SnowValueCause.NewConstruction : SnowValueCause.InitialBaseline;
                     state.AppearanceChosen = true;
                 }
                 if (acceptSnapshot && state.Confirmed)
@@ -300,6 +305,7 @@ namespace Seasons
                     state.CatchUpFrom = state.WeatherTime;
                 }
                 state.Snow = shielded ? 0f : Mathf.Clamp(target, 0f, state.Maximum);
+                RecordRefreshedSnowValue(state, previousSnow, target, valueCause, shielded);
                 if (state.AppearanceChosen || newEpoch || shielded)
                     QueueRuntimeVisual(state, force: acceptSnapshot || newEpoch || shieldChanged);
                 Classify(state);
@@ -340,8 +346,15 @@ namespace Seasons
                     from = state.Construction ? SeasonalSnowStorage.PlacementTime(state.Zdo) : now;
                     target = state.Construction || state.Covered ? 0f :
                         state.Minimum + SeasonalSnow.GetCumulativeSnowGainAt(state.Biome, now);
+                    valueCause = state.Construction ? SnowValueCause.NewConstruction :
+                        state.Covered ? SnowValueCause.CoveredInitialization : SnowValueCause.InitialBaseline;
                     if (state.Construction && localCalculation && !state.Covered)
+                    {
+                        float beforeCatchUp = target;
                         target += SeasonalSnow.GainBetween(state.Biome, from, now);
+                        if (!target.Equals(beforeCatchUp))
+                            valueCause |= SnowValueCause.WeatherCatchUp;
+                    }
                 }
                 else if (localCalculation && !state.Covered && snapshot.From > 0L)
                 {
@@ -352,18 +365,27 @@ namespace Seasons
                     if (snapshot.Epoch == SeasonalSnowStorage.MissingEpoch && snapshot.CurrentWinter &&
                         snapshot.From <= SeasonalSnowStorage.ToTimestamp(SeasonalSnow.TimelineStartSeconds) && target > 0f)
                         baseline = Mathf.Max(baseline, state.Minimum);
+                    float beforeCatchUp = target;
                     target = Mathf.Max(target, baseline + SeasonalSnow.GainBetween(state.Biome, from, now));
+                    if (!target.Equals(beforeCatchUp))
+                        valueCause |= SnowValueCause.WeatherCatchUp;
                 }
                 state.Confirmed = state.AppearanceChosen = true;
                 state.AllowOwnerlessPublication = owner == 0L;
                 state.AllowInitialPublication = localOwner;
             }
             else if (catchUp && localCalculation && !state.Covered && !state.Shielded)
+            {
+                float beforeCatchUp = target;
                 target += SeasonalSnow.GainBetween(state.Biome, from, now);
+                if (!target.Equals(beforeCatchUp))
+                    valueCause |= SnowValueCause.WeatherCatchUp;
+            }
 
             if (state.Shielded)
                 target = 0f;
             state.Snow = Mathf.Clamp(target, 0f, state.Maximum);
+            RecordRefreshedSnowValue(state, previousSnow, target, valueCause, state.Shielded);
             state.WeatherTime = localCalculation ? now : acceptSnapshot ? Math.Min(now, from) : state.WeatherTime;
             state.WeatherGain = SeasonalSnow.GetCumulativeSnowGainAt(state.Biome, state.WeatherTime);
             state.LastHeatTime = snowClock;
@@ -465,6 +487,7 @@ namespace Seasons
             }
             if (previous.Equals(state.Snow))
                 return;
+            RecordSnowValueChange(state, previous, state.Melting ? SnowValueCause.Melting : SnowValueCause.Accumulation);
             Classify(state);
             QueueRuntimeVisual(state, force: state.Snow <= 0f || state.Snow >= state.Maximum);
             if (state.MayPublish && (Mathf.Abs(state.Snow - state.SnapshotValue) >= PublicationStep ||
@@ -616,7 +639,9 @@ namespace Seasons
             if (!endingSnowWinter)
                 foreach (SnowPiece state in snowPieces.Values)
                 {
+                    float previous = state.Snow;
                     state.Snow = 0f;
+                    RecordSnowValueChange(state, previous, SnowValueCause.WinterEnd);
                     state.Simulates = false;
                 }
             winterRunning = false;

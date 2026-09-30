@@ -119,23 +119,33 @@ namespace Seasons
             SeasonalSnowStorage.Snapshot snapshot = new SeasonalSnowStorage.Snapshot(zdo);
             RememberSnapshot(state, snapshot);
             state.Saved = snapshot.AppliesTo(state.Epoch);
+            SnowValueCause initialCause = SnowValueCause.PendingInitialization;
             if (state.Saved)
             {
                 state.Snow = Mathf.Min(state.Maximum, snapshot.Value);
+                initialCause = SnowValueCause.SavedSnapshot;
+                if (!state.Snow.Equals(snapshot.Value))
+                    initialCause |= SnowValueCause.RangeClamp;
                 state.AppearanceChosen = true;
             }
             else if (state.Construction)
             {
                 state.Snow = 0f;
+                initialCause = SnowValueCause.NewConstruction;
                 state.AppearanceChosen = true;
             }
             else if (SeasonalSnow.WeatherReady && (state.Owner == 0L || state.View.IsOwner()))
             {
                 state.Snow = Mathf.Min(state.Maximum, state.Minimum + state.WeatherGain);
+                initialCause = SnowValueCause.InitialBaseline;
                 state.AppearanceChosen = true;
             }
             if (ShieldGenerator.IsInsideShieldCached(state.Position, ref piece.m_shieldChangeID))
+            {
                 state.Snow = 0f;
+                initialCause |= SnowValueCause.ShieldClear;
+            }
+            RecordInitialSnowValue(state, initialCause);
             Classify(state);
             state.View.Unregister(UseSnowRpc);
             state.View.Register(UseSnowRpc, sender => ReceiveUse(state, sender));
@@ -224,7 +234,9 @@ namespace Seasons
                 return;
             state.Construction = true;
             state.Saved = state.AppearanceChosen = true;
+            float previous = state.Snow;
             state.Snow = 0f;
+            RecordSnowValueChange(state, previous, SnowValueCause.NewConstruction);
             state.WeatherTime = ZNet.instance.GetTimeSeconds();
             state.WeatherGain = SeasonalSnow.GetCumulativeSnowGainAt(state.Biome, state.WeatherTime);
             state.LastHeatTime = snowClock;

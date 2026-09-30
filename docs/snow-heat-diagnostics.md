@@ -18,10 +18,14 @@ need an active collider to capture its native bounds; it is not a movement watch
 
 ## Fireplace state
 
-A local transpiler in `Fireplace.UpdateState` copies the result of the existing
-`IsBurning()` call without replacing that call or changing its branch value. After
+A local transpiler in `Fireplace.UpdateState` copies the result of the last matching
+`IsBurning()` call site without replacing that call or changing its branch value. After
 the native method applies its active objects, the result is passed to the registered
 snow heat source. The existing `!Fireplace.m_wet` rule and active-area checks remain.
+Multiple matching call sites no longer disable the observer. Only the selected last
+site is sampled; a return path that never reaches it sends no sample. If there is no
+matching call at all, the original IL is retained and a warning is logged. No extra
+polling or synthetic burning result is introduced for that unsupported case.
 
 Fireplaces are excluded from the snow polling list. `SeasonalSnowHeat` no longer
 calls `Fireplace.IsBurning()`. Native `UpdateFireplace`, fuel interactions, and
@@ -42,6 +46,11 @@ Counters accumulate only while that setting is enabled and reset with their
 piece/region or winter/world lifecycle. Turning diagnostics off does not run a
 cleanup scan; it simply stops collecting and showing observations.
 
+- `Initial snow`: the value and source observed at local registration, including
+  a saved zero. This is initialization, not a fabricated numeric change.
+- `Last snow change`: the last actual numeric change, its cause, previous and new
+  values, and elapsed unscaled seconds. A refresh with an unchanged value leaves
+  this record intact. This record is local and is not synchronized between peers.
 - `Cover checks`: actual cover queries for the hovered piece and its region;
   `piece cover hints` counts native `m_haveRoof` changes on that piece.
 - `Geometry events`: regional invalidation requests by cause, before queue
@@ -60,6 +69,32 @@ No per-event log messages, stack traces, event-history lists, or diagnostic ZDO
 writes are used. Source names and diagnostic text are resolved only during hover
 formatting, at the existing 0.2-second refresh interval.
 
+## Snow value causes
+
+Value observations are allocated only while hover diagnostics are enabled. Each
+piece keeps its registration observation and one last-change record, not a history.
+Enabling diagnostics after registration does not reconstruct the initial source.
+Existing records stop updating while diagnostics are disabled; unload/reset releases
+them with the piece. A saved zero cannot reveal why another session or peer wrote it.
+
+- `SavedSnapshot`: loading or accepting an existing snow snapshot.
+- `PendingInitialization`: registration before an initial appearance can be selected.
+- `InitialBaseline`: the existing initial minimum plus cumulative weather calculation.
+- `NewConstruction`: the zero assigned to a newly placed piece.
+- `CoveredInitialization`: zero selected on first confirmation of an unsaved,
+  covered piece; this is separate from gradual melting.
+- `WeatherCatchUp`: a refresh applies missed weather or the existing snapshot-baseline
+  recovery calculation. It can combine with another cause when both paths contribute.
+- `Accumulation` / `Melting`: the existing live integration increases or melts snow.
+- `ShieldClear`: the shield override selects zero.
+- `RangeClamp`: a refresh clamps its target to the configured range.
+- `WinterReset` / `WinterEnd`: a new winter epoch resets the target, or winter cleanup
+  clears the runtime value before retiring it.
+
+Only numeric changes update the last-change record, including changes below the
+visual/publication thresholds. The instrumentation observes existing calculations;
+it does not change their order, add weather/heat queries, or write diagnostic ZDO data.
+
 ## Manual checks
 
 1. On the affected base, keep the same camera position and let initialization finish.
@@ -75,7 +110,12 @@ formatting, at the existing 0.2-second refresh interval.
    an already burning fireplace. Check wet/blocked and out-of-fuel states as well.
 5. Place and remove a building piece, repair a damaged piece, and change terrain.
    Verify that the diagnostic cause and source explain any regional cover work.
-6. Disable diagnostics: no diagnostic counters should advance. Disable seasonal
+6. Enable diagnostics before entering the world to capture registration. A piece
+   loaded with zero should report `Initial snow: SavedSnapshot` (possibly with a
+   clamp/shield flag), not a new melting or clearing event. Capture the last-change
+   line during accumulation, melting, shield clearing, and new-piece placement.
+   Repeated geometry refreshes with unchanged snow must not replace that line.
+7. Disable diagnostics: no diagnostic counters should advance. Disable seasonal
    snow or leave winter: the native fireplace observer must not enter snow handling.
 
 Static source/diff/API review only. No build, automated mod tests, or game runtime
