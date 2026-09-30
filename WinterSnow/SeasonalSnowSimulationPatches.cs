@@ -26,7 +26,8 @@ namespace Seasons
             if (!SeasonalSnow.WinterReady)
                 return;
             SeasonalSnowController.Instance.SnowPlaced(__instance);
-            SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true);
+            SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true,
+                cause: SeasonalSnowController.SnowGeometryCause.Placed, source: __instance);
         }
     }
 
@@ -325,7 +326,8 @@ namespace Seasons
             bool geometry = controller.CanAffectSnowCover(zdo);
             controller.BeforeSnowViewReset(__instance);
             if (geometry)
-                controller.InvalidateSnowArea(zdo.GetPosition(), geometry: true, readyOnly: true);
+                controller.InvalidateSnowArea(zdo.GetPosition(), geometry: true, readyOnly: true,
+                    cause: SeasonalSnowController.SnowGeometryCause.ObjectRemoved, source: __instance, sourceZdo: zdo);
         }
     }
 
@@ -499,7 +501,8 @@ namespace Seasons
         private static void Postfix(Heightmap __instance)
         {
             if (SeasonalSnowController.Instance.ObservesSnowGeometry && !__instance.IsDistantLod)
-                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true, readyOnly: true);
+                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true, readyOnly: true,
+                    cause: SeasonalSnowController.SnowGeometryCause.TerrainChanged, source: __instance);
         }
     }
 
@@ -520,7 +523,8 @@ namespace Seasons
         private static void Postfix(MineRock __instance, bool __state)
         {
             if (__state)
-                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true);
+                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true,
+                    cause: SeasonalSnowController.SnowGeometryCause.RockChanged, source: __instance);
         }
     }
 
@@ -550,7 +554,8 @@ namespace Seasons
         private static void Postfix(MineRock __instance, bool __state)
         {
             if (__state)
-                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true);
+                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true,
+                    cause: SeasonalSnowController.SnowGeometryCause.RockChanged, source: __instance);
         }
     }
 
@@ -575,7 +580,67 @@ namespace Seasons
         private static void Postfix(MineRock5 __instance, bool __state)
         {
             if (__state)
-                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true);
+                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true,
+                    cause: SeasonalSnowController.SnowGeometryCause.RockChanged, source: __instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(Fireplace), nameof(Fireplace.UpdateState))]
+    internal static class Fireplace_UpdateState_SnowHeat
+    {
+        private static void StateApplied(Fireplace fireplace, bool burning) =>
+            SeasonalSnowController.Instance.FireplaceStateUpdated(fireplace, burning);
+
+        [HarmonyTranspiler]
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
+        {
+            List<CodeInstruction> code = new List<CodeInstruction>(instructions);
+            var isBurning = AccessTools.Method(typeof(Fireplace), nameof(Fireplace.IsBurning));
+            int matches = 0;
+            foreach (CodeInstruction instruction in code)
+                if (instruction.Calls(isBurning))
+                    matches++;
+            if (matches != 1)
+            {
+                Seasons.LogWarning("Could not observe Fireplace.UpdateState for seasonal snow: expected one IsBurning call.");
+                return code;
+            }
+
+            LocalBuilder burning = generator.DeclareLocal(typeof(bool));
+            LocalBuilder observed = generator.DeclareLocal(typeof(bool));
+            var active = AccessTools.Field(typeof(SeasonalSnowController), nameof(SeasonalSnowController.VisualBridgeActive));
+            var notify = AccessTools.Method(typeof(Fireplace_UpdateState_SnowHeat), nameof(StateApplied));
+            List<CodeInstruction> result = new List<CodeInstruction>(code.Count + 24);
+            foreach (CodeInstruction instruction in code)
+            {
+                if (instruction.opcode == OpCodes.Ret)
+                {
+                    Label done = generator.DefineLabel();
+                    CodeInstruction check = new CodeInstruction(OpCodes.Ldsfld, active);
+                    check.labels.AddRange(instruction.labels);
+                    check.blocks.AddRange(instruction.blocks);
+                    instruction.labels.Clear();
+                    instruction.blocks.Clear();
+                    instruction.labels.Add(done);
+                    result.Add(check);
+                    result.Add(new CodeInstruction(OpCodes.Brfalse, done));
+                    result.Add(new CodeInstruction(OpCodes.Ldloc, observed));
+                    result.Add(new CodeInstruction(OpCodes.Brfalse, done));
+                    result.Add(new CodeInstruction(OpCodes.Ldarg_0));
+                    result.Add(new CodeInstruction(OpCodes.Ldloc, burning));
+                    result.Add(new CodeInstruction(OpCodes.Call, notify));
+                }
+                result.Add(instruction);
+                if (instruction.Calls(isBurning))
+                {
+                    // Preserve the native branch value; only copy its already computed result.
+                    result.Add(new CodeInstruction(OpCodes.Dup));
+                    result.Add(new CodeInstruction(OpCodes.Stloc, burning));
+                    result.Add(new CodeInstruction(OpCodes.Ldc_I4_1));
+                    result.Add(new CodeInstruction(OpCodes.Stloc, observed));
+                }
+            }
+            return result;
         }
     }
 }

@@ -195,8 +195,8 @@ namespace Seasons
             }
             state.Biome = GetSnowBiome(position);
             state.GeometryCaptured = false;
-            InvalidateSnowArea(old, geometry: true);
-            InvalidateSnowArea(position, geometry: true);
+            InvalidateSnowArea(old, geometry: true, cause: SnowGeometryCause.PieceMoved, source: state.Piece, sourceZdo: state.Zdo);
+            InvalidateSnowArea(position, geometry: true, cause: SnowGeometryCause.PieceMoved, source: state.Piece, sourceZdo: state.Zdo);
         }
 
         internal float GetSnowValue(WearNTear piece)
@@ -315,7 +315,8 @@ namespace Seasons
                 EndSnowWeatherPass();
             discoveryCursor = 0;
             foreach (SnowRegion region in regionList)
-                QueueRegion(region, rules ? SnowRefresh.Rules | SnowRefresh.Area | SnowRefresh.Snapshot | SnowRefresh.Heat : SnowRefresh.Geometry);
+                QueueRegion(region, rules ? SnowRefresh.Rules | SnowRefresh.Area | SnowRefresh.Snapshot | SnowRefresh.Heat : SnowRefresh.Geometry,
+                    cause: SnowGeometryCause.Settings);
         }
 
         internal void RequestHeatRefresh(bool rebuildLinks = false, bool reindexSources = false)

@@ -14,7 +14,8 @@ namespace Seasons
 
         internal bool ObservesSnowGeometry => SeasonalSnow.WinterReady && snowRegions.Count != 0;
 
-        internal void InvalidateSnowArea(Vector3 position, bool geometry, bool readyOnly = false)
+        internal void InvalidateSnowArea(Vector3 position, bool geometry, bool readyOnly = false,
+            SnowGeometryCause cause = SnowGeometryCause.Other, UnityEngine.Object source = null, ZDO sourceZdo = null)
         {
             if (!ObservesSnowGeometry || Character.InInterior(position))
                 return;
@@ -34,7 +35,7 @@ namespace Seasons
                             // Streaming objects that arrive before area readiness are
                             // covered by the single confirmation pass after readiness.
                             if (!readyOnly || region.Ready)
-                                QueueRegion(region, reason);
+                                QueueRegion(region, reason, cause, source, sourceZdo, position);
                         }
                         else
                             region.ReadinessDirty = true;
@@ -45,7 +46,11 @@ namespace Seasons
         internal void SnowCoverHintChanged(WearNTear piece)
         {
             if (ObservesSnowGeometry && piece && snowPieces.TryGetValue(piece, out SnowPiece state))
+            {
+                if (CollectSnowDiagnostics)
+                    state.DiagnosticCoverHints++;
                 QueueRefresh(state, SnowRefresh.Geometry);
+            }
         }
 
         internal void SnowSceneObjectsChanged()
@@ -120,7 +125,8 @@ namespace Seasons
         internal void SnowObjectAdded(ZDO zdo)
         {
             if (CanAffectSnowCover(zdo))
-                InvalidateSnowArea(zdo.GetPosition(), geometry: true, readyOnly: true);
+                InvalidateSnowArea(zdo.GetPosition(), geometry: true, readyOnly: true,
+                    cause: SnowGeometryCause.ObjectAdded, sourceZdo: zdo);
         }
 
         private static void CaptureSnowGeometry(SnowPiece state)
@@ -163,6 +169,11 @@ namespace Seasons
 
         private static bool HasSnowCover(SnowPiece state)
         {
+            if (CollectSnowDiagnostics)
+            {
+                state.DiagnosticCoverChecks++;
+                state.Region.DiagnosticCoverChecks++;
+            }
             // Preserve the Seasons cast and self-filter, not vanilla HaveRoof.
             if (WearNTear.s_rayMask == 0)
                 WearNTear.s_rayMask = LayerMask.GetMask("piece", "Default", "static_solid", "Default_small", "terrain");
@@ -203,15 +214,18 @@ namespace Seasons
             }
             if (!tracked && !CanAffectSnowCover(zdo))
                 return;
-            InvalidateSnowArea(previousPosition, geometry: true, readyOnly: true);
-            InvalidateSnowArea(zdo.GetPosition(), geometry: true, readyOnly: true);
+            InvalidateSnowArea(previousPosition, geometry: true, readyOnly: true,
+                cause: SnowGeometryCause.TransformChanged, sourceZdo: zdo);
+            InvalidateSnowArea(zdo.GetPosition(), geometry: true, readyOnly: true,
+                cause: SnowGeometryCause.TransformChanged, sourceZdo: zdo);
         }
 
         internal void HealthGeometryChanged(WearNTear piece, int previous)
         {
             if (!ObservesSnowGeometry || !piece || previous == HealthGeometryMask(piece))
                 return;
-            InvalidateSnowArea(piece.transform.position, geometry: true);
+            InvalidateSnowArea(piece.transform.position, geometry: true,
+                cause: SnowGeometryCause.HealthVisualChanged, source: piece);
             if (snowPieces.TryGetValue(piece, out SnowPiece state))
             {
                 state.GeometryCaptured = false;

@@ -37,7 +37,7 @@ namespace Seasons
                 winterEpoch = epoch;
                 discoveryCursor = sourceDiscoveryCursor = 0;
                 foreach (SnowRegion region in regionList)
-                    QueueRegion(region, SnowRefresh.All);
+                    QueueRegion(region, SnowRefresh.All, cause: SnowGeometryCause.WinterStart);
             }
             if (!ContinuousSnowTime(now))
                 RequestSnowCatchUp();
@@ -144,7 +144,7 @@ namespace Seasons
                 region.ReadyGeneration++;
                 // The check just established readiness. Do not dirty it again merely
                 // to notify pieces about that result.
-                QueueRegion(region, SnowRefresh.Geometry | SnowRefresh.Links);
+                QueueRegion(region, SnowRefresh.Geometry | SnowRefresh.Links, cause: SnowGeometryCause.AreaReady);
             }
         }
 
