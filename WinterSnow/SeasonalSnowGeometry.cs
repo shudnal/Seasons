@@ -179,7 +179,7 @@ namespace Seasons
                 WearNTear.s_rayMask = LayerMask.GetMask("piece", "Default", "static_solid", "Default_small", "terrain");
             Vector3 origin = state.HaveOrigin
                 ? state.Transform.TransformPoint(state.LocalOrigin) + Vector3.up * 0.4f
-                : state.Position + new Vector3(0f, state.Piece.m_roofCheckOffset, 0f);
+                : state.Position + new Vector3(0f, 0.5f, 0f);
             int count = Physics.SphereCastNonAlloc(origin, 0.1f, Vector3.up,
                 WearNTear.s_raycastHits, 100f, WearNTear.s_rayMask);
             for (int i = 0; i < count; ++i)
