@@ -319,12 +319,19 @@ namespace Seasons
                         Untrack(controller);
                         continue;
                     }
-                    controller.BeforeSync();
+                    controller.PrepareFixedStep();
                     if (!membership.Contains(controller) || !controller || !controller.WaveValid)
                         continue;
-                    if (!controller.Distant && !controller.OwnerlessKinematic)
-                        controller.Sync.ClientSync(dt);
-                    if (!controller.WaveValid)
+                    // These modes have no fixed-step forces or native ClientSync work.
+                    // PrepareFixedStep still observes native ownership before this decision.
+                    if (controller.Distant || controller.OwnerlessKinematic)
+                        continue;
+                    controller.Sync.ClientSync(dt);
+                    // A native/foreign sync callback may retire the participant. Keep the
+                    // physical path's state/authority refresh after ClientSync in all cases.
+                    if (!membership.Contains(controller))
+                        continue;
+                    if (!controller || !controller.WaveValid)
                     {
                         Untrack(controller);
                         continue;
@@ -887,6 +894,51 @@ namespace Seasons
             position.y = Mathf.Lerp(Body.position.y, TargetY, distantBob.Blend);
             if (Finite(position))
                 Body.position = position;
+        }
+
+        internal void PrepareFixedStep()
+        {
+            // The driver has already checked membership and WaveValid. Only skip the
+            // known no-op preparation of a passive body in this same rendered frame.
+            // Dynamic/native bodies always retain the original pre-sync preparation.
+            int frame = Time.frameCount;
+            bool paused = Game.IsPaused() || Time.timeScale <= 0f;
+            bool prepared = false;
+            if ((Distant || OwnerlessKinematic) && stateFrame == frame && statePaused == paused &&
+                stateFallbackEnabled == EnableFallbackSimulation &&
+                (!Distant || paused || BobFrame == frame) &&
+                (!OwnerlessKinematic || !EnableWavePrediction || SurfaceMode != FloeSurfaceMode.FullRate))
+            {
+                ZDO zdo = m_view.GetZDO();
+                // Mirror the existing RefreshFloeState guard, including the fast paths
+                // it can still enter: authority refresh and synchronized scale edits.
+                // The cached mode is not a cached permission to move or publish.
+                prepared = stateOwner == zdo.GetOwner() && stateOwnerRevision == zdo.OwnerRevision &&
+                    (Distant || authorityDataRevision == zdo.DataRevision) &&
+                    (!Sync.m_syncScale || (scaleSourceValid && ReferenceEquals(scaleSource, zdo) &&
+                        scaleSourceId == zdo.m_uid && scaleSourceRevision == zdo.DataRevision));
+            }
+            if (!prepared)
+            {
+                BeforeSync();
+                // Preparation may run lifecycle callbacks; observe their pause result.
+                paused = Game.IsPaused() || Time.timeScale <= 0f;
+            }
+            if (!Distant && !OwnerlessKinematic)
+                return;
+
+            // Preserve the fixed-step observation previously made before the passive
+            // return in SimulatePhysics, without entering the physics/refresh chain.
+            LastRunFrame = frame;
+            LastRunFixedTime = Time.fixedTime;
+            LastForceCalls = 0;
+            if (paused)
+            {
+                diagnosticStepPending = false;
+                Status = WaveStatus.Paused;
+            }
+            else if (Distant)
+                Status = WaveStatus.Distant;
         }
 
         internal void BeforeSync()
