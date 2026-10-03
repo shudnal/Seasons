@@ -19,7 +19,6 @@ namespace Seasons
 
         private static readonly List<IceFloe> participants = new List<IceFloe>();
         private static readonly HashSet<IceFloe> membership = new HashSet<IceFloe>();
-        private static readonly List<IceFloe> phase = new List<IceFloe>();
         private static SeasonalIceFloeDriver driver;
         private static int lifetimeEpoch;
         internal static int ParticipantCount => participants.Count;
@@ -51,8 +50,12 @@ namespace Seasons
         {
             if (!ZNet.instance || !ZoneSystem.instance)
                 return;
-            WaterDistance = (float)ZNet.instance.GetSyncedSimulationDistance().NearSimulationDistance * ZoneSystem.instance.m_zoneSize;
+            float distance = (float)ZNet.instance.GetSyncedSimulationDistance().NearSimulationDistance * ZoneSystem.instance.m_zoneSize;
+            bool changed = !WaterDistance.Equals(distance);
+            WaterDistance = distance;
             WaterDistanceSquared = WaterDistance * WaterDistance;
+            if (changed)
+                InvalidateDispatchInputs();
         }
 
         internal static void Track(IceFloe controller)
@@ -87,7 +90,16 @@ namespace Seasons
             controller.NextTerrainCheckTime = Time.time + UnityEngine.Random.Range(10f, 30f);
             participants.Add(controller);
             membership.Add(controller);
-            SeasonalIceFloeWater.Admit(controller);
+            try
+            {
+                RegisterDispatch(controller);
+                SeasonalIceFloeWater.Admit(controller);
+            }
+            catch
+            {
+                Untrack(controller);
+                throw;
+            }
             if (driver)
                 driver.enabled = true;
         }
@@ -97,6 +109,7 @@ namespace Seasons
             if (ReferenceEquals(controller, null) || !membership.Remove(controller))
                 return;
             participants.Remove(controller);
+            UnregisterDispatch(controller);
             try
             {
                 SeasonalIceFloeBatching.ReturnNative(controller);
@@ -129,7 +142,7 @@ namespace Seasons
                 try { Untrack(participants[participants.Count - 1]); }
                 catch (Exception exception) { Seasons.LogWarning($"Floe release failed: {exception}"); }
             }
-            phase.Clear();
+            ResetDispatch();
             membership.Clear();
             SeasonalIceFloeWater.Reset();
             if (driver)
@@ -301,96 +314,13 @@ namespace Seasons
         internal static void PrepareInteraction(IceFloe controller)
         {
             if (controller && controller.WaveValid)
+            {
                 controller.RestoreWaves();
-        }
-        internal static void FixedStep(float dt)
-        {
-            phase.Clear();
-            phase.AddRange(participants);
-            try
-            {
-                for (int i = 0; i < phase.Count; ++i)
-                {
-                    IceFloe controller = phase[i];
-                    if (!membership.Contains(controller))
-                        continue;
-                    if (!controller || !controller.WaveValid)
-                    {
-                        Untrack(controller);
-                        continue;
-                    }
-                    controller.BeforeSync();
-                    if (!membership.Contains(controller) || !controller || !controller.WaveValid)
-                        continue;
-                    if (!controller.Distant && !controller.OwnerlessKinematic)
-                        controller.Sync.ClientSync(dt);
-                    if (!controller.WaveValid)
-                    {
-                        Untrack(controller);
-                        continue;
-                    }
-                    controller.SimulatePhysics(dt);
-                }
+                RequestDispatch(controller);
             }
-            finally { phase.Clear(); }
         }
-
-        internal static void LateStep()
-        {
-            phase.Clear();
-            phase.AddRange(participants);
-            try
-            {
-                for (int i = 0; i < phase.Count; ++i)
-                {
-                    IceFloe controller = phase[i];
-                    if (!membership.Contains(controller))
-                        continue;
-                    if (!controller || !controller.WaveValid)
-                    {
-                        Untrack(controller);
-                        continue;
-                    }
-                    bool acquiring = controller.m_view.IsOwner() && !controller.Sync.m_wasOwner;
-                    controller.BeforeSync();
-                    if (!controller.WaveValid)
-                    {
-                        Untrack(controller);
-                        continue;
-                    }
-                    if (Time.time >= controller.NextTerrainCheckTime)
-                    {
-                        controller.NextTerrainCheckTime = Time.time + 30f;
-                        if (!controller.Distant && !controller.Body.isKinematic)
-                            controller.m_floating.TerrainCheck();
-                    }
-                    if (controller.Distant)
-                    {
-                        if (SeasonalIceFloeBatching.Configured || SeasonalIceFloeBatching.BatchedCount != 0)
-                            SeasonalIceFloeBatching.Reconcile(controller);
-                        continue;
-                    }
-                    controller.UpdateOwnerlessMotion();
-                    if (!membership.Contains(controller) || !controller || !controller.WaveValid)
-                        continue;
-                    bool heldOnAcquire = acquiring && (controller.HoldingGravity || controller.RecoveryPending);
-                    controller.Sync.OwnerSync();
-                    if (heldOnAcquire)
-                    {
-                        controller.StopMotion();
-                        controller.RecoveryPending = false;
-                    }
-                    controller.PublishFallbackPose();
-                    if (membership.Contains(controller) && controller && controller.WaveValid &&
-                        (SeasonalIceFloeBatching.Configured || SeasonalIceFloeBatching.BatchedCount != 0))
-                        SeasonalIceFloeBatching.Reconcile(controller);
-                }
-            }
-            finally { phase.Clear(); }
-        }
-
         internal static string GetLifecycleStatus() =>
-            $"active={(driver && driver.enabled)} participants={participants.Count} phase={phase.Count} " +
+            $"active={(driver && driver.enabled)} participants={participants.Count} {GetDispatchStatus()} " +
             $"waterManaged={SeasonalIceFloeWater.ManagedCount} waterVolumes={SeasonalIceFloeWater.VolumeCount} " +
             $"waterPending={SeasonalIceFloeWater.PendingCount} " +
             $"{SeasonalIceFloeBatching.Status} workerQueued={FloeForecastWorker.Queued} " +
@@ -785,10 +715,14 @@ namespace Seasons
 
         private void RecoverInvalidHeight()
         {
+            if (Recovered || !ZoneSystem.instance || Time.time < NextRecovery)
+                return;
             bool adoptingPosition = m_view.IsOwner() && !Sync.m_wasOwner && Sync.m_syncPosition;
             Vector3 position = adoptingPosition ? m_view.GetZDO().GetPosition() : Body.position;
-            if (Recovered || !HasPhysicsAuthority || !ZoneSystem.instance || Time.time < NextRecovery ||
-                (Finite(position.y) && position.y >= -5000f) || !Finite(position.x) || !Finite(position.z))
+            // A normal height needs no lease/range lookup. Revalidate authority only
+            // for an actual recovery, before the existing pose or publication writes.
+            if ((Finite(position.y) && position.y >= -5000f) || !Finite(position.x) || !Finite(position.z) ||
+                !HasPhysicsAuthority)
                 return;
             NextRecovery = Time.time + 0.5f;
             Vector3 probe = new Vector3(position.x, ZoneSystem.instance.m_waterLevel, position.z);
@@ -1422,6 +1356,7 @@ namespace Seasons
                 b.Append(HoverBlockStart).Append(' ').Append(Status).Append(" | Wind surface / dynamic forces | shared settings");
                 b.Append("\nOwner=").Append(m_view.GetZDO().GetOwner()).Append(" local=").Append(m_view.IsOwner());
                 b.Append(" distant=").Append(Distant).Append(" gravityHold=").Append(HoldingGravity);
+                b.Append("\n").Append(SeasonalIceFloeWaves.GetDispatchStatus());
                 AppendAuthorityDiagnostics(b);
                 if (UsingBackgroundForecast)
                     AppendBackgroundDiagnostics(b);

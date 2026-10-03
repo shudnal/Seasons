@@ -26,7 +26,8 @@ namespace Seasons
             if (!SeasonalSnow.WinterReady)
                 return;
             SeasonalSnowController.Instance.SnowPlaced(__instance);
-            SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true);
+            SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true,
+                cause: SeasonalSnowController.SnowGeometryCause.Placed, source: __instance);
         }
     }
 
@@ -43,104 +44,10 @@ namespace Seasons
         }
     }
 
-    [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateCover))]
-    internal static class WearNTear_UpdateCover_SnowHint
-    {
-        private static void RoofChanged(WearNTear piece) =>
-            SeasonalSnowController.Instance.SnowCoverHintChanged(piece);
-
-        [HarmonyTranspiler]
-        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
-        {
-            List<CodeInstruction> code = new List<CodeInstruction>(instructions);
-            LocalBuilder oldRoof = generator.DeclareLocal(typeof(bool));
-            FieldInfo active = AccessTools.Field(typeof(SeasonalSnowController), nameof(SeasonalSnowController.VisualBridgeActive));
-            FieldInfo roof = AccessTools.Field(typeof(WearNTear), nameof(WearNTear.m_haveRoof));
-            Label native = generator.DefineLabel();
-            code[0].labels.Add(native);
-            yield return new CodeInstruction(OpCodes.Ldsfld, active);
-            yield return new CodeInstruction(OpCodes.Brfalse, native);
-            yield return new CodeInstruction(OpCodes.Ldarg_0);
-            yield return new CodeInstruction(OpCodes.Ldfld, roof);
-            yield return new CodeInstruction(OpCodes.Stloc, oldRoof);
-            foreach (CodeInstruction instruction in code)
-            {
-                if (instruction.opcode == OpCodes.Ret)
-                {
-                    Label done = generator.DefineLabel();
-                    CodeInstruction check = new CodeInstruction(OpCodes.Ldsfld, active);
-                    check.labels.AddRange(instruction.labels);
-                    instruction.labels.Clear();
-                    instruction.labels.Add(done);
-                    yield return check;
-                    yield return new CodeInstruction(OpCodes.Brfalse, done);
-                    yield return new CodeInstruction(OpCodes.Ldloc, oldRoof);
-                    yield return new CodeInstruction(OpCodes.Ldarg_0);
-                    yield return new CodeInstruction(OpCodes.Ldfld, roof);
-                    yield return new CodeInstruction(OpCodes.Beq, done);
-                    yield return new CodeInstruction(OpCodes.Ldarg_0);
-                    yield return new CodeInstruction(OpCodes.Call,
-                        AccessTools.Method(typeof(WearNTear_UpdateCover_SnowHint), nameof(RoofChanged)));
-                }
-                yield return instruction;
-            }
-        }
-    }
-
-    [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.SetHealthVisual))]
-    internal static class WearNTear_SetHealthVisual_SnowGeometry
-    {
-        private static int Capture(WearNTear piece) =>
-            SeasonalSnowController.Instance.ObservesSnowGeometry
-                ? SeasonalSnowController.HealthGeometryMask(piece) : -1;
-
-        private static void Changed(WearNTear piece, int previous) =>
-            SeasonalSnowController.Instance.HealthGeometryChanged(piece, previous);
-
-        [HarmonyTranspiler]
-        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
-        {
-            LocalBuilder previous = generator.DeclareLocal(typeof(int));
-            Label native = generator.DefineLabel();
-            // The sentinel also covers activation during a native callback: no entry
-            // observation means no matching exit notification for that invocation.
-            yield return new CodeInstruction(OpCodes.Ldc_I4_M1);
-            yield return new CodeInstruction(OpCodes.Stloc, previous);
-            yield return new CodeInstruction(OpCodes.Ldsfld,
-                AccessTools.Field(typeof(SeasonalSnowController), nameof(SeasonalSnowController.VisualBridgeActive)));
-            yield return new CodeInstruction(OpCodes.Brfalse, native);
-            yield return new CodeInstruction(OpCodes.Ldarg_0);
-            yield return new CodeInstruction(OpCodes.Call,
-                AccessTools.Method(typeof(WearNTear_SetHealthVisual_SnowGeometry), nameof(Capture)));
-            yield return new CodeInstruction(OpCodes.Stloc, previous);
-            CodeInstruction entry = new CodeInstruction(OpCodes.Nop);
-            entry.labels.Add(native);
-            yield return entry;
-
-            foreach (CodeInstruction instruction in instructions)
-            {
-                if (instruction.opcode == OpCodes.Ret)
-                {
-                    Label done = generator.DefineLabel();
-                    CodeInstruction check = new CodeInstruction(OpCodes.Ldloc, previous);
-                    check.labels.AddRange(instruction.labels);
-                    check.blocks.AddRange(instruction.blocks);
-                    instruction.labels.Clear();
-                    instruction.blocks.Clear();
-                    instruction.labels.Add(done);
-                    yield return check;
-                    yield return new CodeInstruction(OpCodes.Ldc_I4_0);
-                    yield return new CodeInstruction(OpCodes.Blt, done);
-                    yield return new CodeInstruction(OpCodes.Ldarg_0);
-                    yield return new CodeInstruction(OpCodes.Ldloc, previous);
-                    yield return new CodeInstruction(OpCodes.Call,
-                        AccessTools.Method(typeof(WearNTear_SetHealthVisual_SnowGeometry), nameof(Changed)));
-                }
-                yield return instruction;
-            }
-        }
-    }
-
+    // SetHealthVisual already calls UpdateSnowVisual, whose seasonal bridge updates
+    // only this piece's cap. Damage variants do not invalidate surrounding cover.
+    // Static obstacle lifetime is observed through AddInstance/ResetZDO/OnPlaced;
+    // do not instrument every ZDO position/rotation write or native roof poll.
     [HarmonyPatch]
     internal static class WearNTear_NativeSnow_SkipSeasonal
     {
@@ -325,7 +232,8 @@ namespace Seasons
             bool geometry = controller.CanAffectSnowCover(zdo);
             controller.BeforeSnowViewReset(__instance);
             if (geometry)
-                controller.InvalidateSnowArea(zdo.GetPosition(), geometry: true, readyOnly: true);
+                controller.InvalidateSnowArea(zdo.GetPosition(), geometry: true, readyOnly: true,
+                    cause: SeasonalSnowController.SnowGeometryCause.ObjectRemoved, source: __instance, sourceZdo: zdo);
         }
     }
 
@@ -357,74 +265,6 @@ namespace Seasons
                     yield return new CodeInstruction(OpCodes.Ldarg_0);
                     yield return new CodeInstruction(OpCodes.Call,
                         AccessTools.Method(typeof(ZDO_Receive_SnowSnapshot), nameof(Received)));
-                }
-                yield return instruction;
-            }
-        }
-    }
-
-    [HarmonyPatch]
-    internal static class ZDO_Transform_SnowGeometry
-    {
-        private struct TransformState
-        {
-            internal bool Observed;
-            internal Vector3 Position;
-            internal Vector3 Rotation;
-        }
-
-        private static IEnumerable<MethodBase> TargetMethods()
-        {
-            yield return AccessTools.Method(typeof(ZDO), nameof(ZDO.InternalSetPosition));
-            yield return AccessTools.Method(typeof(ZDO), nameof(ZDO.SetRotation));
-            yield return AccessTools.Method(typeof(ZDO), nameof(ZDO.Deserialize));
-        }
-
-        private static TransformState Before(ZDO zdo)
-        {
-            // Initial network deserialization happens before ZNetScene creates the
-            // instance. AddInstance performs the one necessary geometry notification.
-            if (!zdo.Created || !SeasonalSnowController.Instance.ShouldObserveSnowTransform(zdo))
-                return default;
-            // Compare stored Euler vectors without constructing a Quaternion per ZDO.
-            return new TransformState { Observed = true, Position = zdo.GetPosition(), Rotation = zdo.m_rotation };
-        }
-
-        private static void After(ZDO zdo, TransformState state)
-        {
-            if (state.Observed)
-                SeasonalSnowController.Instance.SnowObjectTransformChanged(zdo, state.Position, state.Rotation);
-        }
-
-        [HarmonyTranspiler]
-        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
-        {
-            List<CodeInstruction> code = new List<CodeInstruction>(instructions);
-            LocalBuilder state = generator.DeclareLocal(typeof(TransformState));
-            FieldInfo active = AccessTools.Field(typeof(SeasonalSnowController), nameof(SeasonalSnowController.VisualBridgeActive));
-            Label native = generator.DefineLabel();
-            code[0].labels.Add(native);
-            yield return new CodeInstruction(OpCodes.Ldsfld, active);
-            yield return new CodeInstruction(OpCodes.Brfalse, native);
-            yield return new CodeInstruction(OpCodes.Ldarg_0);
-            yield return new CodeInstruction(OpCodes.Call,
-                AccessTools.Method(typeof(ZDO_Transform_SnowGeometry), nameof(Before)));
-            yield return new CodeInstruction(OpCodes.Stloc, state);
-            foreach (CodeInstruction instruction in code)
-            {
-                if (instruction.opcode == OpCodes.Ret)
-                {
-                    Label done = generator.DefineLabel();
-                    CodeInstruction check = new CodeInstruction(OpCodes.Ldsfld, active);
-                    check.labels.AddRange(instruction.labels);
-                    instruction.labels.Clear();
-                    instruction.labels.Add(done);
-                    yield return check;
-                    yield return new CodeInstruction(OpCodes.Brfalse, done);
-                    yield return new CodeInstruction(OpCodes.Ldarg_0);
-                    yield return new CodeInstruction(OpCodes.Ldloc, state);
-                    yield return new CodeInstruction(OpCodes.Call,
-                        AccessTools.Method(typeof(ZDO_Transform_SnowGeometry), nameof(After)));
                 }
                 yield return instruction;
             }
@@ -499,7 +339,8 @@ namespace Seasons
         private static void Postfix(Heightmap __instance)
         {
             if (SeasonalSnowController.Instance.ObservesSnowGeometry && !__instance.IsDistantLod)
-                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true, readyOnly: true);
+                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true, readyOnly: true,
+                    cause: SeasonalSnowController.SnowGeometryCause.TerrainChanged, source: __instance);
         }
     }
 
@@ -520,7 +361,8 @@ namespace Seasons
         private static void Postfix(MineRock __instance, bool __state)
         {
             if (__state)
-                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true);
+                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true,
+                    cause: SeasonalSnowController.SnowGeometryCause.RockChanged, source: __instance);
         }
     }
 
@@ -550,7 +392,8 @@ namespace Seasons
         private static void Postfix(MineRock __instance, bool __state)
         {
             if (__state)
-                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true);
+                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true,
+                    cause: SeasonalSnowController.SnowGeometryCause.RockChanged, source: __instance);
         }
     }
 
@@ -575,7 +418,69 @@ namespace Seasons
         private static void Postfix(MineRock5 __instance, bool __state)
         {
             if (__state)
-                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true);
+                SeasonalSnowController.Instance.InvalidateSnowArea(__instance.transform.position, geometry: true,
+                    cause: SeasonalSnowController.SnowGeometryCause.RockChanged, source: __instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(Fireplace), nameof(Fireplace.UpdateState))]
+    internal static class Fireplace_UpdateState_SnowHeat
+    {
+        private static void StateApplied(Fireplace fireplace, bool burning) =>
+            SeasonalSnowController.Instance.FireplaceStateUpdated(fireplace, burning);
+
+        [HarmonyTranspiler]
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
+        {
+            List<CodeInstruction> code = new List<CodeInstruction>(instructions);
+            var isBurning = AccessTools.Method(typeof(Fireplace), nameof(Fireplace.IsBurning));
+            int lastCall = code.FindLastIndex(instruction => instruction.Calls(isBurning));
+            if (lastCall < 0)
+            {
+                Seasons.LogWarning("Could not observe Fireplace.UpdateState for seasonal snow: no IsBurning call found.");
+                return code;
+            }
+
+            LocalBuilder burning = generator.DeclareLocal(typeof(bool));
+            LocalBuilder observed = generator.DeclareLocal(typeof(bool));
+            var active = AccessTools.Field(typeof(SeasonalSnowController), nameof(SeasonalSnowController.VisualBridgeActive));
+            var notify = AccessTools.Method(typeof(Fireplace_UpdateState_SnowHeat), nameof(StateApplied));
+            List<CodeInstruction> result = new List<CodeInstruction>(code.Count + 26);
+            // An early return may bypass the selected call. Do not report a sample
+            // unless that last call site was actually reached by this invocation.
+            result.Add(new CodeInstruction(OpCodes.Ldc_I4_0));
+            result.Add(new CodeInstruction(OpCodes.Stloc, observed));
+            for (int i = 0; i < code.Count; ++i)
+            {
+                CodeInstruction instruction = code[i];
+                if (instruction.opcode == OpCodes.Ret)
+                {
+                    Label done = generator.DefineLabel();
+                    CodeInstruction check = new CodeInstruction(OpCodes.Ldsfld, active);
+                    check.labels.AddRange(instruction.labels);
+                    check.blocks.AddRange(instruction.blocks);
+                    instruction.labels.Clear();
+                    instruction.blocks.Clear();
+                    instruction.labels.Add(done);
+                    result.Add(check);
+                    result.Add(new CodeInstruction(OpCodes.Brfalse, done));
+                    result.Add(new CodeInstruction(OpCodes.Ldloc, observed));
+                    result.Add(new CodeInstruction(OpCodes.Brfalse, done));
+                    result.Add(new CodeInstruction(OpCodes.Ldarg_0));
+                    result.Add(new CodeInstruction(OpCodes.Ldloc, burning));
+                    result.Add(new CodeInstruction(OpCodes.Call, notify));
+                }
+                result.Add(instruction);
+                if (i == lastCall)
+                {
+                    // Observe only the last matching call site, preserving its native value.
+                    result.Add(new CodeInstruction(OpCodes.Dup));
+                    result.Add(new CodeInstruction(OpCodes.Stloc, burning));
+                    result.Add(new CodeInstruction(OpCodes.Ldc_I4_1));
+                    result.Add(new CodeInstruction(OpCodes.Stloc, observed));
+                }
+            }
+            return result;
         }
     }
 }

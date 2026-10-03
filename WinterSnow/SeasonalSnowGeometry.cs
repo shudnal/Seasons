@@ -14,38 +14,51 @@ namespace Seasons
 
         internal bool ObservesSnowGeometry => SeasonalSnow.WinterReady && snowRegions.Count != 0;
 
-        internal void InvalidateSnowArea(Vector3 position, bool geometry, bool readyOnly = false)
+        internal void InvalidateSnowArea(Vector3 position, bool geometry, bool readyOnly = false,
+            SnowGeometryCause cause = SnowGeometryCause.Other, UnityEngine.Object source = null, ZDO sourceZdo = null)
         {
             if (!ObservesSnowGeometry || Character.InInterior(position))
                 return;
             Vector2s center = ZoneSystem.GetZone(position);
-            SnowRefresh reason = SnowRefresh.Area | (geometry ? SnowRefresh.Geometry : SnowRefresh.None);
+            // Geometry and streaming readiness have different footprints. The native
+            // IsAreaReady query includes neighboring zones even when an obstacle's
+            // cover invalidation only needs the current zone or a boundary neighbor.
+            bool membershipChanged = cause == SnowGeometryCause.ObjectAdded || cause == SnowGeometryCause.ObjectRemoved;
+            bool localEvent = membershipChanged || cause == SnowGeometryCause.Placed || cause == SnowGeometryCause.PieceMoved;
+            int minX = -1, maxX = 1, minZ = -1, maxZ = 1;
+            if (geometry && localEvent)
+            {
+                // Use the same lattice as GetZone/GetZonePos, including negative zones.
+                // The middle third has half-width zoneSize / 6, not zoneSize / 3.
+                Vector3 zoneStep = ZoneSystem.GetZonePos(new Vector2s(1, 1)) -
+                    ZoneSystem.GetZonePos(new Vector2s(0, 0));
+                Vector3 offset = position - ZoneSystem.GetZonePos(center);
+                float thirdX = Mathf.Abs(zoneStep.x) / 6f;
+                float thirdZ = Mathf.Abs(zoneStep.z) / 6f;
+                minX = offset.x <= -thirdX ? -1 : 0;
+                maxX = offset.x >= thirdX ? 1 : 0;
+                minZ = offset.z <= -thirdZ ? -1 : 0;
+                maxZ = offset.z >= thirdZ ? 1 : 0;
+            }
+            // A center event queues one region, an edge two, a corner four.
+            // Area-wide terrain/rock changes retain their conservative neighborhood.
             for (int x = -1; x <= 1; ++x)
-                for (int y = -1; y <= 1; ++y)
+                for (int z = -1; z <= 1; ++z)
                 {
                     int zx = center.x + x;
-                    int zy = center.y + y;
-                    if (zx < short.MinValue || zx > short.MaxValue || zy < short.MinValue || zy > short.MaxValue)
+                    int zz = center.y + z;
+                    if (zx < short.MinValue || zx > short.MaxValue || zz < short.MinValue || zz > short.MaxValue ||
+                        !snowRegions.TryGetValue(new Vector2s(zx, zz), out SnowRegion region))
                         continue;
-                    if (snowRegions.TryGetValue(new Vector2s(zx, zy), out SnowRegion region))
-                    {
-                        if (geometry)
-                        {
-                            // Streaming objects that arrive before area readiness are
-                            // covered by the single confirmation pass after readiness.
-                            if (!readyOnly || region.Ready)
-                                QueueRegion(region, reason);
-                        }
-                        else
-                            region.ReadinessDirty = true;
-                    }
+                    if (!geometry || membershipChanged)
+                        region.ReadinessDirty = true;
+                    if (!geometry || x < minX || x > maxX || z < minZ || z > maxZ)
+                        continue;
+                    // Streaming objects that arrive before area readiness are
+                    // covered by the single confirmation pass after readiness.
+                    if (!readyOnly || region.Ready)
+                        QueueRegion(region, SnowRefresh.Geometry, cause, source, sourceZdo, position);
                 }
-        }
-
-        internal void SnowCoverHintChanged(WearNTear piece)
-        {
-            if (ObservesSnowGeometry && piece && snowPieces.TryGetValue(piece, out SnowPiece state))
-                QueueRefresh(state, SnowRefresh.Geometry);
         }
 
         internal void SnowSceneObjectsChanged()
@@ -106,21 +119,11 @@ namespace Seasons
             return result;
         }
 
-        internal bool ShouldObserveSnowTransform(ZDO zdo)
-        {
-            if (!ObservesSnowGeometry || zdo == null)
-                return false;
-            if (snowIds.TryGetValue(zdo.m_uid, out SnowPiece state) && ReferenceEquals(state.Zdo, zdo))
-                return true;
-            return snowCoverPrefabs.TryGetValue(zdo.GetPrefab(), out bool result)
-                ? result
-                : CanAffectSnowCover(zdo);
-        }
-
         internal void SnowObjectAdded(ZDO zdo)
         {
             if (CanAffectSnowCover(zdo))
-                InvalidateSnowArea(zdo.GetPosition(), geometry: true, readyOnly: true);
+                InvalidateSnowArea(zdo.GetPosition(), geometry: true, readyOnly: true,
+                    cause: SnowGeometryCause.ObjectAdded, sourceZdo: zdo);
         }
 
         private static void CaptureSnowGeometry(SnowPiece state)
@@ -163,12 +166,17 @@ namespace Seasons
 
         private static bool HasSnowCover(SnowPiece state)
         {
+            if (CollectSnowDiagnostics)
+            {
+                state.DiagnosticCoverChecks++;
+                state.Region.DiagnosticCoverChecks++;
+            }
             // Preserve the Seasons cast and self-filter, not vanilla HaveRoof.
             if (WearNTear.s_rayMask == 0)
                 WearNTear.s_rayMask = LayerMask.GetMask("piece", "Default", "static_solid", "Default_small", "terrain");
             Vector3 origin = state.HaveOrigin
                 ? state.Transform.TransformPoint(state.LocalOrigin) + Vector3.up * 0.4f
-                : state.Position + new Vector3(0f, state.Piece.m_roofCheckOffset, 0f);
+                : state.Position + new Vector3(0f, 0.5f, 0f);
             int count = Physics.SphereCastNonAlloc(origin, 0.1f, Vector3.up,
                 WearNTear.s_raycastHits, 100f, WearNTear.s_rayMask);
             for (int i = 0; i < count; ++i)
@@ -182,42 +190,6 @@ namespace Seasons
                 return true;
             }
             return false;
-        }
-
-        internal static int HealthGeometryMask(WearNTear piece) =>
-            (piece.m_new && piece.m_new.activeSelf ? 1 : 0) |
-            (piece.m_worn && piece.m_worn.activeSelf ? 2 : 0) |
-            (piece.m_broken && piece.m_broken.activeSelf ? 4 : 0);
-
-        internal void SnowObjectTransformChanged(ZDO zdo, Vector3 previousPosition, Vector3 previousRotation)
-        {
-            if (!ObservesSnowGeometry || zdo == null ||
-                (zdo.GetPosition() == previousPosition && zdo.m_rotation == previousRotation))
-                return;
-            SnowPositionChanged(zdo);
-            bool tracked = snowIds.TryGetValue(zdo.m_uid, out SnowPiece state) && ReferenceEquals(state.Zdo, zdo);
-            if (tracked)
-            {
-                state.GeometryCaptured = false;
-                QueueRefresh(state, SnowRefresh.Geometry | SnowRefresh.Links | SnowRefresh.Area);
-            }
-            if (!tracked && !CanAffectSnowCover(zdo))
-                return;
-            InvalidateSnowArea(previousPosition, geometry: true, readyOnly: true);
-            InvalidateSnowArea(zdo.GetPosition(), geometry: true, readyOnly: true);
-        }
-
-        internal void HealthGeometryChanged(WearNTear piece, int previous)
-        {
-            if (!ObservesSnowGeometry || !piece || previous == HealthGeometryMask(piece))
-                return;
-            InvalidateSnowArea(piece.transform.position, geometry: true);
-            if (snowPieces.TryGetValue(piece, out SnowPiece state))
-            {
-                state.GeometryCaptured = false;
-                QueueRefresh(state, SnowRefresh.Geometry);
-                QueueRuntimeVisual(state, force: true);
-            }
         }
 
         internal void BeforeSnowReferencePositionChanged(Vector3 position)

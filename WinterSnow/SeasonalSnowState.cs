@@ -62,6 +62,9 @@ namespace Seasons
             internal bool Leaky;
             internal bool HaveOrigin;
             internal bool GeometryCaptured;
+            internal SnowValueDiagnostics ValueDiagnostics;
+            internal int DiagnosticCoverHints;
+            internal long DiagnosticCoverChecks;
             internal int GeometryRevision = -1;
             internal bool Simulates;
             internal bool Melting;
@@ -121,6 +124,8 @@ namespace Seasons
             internal SnowRefresh Scanning;
             internal int ReadyGeneration;
             internal int GeometryRevision;
+            internal SnowGeometryDiagnostics Diagnostics;
+            internal long DiagnosticCoverChecks;
             internal double LastReadyWorld;
             internal double LastReadyTime;
             internal double ResumeFromWorld;
@@ -201,11 +206,14 @@ namespace Seasons
             pieceRefreshes.Enqueue(state);
         }
 
-        private void QueueRegion(SnowRegion region, SnowRefresh reason)
+        private void QueueRegion(SnowRegion region, SnowRefresh reason,
+            SnowGeometryCause cause = SnowGeometryCause.Other, UnityEngine.Object source = null,
+            ZDO sourceZdo = null, Vector3? eventPosition = null)
         {
             bool geometry = (reason & SnowRefresh.Geometry) != 0;
             if (geometry)
             {
+                RecordSnowGeometry(region, cause, source, sourceZdo, eventPosition ?? region.Center);
                 // One generation is enough for every geometry event coalesced into the
                 // same current or pending regional pass. Events arriving during an
                 // active geometry scan schedule exactly one follow-up generation so
