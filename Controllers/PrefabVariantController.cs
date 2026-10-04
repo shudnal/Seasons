@@ -3,6 +3,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection.Emit;
 using UnityEngine;
 using static Seasons.PrefabController;
 using static Seasons.PrefabVariantController;
@@ -83,11 +84,14 @@ namespace Seasons
                     }
                 }
 
-                ApplySharedMaterial(renderer, materialIndex, seasonalMaterials[variant]);
+                if (!SeasonalLevelMaterials.TryApply(renderer, materialIndex, this, seasonalMaterials[variant]))
+                    ApplySharedMaterial(renderer, materialIndex, seasonalMaterials[variant]);
             }
 
             public void RevertSharedMaterial(Renderer renderer, int materialIndex)
             {
+                if (SeasonalLevelMaterials.TryRevert(renderer, materialIndex, this))
+                    return;
                 if (!renderer)
                     return;
                 Material[] current = renderer.sharedMaterials;
@@ -137,6 +141,7 @@ namespace Seasons
             private WearNTear m_wnt;
             private GameObject m_gameObject;
             private MeshRenderer m_renderer;
+            private List<SeasonalLevelMaterials.Binding> m_levelMaterials;
 
             public string m_prefabName;
             private double m_springFactor;
@@ -229,6 +234,7 @@ namespace Seasons
                 WorldToMapPoint(m_gameObject.transform.position, out float mx, out float my);
                 UpdateFactors(mx, my);
                 CheckIsVine();
+                m_levelMaterials = SeasonalLevelMaterials.Register(m_gameObject, m_materialVariants);
 
                 return true;
             }
@@ -239,6 +245,8 @@ namespace Seasons
                     return false;
 
                 RevertState();
+                // Rebind from the clean base, never from our previous level copy.
+                ReleaseLevelMaterials(restoreLevel: false);
                 m_materialVariants.Clear();
                 m_startColors.Clear();
                 m_originalStartColors.Clear();
@@ -332,8 +340,20 @@ namespace Seasons
                 UpdateColors();
             }
 
-            public void RemoveFromPrefabList()
+            internal void ReleaseLevelMaterials(bool restoreLevel)
             {
+                if (m_levelMaterials == null)
+                    return;
+                foreach (SeasonalLevelMaterials.Binding binding in m_levelMaterials)
+                    binding.Release(restoreLevel);
+                m_levelMaterials = null;
+            }
+
+            public void RemoveFromPrefabList() => RemoveFromPrefabList(restoreLevel: true);
+
+            internal void RemoveFromPrefabList(bool restoreLevel)
+            {
+                ReleaseLevelMaterials(restoreLevel);
                 if (m_wnt != null)
                     instance.m_pieceControllers.Remove(m_wnt);
 
@@ -553,7 +573,6 @@ namespace Seasons
         private static readonly char[] s_pathSeparators = { '/' };
         private static readonly List<Color> s_tempColors = new List<Color>();
         private static readonly Dictionary<string, string> s_tempPrefabNames = new Dictionary<string, string>();
-        private static readonly List<GameObject> s_tempObjects = new List<GameObject>();
         public static readonly RaycastHit[] s_raycastHits = new RaycastHit[128];
 
         private const float noiseFrequency = 10000f;
@@ -580,6 +599,8 @@ namespace Seasons
             m_pieceControllers.Clear();
 
             RevertPrefabsState();
+            foreach (PrefabVariant variant in m_prefabVariants.Values.ToArray())
+                variant.ReleaseLevelMaterials(restoreLevel: true);
             m_prefabVariants.Clear();
             s_tempRenderers.Clear();
             s_bindingMaterials.Clear();
@@ -587,7 +608,6 @@ namespace Seasons
             s_rendererPathSegments.Clear();
             s_tempColors.Clear();
             s_tempPrefabNames.Clear();
-            s_tempObjects.Clear();
 
             if (m_instance == this)
             {
@@ -598,9 +618,10 @@ namespace Seasons
 
         public void RevertPrefabsState()
         {
-            foreach (KeyValuePair<GameObject, PrefabVariant> item in m_prefabVariants)
+            // Native level callbacks can activate or retire other controlled objects.
+            foreach (KeyValuePair<GameObject, PrefabVariant> item in m_prefabVariants.ToArray())
             {
-                if (item.Key != null)
+                if (item.Key && m_prefabVariants.TryGetValue(item.Key, out PrefabVariant current) && ReferenceEquals(current, item.Value))
                     item.Value.RevertState();
             }
         }
@@ -676,7 +697,8 @@ namespace Seasons
             if (!m_prefabVariants.TryGetValue(gameObject, out PrefabVariant prefabVariant))
                 return;
 
-            prefabVariant.RemoveFromPrefabList();
+            // All callers are object-destruction paths; do not rebuild a dying visual.
+            prefabVariant.RemoveFromPrefabList(restoreLevel: false);
         }
 
         private static string GetRelativePath(string rendererPath, string prefabName)
@@ -737,15 +759,23 @@ namespace Seasons
             if (instance == null)
                 return;
 
-            s_tempObjects.Clear();
-            foreach (KeyValuePair<GameObject, PrefabVariant> controller in variants)
-                if (controller.Key == null)
-                    s_tempObjects.Add(controller.Key);
+            PrefabVariantController owner = instance;
+            // This is an event-driven repaint, not a frame loop. A local snapshot also
+            // avoids sharing scratch state with callbacks from LevelEffects or other mods.
+            foreach (KeyValuePair<GameObject, PrefabVariant> entry in variants.ToArray())
+            {
+                if (!owner || owner != instance)
+                    break;
+                if (!owner.m_prefabVariants.TryGetValue(entry.Key, out PrefabVariant current) || !ReferenceEquals(current, entry.Value))
+                    continue;
+                if (entry.Key)
+                    current.UpdateColors();
                 else
-                    controller.Value.UpdateColors();
-
-            foreach (GameObject item in s_tempObjects)
-                instance.m_prefabVariants.Remove(item);
+                {
+                    current.ReleaseLevelMaterials(restoreLevel: false);
+                    owner.m_prefabVariants.Remove(entry.Key);
+                }
+            }
         }
 
         public static IEnumerator UpdatePrefabColorsAroundPositionDelayed(Vector3 position, float radius, float delay = 0f)
@@ -800,7 +830,7 @@ namespace Seasons
             s_rendererPathSegments.Clear();
 
             List<PrefabVariant> listToRemove = new List<PrefabVariant>();
-            foreach (PrefabVariant prefabVariant in instance.m_prefabVariants.Values)
+            foreach (PrefabVariant prefabVariant in instance.m_prefabVariants.Values.ToArray())
             {
                 if (!texturesVariants.controllers.TryGetValue(prefabVariant.m_prefabName, out PrefabController controller))
                 {
@@ -850,6 +880,262 @@ namespace Seasons
             my = p.z / 12 + num;
             mx /= 2048;
             my /= 2048;
+        }
+    }
+
+    // The seasonal material is the input; LevelEffects owns the level calculation.
+    // Its global prefab+level cache cannot represent different seasonal variants.
+    internal static class SeasonalLevelMaterials
+    {
+        internal sealed class Binding
+        {
+            internal readonly LevelEffects Effects;
+            internal readonly Renderer Renderer;
+            internal readonly MaterialVariants Variants;
+            internal readonly Dictionary<string, Material> Cache = new Dictionary<string, Material>();
+            internal readonly List<Material> Created = new List<Material>();
+            internal Material Source;
+            internal int Calls;
+            private bool released;
+            private bool restoreLevelOnRelease;
+
+            internal Binding(LevelEffects effects, MaterialVariants variants)
+            {
+                Effects = effects;
+                Renderer = effects.m_mainRender;
+                Variants = variants;
+                Source = variants.m_originalMaterial;
+            }
+
+            internal bool Matches => Effects && Renderer && Effects.m_mainRender == Renderer;
+            internal bool CanBegin => !released && Matches && Source && Calls == 0;
+
+            internal void Apply(Material source)
+            {
+                // A mod can request another repaint from a level callback. Do not
+                // recursively re-enter that same native calculation.
+                if (Calls != 0 || released || !Matches || !source)
+                    return;
+                Source = source;
+                if (Effects.m_character)
+                    Effects.SetupLevelVisualization(Effects.m_character.GetLevel());
+                else
+                {
+                    // Registration can precede LevelEffects.Start. Do not initialize
+                    // its character/subscription or run its level effects early.
+                    MaterialVariants.ApplySharedMaterial(Renderer, 0, Source);
+                    RetireUnused();
+                }
+            }
+
+            internal bool OwnsCurrent()
+            {
+                if (!Renderer)
+                    return false;
+                Material current = Renderer.sharedMaterial;
+                return current && (current == Source || Created.Contains(current) ||
+                    Array.IndexOf(Variants.seasonalMaterials, current) >= 0);
+            }
+
+            internal void Begin()
+            {
+                Calls++;
+                Cache.Clear();
+                MaterialVariants.ApplySharedMaterial(Renderer, 0, Source);
+            }
+
+            internal void Finish()
+            {
+                if (Calls == 0)
+                    return;
+                Calls--;
+                Cache.Clear();
+                if (released)
+                    CompleteRelease();
+                else
+                    RetireUnused();
+            }
+
+            private void RetireUnused()
+            {
+                // Only the observed constructor creates owned materials. Never
+                // destroy a vanilla cache entry or a material supplied by another mod.
+                Material[] assigned = Renderer ? Renderer.sharedMaterials : Array.Empty<Material>();
+                for (int i = Created.Count - 1; i >= 0; --i)
+                {
+                    Material material = Created[i];
+                    if (material && Array.IndexOf(assigned, material) >= 0)
+                        continue;
+                    if (material)
+                        UnityEngine.Object.Destroy(material);
+                    Created.RemoveAt(i);
+                }
+            }
+
+            internal void Release(bool restoreLevel)
+            {
+                if (released)
+                    return;
+                released = true;
+                restoreLevelOnRelease = restoreLevel;
+                // An activation callback may unload the object during SetupLevelVisualization.
+                // Keep its private cache alive until the enclosing call has finished.
+                if (Calls == 0)
+                    CompleteRelease();
+            }
+
+            private void CompleteRelease()
+            {
+                if (byEffects.TryGetValue(Effects, out Binding effectBinding) && ReferenceEquals(effectBinding, this))
+                    byEffects.Remove(Effects);
+                if (byRenderer.TryGetValue(Renderer, out Binding rendererBinding) && ReferenceEquals(rendererBinding, this))
+                    byRenderer.Remove(Renderer);
+                Cache.Clear();
+                bool restore = OwnsCurrent() && Variants.m_originalMaterial;
+                if (restore)
+                    MaterialVariants.ApplySharedMaterial(Renderer, 0, Variants.m_originalMaterial);
+                try
+                {
+                    // A live object leaving seasonal control must retain its stars.
+                    // This unbound call uses the ordinary vanilla cache and base texture.
+                    if (restore && restoreLevelOnRelease && Matches && Effects.m_character)
+                        Effects.SetupLevelVisualization(Effects.m_character.GetLevel());
+                }
+                finally
+                {
+                    RetireUnused();
+                }
+            }
+        }
+
+        private static readonly Dictionary<LevelEffects, Binding> byEffects = new Dictionary<LevelEffects, Binding>();
+        private static readonly Dictionary<Renderer, Binding> byRenderer = new Dictionary<Renderer, Binding>();
+        private static bool nativeHooksAvailable;
+
+        internal static List<Binding> Register(GameObject root, Dictionary<Renderer, Dictionary<int, MaterialVariants>> materials)
+        {
+            if (!nativeHooksAvailable || !root.TryGetComponent(out Character character) || character.IsPlayer())
+                return null;
+            List<Binding> bindings = null;
+            foreach (LevelEffects effects in root.GetComponentsInChildren<LevelEffects>(true))
+            {
+                Renderer renderer = effects.m_mainRender;
+                if (!renderer || byEffects.ContainsKey(effects) || byRenderer.ContainsKey(renderer) ||
+                    !materials.TryGetValue(renderer, out Dictionary<int, MaterialVariants> slots) ||
+                    !slots.TryGetValue(0, out MaterialVariants variants))
+                    continue;
+                Binding binding = new Binding(effects, variants);
+                byEffects.Add(effects, binding);
+                byRenderer.Add(renderer, binding);
+                (bindings ??= new List<Binding>()).Add(binding);
+            }
+            return bindings;
+        }
+
+        internal static bool TryApply(Renderer renderer, int index, MaterialVariants variants, Material source)
+        {
+            if (!nativeHooksAvailable || !renderer || index != 0 || !source ||
+                !byRenderer.TryGetValue(renderer, out Binding binding) || !ReferenceEquals(binding.Variants, variants))
+                return false;
+            if (!binding.Matches)
+            {
+                binding.Release(restoreLevel: false);
+                return false;
+            }
+            binding.Apply(source);
+            return true;
+        }
+
+        internal static bool TryRevert(Renderer renderer, int index, MaterialVariants variants)
+        {
+            if (!nativeHooksAvailable || !renderer || index != 0 ||
+                !byRenderer.TryGetValue(renderer, out Binding binding) || !ReferenceEquals(binding.Variants, variants))
+                return false;
+            if (!binding.Matches)
+            {
+                binding.Release(restoreLevel: false);
+                return false;
+            }
+            // Match both our seasonal source and the native copy derived from it.
+            // An unrelated replacement material is not ours to restore.
+            if (binding.OwnsCurrent())
+                binding.Apply(variants.m_originalMaterial);
+            return true;
+        }
+
+        private static Dictionary<string, Material> GetCache(LevelEffects effects) =>
+            byEffects.TryGetValue(effects, out Binding binding) && binding.Calls != 0
+                ? binding.Cache : LevelEffects.m_materials;
+
+        private static Material CreateMaterial(Material source, LevelEffects effects)
+        {
+            Material material = new Material(source);
+            if (byEffects.TryGetValue(effects, out Binding binding) && binding.Calls != 0)
+                binding.Created.Add(material);
+            return material;
+        }
+
+        [HarmonyPatch(typeof(LevelEffects), nameof(LevelEffects.SetupLevelVisualization))]
+        private static class LevelEffects_SetupLevelVisualization_SeasonalMaterials
+        {
+            [HarmonyPrefix, HarmonyPriority(Priority.First)]
+            private static void Prefix(LevelEffects __instance, out Binding __state)
+            {
+                __state = null;
+                if (!nativeHooksAvailable || !byEffects.TryGetValue(__instance, out Binding binding) || !binding.CanBegin)
+                    return;
+                __state = binding;
+                binding.Begin();
+            }
+
+            [HarmonyFinalizer, HarmonyPriority(Priority.Last)]
+            private static void Finalizer(Binding __state) => __state?.Finish();
+
+            [HarmonyTranspiler]
+            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+            {
+                List<CodeInstruction> code = new List<CodeInstruction>(instructions);
+                var cache = AccessTools.Field(typeof(LevelEffects), nameof(LevelEffects.m_materials));
+                var constructor = AccessTools.Constructor(typeof(Material), new[] { typeof(Material) });
+                int cacheLoads = 0;
+                int constructors = 0;
+                foreach (CodeInstruction instruction in code)
+                {
+                    if (instruction.opcode == OpCodes.Ldsfld && Equals(instruction.operand, cache))
+                        cacheLoads++;
+                    if (instruction.opcode == OpCodes.Newobj && Equals(instruction.operand, constructor))
+                        constructors++;
+                }
+                // Cache routing and ownership observation are one operation. A partial
+                // hook could publish seasonal copies globally or retire a borrowed material.
+                nativeHooksAvailable = cacheLoads >= 2 && constructors == 1;
+                if (!nativeHooksAvailable)
+                {
+                    Seasons.LogWarning($"Could not coordinate seasonal level materials: found {cacheLoads} cache loads and {constructors} material constructors in LevelEffects.SetupLevelVisualization.");
+                    return code;
+                }
+                var getCache = AccessTools.Method(typeof(SeasonalLevelMaterials), nameof(GetCache));
+                var createMaterial = AccessTools.Method(typeof(SeasonalLevelMaterials), nameof(CreateMaterial));
+                List<CodeInstruction> result = new List<CodeInstruction>(code.Count + cacheLoads + constructors);
+                foreach (CodeInstruction instruction in code)
+                {
+                    bool cacheLoad = instruction.opcode == OpCodes.Ldsfld && Equals(instruction.operand, cache);
+                    bool create = instruction.opcode == OpCodes.Newobj && Equals(instruction.operand, constructor);
+                    if (!cacheLoad && !create)
+                    {
+                        result.Add(instruction);
+                        continue;
+                    }
+                    // Preserve branch targets and exception boundaries on the first
+                    // replacement instruction. Material(source) still copies the same source.
+                    CodeInstruction load = new CodeInstruction(OpCodes.Ldarg_0);
+                    load.labels.AddRange(instruction.labels);
+                    load.blocks.AddRange(instruction.blocks);
+                    result.Add(load);
+                    result.Add(new CodeInstruction(OpCodes.Call, cacheLoad ? getCache : createMaterial));
+                }
+                return result;
+            }
         }
     }
 

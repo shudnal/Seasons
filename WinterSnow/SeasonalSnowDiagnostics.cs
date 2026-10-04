@@ -118,6 +118,7 @@ namespace Seasons
             {
                 DiagnosticLine(text, "Runtime: valid={0} confirmed={1} simulates={2} bucket={3} | Snow={4:F5} [{5:F2}, {6:F2}]",
                     state.Valid, state.Confirmed, state.Simulates, state.Bucket, state.Snow, state.Minimum, state.Maximum);
+                AppendSnowValueDiagnostics(text, state);
                 DiagnosticLine(text, "State: saved={0} construction={1} epoch={2} | publish={3} initial={4} ownerless={5}",
                     state.Saved, state.Construction, state.Epoch, state.MayPublish, state.AllowInitialPublication, state.AllowOwnerlessPublication);
                 DiagnosticLine(text, "Queues: refresh={0} ({1}) publish={2}/{3} visual={4}/{5}",
@@ -127,6 +128,7 @@ namespace Seasons
                     region != null && region.Ready, region != null && region.ReadinessDirty,
                     state.ReadyGeneration, region?.ReadyGeneration ?? -1, state.GeometryRevision, region?.GeometryRevision ?? -1,
                     region != null && region.Queued, region?.Scanning ?? SnowRefresh.None, region?.Pending ?? SnowRefresh.None);
+                AppendRefreshDiagnostics(text, state);
                 DiagnosticLine(text, "Cover/heat: covered={0} roof={1} leaky={2} shield={3} melting={4} | heat={5:F5} melt={6:F5} active={7} links={8}",
                     state.Covered, state.Roof, state.Leaky, state.Shielded, state.Melting, state.HeatRate, state.MeltRate,
                     state.InteractiveUntil > Time.time, state.HeatLinks?.Count ?? 0);
@@ -218,5 +220,198 @@ namespace Seasons
 
         private static void DiagnosticLine(StringBuilder text, string format, params object[] values) =>
             text.AppendFormat(CultureInfo.InvariantCulture, format, values).Append('\n');
+
+        [Flags]
+        private enum SnowValueCause : ushort
+        {
+            None = 0, PendingInitialization = 1, SavedSnapshot = 2, NewConstruction = 4,
+            InitialBaseline = 8, CoveredInitialization = 16, WinterReset = 32,
+            WeatherCatchUp = 64, Accumulation = 128, Melting = 256, ShieldClear = 512,
+            RangeClamp = 1024, WinterEnd = 2048
+        }
+
+        private sealed class SnowValueDiagnostics
+        {
+            internal bool InitialObserved, ChangeObserved;
+            internal SnowValueCause InitialCause, LastCause;
+            internal float InitialValue, InitialAt, PreviousValue, Value, ChangedAt;
+        }
+
+        private static void RecordInitialSnowValue(SnowPiece state, SnowValueCause cause)
+        {
+            if (!CollectSnowDiagnostics)
+                return;
+            SnowValueDiagnostics trace = state.ValueDiagnostics ??= new SnowValueDiagnostics();
+            trace.InitialObserved = true;
+            trace.InitialCause = cause;
+            trace.InitialValue = state.Snow;
+            trace.InitialAt = Time.unscaledTime;
+        }
+
+        private static void RecordSnowValueChange(SnowPiece state, float previous, SnowValueCause cause)
+        {
+            // A refresh or accepted snapshot with the same value must not erase the
+            // last real change. In particular, a loaded zero is not a new clearing event.
+            if (!CollectSnowDiagnostics || previous.Equals(state.Snow))
+                return;
+            SnowValueDiagnostics trace = state.ValueDiagnostics ??= new SnowValueDiagnostics();
+            trace.ChangeObserved = true;
+            trace.LastCause = cause;
+            trace.PreviousValue = previous;
+            trace.Value = state.Snow;
+            trace.ChangedAt = Time.unscaledTime;
+        }
+
+        private static void RecordRefreshedSnowValue(SnowPiece state, float previous, float target,
+            SnowValueCause cause, bool shielded)
+        {
+            if (!CollectSnowDiagnostics || previous.Equals(state.Snow))
+                return;
+            if (shielded)
+                cause = SnowValueCause.ShieldClear;
+            else if (!state.Snow.Equals(target))
+                cause |= SnowValueCause.RangeClamp;
+            RecordSnowValueChange(state, previous, cause);
+        }
+
+        private static void AppendSnowValueDiagnostics(StringBuilder text, SnowPiece state)
+        {
+            SnowValueDiagnostics trace = state.ValueDiagnostics;
+            if (trace == null || !trace.InitialObserved)
+                DiagnosticLine(text, "Initial snow: not observed (diagnostics enabled after registration)");
+            else
+                DiagnosticLine(text, "Initial snow: {0} | value={1:F5} age={2:F2}s",
+                    trace.InitialCause, trace.InitialValue, Time.unscaledTime - trace.InitialAt);
+            if (trace == null || !trace.ChangeObserved)
+                DiagnosticLine(text, "Last snow change: none observed");
+            else
+                DiagnosticLine(text, "Last snow change: {0} | {1:F5} -> {2:F5} age={3:F2}s",
+                    trace.LastCause, trace.PreviousValue, trace.Value, Time.unscaledTime - trace.ChangedAt);
+        }
+
+        internal enum SnowGeometryCause : byte
+        {
+            Other, ObjectAdded, ObjectRemoved, TransformChanged, HealthVisualChanged,
+            TerrainChanged, RockChanged, Placed, PieceMoved, AreaReady, WinterStart, Settings,
+            Count
+        }
+
+        [Flags]
+        private enum HeatReindexCause : byte
+        {
+            None = 0, Registration = 1, Removal = 2, Settings = 4, NativeColliderActivity = 8
+        }
+
+        private sealed class SnowGeometryDiagnostics
+        {
+            internal readonly long[] Counts = new long[(int)SnowGeometryCause.Count];
+            internal long Total;
+            internal SnowGeometryCause LastCause;
+            internal UnityEngine.Object Source;
+            internal int SourcePrefab;
+            internal ZDOID SourceId;
+            internal Vector3 Position;
+            internal float At;
+        }
+
+        private struct SnowHeatDiagnostics
+        {
+            internal long NativeFireplaceSamples, OtherSourcePolls, ActivityChanges, Reindexes;
+            internal UnityEngine.Object ActivitySource, ReindexSource;
+            internal HeatReindexCause ReindexCause;
+            internal int ActiveAreas;
+            internal float ActivityAt, ReindexAt;
+        }
+
+        private SnowHeatDiagnostics heatDiagnostics;
+        private static bool CollectSnowDiagnostics => showSnowDiagnosticsOnHover?.Value == true;
+
+        private static void RecordSnowGeometry(SnowRegion region, SnowGeometryCause cause,
+            UnityEngine.Object source, ZDO sourceZdo, Vector3 position)
+        {
+            if (!CollectSnowDiagnostics)
+                return;
+            SnowGeometryDiagnostics trace = region.Diagnostics ??= new SnowGeometryDiagnostics();
+            trace.Total++;
+            trace.Counts[(int)cause]++;
+            trace.LastCause = cause;
+            trace.Source = source;
+            trace.SourcePrefab = sourceZdo != null ? sourceZdo.GetPrefab() : 0;
+            trace.SourceId = sourceZdo != null ? sourceZdo.m_uid : ZDOID.None;
+            trace.Position = position;
+            trace.At = Time.unscaledTime;
+        }
+
+        private void RecordHeatActivity(HeatSource source)
+        {
+            if (!CollectSnowDiagnostics)
+                return;
+            heatDiagnostics.ActivityChanges++;
+            heatDiagnostics.ActivitySource = source.Owner;
+            heatDiagnostics.ActiveAreas = 0;
+            foreach (HeatArea area in source.Areas)
+                if (area.Active)
+                    heatDiagnostics.ActiveAreas++;
+            heatDiagnostics.ActivityAt = Time.unscaledTime;
+        }
+
+        private void RecordHeatReindex(HeatSource source)
+        {
+            if (!CollectSnowDiagnostics)
+                return;
+            heatDiagnostics.Reindexes++;
+            heatDiagnostics.ReindexSource = source.Owner;
+            heatDiagnostics.ReindexCause = source.ReindexCause;
+            heatDiagnostics.ReindexAt = Time.unscaledTime;
+        }
+
+        private static string DiagnosticSourceName(UnityEngine.Object source, int prefab = 0)
+        {
+            GameObject obj = source as GameObject;
+            if (!obj && source is Component component && component)
+                obj = component.gameObject;
+            if (obj)
+                return Utils.GetPrefabName(obj) + " #" + obj.GetInstanceID();
+            if (prefab != 0)
+            {
+                GameObject template = ZNetScene.instance ? ZNetScene.instance.GetPrefab(prefab) : null;
+                return template ? template.name : "prefab hash " + prefab;
+            }
+            return ReferenceEquals(source, null) ? "<none>" : "<destroyed " + source.GetType().Name + ">";
+        }
+
+        private void AppendRefreshDiagnostics(StringBuilder text, SnowPiece state)
+        {
+            SnowGeometryDiagnostics trace = state.Region?.Diagnostics;
+            DiagnosticLine(text, "Cover checks: region={0} piece={1} | piece cover hints={2}",
+                state.Region?.DiagnosticCoverChecks ?? 0L, state.DiagnosticCoverChecks, state.DiagnosticCoverHints);
+            if (trace == null)
+                DiagnosticLine(text, "Geometry events: none observed");
+            else
+            {
+                DiagnosticLine(text, "Geometry events: total={0} add/remove/move/health/terrain/rock/placed/local/ready/winter/settings/other={1}/{2}/{3}/{4}/{5}/{6}/{7}/{8}/{9}/{10}/{11}/{12}",
+                    trace.Total,
+                    trace.Counts[(int)SnowGeometryCause.ObjectAdded], trace.Counts[(int)SnowGeometryCause.ObjectRemoved],
+                    trace.Counts[(int)SnowGeometryCause.TransformChanged], trace.Counts[(int)SnowGeometryCause.HealthVisualChanged],
+                    trace.Counts[(int)SnowGeometryCause.TerrainChanged], trace.Counts[(int)SnowGeometryCause.RockChanged],
+                    trace.Counts[(int)SnowGeometryCause.Placed], trace.Counts[(int)SnowGeometryCause.PieceMoved],
+                    trace.Counts[(int)SnowGeometryCause.AreaReady], trace.Counts[(int)SnowGeometryCause.WinterStart],
+                    trace.Counts[(int)SnowGeometryCause.Settings], trace.Counts[(int)SnowGeometryCause.Other]);
+                DiagnosticLine(text, "Last geometry: {0} | source={1} ZDO={2} at=({3:F2}, {4:F2}, {5:F2}) age={6:F2}s",
+                    trace.LastCause, DiagnosticSourceName(trace.Source, trace.SourcePrefab), trace.SourceId,
+                    trace.Position.x, trace.Position.y, trace.Position.z, Time.unscaledTime - trace.At);
+            }
+            DiagnosticLine(text, "Heat watch (all): fireplace sources={0} native samples={1} | other sources={2} polls={3} | activity changes={4} reindexes={5}",
+                heatSources.Count - polledHeatSources.Count, heatDiagnostics.NativeFireplaceSamples,
+                polledHeatSources.Count, heatDiagnostics.OtherSourcePolls, heatDiagnostics.ActivityChanges, heatDiagnostics.Reindexes);
+            if (heatDiagnostics.ActivityChanges != 0)
+                DiagnosticLine(text, "Last heat activity: {0} | active areas={1} age={2:F2}s",
+                    DiagnosticSourceName(heatDiagnostics.ActivitySource), heatDiagnostics.ActiveAreas,
+                    Time.unscaledTime - heatDiagnostics.ActivityAt);
+            if (heatDiagnostics.Reindexes != 0)
+                DiagnosticLine(text, "Last heat reindex: {0} | source={1} age={2:F2}s",
+                    heatDiagnostics.ReindexCause, DiagnosticSourceName(heatDiagnostics.ReindexSource),
+                    Time.unscaledTime - heatDiagnostics.ReindexAt);
+        }
     }
 }

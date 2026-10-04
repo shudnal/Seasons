@@ -36,11 +36,11 @@ namespace Seasons
             internal EffectArea Area;
             internal Collider Collider;
             internal Transform Transform;
-            internal Matrix4x4 Matrix;
             internal Matrix4x4 Inverse;
             internal Vector3 Position;
             internal Bounds Bounds;
             internal bool Active;
+            internal bool Captured;
             private byte shape;
             private Vector3 center;
             private Vector3 half;
@@ -52,7 +52,10 @@ namespace Seasons
 
             internal void Capture()
             {
-                Matrix = Transform.localToWorldMatrix;
+                // Registered heat volumes are stationary. Activation does not change their geometry.
+                if (Captured)
+                    return;
+                Matrix4x4 matrix = Transform.localToWorldMatrix;
                 Inverse = Transform.worldToLocalMatrix;
                 Position = Transform.position;
                 Vector3 scale = Transform.lossyScale;
@@ -62,10 +65,10 @@ namespace Seasons
                     shape = 1;
                     center = box.center;
                     half = box.size * 0.5f;
-                    Vector3 x = Matrix.MultiplyVector(new Vector3(half.x, 0f, 0f));
-                    Vector3 y = Matrix.MultiplyVector(new Vector3(0f, half.y, 0f));
-                    Vector3 z = Matrix.MultiplyVector(new Vector3(0f, 0f, half.z));
-                    Bounds = new Bounds(Matrix.MultiplyPoint3x4(center), 2f * new Vector3(
+                    Vector3 x = matrix.MultiplyVector(new Vector3(half.x, 0f, 0f));
+                    Vector3 y = matrix.MultiplyVector(new Vector3(0f, half.y, 0f));
+                    Vector3 z = matrix.MultiplyVector(new Vector3(0f, 0f, half.z));
+                    Bounds = new Bounds(matrix.MultiplyPoint3x4(center), 2f * new Vector3(
                         Mathf.Abs(x.x) + Mathf.Abs(y.x) + Mathf.Abs(z.x),
                         Mathf.Abs(x.y) + Mathf.Abs(y.y) + Mathf.Abs(z.y),
                         Mathf.Abs(x.z) + Mathf.Abs(y.z) + Mathf.Abs(z.z)));
@@ -73,7 +76,7 @@ namespace Seasons
                 else if (Collider is SphereCollider sphere)
                 {
                     shape = 2;
-                    center = Matrix.MultiplyPoint3x4(sphere.center);
+                    center = matrix.MultiplyPoint3x4(sphere.center);
                     radius = sphere.radius * Mathf.Max(scale.x, Mathf.Max(scale.y, scale.z));
                     // Unity scales a sphere by the largest axis, not into an ellipsoid.
                     Bounds = new Bounds(center, Vector3.one * radius * 2f);
@@ -86,8 +89,8 @@ namespace Seasons
                     segmentHalf = Mathf.Max(0f, capsule.height * scale[axis] * 0.5f - radius);
                     direction = Vector3.zero;
                     direction[axis] = 1f;
-                    direction = Matrix.MultiplyVector(direction).normalized;
-                    center = Matrix.MultiplyPoint3x4(capsule.center);
+                    direction = matrix.MultiplyVector(direction).normalized;
+                    center = matrix.MultiplyPoint3x4(capsule.center);
                     Bounds = new Bounds(center, 2f * (Vector3.one * radius + segmentHalf *
                         new Vector3(Mathf.Abs(direction.x), Mathf.Abs(direction.y), Mathf.Abs(direction.z))));
                 }
@@ -96,6 +99,8 @@ namespace Seasons
                     shape = 0;
                     Bounds = Collider.bounds;
                 }
+                // A disabled non-primitive collider has no usable native bounds yet.
+                Captured = shape != 0 || (Collider.enabled && Collider.gameObject.activeInHierarchy);
             }
 
             internal bool Contains(Vector3 point)
@@ -123,6 +128,8 @@ namespace Seasons
         {
             internal UnityEngine.Object Owner;
             internal Fireplace Fireplace;
+            internal bool FireplaceObserved;
+            internal bool FireplaceBurning;
             internal Smelter Smelter;
             internal WearNTear Piece;
             internal readonly List<HeatArea> Areas = new List<HeatArea>();
@@ -132,6 +139,7 @@ namespace Seasons
             internal Bounds Bounds;
             internal bool HasBounds;
             internal bool GeometryQueued;
+            internal HeatReindexCause ReindexCause;
             internal bool Wide;
             internal bool Queued;
             internal bool Pending;
@@ -165,6 +173,7 @@ namespace Seasons
         private readonly Dictionary<SnowHeatCell, HashSet<HeatSource>> heatCells = new Dictionary<SnowHeatCell, HashSet<HeatSource>>();
         private readonly Dictionary<WearNTear, HashSet<HeatSource>> selfHeaters = new Dictionary<WearNTear, HashSet<HeatSource>>();
         private readonly List<HeatSource> heatSources = new List<HeatSource>();
+        private readonly List<HeatSource> polledHeatSources = new List<HeatSource>();
         private readonly HashSet<HeatSource> wideHeaters = new HashSet<HeatSource>();
         private readonly Queue<HeatSource> changedHeaters = new Queue<HeatSource>();
         private readonly Queue<HeatSource> heatGeometry = new Queue<HeatSource>();
@@ -202,6 +211,8 @@ namespace Seasons
                 source = new HeatSource { Owner = owner, Fireplace = fireplace, Smelter = smelter, Piece = piece };
                 heatOwners.Add(owner, source);
                 heatSources.Add(source);
+                if (!fireplace)
+                    polledHeatSources.Add(source);
                 if (piece)
                 {
                     if (!selfHeaters.TryGetValue(piece, out HashSet<HeatSource> own))
@@ -210,10 +221,14 @@ namespace Seasons
                 }
             }
             HeatArea shape = new HeatArea { Area = area, Collider = area.m_collider, Transform = area.transform };
+            shape.Capture();
             source.Areas.Add(shape);
             heatAreas.Add(area, source);
-            ReindexHeatSource(source);
-            PollHeatSource(source, force: true);
+            ReindexHeatSource(source, HeatReindexCause.Registration);
+            if (source.Fireplace)
+                RefreshFireplaceHeat(source, force: true);
+            else
+                PollHeatSource(source, force: true);
         }
 
         internal void HeatAreaChanged(EffectArea area)
@@ -222,8 +237,34 @@ namespace Seasons
                 return;
             if (!heatAreas.TryGetValue(area, out HeatSource source))
                 RegisterHeatArea(area);
+            else if (source.Fireplace)
+                RefreshFireplaceHeat(source);
             else
                 source.NextPoll = 0f;
+        }
+
+        // UpdateState supplies the result of its existing IsBurning call after applying
+        // the native active objects. Never call IsBurning again from the snow scheduler.
+        internal void FireplaceStateUpdated(Fireplace fireplace, bool burning)
+        {
+            if (!SeasonalSnow.WinterReady || !fireplace ||
+                !heatOwners.TryGetValue(fireplace, out HeatSource source) || source.Retired)
+                return;
+            if (CollectSnowDiagnostics)
+                heatDiagnostics.NativeFireplaceSamples++;
+            source.FireplaceObserved = true;
+            source.FireplaceBurning = burning;
+            RefreshFireplaceHeat(source);
+        }
+
+        private void RefreshFireplaceHeat(HeatSource source, bool force = false)
+        {
+            Fireplace fireplace = source.Fireplace;
+            // Before the first native update, the active heat areas provide the initial
+            // visual state. The first UpdateState result replaces that bootstrap state.
+            bool burning = fireplace && fireplace.m_nview && fireplace.m_nview.IsValid() &&
+                !fireplace.m_wet && (!source.FireplaceObserved || source.FireplaceBurning);
+            RefreshHeatActivity(source, burning, force);
         }
 
         internal void RemoveHeatArea(EffectArea area)
@@ -241,6 +282,8 @@ namespace Seasons
             {
                 source.Retired = true;
                 heatOwners.Remove(source.Owner);
+                heatSources.Remove(source);
+                polledHeatSources.Remove(source);
                 if (source.Piece && selfHeaters.TryGetValue(source.Piece, out HashSet<HeatSource> own))
                 {
                     own.Remove(source);
@@ -248,7 +291,7 @@ namespace Seasons
                         selfHeaters.Remove(source.Piece);
                 }
             }
-            ReindexHeatSource(source);
+            ReindexHeatSource(source, HeatReindexCause.Removal);
             QueueHeater(source);
         }
 
@@ -265,8 +308,9 @@ namespace Seasons
             changedHeaters.Enqueue(source);
         }
 
-        private void ReindexHeatSource(HeatSource source)
+        private void ReindexHeatSource(HeatSource source, HeatReindexCause cause = HeatReindexCause.Settings)
         {
+            source.ReindexCause |= cause;
             if (source.GeometryQueued)
                 return;
             source.GeometryQueued = true;
@@ -275,6 +319,8 @@ namespace Seasons
 
         private void ReindexHeatSourceNow(HeatSource source)
         {
+            RecordHeatReindex(source);
+            source.ReindexCause = HeatReindexCause.None;
             foreach (SnowHeatCell cell in source.Cells)
                 if (heatCells.TryGetValue(cell, out HashSet<HeatSource> sources))
                 {
@@ -362,13 +408,19 @@ namespace Seasons
             if (source.Retired || (!force && Time.time < source.NextPoll))
                 return;
             source.NextPoll = Time.time + 0.5f;
-            bool burning = source.Owner && (source.Fireplace
-                ? source.Fireplace.m_nview && source.Fireplace.m_nview.IsValid() && !source.Fireplace.m_wet && source.Fireplace.IsBurning() 
-                : source.Smelter
-                    ? source.Smelter.m_nview && source.Smelter.m_nview.IsValid() && source.Smelter.IsActive()
-                    : true);
-            bool changed = force;
-            bool moved = false;
+            if (CollectSnowDiagnostics)
+                heatDiagnostics.OtherSourcePolls++;
+            bool burning = source.Owner && (!source.Smelter ||
+                (source.Smelter.m_nview && source.Smelter.m_nview.IsValid() && source.Smelter.IsActive()));
+            RefreshHeatActivity(source, burning, force);
+        }
+
+        private void RefreshHeatActivity(HeatSource source, bool burning, bool force = false)
+        {
+            if (source.Retired)
+                return;
+            bool changed = false;
+            bool needsBounds = false;
             foreach (HeatArea shape in source.Areas)
             {
                 bool active = burning && shape.Area && shape.Area.isActiveAndEnabled &&
@@ -376,12 +428,13 @@ namespace Seasons
                 bool activityChanged = shape.Active != active;
                 changed |= activityChanged;
                 shape.Active = active;
-                moved |= shape.Transform && shape.Transform.localToWorldMatrix != shape.Matrix;
-                moved |= activityChanged && shape.NeedsActiveGeometry;
+                needsBounds |= activityChanged && shape.NeedsActiveGeometry;
             }
-            if (moved)
-                ReindexHeatSource(source);
+            if (needsBounds)
+                ReindexHeatSource(source, HeatReindexCause.NativeColliderActivity);
             if (changed)
+                RecordHeatActivity(source);
+            if (changed || force)
                 QueueHeater(source);
         }
 
@@ -397,21 +450,11 @@ namespace Seasons
                 source.GeometryQueued = false;
                 ReindexHeatSourceNow(source);
             }
-            int polls = Math.Min(8, heatSources.Count);
-            while (polls-- > 0 && heatSources.Count != 0)
+            int polls = Math.Min(8, polledHeatSources.Count);
+            while (polls-- > 0 && polledHeatSources.Count != 0)
             {
-                heatPollCursor %= heatSources.Count;
-                HeatSource source = heatSources[heatPollCursor];
-                if (source.Retired)
-                {
-                    heatSources[heatPollCursor] = heatSources[heatSources.Count - 1];
-                    heatSources.RemoveAt(heatSources.Count - 1);
-                }
-                else
-                {
-                    heatPollCursor++;
-                    PollHeatSource(source);
-                }
+                heatPollCursor %= polledHeatSources.Count;
+                PollHeatSource(polledHeatSources[heatPollCursor++]);
             }
             int remaining = 128;
             while (remaining-- > 0 && changedHeaters.Count != 0)
@@ -533,6 +576,8 @@ namespace Seasons
             heatCells.Clear();
             selfHeaters.Clear();
             heatSources.Clear();
+            polledHeatSources.Clear();
+            heatDiagnostics = default;
             wideHeaters.Clear();
             changedHeaters.Clear();
             heatGeometry.Clear();
