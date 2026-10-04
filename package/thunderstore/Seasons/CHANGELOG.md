@@ -1,3 +1,10 @@
+# 1.10.4
+* reduced redundant snow-cover checks and fireplace polling
+* optimized ice floe scheduling, avoiding repeated physics passes for distant and kinematic floes
+* improved snow-cover detection on building pieces without a captured collider surface
+* fixed material refreshes for starred creatures, preserving seasonal textures and level colors
+* expanded optional snow and ice floe diagnostics
+
 # 1.10.3
 * added subtle seasonal screen color temperature changes through `Custom lightings.json`: summer is slightly warmer, while fall and winter are cooler by default; the HUD and other screen-space UI are unaffected
 * fixed winter Snow and SnowStorm weather losing the vanilla Freezing effect
