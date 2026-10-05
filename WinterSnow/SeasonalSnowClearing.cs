@@ -61,7 +61,7 @@ namespace Seasons
             Piece target = player.GetHoveringPiece();
             WearNTear wear = target ? target.GetComponent<WearNTear>() : null;
             if (!wear || !wear.m_nview || !wear.m_nview.IsValid() ||
-                SeasonalSnowController.Instance.GetSnowValue(wear) <= 0f)
+                !(SeasonalSnowController.Instance.GetSnowValue(wear) >= SeasonalSnowController.MinimumSnowToClear))
             {
                 ShowResult(player, SnowClearResult.NoSnow);
                 return;
@@ -274,6 +274,8 @@ namespace Seasons
 
     internal sealed partial class SeasonalSnowController
     {
+        internal const float MinimumSnowToClear = 0.05f;
+
         /// <summary>Consume the old accumulation interval and publish an explicit zero without retiring the piece.</summary>
         internal SnowClearResult ClearSnowManually(WearNTear piece, Player actor)
         {
@@ -300,7 +302,7 @@ namespace Seasons
                 return SnowClearResult.NoSnow;
             }
             IntegratePiece(state, now, snowClock);
-            if (!state.Valid || !SeasonalSnowStorage.CanWrite(state.View, state.Zdo) || !(state.Snow > 0f))
+            if (!state.Valid || !SeasonalSnowStorage.CanWrite(state.View, state.Zdo) || !(state.Snow >= MinimumSnowToClear))
                 return SnowClearResult.NoSnow;
 
             float previous = state.Snow;

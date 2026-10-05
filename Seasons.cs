@@ -27,7 +27,7 @@ namespace Seasons
     {
         public const string pluginID = "shudnal.Seasons";
         public const string pluginName = "Seasons";
-        public const string pluginVersion = "1.10.4";
+        public const string pluginVersion = "1.10.5";
 
         private readonly Harmony harmony = new Harmony(pluginID);
 
