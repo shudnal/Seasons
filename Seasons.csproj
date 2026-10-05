@@ -63,6 +63,8 @@
     <Compile Include="WinterSnow\SeasonalSnowSimulation.cs" />
     <Compile Include="WinterSnow\SeasonalSnowHeat.cs" />
     <Compile Include="WinterSnow\SeasonalSnowInteraction.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowClearing.cs" />
+    <Compile Include="WinterSnow\SnowClearingTool.cs" />
     <Compile Include="WinterSnow\SeasonalSnowGeometry.cs" />
     <Compile Include="WinterSnow\SeasonalSnowSimulationPatches.cs" />
     <Compile Include="WinterSnow\SeasonalSnowMaterials.cs" />
@@ -228,6 +230,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Assets\clear_snow.png" />
     <EmbeddedResource Include="Assets\season_fall.png" />
     <EmbeddedResource Include="Assets\season_spring.png" />
     <EmbeddedResource Include="Assets\season_summer.png" />
