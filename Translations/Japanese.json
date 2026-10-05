@@ -102,5 +102,7 @@
     "seasons_status_summer_heat_armor_cold_cloak": "耐寒マント",
     "seasons_status_summer_heat_armor_open_armor": "開放型防具",
     "seasons_status_summer_heat_armor_closed_armor": "密閉型防具",
-    "seasons_status_summer_heat_armor_cold_armor": "耐寒防具"
+    "seasons_status_summer_heat_armor_cold_armor": "耐寒防具",
+    "seasons_clear_snow": "雪かき",
+    "seasons_clear_snow_description": "シャベルではないが、屋根の雪くらいは払える。"
 }

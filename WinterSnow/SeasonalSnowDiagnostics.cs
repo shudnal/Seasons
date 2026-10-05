@@ -227,7 +227,7 @@ namespace Seasons
             None = 0, PendingInitialization = 1, SavedSnapshot = 2, NewConstruction = 4,
             InitialBaseline = 8, CoveredInitialization = 16, WinterReset = 32,
             WeatherCatchUp = 64, Accumulation = 128, Melting = 256, ShieldClear = 512,
-            RangeClamp = 1024, WinterEnd = 2048
+            RangeClamp = 1024, WinterEnd = 2048, ManualClear = 4096
         }
 
         private sealed class SnowValueDiagnostics

@@ -102,5 +102,7 @@
     "seasons_status_summer_heat_armor_cold_cloak": "vorstbestendige mantel",
     "seasons_status_summer_heat_armor_open_armor": "open pantser",
     "seasons_status_summer_heat_armor_closed_armor": "gesloten pantser",
-    "seasons_status_summer_heat_armor_cold_armor": "vorstbestendig pantser"
+    "seasons_status_summer_heat_armor_cold_armor": "vorstbestendig pantser",
+    "seasons_clear_snow": "Sneeuw ruimen",
+    "seasons_clear_snow_description": "Geen schep, maar je krijgt er wel sneeuw mee van het dak."
 }

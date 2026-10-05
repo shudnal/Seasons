@@ -102,5 +102,7 @@
     "seasons_status_summer_heat_armor_cold_cloak": "soğuğa dayanıklı pelerin",
     "seasons_status_summer_heat_armor_open_armor": "açık zırh",
     "seasons_status_summer_heat_armor_closed_armor": "kapalı zırh",
-    "seasons_status_summer_heat_armor_cold_armor": "soğuğa dayanıklı zırh"
+    "seasons_status_summer_heat_armor_cold_armor": "soğuğa dayanıklı zırh",
+    "seasons_clear_snow": "Karı temizle",
+    "seasons_clear_snow_description": "Kürek değil ama çatıdaki karı temizler."
 }

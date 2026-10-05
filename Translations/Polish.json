@@ -102,5 +102,7 @@
     "seasons_status_summer_heat_armor_cold_cloak": "mrozoodporny płaszcz",
     "seasons_status_summer_heat_armor_open_armor": "otwarty pancerz",
     "seasons_status_summer_heat_armor_closed_armor": "zamknięty pancerz",
-    "seasons_status_summer_heat_armor_cold_armor": "mrozoodporny pancerz"
+    "seasons_status_summer_heat_armor_cold_armor": "mrozoodporny pancerz",
+    "seasons_clear_snow": "Odśnieżanie",
+    "seasons_clear_snow_description": "To nie łopata, ale śnieg z dachu zmiecie."
 }

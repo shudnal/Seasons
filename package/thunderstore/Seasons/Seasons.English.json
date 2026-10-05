@@ -102,5 +102,7 @@
     "seasons_status_summer_heat_armor_cold_cloak": "frost-resistant cloak",
     "seasons_status_summer_heat_armor_open_armor": "open armor",
     "seasons_status_summer_heat_armor_closed_armor": "closed armor",
-    "seasons_status_summer_heat_armor_cold_armor": "frost-resistant armor"
+    "seasons_status_summer_heat_armor_cold_armor": "frost-resistant armor",
+    "seasons_clear_snow": "Clear snow",
+    "seasons_clear_snow_description": "No shovel, but it\u0027ll get the snow off the roof."
 }

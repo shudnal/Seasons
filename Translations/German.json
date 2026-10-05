@@ -102,5 +102,7 @@
     "seasons_status_summer_heat_armor_cold_cloak": "frostbeständiger Umhang",
     "seasons_status_summer_heat_armor_open_armor": "offene Rüstung",
     "seasons_status_summer_heat_armor_closed_armor": "geschlossene Rüstung",
-    "seasons_status_summer_heat_armor_cold_armor": "frostbeständige Rüstung"
+    "seasons_status_summer_heat_armor_cold_armor": "frostbeständige Rüstung",
+    "seasons_clear_snow": "Schnee räumen",
+    "seasons_clear_snow_description": "Keine Schaufel, aber den Schnee fegt sie vom Dach."
 }
