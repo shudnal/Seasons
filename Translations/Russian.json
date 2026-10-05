@@ -102,5 +102,7 @@
     "seasons_status_summer_heat_armor_cold_cloak": "морозостойкий плащ",
     "seasons_status_summer_heat_armor_open_armor": "открытая броня",
     "seasons_status_summer_heat_armor_closed_armor": "закрытая броня",
-    "seasons_status_summer_heat_armor_cold_armor": "морозостойкая броня"
+    "seasons_status_summer_heat_armor_cold_armor": "морозостойкая броня",
+    "seasons_clear_snow": "Очистить от снега",
+    "seasons_clear_snow_description": "Не лопата, но снег с крыши смахнёт."
 }

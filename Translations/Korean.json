@@ -102,5 +102,7 @@
     "seasons_status_summer_heat_armor_cold_cloak": "방한 망토",
     "seasons_status_summer_heat_armor_open_armor": "열린 갑옷",
     "seasons_status_summer_heat_armor_closed_armor": "닫힌 갑옷",
-    "seasons_status_summer_heat_armor_cold_armor": "방한 갑옷"
+    "seasons_status_summer_heat_armor_cold_armor": "방한 갑옷",
+    "seasons_clear_snow": "눈 치우기",
+    "seasons_clear_snow_description": "삽은 아니지만 지붕의 눈쯤은 털어낼 수 있다."
 }

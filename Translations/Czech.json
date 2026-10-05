@@ -102,5 +102,7 @@
     "seasons_status_summer_heat_armor_cold_cloak": "mrazuvzdorný plášť",
     "seasons_status_summer_heat_armor_open_armor": "otevřená zbroj",
     "seasons_status_summer_heat_armor_closed_armor": "uzavřená zbroj",
-    "seasons_status_summer_heat_armor_cold_armor": "mrazuvzdorná zbroj"
+    "seasons_status_summer_heat_armor_cold_armor": "mrazuvzdorná zbroj",
+    "seasons_clear_snow": "Odklidit sníh",
+    "seasons_clear_snow_description": "Lopata to není, ale sníh ze střechy smete."
 }

@@ -102,5 +102,7 @@
     "seasons_status_summer_heat_armor_cold_cloak": "防寒披風",
     "seasons_status_summer_heat_armor_open_armor": "開放護甲",
     "seasons_status_summer_heat_armor_closed_armor": "封閉護甲",
-    "seasons_status_summer_heat_armor_cold_armor": "防寒護甲"
+    "seasons_status_summer_heat_armor_cold_armor": "防寒護甲",
+    "seasons_clear_snow": "清除積雪",
+    "seasons_clear_snow_description": "雖不是鏟子，也能掃掉屋頂的雪。"
 }

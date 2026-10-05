@@ -1,3 +1,6 @@
+# 1.10.5
+* you can now clear the snow capes with a hoe (in winter and snow capes should be enabled)
+
 # 1.10.4
 * reduced redundant snow-cover checks and fireplace polling
 * optimized ice floe scheduling, avoiding repeated physics passes for distant and kinematic floes

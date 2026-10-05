@@ -102,5 +102,7 @@
     "seasons_status_summer_heat_armor_cold_cloak": "cape résistante au froid",
     "seasons_status_summer_heat_armor_open_armor": "armure ouverte",
     "seasons_status_summer_heat_armor_closed_armor": "armure fermée",
-    "seasons_status_summer_heat_armor_cold_armor": "armure résistante au froid"
+    "seasons_status_summer_heat_armor_cold_armor": "armure résistante au froid",
+    "seasons_clear_snow": "Déneiger",
+    "seasons_clear_snow_description": "Ce n\u0027est pas une pelle, mais ça chasse la neige du toit."
 }

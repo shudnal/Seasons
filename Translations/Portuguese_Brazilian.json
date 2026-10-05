@@ -102,5 +102,7 @@
     "seasons_status_summer_heat_armor_cold_cloak": "capa contra frio",
     "seasons_status_summer_heat_armor_open_armor": "armadura aberta",
     "seasons_status_summer_heat_armor_closed_armor": "armadura fechada",
-    "seasons_status_summer_heat_armor_cold_armor": "armadura contra frio"
+    "seasons_status_summer_heat_armor_cold_armor": "armadura contra frio",
+    "seasons_clear_snow": "Remover neve",
+    "seasons_clear_snow_description": "Não é uma pá, mas tira a neve do telhado."
 }
