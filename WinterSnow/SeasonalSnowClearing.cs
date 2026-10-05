@@ -141,7 +141,8 @@ namespace Seasons
                 player.FaceLookDirection();
                 player.m_zanim.SetTrigger(operation.Tool.m_shared.m_attack.m_attackAnimation);
             }
-            operation.Tool.m_shared.m_buildEffect?.Create(operation.Position, Quaternion.identity, null, 1f, -1, player.GetZDOID());
+            // Reuse the target position captured for this action; do not perform another hit test.
+            player.m_snowShovelEffect?.Create(operation.Position, Quaternion.identity);
         }
 
         private static void ShowResult(Player player, SnowClearResult result) =>
