@@ -176,6 +176,7 @@ namespace Seasons
             if (!SeasonState.WorldInitialized || !scene || ReferenceEquals(scene, stoppedSnowScene))
                 return;
             bool active = SeasonalSnow.WinterReady;
+            SnowClearingTool.RefreshAvailability();
             bool transitioning = endingSnowWinter || winterRunning || snowPieces.Count != 0 || visuals.Count != 0;
             VisualBridgeActive = active || transitioning;
             if (!active && !transitioning)

@@ -12,20 +12,36 @@ piece's seasonal snow to zero, including a fully healthy piece. It does not repa
 health, remove a structure, place an object, modify terrain, or require a crafting
 station. Normal hoe actions and hammer repairs retain their native paths.
 
+The tile is available only while the world is initialized and
+`SeasonalSnow.WinterReady` is true: winter with seasonal snow and seasonal
+environment control enabled. It is absent in other seasons or when those controls
+are disabled, including in no-cost mode.
+
 A missing target, unsupported piece, or piece without seasonal snow uses the
 existing `$msg_nosnow` message. Wards retain `$msg_privatezone`; insufficient
 stamina uses the native stamina-bar flash. Only a successful action consumes the
-hoe's normal build stamina/eitr/durability and plays its tool animation/effect.
+hoe's normal build stamina/eitr/durability, plays its tool animation, and creates
+the native snow-shovel effect at the already captured piece position.
 This does not clear native Deep North snow, terrain snow, or creature materials.
 Cleared pieces can accumulate fresh snow again according to the existing rules.
 
 ## Selection and UI
 
-`Seasons_ClearSnow` is a private copy of the hammer's repair action, appended once
-to the hoe's `PieceTable`. Its `m_repairPiece` flag remains true for native targeting,
+`Seasons_ClearSnow` is a private copy of the hammer's repair action. Its prefab and
+icon are reused; the entry is added to or removed from the hoe's `PieceTable` when
+availability changes. Its `m_repairPiece` flag remains true for native targeting,
 repair-mode recognition, and suppression of the placement ghost. It does not enable
 `m_canRemovePieces`. The action is made known before the active table is rebuilt;
 no new key binding, raycast, or per-frame target search is added.
+
+Availability is refreshed by the existing snow lifecycle reconciliation after
+world initialization, season changes, and settings changes. Only an actual change
+rebuilds the equipped hoe's available list and an open BuildUi. Cloned hoe tables
+are reconciled before their normal player-side list rebuild. Removing the selected
+action resets selection to the first remaining action, restores its placement
+ghost, and discards any buffered snow-clearing click. Unavailable entries are
+removed from the source list rather than merely relying on `m_enabled`, which
+native no-cost mode can bypass. The input dispatch also rejects unavailable use.
 
 Two BuildUi transpilers treat only this action as an ordinary tile when creating
 buttons and filtering search results. All other repair/remove items remain special.
@@ -65,9 +81,12 @@ after three seconds. Late or duplicate replies cannot complete a newer action.
 A timeout can still occur after a remote owner has processed a request; no local
 prediction or automatic retry is used to hide that ambiguity.
 
-RPC registration uses Game.Start; scene teardown removes only the handlers owned
-by this feature. Per-peer receipts and outstanding requests are discarded on world
-teardown. There is no periodic network check or background polling loop.
+RPC registration runs in the `ZNetScene.Awake` postfix and uses its `__instance`.
+Native Awake already uses the routed RPC for its own SpawnObject registration;
+there is no Game.Start hook or redundant scene-singleton gate. Scene teardown
+removes only the handlers owned by this feature. Per-peer receipts and outstanding
+requests are discarded on world teardown. There is no periodic network check or
+background polling loop.
 
 ## Localization and scope
 
@@ -84,6 +103,11 @@ mouse and gamepad placement, switching back to terrain actions, and hammer repai
 Clear a healthy snow-covered roof, then try empty snow, open sky, bare terrain, an
 unsupported piece, low stamina, and a protected piece. Check single-piece scope,
 zero persistence through area/world reload, and later accumulation from snowfall.
+
+While holding the hoe (also with BuildUi open), switch winter to spring and back,
+and toggle seasonal snow and environment control. Verify removal/reappearance,
+selection and ghost recovery, no-cost behavior, and cloned hoe tables after
+re-equipping. Repeat after returning to the main menu and entering another world.
 
 With two clients, test both local and remote owners, permitted/denied ward users,
 large-piece edges, rapid repeated clicks, ownership handoff, leaving the area during

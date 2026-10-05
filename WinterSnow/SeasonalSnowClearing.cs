@@ -242,15 +242,11 @@ namespace Seasons
             // Keep request identities monotonic across worlds; late replies must not match a new request.
         }
 
-        [HarmonyPatch(typeof(Game), nameof(Game.Start))]
-        private static class Game_Start_SnowClearing
+        [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.Awake))]
+        private static class ZNetScene_Awake_SnowClearing
         {
             [HarmonyPostfix]
-            private static void Postfix()
-            {
-                if (ZNetScene.instance)
-                    Register(ZNetScene.instance);
-            }
+            private static void Postfix(ZNetScene __instance) => Register(__instance);
         }
 
         [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.OnDestroy))]

@@ -17,11 +17,13 @@ namespace Seasons
 
         private static Piece action;
         private static ObjectDB registeredDatabase;
+        private static PieceTable registeredTable;
         private static bool inputHookReady;
         private static bool buttonsHookReady;
         private static bool searchHookReady;
 
         private static bool HooksReady => inputHookReady && buttonsHookReady && searchHookReady;
+        private static bool Available => HooksReady && SeasonState.WorldInitialized && SeasonalSnow.WinterReady;
         internal static bool IsAction(Piece piece) => action && piece == action;
         internal static bool IsHoe(ItemDrop.ItemData tool) => tool != null && tool.m_dropPrefab && tool.m_dropPrefab.name == "Hoe";
 
@@ -67,7 +69,7 @@ namespace Seasons
                 action.m_name = NameToken;
                 action.m_description = DescriptionToken;
                 action.m_icon = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(0.5f, 0.5f));
-                action.m_enabled = true;
+                action.m_enabled = Available;
                 action.m_repairPiece = true;
                 action.m_removePiece = false;
                 action.m_canRotate = false;
@@ -79,14 +81,48 @@ namespace Seasons
                     (int)table.m_categories[0] < (int)Piece.PieceCategory.Max
                     ? table.m_categories[0] : Piece.PieceCategory.Misc;
             }
-            AddToTable(table);
+            SetTableAvailability(table, Available);
+            registeredTable = table;
             registeredDatabase = database;
         }
 
-        private static void AddToTable(PieceTable table)
+        private static void SetTableAvailability(PieceTable table, bool available)
         {
-            if (action && table && !table.m_pieces.Contains(action.gameObject))
-                table.m_pieces.Add(action.gameObject);
+            if (!action || !table)
+                return;
+            if (available)
+            {
+                if (!table.m_pieces.Contains(action.gameObject))
+                    table.m_pieces.Add(action.gameObject);
+            }
+            else
+                // Disabling only m_enabled is insufficient: native no-cost mode ignores it.
+                table.m_pieces.Remove(action.gameObject);
+        }
+
+        internal static void RefreshAvailability()
+        {
+            if (!action)
+                return;
+            bool available = Available;
+            if (action.m_enabled == available)
+                return;
+            action.m_enabled = available;
+            SetTableAvailability(registeredTable, available);
+
+            Player player = Player.m_localPlayer;
+            if (!player || !player.m_buildPieces ||
+                (!IsHoe(player.GetRightItem()) && !player.m_buildPieces.m_pieces.Contains(action.gameObject)))
+                return;
+            // The normal list rebuild also handles cloned hoe tables and a removed selection.
+            player.UpdateAvailablePiecesList();
+            BuildUi ui = Hud.instance ? Hud.instance.m_buildUi : null;
+            if (ui && ui.isActiveAndEnabled && ui.m_currentBuildTool == player.m_buildPieces)
+            {
+                ui.OnHoverPiece(null);
+                ui.UpdateTagButtons();
+                ui.UpdatePieceSelection(player.GetSelectedPiece());
+            }
         }
 
         private static void PrepareAvailablePieces(Player player)
@@ -95,12 +131,14 @@ namespace Seasons
                 return;
             if (!action || registeredDatabase != ObjectDB.instance)
                 Register(ObjectDB.instance);
-            if (!action || !HooksReady)
+            if (!action)
                 return;
+            bool available = Available;
+            action.m_enabled = available;
             // Support a hoe whose table was cloned by another mod, without modifying that table's removal policy.
-            if (IsHoe(player.GetRightItem()))
-                AddToTable(player.m_buildPieces);
-            if (player.m_buildPieces.m_pieces.Contains(action.gameObject))
+            if (IsHoe(player.GetRightItem()) || player.m_buildPieces.m_pieces.Contains(action.gameObject))
+                SetTableAvailability(player.m_buildPieces, available);
+            if (available && player.m_buildPieces.m_pieces.Contains(action.gameObject))
                 player.m_knownRecipes.Add(action.m_name);
         }
 
@@ -112,7 +150,7 @@ namespace Seasons
                 return;
             }
             // Never fall back to repairing health if an integration hook becomes unavailable.
-            if (HooksReady)
+            if (Available)
                 SnowClearingAction.Clear(player, tool);
             else
                 player.Message(MessageHud.MessageType.TopLeft, "$msg_nosnow");
@@ -167,7 +205,24 @@ namespace Seasons
         private static class Player_UpdateAvailablePiecesList_SnowClearing
         {
             [HarmonyPrefix]
-            private static void Prefix(Player __instance) => PrepareAvailablePieces(__instance);
+            private static void Prefix(Player __instance, out PieceTable __state)
+            {
+                __state = __instance && !Available && IsAction(__instance.GetSelectedPiece())
+                    ? __instance.m_buildPieces : null;
+                PrepareAvailablePieces(__instance);
+            }
+
+            [HarmonyPostfix]
+            private static void Postfix(Player __instance, PieceTable __state)
+            {
+                if (!__state || !__instance || __instance.m_buildPieces != __state || Available)
+                    return;
+                // Do not retain an out-of-range repair selection or reuse a buffered snow click for terrain work.
+                __state.SetSelected(Vector2Int.zero);
+                __state.m_lastSelectedPiece[(int)__state.GetSelectedCategory()] = Vector2Int.zero;
+                __instance.m_placePressedTime = -9999f;
+                __instance.SetupPlacementGhost();
+            }
         }
 
         [HarmonyPatch(typeof(Player), nameof(Player.UpdatePlacement))]
