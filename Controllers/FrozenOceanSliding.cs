@@ -55,8 +55,10 @@ namespace Seasons
             {
                 if (!SlidingEnabled || !__instance.IsOnIce() || __instance.m_iceShoes)
                     return;
-                float friction = ShouldUseVanillaIceSlipping(__instance) ? 0f :
-                    Parameter(frozenOceanSlidingFriction.Value, 0.05f, 0f, 1f);
+                bool gliding = playerSlide != null && ReferenceEquals(playerSlide.Player, __instance) && playerSlide.Mode == SlideMode.Glide;
+                float friction = ShouldUseVanillaIceSlipping(__instance) ? 0f : gliding
+                    ? Parameter(frozenOceanGlidingFriction.Value, 0f, 0f, 1f)
+                    : Parameter(frozenOceanSlidingFriction.Value, 0.05f, 0f, 1f);
                 PhysicsMaterial material = ___m_collider.material;
                 if (material.staticFriction != friction)
                     material.staticFriction = friction;
@@ -65,6 +67,89 @@ namespace Seasons
                 if (material.frictionCombine != PhysicsMaterialCombine.Minimum)
                     material.frictionCombine = PhysicsMaterialCombine.Minimum;
             }
+        }
+
+        [HarmonyPatch(typeof(Character), nameof(Character.UpdateMotion))]
+        private static class Character_UpdateMotion_ReleaseSeasonalSlide
+        {
+            [HarmonyPrefix]
+            private static void Prefix(Character __instance)
+            {
+                if (playerSlide != null && ReferenceEquals(playerSlide.Player, __instance) &&
+                    (!CanOwnSlide(playerSlide.Player) || !IsWaterSurfaceFrozen()))
+                    ResetWorldState();
+            }
+        }
+
+        [HarmonyPatch(typeof(Player), nameof(Player.SetControls))]
+        private static class Player_SetControls_FrozenOceanSliding
+        {
+            [HarmonyPrefix]
+            private static void Prefix(Player __instance, Vector3 movedir, bool attack, bool attackHold,
+                bool secondaryAttack, bool secondaryAttackHold, bool block, bool blockHold,
+                bool jump, bool crouch, bool run, bool autoRun, bool dodge)
+            {
+                PlayerSlide state = playerSlide;
+                if (state == null || !ReferenceEquals(state.Player, __instance))
+                    return;
+                bool action = attack || attackHold || secondaryAttack || secondaryAttackHold || block || blockHold ||
+                    jump || crouch || dodge || autoRun;
+                if (state.Mode == SlideMode.Glide)
+                {
+                    float deadZone = Parameter(frozenOceanSlidingInputDeadZone.Value, 0.1f, 0.001f, 0.5f);
+                    // Held-state reads do not consume the native button-down events. Also
+                    // recognize opposing keys whose combined movement vector would be zero.
+                    bool movement = !Finite(movedir) || movedir.sqrMagnitude > deadZone * deadZone ||
+                        ZInput.GetButton("Forward") || ZInput.GetButton("Backward") || ZInput.GetButton("Left") || ZInput.GetButton("Right");
+                    action |= movement || (run && !state.RunInput) || ZInput.GetButton("Use") || ZInput.GetButton("JoyUse");
+                }
+                state.RunInput = run;
+                if (action)
+                    InterruptSlide(__instance, SlideReason.Input);
+            }
+        }
+
+        [HarmonyPatch(typeof(Player), nameof(Player.Interact))]
+        private static class Player_Interact_StopLongGlide
+        {
+            [HarmonyPrefix]
+            private static void Prefix(Player __instance) => InterruptSlide(__instance, SlideReason.Action);
+        }
+
+        [HarmonyPatch(typeof(Character), nameof(Character.Jump))]
+        private static class Character_Jump_StopLongGlide
+        {
+            [HarmonyPrefix]
+            private static void Prefix(Character __instance) => InterruptSlide(__instance, SlideReason.Action);
+        }
+
+        [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.EquipItem))]
+        private static class Humanoid_EquipItem_StopLongGlide
+        {
+            [HarmonyPrefix]
+            private static void Prefix(Humanoid __instance, ItemDrop.ItemData item)
+            {
+                if (item != null && !item.m_equipped)
+                    InterruptSlide(__instance, SlideReason.Action);
+            }
+        }
+
+        [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.UnequipItem))]
+        private static class Humanoid_UnequipItem_StopLongGlide
+        {
+            [HarmonyPrefix]
+            private static void Prefix(Humanoid __instance, ItemDrop.ItemData item)
+            {
+                if (item != null && item.m_equipped)
+                    InterruptSlide(__instance, SlideReason.Action);
+            }
+        }
+
+        [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.UseItem))]
+        private static class Humanoid_UseItem_StopLongGlide
+        {
+            [HarmonyPrefix]
+            private static void Prefix(Humanoid __instance) => InterruptSlide(__instance, SlideReason.Action);
         }
 
         private static void InsertBefore(List<CodeInstruction> code, int index, params CodeInstruction[] added)
@@ -89,6 +174,10 @@ namespace Seasons
                 var canMove = AccessTools.Method(typeof(Character), nameof(Character.CanMove));
                 var multiply = AccessTools.Method(typeof(Vector3), "op_Multiply", new[] { typeof(Vector3), typeof(float) });
                 var lerp = AccessTools.Method(typeof(Vector3), nameof(Vector3.Lerp));
+                var slippingAnimation = AccessTools.Field(typeof(Character), nameof(Character.s_slipping));
+                var setBool = AccessTools.Method(typeof(ZSyncAnimation), nameof(ZSyncAnimation.SetBool), new[] { typeof(int), typeof(bool) });
+                int animationFieldIndex = code.FindIndex(instruction => instruction.LoadsField(slippingAnimation));
+                int animationIndex = animationFieldIndex < 0 ? -1 : code.FindIndex(animationFieldIndex, instruction => instruction.Calls(setBool));
                 int slippingIndex = code.FindIndex(instruction => instruction.StoresField(slipping));
                 int canMoveIndex = code.FindIndex(instruction => instruction.Calls(canMove));
                 int speedIndex = canMoveIndex < 0 ? -1 : code.FindIndex(canMoveIndex, instruction => instruction.Calls(multiply));
@@ -101,13 +190,17 @@ namespace Seasons
                         blendMatches++;
                     }
                 walkingHookReady = slippingIndex >= 0 && canMoveIndex > slippingIndex && speedIndex > canMoveIndex &&
-                    speedIndex - canMoveIndex < 20 && blendIndex > speedIndex && blendMatches == 1;
+                    speedIndex - canMoveIndex < 20 && blendIndex > speedIndex && blendMatches == 1 &&
+                    animationFieldIndex > blendIndex && animationIndex > animationFieldIndex;
                 if (!walkingHookReady)
                 {
                     LogWarning("Seasonal ice sliding is disabled: Character.UpdateWalking integration points were not recognized.");
                     return code;
                 }
 
+                // Supply one final value to the existing synchronized animation write.
+                InsertBefore(code, animationIndex, new CodeInstruction(OpCodes.Ldarg_0),
+                    new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(CharacterExtentions_FrozenOceanSliding), nameof(ResolveSlippingAnimation))));
                 // Replace only the native walking blend. Root motion, pushback, ground forces,
                 // air control and the actual Rigidbody force application remain downstream.
                 code[blendIndex].operand = AccessTools.Method(typeof(CharacterExtentions_FrozenOceanSliding), nameof(BlendWalkingVelocity));
