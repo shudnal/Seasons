@@ -9,7 +9,7 @@ namespace Seasons
 {
     public static class CharacterExtentions_FrozenOceanSliding
     {
-        private const float VanillaSlippingMaximumWaterDepth = 4f;
+        private static bool SlidingEnabled => frozenOceanSlidingEnabled.Value && frozenOceanSlipperiness.Value > 0f;
 
         private struct SlideStatus
         {
@@ -43,33 +43,13 @@ namespace Seasons
 
         private static bool ShouldUseVanillaIceSlipping(Character character)
         {
-            if (!character || character.m_iceShoes || !character.IsOnIce())
-                return false;
-
-            // Humanoid.UpdateEquipment derives m_skating from equipped ItemData.m_shared.m_iceSkates.
-            if (character.m_skating)
-                return true;
-
-            if (!enableVanillaSlippingOnShallowFrozenWater.Value || ZoneSystem.instance == null)
-                return false;
-
-            Vector3 groundPosition = character.transform.position;
-            ZoneSystem.instance.GetGroundData(
-                ref groundPosition,
-                out var _,
-                out Heightmap.Biome biome,
-                out var _,
-                out var _);
-
-            if (biome == Heightmap.Biome.Ocean)
-                return false;
-
-            return ZoneSystem.instance.m_waterLevel - groundPosition.y <= VanillaSlippingMaximumWaterDepth;
+            return SlidingEnabled && character && !character.m_iceShoes &&
+                (character.m_skating || !(character is Player)) && character.IsOnIce();
         }
 
         private static bool ShouldSuppressSeasonsIceSliding(Character character)
         {
-            return character && (character.m_iceShoes || character.m_skating || ShouldUseVanillaIceSlipping(character));
+            return !SlidingEnabled || !(character is Player) || character.m_iceShoes || character.m_skating;
         }
 
         private static bool ResolveVanillaSlipping(bool vanillaSlipping, Character character)
@@ -156,7 +136,7 @@ namespace Seasons
         {
             private static void Prefix(Player __instance, bool run)
             {
-                if (frozenOceanSlipperiness.Value == 0 || __instance != Player.m_localPlayer || !__instance.IsOnIce())
+                if (!SlidingEnabled || __instance != Player.m_localPlayer || !__instance.IsOnIce())
                     return;
 
                 if (!run && __instance.m_run)
@@ -169,7 +149,7 @@ namespace Seasons
         {
             private static void Prefix(Character __instance, bool run, ZNetView ___m_nview)
             {
-                if (frozenOceanSlipperiness.Value == 0 || !__instance.IsOnIce() || !___m_nview.IsValid() || !___m_nview.IsOwner())
+                if (!SlidingEnabled || !(__instance is Player) || !__instance.IsOnIce() || !___m_nview.IsValid() || !___m_nview.IsOwner())
                     return;
 
                 if (!run && __instance.m_run)
@@ -213,7 +193,7 @@ namespace Seasons
             {
                 __state = default;
 
-                if (frozenOceanSlipperiness.Value == 0f || ___m_nview == null || !___m_nview.IsValid() || !___m_nview.IsOwner())
+                if (!SlidingEnabled || !(__instance is Player) || ___m_nview == null || !___m_nview.IsValid() || !___m_nview.IsOwner())
                     return;
 
                 Vector3 position = __instance.transform.position;
@@ -312,7 +292,7 @@ namespace Seasons
         {
             private static void Postfix(Character __instance, CapsuleCollider ___m_collider)
             {
-                if (!__instance.IsOnIce() || __instance.m_iceShoes)
+                if (!SlidingEnabled || !__instance.IsOnIce() || __instance.m_iceShoes)
                     return;
 
                 PhysicsMaterial material = ___m_collider.material;

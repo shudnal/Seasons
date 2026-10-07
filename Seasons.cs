@@ -116,7 +116,26 @@ namespace Seasons
         public static ConfigEntry<Vector2> iceFloesInWinterDays;
         public static ConfigEntry<bool> enableNightMusicOnFrozenOcean;
         public static ConfigEntry<float> frozenOceanSlipperiness;
-        public static ConfigEntry<bool> enableVanillaSlippingOnShallowFrozenWater;
+        public static ConfigEntry<bool> frozenOceanSlidingEnabled;
+        public static ConfigEntry<float> frozenOceanSlidingSpeedMultiplier;
+        public static ConfigEntry<float> frozenOceanSlidingAcceleration;
+        public static ConfigEntry<float> frozenOceanSlidingSteering;
+        public static ConfigEntry<float> frozenOceanSlidingBraking;
+        public static ConfigEntry<float> frozenOceanSlidingCoasting;
+        public static ConfigEntry<float> frozenOceanSlidingMinimumSpeed;
+        public static ConfigEntry<float> frozenOceanSlidingFriction;
+        public static ConfigEntry<bool> frozenOceanGlidingEnabled;
+        public static ConfigEntry<float> frozenOceanGlidingRunUpTime;
+        public static ConfigEntry<float> frozenOceanGlidingRunUpSpeed;
+        public static ConfigEntry<float> frozenOceanGlidingRunUpAngle;
+        public static ConfigEntry<float> frozenOceanGlidingSpeedBonus;
+        public static ConfigEntry<float> frozenOceanGlidingBoostTime;
+        public static ConfigEntry<float> frozenOceanGlidingDeceleration;
+        public static ConfigEntry<float> frozenOceanGlidingMinimumSpeed;
+        public static ConfigEntry<float> frozenOceanGlidingTurnSpeed;
+        public static ConfigEntry<float> frozenOceanGlidingTurnLoss;
+        public static ConfigEntry<float> frozenOceanGlidingFriction;
+        public static ConfigEntry<float> frozenOceanSlidingInputDeadZone;
         public static ConfigEntry<bool> placeShipAboveFrozenOcean;
         public static ConfigEntry<bool> placeFloatingContainersAboveFrozenOcean;
         public static ConfigEntry<float> iceFloesHealth;
@@ -630,9 +649,6 @@ namespace Seasons
                 new ConfigDescription("Base health scaled by floe volume and world level during spawning. Existing floes require respawning to change health.", new SeasonalIceFloeSettings.HealthRange()));
             SeasonalIceFloeSettings.Initialize(Config);
             enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
-            frozenOceanSlipperiness = serverConfig("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1f, "Slipperiness factor of the frozen ocean surface");
-            enableVanillaSlippingOnShallowFrozenWater = serverConfig("Season - Winter ocean", "Enable vanilla slipping on shallow frozen water", defaultValue: true,
-                "Enable Valheim's stronger native slipping on frozen shallow water up to 4 meters deep outside the Ocean biome. Deeper water and the Ocean biome keep Seasons' smoother sliding. Ice skates always use native slipping; ice shoes disable Seasons sliding.");
             placeShipAboveFrozenOcean = serverConfig("Season - Winter ocean", "Place ship above frozen ocean surface", defaultValue: false, "Place ship above frozen ocean surface to move them without destroying");
             placeFloatingContainersAboveFrozenOcean = serverConfig("Season - Winter ocean", "Place floating containers above frozen ocean surface", defaultValue: false, "Place floating containers above frozen ocean surface");
 
@@ -642,6 +658,51 @@ namespace Seasons
             iceFloesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             placeShipAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateShipsPositions();
             placeFloatingContainersAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateFloatingPositions();
+
+            const string slipperinessSection = "Winter ocean - Slipperiness";
+            frozenOceanSlidingEnabled = serverConfig(slipperinessSection, "Enabled", defaultValue: true,
+                "Enable slipping on seasonal frozen water for players and creatures, including ice skates. Does not change native slippery surfaces.");
+            frozenOceanSlipperiness = serverConfig(slipperinessSection, "Basic slipperiness factor", defaultValue: 1.25f,
+                new ConfigDescription("Scales the basic coast duration and reduces lateral grip and braking. Zero disables seasonal ice slipping entirely.", new AcceptableValueRange<float>(0f, 5f)));
+            frozenOceanSlidingSpeedMultiplier = serverConfig(slipperinessSection, "Movement speed multiplier", defaultValue: 1.1f,
+                new ConfigDescription("Multiplier for the fully modified walking, jogging and running speed of ordinary-shoe players on seasonal ice.", new AcceptableValueRange<float>(0.1f, 3f)));
+            frozenOceanSlidingAcceleration = serverConfig(slipperinessSection, "Movement acceleration", defaultValue: 12f,
+                new ConfigDescription("Basic forward acceleration in meters per second squared. Does not add an impulse when entering a slide.", new AcceptableValueRange<float>(0.1f, 50f)));
+            frozenOceanSlidingSteering = serverConfig(slipperinessSection, "Basic steering acceleration", defaultValue: 5f,
+                new ConfigDescription("Lateral grip in meters per second squared, divided by Basic slipperiness factor. Lower values preserve sideways momentum longer.", new AcceptableValueRange<float>(0.1f, 50f)));
+            frozenOceanSlidingBraking = serverConfig(slipperinessSection, "Basic braking deceleration", defaultValue: 4f,
+                new ConfigDescription("Braking against movement input in meters per second squared, divided by Basic slipperiness factor.", new AcceptableValueRange<float>(0.1f, 50f)));
+            frozenOceanSlidingCoasting = serverConfig(slipperinessSection, "Basic coasting deceleration", defaultValue: 1.5f,
+                new ConfigDescription("Deceleration without movement input in meters per second squared, divided by Basic slipperiness factor.", new AcceptableValueRange<float>(0.01f, 20f)));
+            frozenOceanSlidingMinimumSpeed = serverConfig(slipperinessSection, "Basic coasting minimum speed", defaultValue: 1f,
+                new ConfigDescription("Below this horizontal speed, idle movement settles using basic braking instead of the slower coasting deceleration.", new AcceptableValueRange<float>(0.01f, 10f)));
+            frozenOceanSlidingFriction = serverConfig(slipperinessSection, "Basic collider friction", defaultValue: 0.05f,
+                new ConfigDescription("Capsule friction during ordinary player movement on seasonal ice. Higher values add physical contact losses on top of configured deceleration.", new AcceptableValueRange<float>(0f, 1f)));
+            frozenOceanGlidingEnabled = serverConfig(slipperinessSection, "Long glide enabled", defaultValue: true,
+                "Allow ordinary-shoe players to earn a long glide by running steadily on seasonal ice, then releasing movement. Actions cancel the glide to basic inertia.");
+            frozenOceanGlidingRunUpTime = serverConfig(slipperinessSection, "Run-up duration", defaultValue: 2f,
+                new ConfigDescription("Seconds of actual grounded running in a stable direction required for a long glide. Running into an obstacle does not charge it.", new AcceptableValueRange<float>(0.1f, 20f)));
+            frozenOceanGlidingRunUpSpeed = serverConfig(slipperinessSection, "Run-up speed fraction", defaultValue: 0.85f,
+                new ConfigDescription("Required fraction of the fully modified running speed, including Movement speed multiplier, before run-up time counts.", new AcceptableValueRange<float>(0.1f, 1f)));
+            frozenOceanGlidingRunUpAngle = serverConfig(slipperinessSection, "Run-up alignment angle", defaultValue: 25f,
+                new ConfigDescription("Maximum angle in degrees between actual velocity and intended movement for a steady run-up.", new AcceptableValueRange<float>(0f, 90f)));
+            frozenOceanGlidingSpeedBonus = serverConfig(slipperinessSection, "Run-up speed bonus", defaultValue: 0.25f,
+                new ConfigDescription("Additional running speed fraction earned gradually during a steady run-up. It never multiplies existing momentum on release.", new AcceptableValueRange<float>(0f, 2f)));
+            frozenOceanGlidingBoostTime = serverConfig(slipperinessSection, "Run-up full bonus time", defaultValue: 3f,
+                new ConfigDescription("Seconds of steady run-up to reach the full running speed bonus. Independent of the minimum duration required to glide.", new AcceptableValueRange<float>(0.1f, 30f)));
+            frozenOceanGlidingDeceleration = serverConfig(slipperinessSection, "Long glide deceleration", defaultValue: 0.25f,
+                new ConfigDescription("Free-glide deceleration in meters per second squared. Does not use Basic slipperiness factor.", new AcceptableValueRange<float>(0.01f, 10f)));
+            frozenOceanGlidingMinimumSpeed = serverConfig(slipperinessSection, "Long glide minimum speed", defaultValue: 3f,
+                new ConfigDescription("Horizontal speed below which a long glide returns to basic inertia and stops the slipping animation.", new AcceptableValueRange<float>(0.1f, 20f)));
+            frozenOceanGlidingTurnSpeed = serverConfig(slipperinessSection, "Long glide turn speed", defaultValue: 25f,
+                new ConfigDescription("Maximum steering rate in degrees per second while using mouse look or controller look. Zero keeps the entry direction.", new AcceptableValueRange<float>(0f, 180f)));
+            frozenOceanGlidingTurnLoss = serverConfig(slipperinessSection, "Long glide turning speed loss", defaultValue: 0.4f,
+                new ConfigDescription("Additional speed lost in meters per second for each radian of actual trajectory turn. Steering cannot accelerate the player.", new AcceptableValueRange<float>(0f, 10f)));
+            frozenOceanGlidingFriction = serverConfig(slipperinessSection, "Long glide collider friction", defaultValue: 0f,
+                new ConfigDescription("Capsule friction during the animated long glide. Zero leaves deceleration to the glide calculation.", new AcceptableValueRange<float>(0f, 1f)));
+            frozenOceanSlidingInputDeadZone = serverConfig(slipperinessSection, "Movement input dead zone", defaultValue: 0.1f,
+                new ConfigDescription("Analog movement magnitude below which input is treated as released. Keyboard movement always cancels a long glide.", new AcceptableValueRange<float>(0.001f, 0.5f)));
+            frozenOceanSlidingEnabled.SettingChanged += (sender, args) => CharacterExtentions_FrozenOceanSliding.ResetWorldState();
 
             summerHeatCoolingFoods = serverConfig("Season - Summer heat", "Cooling foods", defaultValue: "Eyescream,$item_eyescream", GetDescriptionSeparatedStrings("Foods that help cool you down in summer. Use prefab names or localization keys. While a cooling food is active, new heat bursts are blocked. It also protects from the older warm-clothes overheat status when the main Summer Heat mechanic is disabled."));
             summerHeatEnabled = serverConfig("Season - Summer heat", "Enabled", defaultValue: true, "Turns the new Summer Heat mechanic on or off. When disabled, the heat meter, status effect, bonuses, penalties and visual heat effects are removed. The older warm-clothes overheat status can still work if 'Warm clothes add heat' is enabled.");
