@@ -1,3 +1,6 @@
+# 1.10.6
+* restored seasonal minimap and territory overlay compatibility with Marketplace 10.0.6
+
 # 1.10.5
 * you can now clear the snow capes with a hoe (in winter and snow capes should be enabled)
 

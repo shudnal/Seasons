@@ -34,6 +34,7 @@ namespace Seasons.Compatibility
         private static bool reportedFailure;
         private static ZNet stoppedNetwork;
         private static bool stopping;
+        private static bool usesNativeSnapshots;
 
         private sealed class MapContext
         {
@@ -54,6 +55,26 @@ namespace Seasons.Compatibility
             internal float RetryAt;
             internal BitArray Revealed;
             internal MarketplaceMapOverlay Drawing;
+            internal List<AwaitableCompletionSource> Completions;
+
+            internal void CompleteRedraws()
+            {
+                // Awaitable continuations run synchronously. Detach the completed batch
+                // before callbacks can request another redraw or release this map.
+                List<AwaitableCompletionSource> completed = Completions;
+                Completions = null;
+                if (completed == null)
+                    return;
+                foreach (AwaitableCompletionSource completion in completed)
+                    try
+                    {
+                        completion.TrySetResult();
+                    }
+                    catch (Exception error)
+                    {
+                        LogWarning($"[Marketplace] Territory redraw continuation failed.\n{Unwrap(error)}");
+                    }
+            }
 
             internal MapContext(Minimap minimap, Color32[] colors)
             {
@@ -100,6 +121,7 @@ namespace Seasons.Compatibility
             propertyTerritoryValue = null;
             territoryApi = null;
             useMapDraw = null;
+            usesNativeSnapshots = false;
             if (assembly == null || !UseTextureControllers())
                 return;
 
@@ -109,13 +131,21 @@ namespace Seasons.Compatibility
                 Type data = assembly.GetType(TerritoryNamespace + "TerritorySystem_DataTypes", throwOnError: true);
                 MethodInfo method = AccessTools.DeclaredMethod(client, "DoMapMagic", Type.EmptyTypes);
                 FieldInfo colors = RequiredField(client, "originalMapColors", null, isStatic: true);
-                if (method == null || !method.IsStatic || method.ReturnType != typeof(void) || method.ContainsGenericParameters
-                    || (colors.FieldType != typeof(Color[]) && colors.FieldType != typeof(Color32[])) || colors.IsInitOnly)
-                    throw new NotSupportedException("Unsupported territory map entry point or color array.");
+                if (method == null || !method.IsStatic || method.ContainsGenericParameters
+                    || (method.ReturnType != typeof(void) && method.ReturnType != typeof(Awaitable)))
+                    throw new NotSupportedException("Unsupported territory map entry point.");
 
                 FieldInfo heights = AccessTools.DeclaredField(client, "originalHeightColors");
-                if (heights != null && (!heights.IsStatic || heights.FieldType != typeof(Color[]) || heights.IsInitOnly))
-                    throw new NotSupportedException("Unsupported floating-point territory height baseline.");
+                bool nativeSnapshots = method.ReturnType == typeof(Awaitable)
+                    && IsNativePixelArray(colors, client, "RGB24Pixel")
+                    && IsNativePixelArray(heights, client, "RHalfPixel");
+                if (!nativeSnapshots)
+                {
+                    if ((colors.FieldType != typeof(Color[]) && colors.FieldType != typeof(Color32[])) || colors.IsInitOnly)
+                        throw new NotSupportedException("Unsupported territory map color baseline.");
+                    if (heights != null && (!heights.IsStatic || heights.FieldType != typeof(Color[]) || heights.IsInitOnly))
+                        throw new NotSupportedException("Unsupported floating-point territory height baseline.");
+                }
                 fieldUseMapDraw = RequiredField(client, "UseMapDraw", typeof(ConfigEntry<bool>), isStatic: true);
                 fieldTerritories = RequiredField(data, "SyncedTerritoriesData", null, isStatic: true);
                 propertyTerritoryValue = AccessTools.Property(fieldTerritories.FieldType, "Value");
@@ -125,6 +155,7 @@ namespace Seasons.Compatibility
                 territoryApi = new TerritoryApi(data.GetNestedType("Territory", BindingFlags.Public | BindingFlags.NonPublic));
                 fieldOriginalMapColors = colors;
                 fieldOriginalHeightColors = heights;
+                usesNativeSnapshots = nativeSnapshots;
                 // Publish the patch target last. An unsupported optional mod must not
                 // leave a half-initialized patch or prevent Seasons from loading.
                 methodDoMapMagic = method;
@@ -133,6 +164,17 @@ namespace Seasons.Compatibility
             {
                 LogWarning($"[Marketplace] Unsupported territory map API in {plugin.Metadata.Version}; seasonal colors remain available without territory redraw.\n{Unwrap(error)}");
             }
+        }
+
+        private static bool IsNativePixelArray(FieldInfo field, Type owner, string pixelName)
+        {
+            // Identify Marketplace's native storage without referencing Unity.Collections
+            // or its private pixel structs. Seasons never reads, replaces or disposes it.
+            return field != null && field.IsStatic && !field.IsInitOnly && field.FieldType.IsValueType
+                && field.FieldType.IsGenericType
+                && field.FieldType.GetGenericTypeDefinition().FullName == "Unity.Collections.NativeArray`1"
+                && field.FieldType.GetGenericArguments()[0]
+                    == owner.GetNestedType(pixelName, BindingFlags.Public | BindingFlags.NonPublic);
         }
 
         // Called only after native generation or a successful native texture-cache
@@ -181,6 +223,26 @@ namespace Seasons.Compatibility
         {
             if (context != null && context.Map == minimap && context.IsCurrent())
                 context.RequestRedraw();
+        }
+
+        private static Awaitable RequestAwaitableRedraw(Minimap minimap)
+        {
+            // Each invocation needs its own Awaitable: Unity pools these objects and
+            // an instance cannot be awaited by several Marketplace callers.
+            var completion = new AwaitableCompletionSource();
+            Awaitable result = completion.Awaitable;
+            MapContext current = context;
+            if (current != null && current.Map == minimap && current.IsCurrent())
+            {
+                current.RequestRedraw();
+                current.Completions ??= new List<AwaitableCompletionSource>();
+                current.Completions.Add(completion);
+            }
+            else
+                // Before native map capture there is no work to await. CaptureNativeMap
+                // schedules the latest territory snapshot once the base map is ready.
+                completion.SetResult();
+            return result;
         }
 
         internal static void UpdatePendingMap(Minimap minimap)
@@ -254,12 +316,18 @@ namespace Seasons.Compatibility
                 current.Drawing = null;
                 current.Pending = false;
                 reportedFailure = false;
+                // Finish only after texture upload and all state updates. A continuation
+                // may immediately schedule a new request on this same context.
+                current.CompleteRedraws();
             }
             catch (Exception error)
             {
                 current.RequestRedraw();
                 current.RetryAt = Time.realtimeSinceStartup + RetryInterval;
                 ReportFailure(error);
+                // Native DoMapMagic catches rendering failures and completes normally.
+                // Keep our retry queued without stranding its awaiting callers.
+                current.CompleteRedraws();
             }
         }
 
@@ -299,6 +367,10 @@ namespace Seasons.Compatibility
 
         private static void PublishBaselines(MapContext current)
         {
+            // The 10.x renderer is redirected to our managed snapshots. Its persistent
+            // NativeArrays belong to Marketplace and must not receive managed arrays.
+            if (usesNativeSnapshots)
+                return;
             if (!ReferenceEquals(current.PublishedSource, current.Colors))
             {
                 if (fieldOriginalMapColors.FieldType == typeof(Color32[]))
@@ -327,16 +399,22 @@ namespace Seasons.Compatibility
             {
                 // Release only snapshots we published; do not clear a newer snapshot
                 // installed by Marketplace or another mod during map initialization.
-                if (fieldOriginalMapColors != null && previous.PublishedColors != null
+                if (!usesNativeSnapshots && fieldOriginalMapColors != null && previous.PublishedColors != null
                     && ReferenceEquals(fieldOriginalMapColors.GetValue(null), previous.PublishedColors))
                     fieldOriginalMapColors.SetValue(null, null);
-                if (fieldOriginalHeightColors != null && previous.Heights != null
+                if (!usesNativeSnapshots && fieldOriginalHeightColors != null && previous.Heights != null
                     && ReferenceEquals(fieldOriginalHeightColors.GetValue(null), previous.Heights))
                     fieldOriginalHeightColors.SetValue(null, null);
             }
             catch (Exception error)
             {
                 LogWarning($"[Marketplace] Could not release territory map snapshots.\n{Unwrap(error)}");
+            }
+            finally
+            {
+                // A replaced/unloaded map cannot finish its old redraw. Complete it as
+                // a no-op, as native DoMapMagic does when the map is unavailable.
+                previous.CompleteRedraws();
             }
         }
 
@@ -484,7 +562,7 @@ namespace Seasons.Compatibility
         [HarmonyPatch]
         private static class TerritoryMapRedraw
         {
-            private static bool Prepare() => methodDoMapMagic != null;
+            private static bool Prepare() => methodDoMapMagic is MethodInfo method && method.ReturnType == typeof(void);
             private static MethodBase TargetMethod() => methodDoMapMagic;
 
             private static bool Prefix()
@@ -493,6 +571,21 @@ namespace Seasons.Compatibility
                 // on a worker thread and assumes bool[] exploration fields. Redirect
                 // only this renderer, including Marketplace-originated redraws.
                 RequestRedraw(Minimap.instance);
+                return false;
+            }
+        }
+
+        [HarmonyPatch]
+        private static class TerritoryMapRedrawAwaitable
+        {
+            private static bool Prepare() => methodDoMapMagic is MethodInfo method && method.ReturnType == typeof(Awaitable);
+            private static MethodBase TargetMethod() => methodDoMapMagic;
+
+            private static bool Prefix(ref Awaitable __result)
+            {
+                // Marketplace 10.0.6 awaits this result before updating zone visuals.
+                // Skipping its body without a real result would return null to that await.
+                __result = RequestAwaitableRedraw(Minimap.instance);
                 return false;
             }
         }
