@@ -190,7 +190,9 @@ namespace Seasons
         private static bool ApplyWalkingInertiaAndRootMotion(Character character, ref Vector3 velocity, float dt)
         {
             bool seasonalCorrection = false;
-            if (TrySlide(character, out PlayerSlide state) && Finite(dt) && dt > 0f)
+            // Leave the native airborne target and air control intact after jumping off ice.
+            // A later root-motion or movement patch must receive that same unmodified target.
+            if (TrySlide(character, out PlayerSlide state) && state.OnIce && character.IsOnIce() && Finite(dt) && dt > 0f)
             {
                 Vector3 actual = Horizontal(state.Player.m_body.linearVelocity);
                 if (!Finite(actual))
@@ -201,7 +203,7 @@ namespace Seasons
                     // must still cancel the glide, without restoring a launch velocity.
                     if (state.Mode == SlideMode.Glide && (HasBlockingAction(state.Player) || !frozenOceanGlidingEnabled.Value))
                         InterruptSlide(state.Player, SlideReason.Action);
-                    Vector3 result = !state.OnIce ? actual : state.Mode == SlideMode.Glide
+                    Vector3 result = state.Mode == SlideMode.Glide
                         ? GlideVelocity(state, actual, dt) : BasicVelocity(state, actual, dt);
                     seasonalCorrection = state.OnIce && Finite(result) &&
                         (result.x != actual.x || result.z != actual.z);
