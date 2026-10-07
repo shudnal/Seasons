@@ -88,11 +88,20 @@ namespace Seasons
             [HarmonyPrefix]
             private static void Prefix(Player __instance, Vector3 movedir, bool attack, bool attackHold,
                 bool secondaryAttack, bool secondaryAttackHold, bool block, bool blockHold,
-                bool jump, bool crouch, bool run, bool autoRun, bool dodge)
+                bool jump, bool crouch, bool autoRun, bool dodge)
             {
                 PlayerSlide state = playerSlide;
                 if (state == null || !ReferenceEquals(state.Player, __instance))
                     return;
+                if (!CanReadSlideInput(__instance))
+                {
+                    state.MovementHeld = false;
+                    // UI focus is not a movement command. It may keep an existing glide,
+                    // but must never turn a suppressed run input into a release gesture.
+                    if (state.Mode == SlideMode.RunUp)
+                        InterruptSlide(__instance, SlideReason.Input);
+                    return;
+                }
                 bool action = attack || attackHold || secondaryAttack || secondaryAttackHold || block || blockHold ||
                     jump || crouch || dodge || autoRun;
                 float deadZone = Parameter(frozenOceanSlidingInputDeadZone.Value, 0.1f, 0.001f, 0.5f);
@@ -104,8 +113,9 @@ namespace Seasons
                         ZInput.GetButton("Left") || ZInput.GetButton("Right");
                 state.MovementHeld = movement;
                 if (state.Mode == SlideMode.Glide)
-                    action |= movement || (run && !state.RunInput) || ZInput.GetButton("Use") || ZInput.GetButton("JoyUse");
-                state.RunInput = run;
+                    action |= movement;
+                // Run is only a modifier; pressing, holding or releasing it cannot end a glide.
+                // Actual interactions and item actions are handled by their own hooks below.
                 if (action)
                     InterruptSlide(__instance, SlideReason.Input);
             }

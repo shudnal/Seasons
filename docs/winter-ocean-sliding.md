@@ -44,22 +44,34 @@ camera. Controller look uses the same existing look direction. Turning loses
 speed and cannot generate acceleration. The character faces actual travel after
 the native walking rotation without changing its look yaw.
 
-Movement keys / stick input, a new Run press, attack, block, jump, dodge, crouch,
-interaction, item use, equipment changes and other blocking actions cancel the
-long glide and its animation. Opposing keyboard keys are not a release gesture.
-Opening inventory, map, a store or build UI also cancels the long glide. Actions
-are not consumed or suppressed: their native logic still runs. The intended Run
-cancellation currently reads the processed run argument; a raw Run press without
-movement can be discarded by the controller. Raw-button handling remains pending.
+Movement keys / stick input, attack, block, jump, dodge, crouch, auto-run,
+interaction, item use, equipment changes and other movement or animation actions
+cancel the long glide and its animation. Opposing keyboard keys are not a release
+gesture. Actions are not consumed or suppressed: their native logic still runs.
+Run / Shift / JoyRun is only a modifier. Pressing, holding or releasing it alone
+does not cancel a glide, change its drag or grant acceleration. Run with movement
+returns to normal running because movement input cancels the glide, not because
+Run was pressed. No raw Run-button edge tracker is needed.
+
+Opening a map, inventory, console or other UI does not by itself cancel an active
+glide. Gameplay actions still cancel it when they actually reach the movement or
+item-action hooks. Input focus loss prevents charging or starting a new glide:
+the controller's suppressed movement is not a deliberate release gesture. Raw
+movement keys are not read as gameplay commands while input is captured by UI.
+Pressing Use without invoking an interaction no longer cancels a glide by itself.
 
 Cancellation changes the mode to basic inertia without zeroing velocity or
 restoring a remembered vector. Native root motion, jump impulses and pushback
 still have their normal downstream effects. A new long glide needs a new run-up.
-A jump cancels the glide; vertical speed is not converted into horizontal speed.
-The current airborne override preserves actual horizontal velocity but also prevents
-normal input steering in the air. Restoring that control is a separate pending
-change. Landing on another surface ends the seasonal state rather than transferring
-it into a different slip motor.
+A jump cancels the glide and its animation without clearing Rigidbody velocity.
+The game's jump impulse and status modifiers still apply. Once airborne, Seasons
+does not replace the native movement target: no input keeps native inertial flight,
+movement input uses native air control, and look alone no longer steers the glide.
+Native root motion, pushback and other mods receive the unmodified airborne target.
+Vertical speed is never converted into horizontal speed. Landing on seasonal ice
+resumes basic inertia at the actual remaining velocity and requires a new run-up
+for another long glide. Landing elsewhere releases the seasonal state without
+transferring it into a different slip motor.
 
 ## Motion and animation integration
 
@@ -73,6 +85,7 @@ The integration stays inside `Character.UpdateWalking`:
    immediately before the native root-motion call. Use actual Rigidbody X/Z velocity
    every step, not a launch cache. Keep the original m_currentVel blend unchanged
    so passive coasting does not masquerade as commanded walking in the Animator.
+   Require current seasonal ground contact; do not override airborne motion.
 4. Call the real patched root-motion method and retain native pushback, ground
    forces, air control, velocity-change force application and velocity hooks.
    Other surfaces retain the complete native slope and movement path.
@@ -130,9 +143,6 @@ or ambiguous, only this precision adjustment is omitted with a patch-time warnin
 the existing movement path is left intact. Priorities cannot guarantee compatibility
 with every later transpiler or a mod replacing the whole movement method.
 
-Airborne steering and raw Run-button edge handling are separate pending follow-ups;
-this change does not alter either input behavior or the airborne velocity override.
-
 ## Live tuning
 
 All entries are declared in the common `Seasons.ConfigInit`, in the single new
@@ -182,8 +192,15 @@ last reason. It performs no background sampling and makes no gameplay changes.
 - Earn a run-up, release movement, steer with look only, then cancel separately with
   each movement key, jump, dodge, attack, block, interaction and item use. Confirm
   immediate animation cancellation without a synthetic stop or later speed rebound.
-- Hold opposing movement keys, use controller drift near the configured dead zone,
-  and repeatedly tap Run. None should create a free glide impulse.
+- Hold opposing movement keys and use controller drift near the configured dead
+  zone. Repeatedly press, hold and release Run during a glide: it must continue
+  without a free impulse or a switch to basic deceleration. Repeat with toggle-run.
+- Jump during a steered glide. Check inertial flight without movement input, native
+  air control with movement input, look without air steering, and basic inertia on
+  landing. No former glide speed or run-up readiness should return.
+- Open and close the map, inventory or console during a glide; browsing alone must
+  not cancel it. Opening UI during run-up must not start a glide automatically.
+  Press Use without a target, then interact with a target: only the action cancels.
 - Hit an obstacle, jump, fall vertically onto ice, equip skates or ice shoes, cross
   shallow/deep ocean areas, walk onto land and native slippery surfaces, and thaw.
 - Toggle the master and long-glide options during movement, then leave and re-enter

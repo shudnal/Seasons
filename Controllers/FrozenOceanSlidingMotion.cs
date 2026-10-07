@@ -19,7 +19,6 @@ namespace Seasons
             internal SlideMode Mode;
             internal SlideReason Reason;
             internal float RunUpTime;
-            internal bool RunInput;
             internal bool MovementHeld;
             internal bool Interrupted;
             internal bool AnimationOwned;
@@ -68,10 +67,13 @@ namespace Seasons
             // Do not touch Rigidbody velocity or restore a previous launch vector.
         }
 
-        private static bool HasBlockingAction(Player player) => !player.CanMove() || !player.TakeInput() ||
+        private static bool HasBlockingAction(Player player) => !player.CanMove() ||
             player.InAttack() || player.InDodge() || player.IsBlocking() || player.IsCrouching() ||
-            player.InMinorAction() || player.InEmote() || player.IsEncumbered() || player.m_pushForce.sqrMagnitude > 0f ||
-            InventoryGui.IsVisible() || Minimap.IsOpen() || StoreGui.IsVisible() || Hud.IsPieceSelectionVisible() || Hud.InRadial();
+            player.InMinorAction() || player.InEmote() || player.IsEncumbered() || player.m_pushForce.sqrMagnitude > 0f;
+
+        // Losing input focus blocks run-up and entry, not an already active passive glide.
+        private static bool CanReadSlideInput(Player player) => player.TakeInput() &&
+            !Hud.IsPieceSelectionVisible() && !Hud.InRadial();
 
         private static bool Finite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
         private static bool Finite(Vector3 value) => Finite(value.x) && Finite(value.y) && Finite(value.z) && Finite(value.sqrMagnitude);
@@ -110,7 +112,7 @@ namespace Seasons
             if (playerSlide == null || playerSlide.Player != player)
                 playerSlide = new PlayerSlide
                 {
-                    Player = player, RunInput = player.m_run,
+                    Player = player,
                     MovementHeld = player.m_moveDir.sqrMagnitude > 0f, Reason = SlideReason.Surface
                 };
             playerSlide.OnIce = true;
@@ -150,6 +152,14 @@ namespace Seasons
                 }
                 else
                     return state.TargetSpeed = 0f;
+            }
+
+            if (!CanReadSlideInput(player))
+            {
+                state.RunUpTime = 0f;
+                if (state.Mode != SlideMode.Basic)
+                    ChangeMode(state, SlideMode.Basic, SlideReason.Input);
+                return state.TargetSpeed;
             }
 
             float requiredTime = Parameter(frozenOceanGlidingRunUpTime.Value, 2f, 0.1f, 20f);
