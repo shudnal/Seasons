@@ -53,7 +53,7 @@ namespace Seasons
             [HarmonyPostfix]
             private static void Postfix(Character __instance, CapsuleCollider ___m_collider)
             {
-                if (!SlidingEnabled || !__instance.IsOnIce() || __instance.m_iceShoes)
+                if (!SlidingEnabled || __instance.IsDead() || !__instance.IsOnIce() || __instance.m_iceShoes)
                     return;
                 bool gliding = playerSlide != null && ReferenceEquals(playerSlide.Player, __instance) && playerSlide.Mode == SlideMode.Glide;
                 float friction = ShouldUseVanillaIceSlipping(__instance) ? 0f : gliding
