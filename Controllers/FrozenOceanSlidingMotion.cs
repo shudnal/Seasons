@@ -187,8 +187,9 @@ namespace Seasons
             return state.TargetSpeed;
         }
 
-        private static void ApplyWalkingInertiaAndRootMotion(Character character, ref Vector3 velocity, float dt)
+        private static bool ApplyWalkingInertiaAndRootMotion(Character character, ref Vector3 velocity, float dt)
         {
+            bool seasonalCorrection = false;
             if (TrySlide(character, out PlayerSlide state) && Finite(dt) && dt > 0f)
             {
                 Vector3 actual = Horizontal(state.Player.m_body.linearVelocity);
@@ -202,6 +203,8 @@ namespace Seasons
                         InterruptSlide(state.Player, SlideReason.Action);
                     Vector3 result = !state.OnIce ? actual : state.Mode == SlideMode.Glide
                         ? GlideVelocity(state, actual, dt) : BasicVelocity(state, actual, dt);
+                    seasonalCorrection = state.OnIce && Finite(result) &&
+                        (result.x != actual.x || result.z != actual.z);
                     velocity.x = result.x;
                     velocity.z = result.z;
                 }
@@ -209,6 +212,19 @@ namespace Seasons
             // Route the real patched method. The local physics velocity is separate
             // from m_currentVel, which still drives ordinary locomotion animation.
             character.ApplyRootMotion(ref velocity);
+            return seasonalCorrection;
+        }
+
+        private static float ResolveMovementThreshold(float threshold, bool seasonalCorrection, Character character)
+        {
+            // Respect thresholds changed by other mods, including an already removed guard.
+            // Eligibility alone is not enough: our grounded solver must have contributed
+            // a finite horizontal correction during this particular UpdateWalking call.
+            if (threshold != 0.01f || !seasonalCorrection || !TrySlide(character, out PlayerSlide state) ||
+                !state.OnIce || !character.IsOnIce() || character.m_slipping)
+                return threshold;
+            // Keep the original strict comparison: zero and NaN still cannot apply a force.
+            return 0f;
         }
 
         private static Vector3 BasicVelocity(PlayerSlide state, Vector3 actual, float dt)

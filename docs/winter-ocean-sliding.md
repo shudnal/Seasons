@@ -48,14 +48,18 @@ Movement keys / stick input, a new Run press, attack, block, jump, dodge, crouch
 interaction, item use, equipment changes and other blocking actions cancel the
 long glide and its animation. Opposing keyboard keys are not a release gesture.
 Opening inventory, map, a store or build UI also cancels the long glide. Actions
-are not consumed or suppressed: their native logic still runs.
+are not consumed or suppressed: their native logic still runs. The intended Run
+cancellation currently reads the processed run argument; a raw Run press without
+movement can be discarded by the controller. Raw-button handling remains pending.
 
 Cancellation changes the mode to basic inertia without zeroing velocity or
 restoring a remembered vector. Native root motion, jump impulses and pushback
 still have their normal downstream effects. A new long glide needs a new run-up.
-A jump carries actual horizontal velocity through the native airborne path; its
-vertical speed is not converted into horizontal speed. Landing on another surface
-ends the seasonal state rather than transferring it into a different slip motor.
+A jump cancels the glide; vertical speed is not converted into horizontal speed.
+The current airborne override preserves actual horizontal velocity but also prevents
+normal input steering in the air. Restoring that control is a separate pending
+change. Landing on another surface ends the seasonal state rather than transferring
+it into a different slip motor.
 
 ## Motion and animation integration
 
@@ -94,6 +98,40 @@ The game's existing animation and player movement replication remain in use.
 The former ground-contact, SyncVelocity, SetRun, dodge-velocity cache and late
 ApplyGroundForce blending hooks are removed. Integration mismatches log a warning
 and disable the seasonal extension rather than combining partial custom motors.
+
+## Small velocity corrections and other movement mods
+
+The native walking force guard ignores a velocity delta of 0.01 m/s or less.
+At a 0.02 s step the default glide deceleration requests only 0.005 m/s, so it
+must not be lost on every straight, grounded glide step.
+
+The walking transpiler runs at Priority.Last and recognizes the magnitude guard
+immediately around the same local velocity delta passed to this Character body's
+AddForce(Vector3, ForceMode.VelocityChange). It keeps the original constant, branch,
+force vector, force mode and call. Only the comparison threshold becomes zero when
+all of these conditions hold:
+
+- The incoming threshold is still exactly the native 0.01 value. Another mod's
+  changed value is returned unchanged, whether it is smaller, larger or zero.
+- A fresh local flag confirms that the Seasons grounded solver contributed a
+  finite, nonzero horizontal correction in this UpdateWalking invocation.
+- The owning local ordinary-shoe player is still eligible and on seasonal ice.
+
+The marker is initialized per invocation and stored after our existing inertia /
+root-motion wrapper returns. It is not a cached per-player or per-frame permission.
+Airborne movement, other actors, skates, shoes, native surfaces and inactive or
+skipped seasonal processing keep the existing threshold. Strict greater-than
+comparison still excludes a zero delta and unordered (NaN) comparisons.
+
+There is no second AddForce, Rigidbody setter, global force patch or replacement
+of another mod's result. Native force clamping, root motion, pushback, ground forces
+and other pre-existing conditions remain. If the local force-guard shape is absent
+or ambiguous, only this precision adjustment is omitted with a patch-time warning;
+the existing movement path is left intact. Priorities cannot guarantee compatibility
+with every later transpiler or a mod replacing the whole movement method.
+
+Airborne steering and raw Run-button edge handling are separate pending follow-ups;
+this change does not alter either input behavior or the airborne velocity override.
 
 ## Live tuning
 
@@ -138,6 +176,9 @@ last reason. It performs no background sampling and makes no gameplay changes.
 ## Manual checks
 
 - Short run/release, walking turns and braking; compare basic duration and response.
+- Glide straight with a low deceleration and zero glide collider friction. Verify
+  a gradual speed decrease without needing to turn. Compare with other movement
+  mods and inspect any force-guard warning; their own thresholds are not overridden.
 - Earn a run-up, release movement, steer with look only, then cancel separately with
   each movement key, jump, dodge, attack, block, interaction and item use. Confirm
   immediate animation cancellation without a synthetic stop or later speed rebound.

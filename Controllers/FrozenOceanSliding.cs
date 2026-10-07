@@ -1,6 +1,7 @@
 using HarmonyLib;
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Reflection.Emit;
 using UnityEngine;
 using static Seasons.Seasons;
@@ -172,11 +173,75 @@ namespace Seasons
             code.InsertRange(index, added);
         }
 
+        private static int LocalIndex(CodeInstruction instruction)
+        {
+            if (instruction.opcode == OpCodes.Ldloc_0) return 0;
+            if (instruction.opcode == OpCodes.Ldloc_1) return 1;
+            if (instruction.opcode == OpCodes.Ldloc_2) return 2;
+            if (instruction.opcode == OpCodes.Ldloc_3) return 3;
+            if (instruction.opcode != OpCodes.Ldloc && instruction.opcode != OpCodes.Ldloc_S &&
+                instruction.opcode != OpCodes.Ldloca && instruction.opcode != OpCodes.Ldloca_S)
+                return -1;
+            if (instruction.operand is LocalVariableInfo local)
+                return local.LocalIndex;
+            if (instruction.operand is byte || instruction.operand is short || instruction.operand is int)
+                return Convert.ToInt32(instruction.operand);
+            return -1;
+        }
+
+        private static int FindMovementThreshold(List<CodeInstruction> code, int begin, int end)
+        {
+            var magnitude = AccessTools.PropertyGetter(typeof(Vector3), nameof(Vector3.magnitude));
+            var body = AccessTools.Field(typeof(Character), nameof(Character.m_body));
+            var addForce = AccessTools.Method(typeof(Rigidbody), nameof(Rigidbody.AddForce),
+                new[] { typeof(Vector3), typeof(ForceMode) });
+            var positions = new List<int>();
+            for (int i = begin; i < end; ++i)
+                if (code[i].opcode != OpCodes.Nop)
+                    positions.Add(i);
+
+            int found = -1;
+            for (int i = 0; i + 8 < positions.Count; ++i)
+            {
+                CodeInstruction address = code[positions[i]];
+                CodeInstruction threshold = code[positions[i + 2]];
+                CodeInstruction branch = code[positions[i + 3]];
+                CodeInstruction force = code[positions[i + 6]];
+                CodeInstruction mode = code[positions[i + 7]];
+                int forceIndex = LocalIndex(address);
+                // Match the guard of this exact velocity-change call, not an arbitrary
+                // 0.01 constant, another magnitude comparison, or another body's force.
+                if ((address.opcode != OpCodes.Ldloca && address.opcode != OpCodes.Ldloca_S) || forceIndex < 0 ||
+                    !code[positions[i + 1]].Calls(magnitude) || threshold.opcode != OpCodes.Ldc_R4 ||
+                    !(threshold.operand is float) ||
+                    (branch.opcode != OpCodes.Ble_Un && branch.opcode != OpCodes.Ble_Un_S) ||
+                    !(branch.operand is Label target) || code[positions[i + 4]].opcode != OpCodes.Ldarg_0 ||
+                    !code[positions[i + 5]].LoadsField(body) || LocalIndex(force) != forceIndex ||
+                    force.opcode == OpCodes.Ldloca || force.opcode == OpCodes.Ldloca_S ||
+                    !(mode.opcode == OpCodes.Ldc_I4_2 ||
+                        (mode.opcode == OpCodes.Ldc_I4 && Equals(mode.operand, (int)ForceMode.VelocityChange))) ||
+                    !code[positions[i + 8]].Calls(addForce))
+                    continue;
+
+                // The failed comparison must skip just this call. A rewritten control
+                // flow belongs to the other transpiler; do not try to reconstruct it.
+                int afterCall = positions[i + 8] + 1;
+                while (afterCall < end && code[afterCall].opcode == OpCodes.Nop && !code[afterCall].labels.Contains(target))
+                    ++afterCall;
+                if (afterCall >= code.Count || !code[afterCall].labels.Contains(target))
+                    continue;
+                if (found >= 0)
+                    return -1;
+                found = positions[i + 3];
+            }
+            return found;
+        }
+
         [HarmonyPatch(typeof(Character), nameof(Character.UpdateWalking))]
         private static class Character_UpdateWalking_FrozenOceanSliding
         {
-            [HarmonyTranspiler]
-            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+            [HarmonyTranspiler, HarmonyPriority(Priority.Last)]
+            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
             {
                 var code = new List<CodeInstruction>(instructions);
                 var slipping = AccessTools.Field(typeof(Character), nameof(Character.m_slipping));
@@ -201,18 +266,31 @@ namespace Seasons
                     return code;
                 }
 
+                int thresholdIndex = FindMovementThreshold(code, rootMotionIndex + 1, animationFieldIndex);
+                LocalBuilder seasonalCorrection = generator.DeclareLocal(typeof(bool));
+                if (thresholdIndex < 0)
+                    LogWarning("Small seasonal ice corrections retain the existing movement threshold: the force guard was changed or ambiguous.");
+
                 // Supply one final value to the existing synchronized animation write.
                 InsertBefore(code, animationIndex, new CodeInstruction(OpCodes.Ldarg_0),
                     new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(CharacterExtentions_FrozenOceanSliding), nameof(ResolveSlippingAnimation))));
+                if (thresholdIndex >= 0)
+                    // Preserve the existing threshold producer and conditional branch.
+                    InsertBefore(code, thresholdIndex, new CodeInstruction(OpCodes.Ldloc, seasonalCorrection),
+                        new CodeInstruction(OpCodes.Ldarg_0), new CodeInstruction(OpCodes.Call,
+                            AccessTools.Method(typeof(CharacterExtentions_FrozenOceanSliding), nameof(ResolveMovementThreshold))));
                 // Modify only the local physics velocity immediately before root motion.
                 // Keep m_currentVel and its native walking animation blend independent of inertia.
                 code[rootMotionIndex].opcode = OpCodes.Call;
                 code[rootMotionIndex].operand = AccessTools.Method(typeof(CharacterExtentions_FrozenOceanSliding), nameof(ApplyWalkingInertiaAndRootMotion));
+                code.Insert(rootMotionIndex + 1, new CodeInstruction(OpCodes.Stloc, seasonalCorrection));
                 InsertBefore(code, rootMotionIndex, new CodeInstruction(OpCodes.Ldarg_1));
                 InsertBefore(code, speedIndex, new CodeInstruction(OpCodes.Ldarg_0), new CodeInstruction(OpCodes.Ldarg_1),
                     new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(CharacterExtentions_FrozenOceanSliding), nameof(ResolveWalkingSpeed))));
                 InsertBefore(code, slippingIndex, new CodeInstruction(OpCodes.Ldarg_0),
                     new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(CharacterExtentions_FrozenOceanSliding), nameof(ResolveVanillaSlipping))));
+                // A skipped or re-entered movement path must not reuse another invocation's marker.
+                InsertBefore(code, 0, new CodeInstruction(OpCodes.Ldc_I4_0), new CodeInstruction(OpCodes.Stloc, seasonalCorrection));
                 return code;
             }
         }
