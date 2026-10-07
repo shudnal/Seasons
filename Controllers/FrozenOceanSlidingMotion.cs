@@ -159,7 +159,7 @@ namespace Seasons
                 state.RunUpTime >= requiredTime && actualSpeed >= minimumSpeed)
             {
                 Vector3 look = Horizontal(player.GetLookDir());
-                state.LookOffset = look.sqrMagnitude > 0.000001f
+                state.LookOffset = Finite(look) && look.sqrMagnitude > 0.000001f
                     ? Vector3.SignedAngle(look, actual, Vector3.up) : 0f;
                 state.RunUpTime = 0f;
                 ChangeMode(state, SlideMode.Glide, SlideReason.Released);
@@ -215,6 +215,8 @@ namespace Seasons
             float deadZone = Parameter(frozenOceanSlidingInputDeadZone.Value, 0.1f, 0.001f, 0.5f);
             Player player = state.Player;
             Vector3 input = player.CanMove() ? Horizontal(player.m_moveDir) : Vector3.zero;
+            if (!Finite(input) || !Finite(state.TargetSpeed))
+                return actual;
             float inputLength = input.magnitude;
             float speed = actual.magnitude;
             if (inputLength <= deadZone || state.TargetSpeed <= 0f)
