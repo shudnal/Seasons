@@ -187,25 +187,28 @@ namespace Seasons
             return state.TargetSpeed;
         }
 
-        private static Vector3 BlendWalkingVelocity(Vector3 previous, Vector3 target, float blend, Character character, float dt)
+        private static void ApplyWalkingInertiaAndRootMotion(Character character, ref Vector3 velocity, float dt)
         {
-            if (!TrySlide(character, out PlayerSlide state) || !Finite(dt) || dt <= 0f)
-                return Vector3.Lerp(previous, target, blend);
-            Vector3 actual = Horizontal(state.Player.m_body.linearVelocity);
-            if (!Finite(actual))
+            if (TrySlide(character, out PlayerSlide state) && Finite(dt) && dt > 0f)
             {
-                ResetWorldState();
-                return Vector3.Lerp(previous, target, blend);
+                Vector3 actual = Horizontal(state.Player.m_body.linearVelocity);
+                if (!Finite(actual))
+                    ResetWorldState();
+                else
+                {
+                    // CanMove may bypass the native speed branch. Immobilizing actions
+                    // must still cancel the glide, without restoring a launch velocity.
+                    if (state.Mode == SlideMode.Glide && (HasBlockingAction(state.Player) || !frozenOceanGlidingEnabled.Value))
+                        InterruptSlide(state.Player, SlideReason.Action);
+                    Vector3 result = !state.OnIce ? actual : state.Mode == SlideMode.Glide
+                        ? GlideVelocity(state, actual, dt) : BasicVelocity(state, actual, dt);
+                    velocity.x = result.x;
+                    velocity.z = result.z;
+                }
             }
-            // The speed branch is skipped by vanilla when CanMove is false. Recheck the
-            // interruption here so an immobilizing action can never leave the animation active.
-            if (state.Mode == SlideMode.Glide && (HasBlockingAction(state.Player) || !frozenOceanGlidingEnabled.Value))
-                InterruptSlide(state.Player, SlideReason.Action);
-            Vector3 result = !state.OnIce ? actual : state.Mode == SlideMode.Glide
-                ? GlideVelocity(state, actual, dt) : BasicVelocity(state, actual, dt);
-            // UpdateWalking preserves Rigidbody Y separately, before its native ground handling.
-            result.y = target.y;
-            return result;
+            // Route the real patched method. The local physics velocity is separate
+            // from m_currentVel, which still drives ordinary locomotion animation.
+            character.ApplyRootMotion(ref velocity);
         }
 
         private static Vector3 BasicVelocity(PlayerSlide state, Vector3 actual, float dt)

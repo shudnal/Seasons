@@ -65,10 +65,13 @@ The integration stays inside `Character.UpdateWalking`:
    been assigned to `m_running`. Never call `CheckRun` a second time.
 2. Adjust the final requested walking speed after native speed modifiers and before
    it is multiplied by movement direction.
-3. Replace only the walking velocity blend for the owning local ordinary-shoe
-   player. Use the Rigidbody's actual X/Z velocity every step, not a launch cache.
-4. Retain native slope handling, root motion, pushback, ground forces, air control,
-   velocity-change force application and status-effect velocity hooks downstream.
+3. Set only the local physics velocity for the owning local ordinary-shoe player,
+   immediately before the native root-motion call. Use actual Rigidbody X/Z velocity
+   every step, not a launch cache. Keep the original m_currentVel blend unchanged
+   so passive coasting does not masquerade as commanded walking in the Animator.
+4. Call the real patched root-motion method and retain native pushback, ground
+   forces, air control, velocity-change force application and velocity hooks.
+   Other surfaces retain the complete native slope and movement path.
 5. Resolve the final slipping animation value at the existing synchronized
    `ZSyncAnimation.SetBool(s_slipping, ...)` call.
 

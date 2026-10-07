@@ -180,10 +180,9 @@ namespace Seasons
             {
                 var code = new List<CodeInstruction>(instructions);
                 var slipping = AccessTools.Field(typeof(Character), nameof(Character.m_slipping));
-                var currentVelocity = AccessTools.Field(typeof(Character), nameof(Character.m_currentVel));
                 var canMove = AccessTools.Method(typeof(Character), nameof(Character.CanMove));
                 var multiply = AccessTools.Method(typeof(Vector3), "op_Multiply", new[] { typeof(Vector3), typeof(float) });
-                var lerp = AccessTools.Method(typeof(Vector3), nameof(Vector3.Lerp));
+                var rootMotion = AccessTools.Method(typeof(Character), nameof(Character.ApplyRootMotion));
                 var slippingAnimation = AccessTools.Field(typeof(Character), nameof(Character.s_slipping));
                 var setBool = AccessTools.Method(typeof(ZSyncAnimation), nameof(ZSyncAnimation.SetBool), new[] { typeof(int), typeof(bool) });
                 int animationFieldIndex = code.FindIndex(instruction => instruction.LoadsField(slippingAnimation));
@@ -191,17 +190,11 @@ namespace Seasons
                 int slippingIndex = code.FindIndex(instruction => instruction.StoresField(slipping));
                 int canMoveIndex = code.FindIndex(instruction => instruction.Calls(canMove));
                 int speedIndex = canMoveIndex < 0 ? -1 : code.FindIndex(canMoveIndex, instruction => instruction.Calls(multiply));
-                int blendIndex = -1;
-                int blendMatches = 0;
-                for (int i = 0; i + 1 < code.Count; ++i)
-                    if (code[i].Calls(lerp) && code[i + 1].StoresField(currentVelocity))
-                    {
-                        blendIndex = i;
-                        blendMatches++;
-                    }
+                int rootMotionIndex = code.FindIndex(instruction => instruction.Calls(rootMotion));
+                int rootMotionMatches = code.FindAll(instruction => instruction.Calls(rootMotion)).Count;
                 walkingHookReady = slippingIndex >= 0 && canMoveIndex > slippingIndex && speedIndex > canMoveIndex &&
-                    speedIndex - canMoveIndex < 20 && blendIndex > speedIndex && blendMatches == 1 &&
-                    animationFieldIndex > blendIndex && animationIndex > animationFieldIndex;
+                    speedIndex - canMoveIndex < 20 && rootMotionIndex > speedIndex && rootMotionMatches == 1 &&
+                    animationFieldIndex > rootMotionIndex && animationIndex > animationFieldIndex;
                 if (!walkingHookReady)
                 {
                     LogWarning("Seasonal ice sliding is disabled: Character.UpdateWalking integration points were not recognized.");
@@ -211,10 +204,11 @@ namespace Seasons
                 // Supply one final value to the existing synchronized animation write.
                 InsertBefore(code, animationIndex, new CodeInstruction(OpCodes.Ldarg_0),
                     new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(CharacterExtentions_FrozenOceanSliding), nameof(ResolveSlippingAnimation))));
-                // Replace only the native walking blend. Root motion, pushback, ground forces,
-                // air control and the actual Rigidbody force application remain downstream.
-                code[blendIndex].operand = AccessTools.Method(typeof(CharacterExtentions_FrozenOceanSliding), nameof(BlendWalkingVelocity));
-                InsertBefore(code, blendIndex, new CodeInstruction(OpCodes.Ldarg_0), new CodeInstruction(OpCodes.Ldarg_1));
+                // Modify only the local physics velocity immediately before root motion.
+                // Keep m_currentVel and its native walking animation blend independent of inertia.
+                code[rootMotionIndex].opcode = OpCodes.Call;
+                code[rootMotionIndex].operand = AccessTools.Method(typeof(CharacterExtentions_FrozenOceanSliding), nameof(ApplyWalkingInertiaAndRootMotion));
+                InsertBefore(code, rootMotionIndex, new CodeInstruction(OpCodes.Ldarg_1));
                 InsertBefore(code, speedIndex, new CodeInstruction(OpCodes.Ldarg_0), new CodeInstruction(OpCodes.Ldarg_1),
                     new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(CharacterExtentions_FrozenOceanSliding), nameof(ResolveWalkingSpeed))));
                 InsertBefore(code, slippingIndex, new CodeInstruction(OpCodes.Ldarg_0),
