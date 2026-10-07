@@ -20,6 +20,7 @@ namespace Seasons
             internal SlideReason Reason;
             internal float RunUpTime;
             internal bool RunInput;
+            internal bool MovementHeld;
             internal bool Interrupted;
             internal bool AnimationOwned;
             internal float LookOffset;
@@ -69,7 +70,8 @@ namespace Seasons
 
         private static bool HasBlockingAction(Player player) => !player.CanMove() || !player.TakeInput() ||
             player.InAttack() || player.InDodge() || player.IsBlocking() || player.IsCrouching() ||
-            player.InMinorAction() || player.InEmote() || player.IsEncumbered() || player.m_pushForce.sqrMagnitude > 0f;
+            player.InMinorAction() || player.InEmote() || player.IsEncumbered() || player.m_pushForce.sqrMagnitude > 0f ||
+            InventoryGui.IsVisible() || Minimap.IsOpen() || StoreGui.IsVisible() || Hud.IsPieceSelectionVisible() || Hud.InRadial();
 
         private static bool Finite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
         private static bool Finite(Vector3 value) => Finite(value.x) && Finite(value.y) && Finite(value.z) && Finite(value.sqrMagnitude);
@@ -106,7 +108,11 @@ namespace Seasons
                 return;
             }
             if (playerSlide == null || playerSlide.Player != player)
-                playerSlide = new PlayerSlide { Player = player, RunInput = player.m_run, Reason = SlideReason.Surface };
+                playerSlide = new PlayerSlide
+                {
+                    Player = player, RunInput = player.m_run,
+                    MovementHeld = player.m_moveDir.sqrMagnitude > 0f, Reason = SlideReason.Surface
+                };
             playerSlide.OnIce = true;
             playerSlide.TargetSpeed = 0f;
         }
@@ -127,7 +133,7 @@ namespace Seasons
             Vector3 actual = Horizontal(player.m_body.linearVelocity);
             Vector3 input = Horizontal(player.m_moveDir);
             float deadZone = Parameter(frozenOceanSlidingInputDeadZone.Value, 0.1f, 0.001f, 0.5f);
-            bool moving = input.sqrMagnitude > deadZone * deadZone;
+            bool moving = state.MovementHeld || input.sqrMagnitude > deadZone * deadZone;
             bool blocked = state.Interrupted || HasBlockingAction(player) || !Finite(actual) || !Finite(input);
             state.Interrupted = false;
             bool longGlide = frozenOceanGlidingEnabled.Value;

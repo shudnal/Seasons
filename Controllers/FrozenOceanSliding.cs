@@ -94,15 +94,16 @@ namespace Seasons
                     return;
                 bool action = attack || attackHold || secondaryAttack || secondaryAttackHold || block || blockHold ||
                     jump || crouch || dodge || autoRun;
+                float deadZone = Parameter(frozenOceanSlidingInputDeadZone.Value, 0.1f, 0.001f, 0.5f);
+                bool movement = !Finite(movedir) || movedir.sqrMagnitude > deadZone * deadZone;
+                if (!movement && (state.Mode == SlideMode.RunUp || state.Mode == SlideMode.Glide))
+                    // Held-state reads do not consume native button-down events. Opposing
+                    // keyboard keys are not a release gesture even if their vector is zero.
+                    movement = ZInput.GetButton("Forward") || ZInput.GetButton("Backward") ||
+                        ZInput.GetButton("Left") || ZInput.GetButton("Right");
+                state.MovementHeld = movement;
                 if (state.Mode == SlideMode.Glide)
-                {
-                    float deadZone = Parameter(frozenOceanSlidingInputDeadZone.Value, 0.1f, 0.001f, 0.5f);
-                    // Held-state reads do not consume the native button-down events. Also
-                    // recognize opposing keys whose combined movement vector would be zero.
-                    bool movement = !Finite(movedir) || movedir.sqrMagnitude > deadZone * deadZone ||
-                        ZInput.GetButton("Forward") || ZInput.GetButton("Backward") || ZInput.GetButton("Left") || ZInput.GetButton("Right");
                     action |= movement || (run && !state.RunInput) || ZInput.GetButton("Use") || ZInput.GetButton("JoyUse");
-                }
                 state.RunInput = run;
                 if (action)
                     InterruptSlide(__instance, SlideReason.Input);
@@ -150,6 +151,15 @@ namespace Seasons
         {
             [HarmonyPrefix]
             private static void Prefix(Humanoid __instance) => InterruptSlide(__instance, SlideReason.Action);
+        }
+
+        [HarmonyPatch(typeof(Terminal), nameof(Terminal.InitTerminal))]
+        private static class Terminal_InitTerminal_SlidingStatus
+        {
+            [HarmonyPostfix]
+            private static void Postfix() => new Terminal.ConsoleCommand("seasons_sliding",
+                "Show the local seasonal ice sliding state without changing gameplay.",
+                args => args.Context.AddString(GetSlidingStatus()));
         }
 
         private static void InsertBefore(List<CodeInstruction> code, int index, params CodeInstruction[] added)
