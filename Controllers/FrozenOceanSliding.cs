@@ -112,12 +112,12 @@ namespace Seasons
                     movement = ZInput.GetButton("Forward") || ZInput.GetButton("Backward") ||
                         ZInput.GetButton("Left") || ZInput.GetButton("Right");
                 state.MovementHeld = movement;
-                if (state.Mode == SlideMode.Glide)
-                    action |= movement;
                 // Run is only a modifier; pressing, holding or releasing it cannot end a glide.
                 // Actual interactions and item actions are handled by their own hooks below.
                 if (action)
                     InterruptSlide(__instance, SlideReason.Input);
+                else if (movement && state.Mode == SlideMode.Glide)
+                    InterruptForMovement(state);
             }
         }
 
