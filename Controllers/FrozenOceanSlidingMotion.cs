@@ -430,10 +430,11 @@ namespace Seasons
                 return "state=inactive";
             float speed = Horizontal(state.Player.m_body.linearVelocity).magnitude;
             return string.Format(CultureInfo.InvariantCulture,
-                "state={0} grounded={1} speed={2:F2} runSpeed={3:F2} ratio={4:F1}% steady={5:F2}/{6:F2} charge={7:F2}/{8:F2} ready={9} glide={10:F2}/{11:F2} animation={12} transitions={13} reason={14}",
+                "state={0} grounded={1} speed={2:F2} runSpeed={3:F2} ratio={4:F1}% steady={5:F2}/{6:F2} charge={7:F2}/{8:F2} ready={9} glide={10:F2}/{11:F2} animation={12} transitions={13} reason={14} fovOffset={15:F2} cadenceHook={16} fovHook={17}",
                 state.Mode, state.OnIce, speed, state.RunSpeed, state.RunSpeed > 0f ? 100f * speed / state.RunSpeed : 0f,
                 state.RunUpTime, SteadyRunDuration, state.ChargeTime, ChargeDuration, IsCharged(state),
-                state.GlideTime, BonusDuration + CoastDuration, state.AnimationOwned, state.Transitions, state.Reason);
+                state.GlideTime, BonusDuration + CoastDuration, state.AnimationOwned, state.Transitions, state.Reason,
+                GetGlideFovOffset(), cadenceHookReady, fovHookReady);
         }
     }
 }
