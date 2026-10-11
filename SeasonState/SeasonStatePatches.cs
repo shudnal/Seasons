@@ -175,6 +175,7 @@ namespace Seasons
                 if (__instance.IsIgnored())
                     return;
 
+                // DO NOT START invokation unconditionally
                 if (!__instance.CheckForPerishInWinter() && !__instance.IsInvoking("UpdateRespawn"))
                     __instance.InvokeRepeating("UpdateRespawn", UnityEngine.Random.Range(1f, 5f), repeatRate: 60f);
             }
@@ -252,7 +253,7 @@ namespace Seasons
                     }
                 }
 
-                if (__instance.IsIgnored() || seasonState.GetCurrentSeason() != Season.Winter || !__instance.CanBePicked())
+                if (!pickablesPerishInWinter.Value || __instance.IsIgnored() || seasonState.GetCurrentSeason() != Season.Winter || !__instance.CanBePicked())
                     return;
 
                 if (string.IsNullOrWhiteSpace(__result))
@@ -382,7 +383,7 @@ namespace Seasons
         {
             private static void Prefix(Beehive __instance, ref Tuple<string> __state)
             {
-                if (IsProtectedPosition(__instance.transform.position))
+                if (!controlBeehiveProduction.Value || IsProtectedPosition(__instance.transform.position))
                     return;
 
                 __state = Tuple.Create(__instance.m_happyText);
@@ -404,7 +405,7 @@ namespace Seasons
         {
             private static void Postfix(Beehive __instance, ref float __result)
             {
-                if (IsProtectedPosition(__instance.transform.position))
+                if (!controlBeehiveProduction.Value || IsProtectedPosition(__instance.transform.position))
                     return;
 
                 __result *= seasonState.GetBeehiveProductionMultiplier();
@@ -451,7 +452,7 @@ namespace Seasons
         {
             private static void Postfix(Beehive __instance, ref GameObject ___m_beeEffect)
             {
-                if (IsProtectedPosition(__instance.transform.position))
+                if (!controlBeehiveProduction.Value || IsProtectedPosition(__instance.transform.position))
                     return;
 
                 if (seasonState.GetBeehiveProductionMultiplier() == 0f && ___m_beeEffect != null)
@@ -488,7 +489,7 @@ namespace Seasons
         {
             private static void Prefix(Player __instance, ref float v)
             {
-                if (__instance == null)
+                if (!controlStaminaConsumption.Value || __instance == null)
                     return;
 
                 if (__instance.InInterior() || __instance.InShelter())
@@ -503,7 +504,7 @@ namespace Seasons
         {
             private static void Postfix(Fireplace __instance, ref double __result)
             {
-                if (IsProtectedPosition(__instance.transform.position))
+                if (!controlFuelConsumption.Value || IsProtectedPosition(__instance.transform.position))
                     return;
 
                 __result *= (double)Math.Max(0f, seasonState.GetFireplaceDrainMultiplier());
@@ -518,7 +519,7 @@ namespace Seasons
                 if (__instance.m_name != "$piece_bathtub")
                     return;
 
-                if (IsProtectedPosition(__instance.transform.position))
+                if (!controlFuelConsumption.Value || IsProtectedPosition(__instance.transform.position))
                     return;
 
                 __result *= (double)Math.Max(0f, seasonState.GetFireplaceDrainMultiplier());
@@ -530,7 +531,7 @@ namespace Seasons
         {
             private static void Prefix(CookingStation __instance, ref float dt)
             {
-                if (IsProtectedPosition(__instance.transform.position))
+                if (!controlFuelConsumption.Value || IsProtectedPosition(__instance.transform.position))
                     return;
 
                 dt *= Math.Max(0f, seasonState.GetFireplaceDrainMultiplier());
@@ -542,7 +543,7 @@ namespace Seasons
         {
             private static void Postfix(SapCollector __instance, ref float __result)
             {
-                if (IsProtectedPosition(__instance.transform.position))
+                if (!controlSapCollection.Value || IsProtectedPosition(__instance.transform.position))
                     return;
 
                 __result *= Math.Max(0f, seasonState.GetSapCollectingSpeedMultiplier());
@@ -615,7 +616,7 @@ namespace Seasons
         {
             private static void Prefix(Destructible __instance, ZNetView ___m_nview)
             {
-                if (UnityEngine.Random.Range(0.0f, 1.0f) > seasonState.GetTreesReqrowthChance())
+                if (!enableTreeRegrowth.Value || UnityEngine.Random.Range(0.0f, 1.0f) > seasonState.GetTreesReqrowthChance())
                     return;
 
                 if (___m_nview == null || !___m_nview.IsValid() || !___m_nview.IsOwner())

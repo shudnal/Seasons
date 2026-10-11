@@ -103,6 +103,7 @@
     <Compile Include="SeasonState\SeasonStatePatches.cs" />
     <Compile Include="SeasonState\EnvManPatches.cs" />
     <Compile Include="SeasonState\SeasonState.cs" />
+    <Compile Include="SeasonState\SeasonalTorchOverrides.cs" />
     <Compile Include="SeasonSettings\SeasonStats.cs" />
     <Compile Include="SeasonSettings\SeasonTraderItems.cs" />
     <Compile Include="SeasonSettings\SeasonWorldSettings.cs" />

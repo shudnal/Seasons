@@ -276,6 +276,9 @@ namespace Seasons
 
         public int GetNightLength(Season season, int dayInSeason)
         {
+            if (!controlNightLength.Value)
+                return SeasonSettings.nightLentghDefault;
+
             int currentNightLength = GetSeasonSettings(season).m_nightLength;
             if (!changeNightLengthGradually.Value)
                 return currentNightLength;
@@ -1104,7 +1107,7 @@ namespace Seasons
 
         public bool GetTorchAsFiresource()
         {
-            return settings.m_torchAsFiresource;
+            return enableTorchWarmth.Value && settings.m_torchAsFiresource;
         }
 
         public float GetTorchDurabilityDrain()
@@ -1119,17 +1122,17 @@ namespace Seasons
 
         public float GetBeehiveProductionMultiplier(Season season)
         {
-            return GetSeasonSettings(season).m_beehiveProductionMultiplier;
+            return controlBeehiveProduction.Value ? GetSeasonSettings(season).m_beehiveProductionMultiplier : 1f;
         }
 
         public float GetFoodDrainMultiplier()
         {
-            return settings.m_foodDrainMultiplier;
+            return controlFoodConsumption.Value ? settings.m_foodDrainMultiplier : 1f;
         }
 
         public float GetStaminaDrainMultiplier()
         {
-            return settings.m_staminaDrainMultiplier;
+            return controlStaminaConsumption.Value ? settings.m_staminaDrainMultiplier : 1f;
         }
 
         public float GetFireplaceDrainMultiplier()
@@ -1139,7 +1142,7 @@ namespace Seasons
 
         public float GetFireplaceDrainMultiplier(Season season)
         {
-            return GetSeasonSettings(season).m_fireplaceDrainMultiplier;
+            return controlFuelConsumption.Value ? GetSeasonSettings(season).m_fireplaceDrainMultiplier : 1f;
         }
 
         public float GetSapCollectingSpeedMultiplier()
@@ -1149,7 +1152,7 @@ namespace Seasons
 
         public float GetSapCollectingSpeedMultiplier(Season season)
         {
-            return GetSeasonSettings(season).m_sapCollectingSpeedMultiplier;
+            return controlSapCollection.Value ? GetSeasonSettings(season).m_sapCollectingSpeedMultiplier : 1f;
         }
 
         public bool GetRainProtection()
@@ -1159,27 +1162,27 @@ namespace Seasons
 
         public float GetWoodFromTreesMultiplier()
         {
-            return settings.m_woodFromTreesMultiplier;
+            return controlWoodDrops.Value ? settings.m_woodFromTreesMultiplier : 1f;
         }
 
         public float GetMeatFromAnimalsMultiplier()
         {
-            return settings.m_meatFromAnimalsMultiplier;
+            return controlMeatDrops.Value ? settings.m_meatFromAnimalsMultiplier : 1f;
         }
 
         public float GetWindIntensityMultiplier()
         {
-            return settings.m_windIntensityMultiplier;
+            return controlWindIntensity.Value ? settings.m_windIntensityMultiplier : 1f;
         }
 
         public float GetRestedBuffDurationMultiplier()
         {
-            return settings.m_restedBuffDurationMultiplier;
+            return controlRestedDuration.Value ? settings.m_restedBuffDurationMultiplier : 1f;
         }
 
         public float GetLivestockProcreationMultiplier()
         {
-            return settings.m_livestockProcreationMultiplier;
+            return controlLivestockProcreation.Value ? settings.m_livestockProcreationMultiplier : 1f;
         }
 
         public bool GetOverheatIn2WarmClothes()
@@ -1189,7 +1192,7 @@ namespace Seasons
 
         public float GetTreesReqrowthChance()
         {
-            return settings.m_treesRegrowthChance;
+            return enableTreeRegrowth.Value ? settings.m_treesRegrowthChance : 0f;
         }
 
         public SeasonSettings GetSeasonSettings(Season season)
@@ -1553,19 +1556,18 @@ namespace Seasons
             if (torch.m_shared.m_itemType != ItemDrop.ItemData.ItemType.Torch)
                 return;
 
-            if (seasonState.GetTorchAsFiresource() && IsActive && (EnvMan.IsWet() || IsCold()))
-                torch.m_shared.m_durabilityDrain = seasonState.GetTorchDurabilityDrain();
-            else
-                torch.m_shared.m_durabilityDrain = 0.0333f;
+            bool adjustDrain = seasonState.GetTorchAsFiresource() && IsActive && (EnvMan.IsWet() || IsCold());
+            SeasonalTorchOverrides.UpdateDurability(torch, adjustDrain, seasonState.GetTorchDurabilityDrain());
         }
 
         public void UpdateTorchesFireWarmth()
         {
-            UpdateTorchFireWarmth("GoblinTorch");
-            UpdateTorchFireWarmth(SeasonSettings.itemNameTorch);
-
+            // Visit inventory copies before releasing their prefab's captured override.
             if (Player.m_localPlayer != null)
                 PatchTorchesInInventory(Player.m_localPlayer.GetInventory());
+
+            UpdateTorchFireWarmth("GoblinTorch");
+            UpdateTorchFireWarmth(SeasonSettings.itemNameTorch);
         }
 
         public void PatchTorchesInInventory(Inventory inventory)
@@ -1590,6 +1592,9 @@ namespace Seasons
             if (prefab == null)
                 return;
 
+            ItemDrop item = prefab.GetComponent<ItemDrop>();
+            PatchTorchItemData(item?.m_itemData);
+
             EffectArea component = prefab.GetComponentInChildren<EffectArea>(includeInactive: true);
             if (component == null)
                 return;
@@ -1607,26 +1612,26 @@ namespace Seasons
                     )
                 );
 
-            component.m_type = heatEnabled ? EffectArea.Type.Heat | EffectArea.Type.Fire : EffectArea.Type.Fire;
-            component.m_isHeatType = component.m_type.HasFlag(EffectArea.Type.Heat);
-
-            ItemDrop item = prefab.GetComponent<ItemDrop>();
-            PatchTorchItemData(item?.m_itemData);
-
-            if (Player.m_localPlayer != null && Player.m_localPlayer.m_visEquipment != null)
+            // This event-driven refresh must also remove inherited seasonal heat from
+            // already equipped remote-player and creature visuals on this client.
+            int prefabHash = prefabName.GetStableHashCode();
+            foreach (Character character in Character.GetAllCharacters())
             {
-                if (Player.m_localPlayer.m_visEquipment.m_rightItem == prefabName.GetStableHashCode() && (Player.m_localPlayer.m_visEquipment.m_rightItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea rightEffect))
-                {
-                    rightEffect.m_type = component.m_type;
-                    rightEffect.m_isHeatType = component.m_isHeatType;
-                }
+                if (character is not Humanoid humanoid || !humanoid.m_visEquipment)
+                    continue;
 
-                if (Player.m_localPlayer.m_visEquipment.m_leftItem == prefabName.GetStableHashCode() && (Player.m_localPlayer.m_visEquipment.m_leftItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea leftEffect))
-                {
-                    leftEffect.m_type = component.m_type;
-                    leftEffect.m_isHeatType = component.m_isHeatType;
-                }
+                VisEquipment equipment = humanoid.m_visEquipment;
+                if (equipment.m_rightItem == prefabHash &&
+                    equipment.m_rightItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea rightEffect)
+                    SeasonalTorchOverrides.UpdateArea(rightEffect, heatEnabled, component);
+
+                if (equipment.m_leftItem == prefabHash &&
+                    equipment.m_leftItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea leftEffect)
+                    SeasonalTorchOverrides.UpdateArea(leftEffect, heatEnabled, component);
             }
+            // Equipped visuals can inherit an already-patched prefab. Resolve them first
+            // so disabling cannot turn the inherited Heat bit into a new baseline.
+            SeasonalTorchOverrides.UpdateArea(component, heatEnabled);
         }
 
         public void UpdateMinimapBorder()

@@ -62,6 +62,21 @@ namespace Seasons
         public static ConfigEntry<bool> controlYggdrasil;
         public static ConfigEntry<bool> controlTraders;
         public static ConfigEntry<bool> controlGrass;
+        public static ConfigEntry<bool> enableTreeRegrowth;
+        public static ConfigEntry<bool> controlWoodDrops;
+        public static ConfigEntry<bool> controlMeatDrops;
+        public static ConfigEntry<bool> controlFoodConsumption;
+        public static ConfigEntry<bool> controlStaminaConsumption;
+        public static ConfigEntry<bool> controlRestedDuration;
+        public static ConfigEntry<bool> controlFuelConsumption;
+        public static ConfigEntry<bool> controlBeehiveProduction;
+        public static ConfigEntry<bool> controlSapCollection;
+        public static ConfigEntry<bool> controlLivestockProcreation;
+
+        public static ConfigEntry<bool> controlNightLength;
+        public static ConfigEntry<bool> controlWindIntensity;
+        public static ConfigEntry<bool> enableTorchWarmth;
+
         public static ConfigEntry<bool> customTextures;
 
         public static ConfigEntry<bool> showCurrentSeasonBuff;
@@ -77,6 +92,7 @@ namespace Seasons
         public static ConfigEntry<bool> freezingSwimmingInWinter;
         public static ConfigEntry<bool> seasonalStatsOutdoorsOnly;
         public static ConfigEntry<bool> changeSeasonOnlyAfterSleep;
+        public static ConfigEntry<bool> pickablesPerishInWinter;
         public static ConfigEntry<int> cropsDiesAfterSetDayInWinter;
         public static ConfigEntry<string> cropsToSurviveInWinter;
         public static ConfigEntry<string> cropsToControlGrowth;
@@ -154,6 +170,7 @@ namespace Seasons
         public static ConfigEntry<float> summerHeatMaxOverflow;
         public static ConfigEntry<bool> summerHeatWorldHazeEnabled;
         public static ConfigEntry<bool> summerHeatPersonalDistortionEnabled;
+        public static ConfigEntry<bool> summerHeatDamageEnabled;
         public static ConfigEntry<float> summerHeatDamageTickInterval;
         public static ConfigEntry<float> summerHeatDamageHealthPerTickMinHealthPercentage;
         public static ConfigEntry<float> summerHeatDamageHealthPerTick;
@@ -477,12 +494,45 @@ namespace Seasons
             controlEnvironments = serverConfig("Season - Control", "Control environments", defaultValue: true, "Enables seasonal weathers");
             controlRandomEvents = serverConfig("Season - Control", "Control random events", defaultValue: true, "Enables seasonal random events");
             controlLightings = serverConfig("Season - Control", "Control lightings", defaultValue: true, "Enables seasonal lightings change (basically gamma or brightness)");
-            controlStats = serverConfig("Season - Control", "Control stats", defaultValue: true, "Enables seasonal stats change (status effect)");
+            controlStats = serverConfig("Season - Control", "Control stats", defaultValue: true, "Enables seasonal stats change through the season status effect. Does not control the separate food, stamina, fuel, production or drop multipliers; use their individual switches.");
             controlMinimap = serverConfig("Season - Control", "Control minimap", defaultValue: true, "Enables seasonal minimap colors");
             controlYggdrasil = serverConfig("Season - Control", "Control yggdrasil branch and roots", defaultValue: true, "Enables seasonal coloring of yggdrasil branch in the sky and roots on the ground");
             controlTraders = serverConfig("Season - Control", "Control trader seasonal items list", defaultValue: true, "Enables seasonal changes of trader additional item availability");
             controlGrass = serverConfig("Season - Control", "Control grass", defaultValue: true, "Enables seasonal changes of grass thickness, size and sparseness");
             customTextures = serverConfig("Season - Control", "Custom textures", defaultValue: true, "Enables custom textures");
+
+            enableTreeRegrowth = serverConfig("Season - Control", "Enable tree regrowth", defaultValue: true,
+                "Allow Seasons to replant trees after eligible stumps are destroyed, using the configured seasonal chances. Disabling also cancels pending replanting while disabled; existing trees and saplings are not removed.");
+            controlWoodDrops = serverConfig("Season - Control", "Control wood drops", defaultValue: true,
+                "Apply seasonal wood drop multipliers. Disable to leave wood drops unchanged by Seasons without clearing the configured resource list or seasonal multipliers.");
+            controlMeatDrops = serverConfig("Season - Control", "Control meat drops", defaultValue: true,
+                "Apply seasonal meat drop multipliers. Disable to leave meat drops unchanged by Seasons without clearing the configured resource list or seasonal multipliers.");
+            controlFoodConsumption = serverConfig("Season - Control", "Control food consumption", defaultValue: true,
+                "Apply the separate seasonal food-duration drain multiplier. Disable to leave food consumption unchanged by this mechanic; other status effects and mods still apply.");
+            controlStaminaConsumption = serverConfig("Season - Control", "Control stamina consumption", defaultValue: true,
+                "Apply the separate seasonal stamina-consumption multiplier. Disable to leave stamina costs unchanged by this mechanic; seasonal status-effect stats, Summer Heat and other mods still apply.");
+            controlRestedDuration = serverConfig("Season - Control", "Control rested duration", defaultValue: true,
+                "Apply seasonal multipliers when calculating Rested duration and its comfort bonus. Disable to leave that calculation unchanged by Seasons. Already granted Rested time is not rewritten.");
+            controlFuelConsumption = serverConfig("Season - Control", "Control fuel consumption", defaultValue: true,
+                "Apply seasonal fuel-consumption multipliers to fireplaces, fueled cooking stations and hot tubs. Disable to leave their normal updates unchanged. This does not control torch durability or general smelter production.");
+            controlBeehiveProduction = serverConfig("Season - Control", "Control beehive production", defaultValue: true,
+                "Apply seasonal honey-production multipliers, including winter dormancy. Disable to use normal honey production, bee activity and messages; stored honey and production progress are preserved.");
+            controlSapCollection = serverConfig("Season - Control", "Control sap collection", defaultValue: true,
+                "Apply seasonal sap-collection speed multipliers. Disable to use normal collection updates without changing stored sap or production progress.");
+            controlLivestockProcreation = serverConfig("Season - Control", "Control livestock procreation", defaultValue: true,
+                "Apply seasonal breeding changes to probability, pregnancy duration and population-check distances. Disable to leave those values unchanged by Seasons; animals and ongoing pregnancies are not reset.");
+
+            controlNightLength = serverConfig("Season - Control", "Control night length", defaultValue: true,
+                "Apply seasonal changes to the day/night ratio, morning times and sleep destination. Disable to leave those calculations to the game and other mods. Day length in seconds is a separate setting.");
+            controlWindIntensity = serverConfig("Season - Control", "Control wind intensity", defaultValue: true,
+                "Apply the additional seasonal wind-strength multiplier. Disable to keep weather-derived wind unchanged by this multiplier; seasonal weather selection remains independently controlled.");
+
+            enableTorchWarmth = serverConfig("Season - Control", "Enable torch warmth", defaultValue: true,
+                "Allow season-specific torch warmth and its durability-drain adjustment. Disable to remove only Seasons' torch overrides, preserving configured values and unrelated changes. Seasonal weather and other heat sources are unaffected.");
+            enableTorchWarmth.SettingChanged += (sender, args) => { seasonState?.UpdateTorchesFireWarmth(); LoadingTips.UpdateLoadingTips(); };
+
+            controlNightLength.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
+            controlFuelConsumption.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
 
             controlEnvironments.SettingChanged += (sender, args) => SeasonState.UpdateEnvironmentControlState();
             controlRandomEvents.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
@@ -499,16 +549,19 @@ namespace Seasons
             seasonalStatsOutdoorsOnly = serverConfig("Season", "Seasonal stats works only outdoors", defaultValue: true, "Make seasonal stats works only outdoors");
             freezingSwimmingInWinter = serverConfig("Season", "Get freezing when swimming in cold water in winter", defaultValue: true, "Swimming in cold water during winter will get you freezing debuff");
             changeSeasonOnlyAfterSleep = serverConfig("Season", "Change season only after sleep", defaultValue: false, "Season can be changed regular way only after sleep");
-            cropsDiesAfterSetDayInWinter = serverConfig("Season", "Crops will die after set day in winter", defaultValue: 3, "Crops and pickables will perish after set day in winter");
-            fireHeatProtectsFromPerish = serverConfig("Season", "Crops will survive if protected by fire", defaultValue: true, "Crops and pickables will not perish in winter if there are fire source nearby");
-            chanceToProduceACropInWinter = serverConfig("Season", "Crops will have a chance to survive winter", defaultValue: 0.33f, new ConfigDescription("Crops and pickables will have given chance to produce a harvest instead of complete perish.",
+            pickablesPerishInWinter = serverConfig("Season", "Pickables can perish in winter", defaultValue: true,
+                "Allow winter freezing and perishing of mature crops and other growth-controlled harvestable plants (Pickable). Disable to preserve their available harvests. Does not change seasonal growth or respawn rates, growing Plant health, or winter loss of cultivated ground. Does not restore harvests already lost.");
+            cropsDiesAfterSetDayInWinter = serverConfig("Season", "Crops will die after set day in winter", defaultValue: 3,
+                "First day within winter when vulnerable mature Pickables can begin freezing, if Pickables can perish in winter is enabled. This is not the crop's age. A value greater than the winter length prevents this perishing path; zero does not disable it. Does not affect growing Plants.");
+            fireHeatProtectsFromPerish = serverConfig("Season", "Crops will survive if protected by fire", defaultValue: true, "Nearby active heat sources protect mature Pickables from winter perishing and growing Plants from Seasons' TooCold status. Does not resume winter growth or replace cultivation and other native growth requirements.");
+            chanceToProduceACropInWinter = serverConfig("Season", "Crops will have a chance to survive winter", defaultValue: 0.33f, new ConfigDescription("Chance for a mature Pickable to retain its harvest when its winter freezing timer expires. Only used when Pickables can perish in winter is enabled. Does not protect growing Plants or change their TooCold status; use Crops will survive in winter for frost resistance.",
                                                                                                                                new AcceptableValueRange<float>(0f, 1f),
                                                                                                                                new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            secondsToFreezeForCropInWinter = serverConfig("Season", "Crops will be freezing for seconds until perish", defaultValue: 120f, "After crop is hit by winter it will not perish immediately but will start to gradually freeze to death.");
-            cultivatedGroundTurnsIntoDirtInWinter = serverConfig("Season", "Cultivated ground turns into regular Dirt in Winter", defaultValue: true, "With the onset of winter, any ground cultivated by player turns into ordinary dirt and has to be recultivated. It happens once per year.");
+            secondsToFreezeForCropInWinter = serverConfig("Season", "Crops will be freezing for seconds until perish", defaultValue: 120f, "Freezing duration in seconds for vulnerable mature Pickables before the winter survival roll, if Pickables can perish in winter is enabled. Zero or negative values remove the delay, not perishing. Does not affect growing Plants or their TooCold status.");
+            cultivatedGroundTurnsIntoDirtInWinter = serverConfig("Season", "Cultivated ground turns into regular Dirt in Winter", defaultValue: true, "Winter removes cultivation from eligible terrain once per year. This is independent of Pickable perishing and frost resistance: growing Plants that require cultivated soil can become NotCultivated. Disabling prevents future removal but does not restore already changed soil.");
 
             cropsToSurviveInWinter = serverConfig("Season", "Crops will survive in winter", defaultValue: "Pickable_Carrot,Pickable_Barley,Pickable_Barley_Wild,Pickable_Flax,Pickable_Flax_Wild,Pickable_Thistle,Pickable_Mushroom_Magecap",
-                                                                                                GetDescriptionSeparatedStrings("Crops and pickables from the list will not perish after set day in winter"));
+                                                                                                GetDescriptionSeparatedStrings("Frost-resistant prefab names. Listed Pickables do not perish in winter; growing Plant prefabs that produce a listed grown prefab are also protected from Seasons' TooCold status. This list does not resume winter growth or replace cultivation and other native growth requirements."));
             cropsToControlGrowth = serverConfig("Season", "Crops to control growth", defaultValue: "Pickable_Barley,Pickable_Barley_Wild,Pickable_Dandelion,Pickable_Flax,Pickable_Flax_Wild,Pickable_SeedCarrot,Pickable_SeedOnion,Pickable_SeedTurnip,Pickable_Thistle,Pickable_Turnip",
                                                                                             GetDescriptionSeparatedStrings("All consumable crops will be added automatically. Set only unconsumable crops here." +
                                                                                             "Crops and pickables from the list will be controlled by growth multiplier in addition to consumable crops"));
@@ -532,6 +585,7 @@ namespace Seasons
             mountainInWinterRequires2WarmPieces = serverConfig("Season", "Mountains in Winter require 2 warm armor pieces", defaultValue: true, "If enabled - you have to wear 2 armor pieces with frost resistance in Winter or get frost resistance mead.");
 
 
+            pickablesPerishInWinter.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
             cropsDiesAfterSetDayInWinter.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
             seasonalStatsOutdoorsOnly.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
             freezingSwimmingInWinter.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
@@ -752,6 +806,8 @@ namespace Seasons
             summerHeatColdArmorHeating = serverConfig("Season - Summer heat - Armor heat", "Cold armor heating", defaultValue: 0.25f, new ConfigDescription("Extra heat gain from chest and leg armor with frost resistance. At 25%, each warm item makes you heat up 25% faster.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
             summerHeatColdArmorCoolingPenalty = serverConfig("Season - Summer heat - Armor heat", "Cold armor cooling penalty", defaultValue: 0.1f, new ConfigDescription("How much frost-resistant chest and leg armor slows cooling. At 10%, each warm item makes cooling 10% weaker.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
 
+            summerHeatDamageEnabled = serverConfig("Season - Summer heat - Damage in red zone", "Enable heat damage", defaultValue: true,
+                "Allow Summer Heat to deal periodic health damage. Disable to keep heat accumulation, zones, visual feedback and other heat modifiers without this damage. Damage tuning values are preserved.");
             summerHeatDamageTickInterval = serverConfig("Season - Summer heat - Damage in red zone", "Damage tick interval", defaultValue: 2f, "Seconds between damage ticks while heat is forcing your health down.");
             summerHeatDamageHealthPerTickMinHealthPercentage = serverConfig("Season - Summer heat - Damage in red zone", "Soft HP cap percentage", defaultValue: 0.8f, new ConfigDescription("Lowest health percentage that Summer Heat can push you toward. You will take constant damage when your HP is higher than this percent. This damage only lowers current HP toward the set mark; it does not reduce your real maximum HP. Values below 1% are treated as 1%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
             summerHeatDamageHealthPerTick = serverConfig("Season - Summer heat - Damage in red zone", "Damage per tick", defaultValue: 2f, "How much damage is dealt each tick while Summer Heat is pushing your HP down toward the soft cap.");
@@ -1247,7 +1303,7 @@ namespace Seasons
             ZoneSystem zones = ZoneSystem.instance;
             yield return waitFor5Seconds;
 
-            if (!scene || ZNetScene.instance != scene || !zones || ZoneSystem.instance != zones || !prefab)
+            if (!enableTreeRegrowth.Value || !scene || ZNetScene.instance != scene || !zones || ZoneSystem.instance != zones || !prefab)
                 yield break;
 
             if (zones.IsBlocked(position))

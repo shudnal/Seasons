@@ -201,6 +201,9 @@ namespace Seasons
             [HarmonyPriority(Priority.First)]
             public static bool Prefix(float fraction, ref float __result)
             {
+                if (!controlNightLength.Value)
+                    return true;
+
                 float dayStart = seasonState.DayStartFraction();
 
                 if (dayStart == EnvMan.c_MorningL)
@@ -231,6 +234,9 @@ namespace Seasons
             [HarmonyPriority(Priority.First)]
             public static bool Prefix(EnvMan __instance, int day, ref double __result)
             {
+                if (!controlNightLength.Value)
+                    return true;
+
                 __result = (day * __instance.m_dayLengthSec) + (double)(__instance.m_dayLengthSec * seasonState.DayStartFraction(seasonState.GetSeason(day), seasonState.GetDayInSeason(day)));
                 return false;
             }
@@ -242,6 +248,9 @@ namespace Seasons
             [HarmonyPriority(Priority.First)]
             public static bool Prefix(EnvMan __instance, ref bool ___m_skipTime, ref double ___m_skipToTime, ref double ___m_timeSkipSpeed)
             {
+                if (!controlNightLength.Value)
+                    return true;
+
                 float dayStart = seasonState.DayStartFraction();
                 if (dayStart == EnvMan.c_MorningL)
                     return true;
@@ -486,7 +495,8 @@ namespace Seasons
         {
             private static void Postfix(ref Vector3 __result)
             {
-                __result *= seasonState.GetWindIntensityMultiplier();
+                if (controlWindIntensity.Value)
+                    __result *= seasonState.GetWindIntensityMultiplier();
             }
         }
 
@@ -495,7 +505,8 @@ namespace Seasons
         {
             private static void Postfix(ref float __result)
             {
-                __result *= seasonState.GetWindIntensityMultiplier();
+                if (controlWindIntensity.Value)
+                    __result *= seasonState.GetWindIntensityMultiplier();
             }
         }
     }
