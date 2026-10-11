@@ -1,4 +1,4 @@
-using BepInEx;
+﻿using BepInEx;
 using BepInEx.Bootstrap;
 using BepInEx.Configuration;
 using HarmonyLib;
@@ -726,7 +726,7 @@ namespace Seasons
             frozenOceanSlidingSpeedMultiplier = serverConfig(slipperinessSection, "Movement speed multiplier", defaultValue: 1f,
                 new ConfigDescription("Scales requested walking, jogging and running speed on seasonal ice. Limited to 100% of the speed already calculated by the game and other mods. Does not erase existing momentum or external impulses.", new AcceptableValueRange<float>(0.1f, 1f)));
             frozenOceanSlidingAcceleration = serverConfig(slipperinessSection, "Movement acceleration", defaultValue: 12f,
-                new ConfigDescription("Basic forward acceleration in meters per second squared. Does not add an impulse when entering a slide.", new AcceptableValueRange<float>(0.1f, 50f)));
+                new ConfigDescription("Basic forward acceleration in meters per second squared. The earned launch uses Long glide speed bonus instead.", new AcceptableValueRange<float>(0.1f, 50f)));
             frozenOceanSlidingSteering = serverConfig(slipperinessSection, "Basic steering acceleration", defaultValue: 5f,
                 new ConfigDescription("Lateral grip in meters per second squared, divided by Basic slipperiness factor. Lower values preserve sideways momentum longer.", new AcceptableValueRange<float>(0.1f, 50f)));
             frozenOceanSlidingBraking = serverConfig(slipperinessSection, "Basic braking deceleration", defaultValue: 4f,

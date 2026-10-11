@@ -1,22 +1,21 @@
 # Seasonal ice sliding
 
-Base: Seasons 1.10.6, master `4054af6e8823d787921d673607e4942554872b66`.
+The balanced travel cycle builds on `feature/winter-ocean-sliding` at
+`00da7d9b570e60b5eacd22d9768b404775cd07d8` (Seasons 1.10.6).
 Game source reviewed: `shudnal/assemblies_combined` at
-`5a2365409cff644d6adaccd2b308178cc4179b19` (1.0.16).
+`6bfb1776f3f59869fcf67afae3b12885e14ad6a1`.
 
 ## Surface and actor policy
 
 Only the existing frozen-water `IceSurface` belongs to this movement domain.
 There is no biome, water-depth, or underwater terrain query in its routing.
 Native slippery surfaces and floating floes are separate domains. No launch
-velocity, run-up readiness, or native `m_slipperySpeed` is transferred between them.
+velocity, readiness, or native `m_slipperySpeed` is transferred between them.
 Leaving seasonal ice releases the seasonal state; it does not zero the Rigidbody.
-
-With the master toggle enabled:
 
 | Actor / equipment | Seasonal frozen water |
 | --- | --- |
-| Player, ordinary footwear | Basic Seasons inertia, steady run-up, optional long glide |
+| Player, ordinary footwear | Basic Seasons inertia, steady run preparation, optional timed glide |
 | Player, ice skates (`m_skating`) | Native slipping and skating, with native coefficients |
 | Ice shoes / snowshoes (`m_iceShoes`) | No additional seasonal slipping; takes precedence over skates |
 | Non-player character | Native slipping; no Seasons movement state or custom slide triggers |
@@ -26,190 +25,236 @@ seasonal ice, including creatures and skates. It does not disable slipping on th
 game's own surfaces. A zero basic slipperiness factor also disables the seasonal
 extension. The old shallow-water switch has been removed entirely.
 
-## Player controls
+## Running and preparing a glide
 
-Run steadily on seasonal ice, then release movement to enter a long glide once the
-run-up requirement is met. Releasing only Run while continuing to hold movement
-stays in basic inertia. Run-up counts actual horizontal speed and alignment with
-intended movement, not button-hold time. Airborne time, blocked movement, attacks,
-sharp direction changes and running into a wall do not charge a glide.
+Running does not receive a physical speed bonus from Seasons. The requested target
+is at most the fully modified speed already calculated by `Character.UpdateWalking`,
+including the game, equipment, skills, status effects and earlier movement patches.
+`CheckRun` and speed modifiers are not called again. Existing external momentum can
+remain above this target and settle under basic braking; the cap is not a global
+Rigidbody speed limit and does not erase collision, combat or jump impulses.
 
-Speed increases gradually while running, relative to the fully modified native
-running speed. Releasing input does not multiply velocity or inject an impulse.
-Repeated Run presses cannot restore a lost launch speed.
+A first full preparation has two consecutive stages:
+
+1. Run on seasonal ice in approximately the same direction for **3 seconds**.
+2. Continue for **2 seconds** while locomotion cadence and the FOV cue ramp up.
+
+The second stage must finish to earn a launch. At full charge the FOV cue reaches
+**+10 degrees** by default; release movement to glide. An earlier release keeps
+basic inertia and gives no boost. Readiness remains available while qualifying
+running continues. Actual speed and heading are checked again on release.
+
+Run-up counts actual horizontal speed, not held-key time. The input and actual
+velocity must stay aligned with each other and the preparation heading. Larger
+turns restart preparation. Running against an obstacle, airborne time, blocking
+actions and input captured by UI do not charge a glide.
+
+Releasing Shift slightly before movement retains a completed charge for **0.25
+seconds**, making the release gesture tolerant of keyboard event ordering. This
+window neither accumulates charge nor preserves it through an action, obstacle,
+UI capture, or loss of ice contact. Shift alone never cancels an active glide.
+
+The visual cadence bonus defaults to **17.5%**: the former 25% run-up bonus reduced
+by 30%. This reduces the *bonus*, not the complete base animation speed. The old
+additional 10% movement multiplier no longer contributes to movement or cadence.
+Only synchronized forward/sideways locomotion parameters are scaled. There is no
+`Animator.speed` override and no animation-speed change for attacks, dodges or jumps.
+The exact visual result depends on the player's existing Animator blend tree.
+
+## Finite glide speed profile
+
+A completed charge grants one launch toward **110%** of the captured running
+speed. It is applied through the existing walking force path, not by a second
+`AddForce` or a direct Rigidbody assignment. Launch never multiplies the current
+glide speed, and external speed already above the launch target is not amplified.
+The charge is consumed even if another movement mod suppresses that force.
+
+For a straight, unobstructed glide without additional contact losses:
+
+| Time after release | Speed relative to captured running speed | Additional FOV |
+| --- | ---: | ---: |
+| 0 seconds | 110% | +10 degrees |
+| 15 seconds | 105% | +5 degrees |
+| 30 seconds | 100% | 0 degrees |
+| 35 seconds | 95% | 0 degrees |
+| 40 seconds | 90%; switch to basic inertia | 0 degrees |
+
+The first interval removes the configured speed bonus linearly. The second
+interval removes the remaining configured fraction linearly. The animated glide
+ends at its duration limit even if an external impulse kept the body faster.
+Reaching the configured end-speed fraction earlier also ends it.
+
+Every step subtracts the scheduled loss from **actual horizontal Rigidbody
+velocity**. The nominal profile is a loss schedule, not a target servo. Turns,
+contact friction, obstacles and other mods may reduce the speed further; Seasons
+does not restore those losses or pull the player back to an old launch vector.
+Vertical speed is never used to increase horizontal speed.
 
 While gliding, look yaw steers the trajectory at a bounded angular rate. The entry
-heading offset is retained, so entering a glide does not snap travel toward the
-camera. Controller look uses the same existing look direction. Turning loses
-speed and cannot generate acceleration. The character faces actual travel after
-the native walking rotation without changing its look yaw.
+heading offset is retained, so entry does not snap travel toward the camera.
+Controller look uses the same existing look direction. Turning loses speed and
+cannot generate acceleration. The character faces actual travel after the native
+walking rotation without changing its look yaw.
+
+## Renewing the boost
+
+During the first **30 seconds**, while actual speed is still above **100%**,
+returning directly to aligned running skips the initial 3-second stage. The full
+**2-second charge** is still required before the next launch.
+
+Movement immediately cancels the glide animation and returns to basic handling.
+Only a successful native running calculation and aligned movement consume the
+one-use fast-recharge permission. Walking, braking, attacking, jumping, a large
+turn or a late restart does not retain that permission. After the bonus phase,
+preparation starts from the full 3 + 2 seconds again.
+
+Every new launch has a fresh finite profile and a bounded 110% target; bonuses do
+not stack. Tapping movement or Shift without completing preparation cannot inject
+another boost. Repeated travel therefore requires actual running and its normal
+stamina costs, rather than indefinite passive gliding.
+
+## Other controls and interruptions
 
 Movement keys / stick input, attack, block, jump, dodge, crouch, auto-run,
 interaction, item use, equipment changes and other movement or animation actions
 cancel the long glide and its animation. Opposing keyboard keys are not a release
 gesture. Actions are not consumed or suppressed: their native logic still runs.
-Run / Shift / JoyRun is only a modifier. Pressing, holding or releasing it alone
-does not cancel a glide, change its drag or grant acceleration. Run with movement
-returns to normal running because movement input cancels the glide, not because
-Run was pressed. No raw Run-button edge tracker is needed.
+Run / Shift / JoyRun is only a modifier; pressing, holding or releasing it alone
+does not cancel a glide, change drag or grant acceleration.
 
 Opening a map, inventory, console or other UI does not by itself cancel an active
-glide. Gameplay actions still cancel it when they actually reach the movement or
-item-action hooks. Input focus loss prevents charging or starting a new glide:
-the controller's suppressed movement is not a deliberate release gesture. Raw
-movement keys are not read as gameplay commands while input is captured by UI.
-Pressing Use without invoking an interaction no longer cancels a glide by itself.
+glide. Input capture does prevent charging or starting a new glide: the controller's
+suppressed input is not a deliberate release. Raw movement keys are not interpreted
+as gameplay while UI has input focus. Use without an interaction does not cancel.
 
-Cancellation changes the mode to basic inertia without zeroing velocity or
-restoring a remembered vector. Native root motion, jump impulses and pushback
-still have their normal downstream effects. A new long glide needs a new run-up.
-A jump cancels the glide and its animation without clearing Rigidbody velocity.
-The game's jump impulse and status modifiers still apply. Once airborne, Seasons
-does not replace the native movement target: no input keeps native inertial flight,
-movement input uses native air control, and look alone no longer steers the glide.
-Native root motion, pushback and other mods receive the unmodified airborne target.
-Vertical speed is never converted into horizontal speed. Landing on seasonal ice
-resumes basic inertia at the actual remaining velocity and requires a new run-up
-for another long glide. Landing elsewhere releases the seasonal state without
-transferring it into a different slip motor.
+Cancellation does not zero Rigidbody velocity. Native root motion, jump impulses
+and pushback still have their normal downstream effects. A jump ends the glide;
+airborne movement targets are not replaced by Seasons. No input keeps native
+inertial flight, movement uses native air control, and look alone no longer steers.
+Landing on seasonal ice resumes basic inertia at actual remaining velocity, with
+no retained charge. Other surfaces keep their own movement domain.
 
-## Motion and animation integration
+## FOV integration and compatibility
 
-The integration stays inside `Character.UpdateWalking`:
+The FOV cue grows with the 2-second charge. During the glide it follows the
+**actual positive speed bonus**, capped by the configured launch bonus. One
+percentage point gives one additional degree by default. Speeds below 100% never
+narrow the base view. Remaining physical bonus can remain visible while recharging.
+The cue and its scale are local visual preferences, independent of server physics.
 
-1. Resolve seasonal native-slip eligibility after the native `CheckRun` result has
-   been assigned to `m_running`. Never call `CheckRun` a second time.
-2. Adjust the final requested walking speed after native speed modifiers and before
-   it is multiplied by movement direction.
-3. Set only the local physics velocity for the owning local ordinary-shoe player,
-   immediately before the native root-motion call. Use actual Rigidbody X/Z velocity
-   every step, not a launch cache. Keep the original m_currentVel blend unchanged
-   so passive coasting does not masquerade as commanded walking in the Animator.
-   Require current seasonal ground contact; do not override airborne motion.
-4. Call the real patched root-motion method and retain native pushback, ground
-   forces, air control, velocity-change force application and velocity hooks.
-   Other surfaces retain the complete native slope and movement path.
-5. Resolve the final slipping animation value at the existing synchronized
-   `ZSyncAnimation.SetBool(s_slipping, ...)` call.
+The camera transpiler adds the offset to the existing main- and sky-camera writes
+in `GameCamera.UpdateCamera`. It does not modify `m_fov`, `m_fovBase`, `m_fovTarget`,
+player preferences or a cached base FOV. Offsets cannot accumulate across frames.
+Cancellation, death, footwear changes, disabling, thaw, logout and camera replacement
+leave no persistent FOV override: the next normal camera write uses its own base.
+Free-fly is not affected. Other camera effects using the native FOV fields remain
+upstream of the additional offset.
 
-Custom gliding never enables `Character.m_slipping`. Animation ownership is released
-on cancellation, invalid actor state, footwear changes, disable, thaw and world
-reset. There is no per-frame false/true correction pair; exceptional exits can
-clear an owned animation once. Animator behavior is assumed to be visual for this
-iteration; no global root-motion override or animation-controller replacement is
-included. Actual clip behavior remains a gameplay verification item.
+Both camera writes must have the recognized non-accumulating FOV source. If another
+transpiler has replaced the path or it is ambiguous, only the visual cue is omitted
+with a warning. Cadence likewise requires both known locomotion writes. These
+optional integrations never reconstruct or overwrite an unknown animation/camera
+path. A later mod replacing the camera output can override the cue; custom projection
+matrices or VR camera providers may also control projection independently.
 
-Basic inertia separates forward acceleration, lateral grip, opposing-input braking
-and idle coast deceleration. Its combined velocity cannot exceed the larger of
-actual speed and requested speed merely by combining lateral and forward control.
-External impulses are not clamped to a fixed running-speed ceiling. Long gliding
-uses linear deceleration and additional loss proportional to actual turning angle.
+## Motion integration and small corrections
+
+The movement integration stays inside `Character.UpdateWalking`:
+
+1. Resolve seasonal slip eligibility after the native `CheckRun` result is assigned
+   to `m_running`.
+2. Capture the fully modified requested speed before multiplication by movement
+   direction. Update preparation without increasing the physical running target.
+3. Modify only the local physics velocity of the owning ordinary-shoe player with
+   current seasonal ground contact, immediately before native root motion. Keep
+   `m_currentVel` independent so passive coasting does not animate ordinary walking.
+4. Retain the real patched root-motion call, pushback, ground forces, air control,
+   velocity-change force application and downstream velocity hooks.
+5. Resolve `s_slipping` in the existing synchronized bool write. Ordinary players do
+   not enable `Character.m_slipping` merely to animate a Seasons glide.
+
+The small-correction integration is unchanged. The native 0.01 velocity-delta
+threshold is relaxed only for a finite nonzero grounded Seasons correction in the
+current invocation. Altered thresholds and ambiguous force guards are respected.
+The force vector, mode, clamp and call are preserved. There is no second force
+application or global Rigidbody patch.
 
 There is one local player state, no creature dictionary, new component, coroutine,
-raycast, terrain sampling, RPC, or network persistence for the movement state.
-The game's existing animation and player movement replication remain in use.
-The former ground-contact, SyncVelocity, SetRun, dodge-velocity cache and late
-ApplyGroundForce blending hooks are removed. Integration mismatches log a warning
-and disable the seasonal extension rather than combining partial custom motors.
+raycast, terrain sampling, RPC or movement-state persistence. The existing player
+movement and animation replication remain in use. Native slippery surfaces,
+creatures and footwear modes retain their previous behavior.
 
-## Small velocity corrections and other movement mods
+## Live configuration
 
-The native walking force guard ignores a velocity delta of 0.01 m/s or less.
-At a 0.02 s step the default glide deceleration requests only 0.005 m/s, so it
-must not be lost on every straight, grounded glide step.
+All entries are declared in the common `Seasons.ConfigInit` under
+**Winter ocean - Slipperiness**. Gameplay values are server-controlled. FOV cue
+preferences are client-side. Existing basic-inertia parameters remain available.
 
-The walking transpiler runs at Priority.Last and recognizes the magnitude guard
-immediately around the same local velocity delta passed to this Character body's
-AddForce(Vector3, ForceMode.VelocityChange). It keeps the original constant, branch,
-force vector, force mode and call. Only the comparison threshold becomes zero when
-all of these conditions hold:
-
-- The incoming threshold is still exactly the native 0.01 value. Another mod's
-  changed value is returned unchanged, whether it is smaller, larger or zero.
-- A fresh local flag confirms that the Seasons grounded solver contributed a
-  finite, nonzero horizontal correction in this UpdateWalking invocation.
-- The owning local ordinary-shoe player is still eligible and on seasonal ice.
-
-The marker is initialized per invocation and stored after our existing inertia /
-root-motion wrapper returns. It is not a cached per-player or per-frame permission.
-Airborne movement, other actors, skates, shoes, native surfaces and inactive or
-skipped seasonal processing keep the existing threshold. Strict greater-than
-comparison still excludes a zero delta and unordered (NaN) comparisons.
-
-There is no second AddForce, Rigidbody setter, global force patch or replacement
-of another mod's result. Native force clamping, root motion, pushback, ground forces
-and other pre-existing conditions remain. If the local force-guard shape is absent
-or ambiguous, only this precision adjustment is omitted with a patch-time warning;
-the existing movement path is left intact. Priorities cannot guarantee compatibility
-with every later transpiler or a mod replacing the whole movement method.
-
-## Live tuning
-
-All entries are declared in the common `Seasons.ConfigInit`, in the single new
-section **Winter ocean - Slipperiness**, using server-controlled configuration.
-No JSON settings are added. Values take effect during play. The master toggle
-also immediately discards the local state and releases its animation.
-
-| Setting | Initial value | Units / purpose |
+| Setting | Default | Purpose |
 | --- | ---: | --- |
-| Enabled | true | Entire seasonal slipping extension |
-| Basic slipperiness factor | 1.25 | Divides basic braking, lateral grip and coasting loss |
-| Movement speed multiplier | 1.10 | Multiplies the fully modified native requested speed |
-| Movement acceleration | 12 | m/s squared |
-| Basic steering acceleration | 5 | m/s squared, before slipperiness factor |
-| Basic braking deceleration | 4 | m/s squared, before slipperiness factor |
-| Basic coasting deceleration | 1.5 | m/s squared, before slipperiness factor |
-| Basic coasting minimum speed | 1 | m/s; slower idle movement settles using braking |
-| Basic collider friction | 0.05 | Physical capsule contact friction |
-| Long glide enabled | true | Earned player glide, independent of basic inertia |
-| Run-up duration | 2 | Seconds at qualifying actual speed and alignment |
-| Run-up speed fraction | 0.85 | Fraction of modified running speed |
-| Run-up alignment angle | 25 | Degrees from intended movement |
-| Run-up speed bonus | 0.25 | Maximum additional speed fraction while running |
-| Run-up full bonus time | 3 | Seconds of qualifying run-up for the full bonus |
-| Long glide deceleration | 0.25 | m/s squared; not scaled by basic slipperiness |
-| Long glide minimum speed | 3 | m/s; returns to basic inertia below this speed |
+| Enabled | true | Entire seasonal sliding extension |
+| Basic slipperiness factor | 1.25 | Divides basic braking, lateral grip and idle loss |
+| Movement speed multiplier | 1.00 | Driven target only, range 0.1..1.0 |
+| Movement acceleration | 12 | Basic acceleration, m/s squared |
+| Basic steering acceleration | 5 | Lateral grip before slipperiness scaling |
+| Basic braking deceleration | 4 | Braking before slipperiness scaling |
+| Basic coasting deceleration | 1.5 | Idle loss before slipperiness scaling |
+| Basic coasting minimum speed | 1 | Below this speed use basic braking |
+| Basic collider friction | 0.05 | Additional physical contact friction |
+| Long glide enabled | true | Enable preparation and animated travel |
+| Steady run duration | 3 | Initial stable running, seconds |
+| Run-up speed fraction | 0.85 | Minimum actual / requested running speed |
+| Run-up alignment angle | 25 | Maximum deviation, degrees |
+| Glide charge duration | 2 | Visual preparation; also required for renewal |
+| Glide release grace | 0.25 | Run/movement release ordering tolerance, seconds |
+| Long glide speed bonus | 0.10 | Earned launch bonus; not running acceleration |
+| Long glide bonus duration | 30 | Time from launch to 100%, seconds |
+| Long glide coast duration | 10 | Additional time to end-speed fraction, seconds |
+| Long glide end speed fraction | 0.90 | Early exit threshold and profile endpoint |
+| Run-up animation speed bonus | 0.175 | Visual locomotion bonus at full charge |
+| Glide FOV cue | true | Local visual toggle |
+| Glide FOV degrees per percent | 1 | Local additional degrees per bonus point |
 | Long glide turn speed | 25 | Degrees per second |
 | Long glide turning speed loss | 0.4 | m/s lost per radian turned |
-| Long glide collider friction | 0 | Physical capsule contact friction |
-| Movement input dead zone | 0.10 | Analog release threshold; keyboard keys remain explicit |
+| Long glide collider friction | 0 | Contact friction during animated gliding |
+| Movement input dead zone | 0.10 | Analog release threshold |
 
-These values are starting points for runtime tuning, not measured balance.
-Old entries under `Season - Winter ocean` are no longer bound. The basic factor
-now has its own key in the new section; previous values are not silently mapped to
-the new force-based model. Unrelated configuration and localization are unchanged.
+The old `Run-up duration`, `Run-up speed bonus`, `Run-up full bonus time`,
+`Long glide deceleration` and `Long glide minimum speed` keys are no longer bound:
+their values describe the previous model and are not silently reused for the new
+one. Existing `Movement speed multiplier` values above one are clamped to one.
+No other settings or localization files are rewritten.
 
-The read-only console command `seasons_sliding` reports local mode, grounded state,
-actual horizontal speed, run-up time, animation ownership, transition count and
-last reason. It performs no background sampling and makes no gameplay changes.
+Parameters are read during play. The running-speed reference is captured from real
+running and retained for that glide; changing equipment cancels it. Changing a
+profile duration or loss parameter affects subsequent steps without restoring lost
+speed. Disabling the master or long-glide toggle immediately releases local state.
+
+The read-only `seasons_sliding` command reports mode, ground contact, actual speed,
+captured running speed, their ratio, steady-run and charge progress, readiness,
+elapsed glide time, animation ownership, transition reason, FOV offset and visual
+hook availability. It does not enable background sampling or change gameplay.
 
 ## Manual checks
 
-- Short run/release, walking turns and braking; compare basic duration and response.
-- Glide straight with a low deceleration and zero glide collider friction. Verify
-  a gradual speed decrease without needing to turn. Compare with other movement
-  mods and inspect any force-guard warning; their own thresholds are not overridden.
-- Earn a run-up, release movement, steer with look only, then cancel separately with
-  each movement key, jump, dodge, attack, block, interaction and item use. Confirm
-  immediate animation cancellation without a synthetic stop or later speed rebound.
-- Hold opposing movement keys and use controller drift near the configured dead
-  zone. Repeatedly press, hold and release Run during a glide: it must continue
-  without a free impulse or a switch to basic deceleration. Repeat with toggle-run.
-- Jump during a steered glide. Check inertial flight without movement input, native
-  air control with movement input, look without air steering, and basic inertia on
-  landing. No former glide speed or run-up readiness should return.
-- Open and close the map, inventory or console during a glide; browsing alone must
-  not cancel it. Opening UI during run-up must not start a glide automatically.
-  Press Use without a target, then interact with a target: only the action cancels.
-- Hit an obstacle, jump, fall vertically onto ice, equip skates or ice shoes, cross
-  shallow/deep ocean areas, walk onto land and native slippery surfaces, and thaw.
-- Toggle the master and long-glide options during movement, then leave and re-enter
-  the world. There should be no retained owned animation or old readiness.
-- Spawn ordinary creatures and observe the native response on the frozen surface.
-  Creature behavior has not been evaluated in-game by the assistant.
-- With another client, inspect the same trajectory and synchronized animation.
+- Run continuously on ice: body speed does not accelerate with charge; cadence and
+  FOV do. Release after a full charge, and separately just before it completes.
+- Glide straight and inspect speed/FOV at 0, 15, 30 and 40 seconds. Repeat with a
+  different running skill/equipment speed and at different physics/frame rates.
+- Release Shift just before W within the grace window; repeat outside that window.
+  Press/hold/release Shift during a glide: no cancellation or free acceleration.
+- Return to aligned Shift + movement at 15 seconds: only 2 seconds of preparation.
+  Repeat after 30 seconds, below 100% following a turn, and without running.
+- Tap movement and release immediately: no renewed boost. Hit an obstacle and
+  confirm neither the nominal profile nor FOV reconstructs the lost speed.
+- Turn, attack, jump, dodge, interact and change footwear. Check air control and
+  basic inertia after landing, with no automatic return of charge.
+- Open UI during a glide versus during preparation. Test master/long-glide/FOV
+  toggles, thaw, death, logout and free-fly for leftover visual state.
+- Verify another client sees the cadence and glide animation. Compare with camera
+  and movement mods and inspect any optional-integration warnings.
 
-Validation is source/API and diff inspection only. No mod build, mod tests, or
-Valheim runtime execution was performed. The release version remains 1.10.6;
-Marketplace compatibility, snow simulation, hoe clearing and floe physics are not
-part of this change.
+Validation is static source/API and diff inspection only. No mod build, mod tests,
+or Valheim runtime execution is performed. Coefficients remain tunable starting
+values. Release version, mechanic toggles, EWD/Marketplace compatibility, crops,
+snow simulation, hoe clearing and floe physics are outside this change.
