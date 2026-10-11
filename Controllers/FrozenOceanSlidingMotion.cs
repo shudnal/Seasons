@@ -98,6 +98,11 @@ namespace Seasons
 
         private static void InterruptForMovement(PlayerSlide state)
         {
+            if (!CanOwnSlide(state.Player))
+            {
+                ResetWorldState();
+                return;
+            }
             Vector3 actual = Horizontal(state.Player.m_body.linearVelocity);
             bool canRecharge = state.OnIce && state.Player.IsOnIce() && frozenOceanGlidingEnabled.Value &&
                 state.Mode == SlideMode.Glide && !state.LaunchPending && state.GlideTime < BonusDuration &&

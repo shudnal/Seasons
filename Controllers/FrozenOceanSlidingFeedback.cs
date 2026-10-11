@@ -49,7 +49,8 @@ namespace Seasons
             if (!frozenOceanGlidingEnabled.Value || !Finite(value) || !TrySlide(character, out PlayerSlide state) ||
                 !state.OnIce || !character.IsOnIce() || !character.m_running || HasBlockingAction(state.Player))
                 return value;
-            return value * (1f + ChargeFeedback(state) * Parameter(frozenOceanGlidingAnimationBonus.Value, 0.175f, 0f, 1f));
+            float result = value * (1f + ChargeFeedback(state) * Parameter(frozenOceanGlidingAnimationBonus.Value, 0.175f, 0f, 1f));
+            return Finite(result) ? result : value;
         }
 
         [HarmonyPatch(typeof(Character), nameof(Character.UpdateWalking))]
