@@ -387,8 +387,8 @@ namespace Seasons
             s_waterPlaneState?.RestoreProperties(s_waterPlane);
             s_waterPlane = null;
             s_waterPlaneState = null;
-            // The inactive template belongs to the loaded zone prefab, not this world.
-            // Retain its reference across controller teardown and world changes.
+            // The independent, persistent template is not part of any zone or world.
+            // Only spawned collider copies are released with their owning zones.
             if (s_iceSurface != null && s_iceSurface.activeSelf)
                 s_iceSurface.SetActive(false);
             s_freezeStatus = 0f;
@@ -420,7 +420,18 @@ namespace Seasons
 
             Transform water = instance.m_zonePrefab.transform.Find("Water");
             if (water != null)
-                AddIceCollider(water);
+                PrepareIceColliderTemplate(water);
+
+            // Awake may have run before this controller was initialized. Use the existing
+            // active-water list once; later spawns register through WaterVolume.Awake.
+            foreach (WaterVolume waterVolume in WaterVolume.Instances)
+            {
+                if (waterVolume == null)
+                    continue;
+                RegisterWaterVolume(waterVolume);
+                if (waterStates.TryGetValue(waterVolume, out WaterState state))
+                    UpdateWater(waterVolume, state);
+            }
         }
 
         public static void UpdateTerrainColor(Heightmap heightmap)
@@ -573,7 +584,7 @@ namespace Seasons
             ClutterSystem.instance?.ResetGrass(position, radius + 1);
         }
 
-        public static void AddIceCollider(Transform water)
+        private static void PrepareIceColliderTemplate(Transform water)
         {
             if (water == null)
                 return;
@@ -585,33 +596,99 @@ namespace Seasons
                 return;
             }
 
-            // Recalculate world-specific height even when the prefab template is retained.
+            // Read the source prefab without modifying its hierarchy or components.
+            // The template survives world changes, but the surface height must be refreshed.
             s_colliderHeight = waterSurface.position.y + _colliderOffset;
 
-            // Resolve through the current prefab, which may differ after a world change.
-            // Reuse its existing child without reparenting or recreating it.
-            Transform iceSurfaceTransform = water.Find(_iceSurfaceName);
-            if (iceSurfaceTransform != null)
+            if (s_iceSurface == null)
             {
-                s_iceSurface = iceSurfaceTransform.gameObject;
-                if (s_iceSurface.activeSelf)
-                    s_iceSurface.SetActive(false);
+                s_iceSurface = new GameObject("Seasons_IceSurfaceTemplate");
+                s_iceSurface.SetActive(false);
+                DontDestroyOnLoad(s_iceSurface);
+                s_iceSurface.layer = 0;
+
+                MeshCollider iceCollider = s_iceSurface.AddComponent<MeshCollider>();
+                iceCollider.cookingOptions = MeshColliderCookingOptions.UseFastMidphase;
+                iceCollider.sharedMaterial = new PhysicsMaterial("Seasons Ice Surface")
+                {
+                    staticFriction = 0.1f,
+                    dynamicFriction = 0.1f,
+                    frictionCombine = PhysicsMaterialCombine.Minimum
+                };
+            }
+            else if (s_iceSurface.activeSelf)
+                s_iceSurface.SetActive(false);
+
+            s_iceSurface.transform.localScale = new Vector3(waterSurface.localScale.x, Math.Abs(_colliderOffset), waterSurface.localScale.z);
+            s_iceSurface.transform.localPosition = new Vector3(0, _colliderOffset, 0);
+            MeshCollider templateCollider = s_iceSurface.GetComponent<MeshCollider>();
+            if (templateCollider.sharedMesh != waterMesh.sharedMesh)
+                templateCollider.sharedMesh = waterMesh.sharedMesh;
+        }
+
+        public static void RegisterWaterVolume(WaterVolume waterVolume)
+        {
+            if (!UseTextureControllers() || !SeasonState.IsActive || Instance == null || waterVolume == null
+                || !waterVolume.gameObject.scene.IsValid() || CustomPrefabs.prefabInit || waterVolume.m_waterSurface == null)
+                return;
+
+            if (waterStates.TryGetValue(waterVolume, out WaterState existing))
+            {
+                CreateIceColliderInstance(waterVolume, existing);
                 return;
             }
 
-            s_iceSurface = new GameObject(_iceSurfaceName);
-            s_iceSurface.SetActive(false);
-            s_iceSurface.transform.SetParent(water);
-            s_iceSurface.layer = 0;
-            s_iceSurface.transform.localScale = new Vector3(waterSurface.transform.localScale.x, Math.Abs(_colliderOffset), waterSurface.transform.localScale.z);
-            s_iceSurface.transform.localPosition = new Vector3(0, _colliderOffset, 0);
+            if (!waterVolume.m_useGlobalWind)
+                return;
 
-            MeshCollider iceCollider = s_iceSurface.gameObject.AddComponent<MeshCollider>();
-            iceCollider.sharedMesh = waterMesh.sharedMesh;
-            iceCollider.material.staticFriction = 0.1f;
-            iceCollider.material.dynamicFriction = 0.1f;
-            iceCollider.material.frictionCombine = PhysicsMaterialCombine.Minimum;
-            iceCollider.cookingOptions = MeshColliderCookingOptions.UseFastMidphase;
+            WaterState state = new WaterState(waterVolume);
+            CreateIceColliderInstance(waterVolume, state);
+            waterStates.Add(waterVolume, state);
+            Instance.waterVolumesCheckFloes.Add(waterVolume);
+        }
+
+        private static void CreateIceColliderInstance(WaterVolume waterVolume, WaterState state)
+        {
+            if (state.m_iceSurface != null || s_iceSurface == null)
+                return;
+
+            // Match the zone-water hierarchy. Do not add an ocean-sized floor to unrelated
+            // water volumes (for example, a location's pool) or to a loaded prefab asset.
+            Transform water = waterVolume.transform.parent;
+            Transform waterSurface = water == null ? null : water.Find("WaterSurface");
+            if (waterSurface == null || waterSurface != waterVolume.m_waterSurface.transform
+                || !waterSurface.TryGetComponent(out MeshFilter waterMesh) || waterMesh.sharedMesh == null)
+                return;
+
+            Transform existing = water.Find(_iceSurfaceName);
+            if (existing != null)
+            {
+                // Reuse a copy already present in this spawned hierarchy, without duplicates.
+                if (existing.TryGetComponent(out MeshCollider _))
+                    state.m_iceSurface = existing.gameObject;
+                return;
+            }
+
+            // An inactive template stays inactive during Instantiate. Only SetupIceCollider
+            // may enable the copy after it has been attached to this live water instance.
+            GameObject iceSurface = Instantiate(s_iceSurface, water, false);
+            iceSurface.name = _iceSurfaceName;
+            iceSurface.transform.localScale = new Vector3(waterSurface.localScale.x, Math.Abs(_colliderOffset), waterSurface.localScale.z);
+            MeshCollider iceCollider = iceSurface.GetComponent<MeshCollider>();
+            if (iceCollider.sharedMesh != waterMesh.sharedMesh)
+                iceCollider.sharedMesh = waterMesh.sharedMesh;
+            state.m_iceSurface = iceSurface;
+        }
+
+        public static void UnregisterWaterVolume(WaterVolume waterVolume)
+        {
+            if (waterStates.TryGetValue(waterVolume, out WaterState state))
+            {
+                SetupIceCollider(waterVolume, state, revertState: true);
+                waterStates.Remove(waterVolume);
+            }
+            if (Instance != null)
+                Instance.waterVolumesCheckFloes.Remove(waterVolume);
         }
 
         public static void UpdateWaterState()
@@ -702,9 +779,6 @@ namespace Seasons
 
         private static void SetupIceCollider(WaterVolume waterVolume, WaterState waterState, bool revertState)
         {
-            if (waterState.m_iceSurface == null)
-                waterState.m_iceSurface = waterVolume.transform.parent?.Find(_iceSurfaceName)?.gameObject;
-
             GameObject iceSurface = waterState.m_iceSurface;
             if (iceSurface == null)
                 return;
@@ -1311,17 +1385,7 @@ namespace Seasons
     public static class WaterVolume_Awake_WaterState
     {
         [HarmonyPriority(Priority.Last)]
-        private static void Postfix(WaterVolume __instance)
-        {
-            if (!UseTextureControllers() || !SeasonState.IsActive || !__instance.m_useGlobalWind || Instance == null)
-                return;
-
-            if (waterStates.ContainsKey(__instance))
-                return;
-            
-            waterStates.Add(__instance, new WaterState(__instance));
-            Instance.waterVolumesCheckFloes.Add(__instance);
-        }
+        private static void Postfix(WaterVolume __instance) => RegisterWaterVolume(__instance);
     }
 
     [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.OnEnable))]
@@ -1330,16 +1394,13 @@ namespace Seasons
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(WaterVolume __instance)
         {
-            if (!UseTextureControllers())
+            if (!UseTextureControllers() || !SeasonState.IsActive)
                 return;
 
-            if (!SeasonState.IsActive)
-                return;
-
-            if (!waterStates.ContainsKey(__instance))
-                return;
-
-            UpdateWater(__instance, waterStates[__instance]);
+            // Also covers objects whose Awake ran before the seasonal controller existed.
+            RegisterWaterVolume(__instance);
+            if (waterStates.TryGetValue(__instance, out WaterState state))
+                UpdateWater(__instance, state);
         }
     }
 
@@ -1349,16 +1410,9 @@ namespace Seasons
         [HarmonyPriority(Priority.Last)]
         private static void Postfix(WaterVolume __instance)
         {
-            if (!UseTextureControllers())
-                return;
-
-            if (!SeasonState.IsActive)
-                return;
-
-            if (!waterStates.ContainsKey(__instance))
-                return;
-
-            UpdateWater(__instance, waterStates[__instance], revertState: true);
+            // Restore tracked instances even if the current seasonal policy is disabled.
+            if (waterStates.TryGetValue(__instance, out WaterState state))
+                UpdateWater(__instance, state, revertState: true);
         }
     }
 
@@ -1366,10 +1420,7 @@ namespace Seasons
     public static class WaterVolume_OnDestroy_WaterState
     {
         [HarmonyPriority(Priority.Last)]
-        private static void Postfix(WaterVolume __instance)
-        {
-            waterStates.Remove(__instance);
-        }
+        private static void Postfix(WaterVolume __instance) => UnregisterWaterVolume(__instance);
     }
 
     [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.UpdateWaterTime))]
