@@ -355,6 +355,27 @@ namespace Seasons
             tempWaterVolumesList.Clear();
         }
 
+        private void OnEnable()
+        {
+            if (!waterStateInitialized)
+                return;
+
+            foreach (KeyValuePair<WaterVolume, WaterState> waterState in waterStates)
+                if (waterState.Key != null)
+                    SetupIceCollider(waterState.Key, waterState.Value, revertState: false);
+        }
+
+        private void OnDisable()
+        {
+            // Keep both the template and spawned colliders; only release their active state.
+            if (s_iceSurface != null && s_iceSurface.activeSelf)
+                s_iceSurface.SetActive(false);
+
+            foreach (KeyValuePair<WaterVolume, WaterState> waterState in waterStates)
+                if (waterState.Key != null)
+                    SetupIceCollider(waterState.Key, waterState.Value, revertState: true);
+        }
+
         private void OnDestroy()
         {
             foreach (Ship ship in Ship.Instances.ToArray().Cast<Ship>())
@@ -366,7 +387,10 @@ namespace Seasons
             s_waterPlaneState?.RestoreProperties(s_waterPlane);
             s_waterPlane = null;
             s_waterPlaneState = null;
-            s_iceSurface = null;
+            // The inactive template belongs to the loaded zone prefab, not this world.
+            // Retain its reference across controller teardown and world changes.
+            if (s_iceSurface != null && s_iceSurface.activeSelf)
+                s_iceSurface.SetActive(false);
             s_freezeStatus = 0f;
             s_colliderHeight = 0f;
             waterStates.Clear();
@@ -551,7 +575,7 @@ namespace Seasons
 
         public static void AddIceCollider(Transform water)
         {
-            if (s_iceSurface != null)
+            if (water == null)
                 return;
 
             Transform waterSurface = water.Find("WaterSurface");
@@ -561,22 +585,26 @@ namespace Seasons
                 return;
             }
 
-            // The prefab can survive a world change, but the world-specific cached height cannot.
+            // Recalculate world-specific height even when the prefab template is retained.
             s_colliderHeight = waterSurface.position.y + _colliderOffset;
 
+            // Resolve through the current prefab, which may differ after a world change.
+            // Reuse its existing child without reparenting or recreating it.
             Transform iceSurfaceTransform = water.Find(_iceSurfaceName);
             if (iceSurfaceTransform != null)
             {
                 s_iceSurface = iceSurfaceTransform.gameObject;
+                if (s_iceSurface.activeSelf)
+                    s_iceSurface.SetActive(false);
                 return;
             }
 
             s_iceSurface = new GameObject(_iceSurfaceName);
+            s_iceSurface.SetActive(false);
             s_iceSurface.transform.SetParent(water);
             s_iceSurface.layer = 0;
             s_iceSurface.transform.localScale = new Vector3(waterSurface.transform.localScale.x, Math.Abs(_colliderOffset), waterSurface.transform.localScale.z);
             s_iceSurface.transform.localPosition = new Vector3(0, _colliderOffset, 0);
-            s_iceSurface.SetActive(false);
 
             MeshCollider iceCollider = s_iceSurface.gameObject.AddComponent<MeshCollider>();
             iceCollider.sharedMesh = waterMesh.sharedMesh;
@@ -676,11 +704,17 @@ namespace Seasons
         {
             if (waterState.m_iceSurface == null)
                 waterState.m_iceSurface = waterVolume.transform.parent?.Find(_iceSurfaceName)?.gameObject;
-            
-            if (revertState)
-                waterState.m_iceSurface?.SetActive(false);
-            else
-                waterState.m_iceSurface?.SetActive(IsWaterSurfaceFrozen());
+
+            GameObject iceSurface = waterState.m_iceSurface;
+            if (iceSurface == null)
+                return;
+
+            // Never activate the prefab template, only live, controlled water instances.
+            bool active = !revertState && iceSurface != s_iceSurface && Instance != null
+                && Instance.isActiveAndEnabled && waterVolume.isActiveAndEnabled
+                && SeasonState.IsActive && enableFrozenWater.Value && IsWaterSurfaceFrozen();
+            if (iceSurface.activeSelf != active)
+                iceSurface.SetActive(active);
         }
 
         public static bool LocalPlayerIsOnFrozenOcean() => IsWaterSurfaceFrozen()
