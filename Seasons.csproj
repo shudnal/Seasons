@@ -64,6 +64,7 @@
     <Compile Include="WinterSnow\SeasonalSnowHeat.cs" />
     <Compile Include="WinterSnow\SeasonalSnowInteraction.cs" />
     <Compile Include="WinterSnow\SeasonalSnowClearing.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowTrampling.cs" />
     <Compile Include="WinterSnow\SnowClearingTool.cs" />
     <Compile Include="WinterSnow\SeasonalSnowGeometry.cs" />
     <Compile Include="WinterSnow\SeasonalSnowSimulationPatches.cs" />

@@ -125,6 +125,8 @@ namespace Seasons
         public static ConfigEntry<float> seasonalSnowLeakyPieceMeltMultiplier;
         public static ConfigEntry<float> seasonalSnowRoofPieceMeltMultiplier;
         public static ConfigEntry<float> seasonalSnowCoveredPieceMeltMultiplier;
+        public static ConfigEntry<float> seasonalSnowFootstepReduction;
+        public static ConfigEntry<bool> seasonalSnowFootstepsCanClear;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -680,6 +682,11 @@ namespace Seasons
                 "Controls heat-based melting on roof pieces. 0 keeps snow on roofs even when a fire is nearby.");
             seasonalSnowCoveredPieceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - covered pieces", defaultValue: 2f,
                 "Melts existing snow under a newly added roof at 0.0018 buildup per active second times this value. Independent of fireplace and roof-piece multipliers. Zero stops covered melting but still blocks snowfall.");
+
+            seasonalSnowFootstepReduction = serverConfig("Season - Winter snow", "Snow reduction per footstep", defaultValue: 0.01f,
+                new ConfigDescription("Seasonal snow buildup removed by each footstep on a building piece. Applies to players and creatures. This is an absolute amount, not a percentage of the remaining snow. Set to 0 to disable trampling.", new AcceptableValueRange<float>(0f, 1f)));
+            seasonalSnowFootstepsCanClear = serverConfig("Season - Winter snow", "Footsteps can clear snow completely", defaultValue: false,
+                "Allow footsteps to reduce seasonal snow buildup to zero. When disabled, footsteps stop at the piece's configured minimum buildup, including the reduced range, and do not change snow already below that minimum. Heat and hoe clearing are not affected.");
 
             showSnowDiagnosticsOnHover = clientConfig("Season - Winter snow", "Show snow diagnostics on hover", defaultValue: false,
                 "Shows technical seasonal snow runtime information while hovering a building piece.");
