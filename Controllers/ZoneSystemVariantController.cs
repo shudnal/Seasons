@@ -32,7 +32,6 @@ namespace Seasons
             private readonly Dictionary<int, PropertyState> m_ownedProperties = new Dictionary<int, PropertyState>();
             private readonly List<int> m_releasedProperties = new List<int>();
             private bool m_propertiesChanged;
-            private int m_inactivePropertyCount;
             public bool m_useGlobalWind;
             public bool m_appliedGlobalWind;
             public float m_appliedSurfaceOffset;
@@ -82,33 +81,14 @@ namespace Seasons
                 m_colorBottomShallowFrozen = Color.Lerp(m_colorBottomShallow, Color.white, 0.5f);
             }
 
-            private bool ReleasedPropertiesChanged(Material material)
-            {
-                // MPB has no individual removal. Our released neutral overrides must
-                // still follow real material changes, without copying the block each frame.
-                foreach (KeyValuePair<int, PropertyState> entry in m_ownedProperties)
-                {
-                    PropertyState property = entry.Value;
-                    if (property.Active)
-                        continue;
-                    if (property.IsColor
-                        ? !material.GetColor(entry.Key).Equals(property.AppliedColor)
-                        : !material.GetFloat(entry.Key).Equals(property.AppliedFloat))
-                        return true;
-                }
-                return false;
-            }
-
             public void RestoreProperties(MeshRenderer renderer, bool inactiveOnly = false)
             {
-                // The normal per-frame call has no work before any override was released,
-                // or while every owned override is active. Avoid even reading the renderer.
-                if (inactiveOnly && m_inactivePropertyCount == 0)
-                    return;
+                // Restore only on water lifecycle, season/day or configuration events.
+                // Inactive overrides follow the material at these events, not every frame.
                 if (renderer == null)
                     return;
                 Material material = renderer.sharedMaterial;
-                if (material == null || (inactiveOnly && !ReleasedPropertiesChanged(material)))
+                if (material == null)
                     return;
 
                 // Explicit season/config restoration also starts the next edit from a fresh
@@ -126,8 +106,6 @@ namespace Seasons
                         : m_properties.GetFloat(entry.Key).Equals(property.AppliedFloat));
                     if (!stillOwned)
                     {
-                        if (!property.Active)
-                            m_inactivePropertyCount--;
                         m_releasedProperties.Add(entry.Key);
                         continue;
                     }
@@ -150,14 +128,9 @@ namespace Seasons
                             m_propertiesChanged = true;
                         }
                     }
-                    if (property.Active)
-                    {
-                        property.Active = false;
-                        m_inactivePropertyCount++;
-                    }
+                    property.Active = false;
                     if (property.HadOverride)
                     {
-                        m_inactivePropertyCount--;
                         m_releasedProperties.Add(entry.Key);
                     }
                 }
@@ -173,11 +146,8 @@ namespace Seasons
                     state = new PropertyState { Active = true, HadOverride = m_properties.HasProperty(property), OriginalFloat = m_properties.GetFloat(property) };
                     m_ownedProperties.Add(property, state);
                 }
-                else if (!state.Active)
-                {
+                else
                     state.Active = true;
-                    m_inactivePropertyCount--;
-                }
                 state.AppliedFloat = value;
                 if (!m_properties.HasProperty(property) || !m_properties.GetFloat(property).Equals(value))
                 {
@@ -196,11 +166,8 @@ namespace Seasons
                     state = new PropertyState { Active = true, IsColor = true, HadOverride = m_properties.HasProperty(property), OriginalColor = m_properties.GetColor(property) };
                     m_ownedProperties.Add(property, state);
                 }
-                else if (!state.Active)
-                {
+                else
                     state.Active = true;
-                    m_inactivePropertyCount--;
-                }
                 state.AppliedColor = value;
                 if (!m_properties.HasProperty(property) || !m_properties.GetColor(property).Equals(value))
                 {
@@ -327,8 +294,6 @@ namespace Seasons
 
         public void Update()
         {
-            // MPB has no per-property removal; released overrides follow the current material values.
-            s_waterPlaneState?.RestoreProperties(s_waterPlane, inactiveOnly: true);
             float deltaTime = Time.deltaTime;
             m_createDestroyTimer += deltaTime;
             if (m_createDestroyTimer >= (1f / 15f) && waterVolumesCheckFloes.Count > 0)
@@ -362,7 +327,8 @@ namespace Seasons
 
             foreach (KeyValuePair<WaterVolume, WaterState> waterState in waterStates)
                 if (waterState.Key != null)
-                    SetupIceCollider(waterState.Key, waterState.Value, revertState: false);
+                    UpdateWater(waterState.Key, waterState.Value);
+            UpdateWaterSurface(s_waterPlane, s_waterPlaneState);
         }
 
         private void OnDisable()
@@ -373,7 +339,8 @@ namespace Seasons
 
             foreach (KeyValuePair<WaterVolume, WaterState> waterState in waterStates)
                 if (waterState.Key != null)
-                    SetupIceCollider(waterState.Key, waterState.Value, revertState: true);
+                    UpdateWater(waterState.Key, waterState.Value, revertState: true);
+            s_waterPlaneState?.RestoreProperties(s_waterPlane);
         }
 
         private void OnDestroy()
@@ -1439,16 +1406,6 @@ namespace Seasons
                 return;
 
             WaterVolume.s_waterTime = 0f;
-        }
-    }
-
-    [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.UpdateMaterials))]
-    public static class WaterVolume_UpdateMaterials_RestoreReleasedProperties
-    {
-        private static void Postfix(WaterVolume __instance)
-        {
-            if (waterStates.TryGetValue(__instance, out WaterState state))
-                state.RestoreProperties(__instance.m_waterSurface, inactiveOnly: true);
         }
     }
 
