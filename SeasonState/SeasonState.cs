@@ -1819,7 +1819,10 @@ namespace Seasons
             else if (dayChanged)
                 OnDayChange();
             if (seasonChanged || dayChanged)
+            {
+                SummerHeatController.Instance?.RefreshState();
                 SeasonalIceFloeBatching.RefreshSourceMaterials();
+            }
         }
 
         private static void OnDayChange()

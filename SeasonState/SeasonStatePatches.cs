@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Emit;
 using UnityEngine;
 using static Seasons.Seasons;
 
@@ -798,27 +799,56 @@ namespace Seasons
             }
         }
 
+        // Legacy overheat only needs an update when the food list actually changes.
+        private static void RefreshLegacyOverheatAfterFoodChange(Player player)
+        {
+            if (summerHeatEnabled.Value || !summerHeatAddsExtraWarmCloth.Value ||
+                player != Player.m_localPlayer || seasonState.GetCurrentSeason() != Season.Summer ||
+                !seasonState.GetOverheatIn2WarmClothes())
+                return;
+            seasonState.CheckOverheatStatus(player);
+        }
+
         [HarmonyPatch]
         public static class Player_Food_OverheatIn2WarmClothesExcludeEyescream
         {
             private static IEnumerable<MethodBase> TargetMethods()
             {
-                yield return AccessTools.Method(typeof(Player), nameof(Player.UpdateFood));
                 yield return AccessTools.Method(typeof(Player), nameof(Player.ClearFood));
                 yield return AccessTools.Method(typeof(Player), nameof(Player.EatFood));
                 yield return AccessTools.Method(typeof(Player), nameof(Player.RemoveOneFood));
             }
 
-            private static void Prefix(Player __instance, ref bool __state)
+            private static void Postfix(Player __instance) => RefreshLegacyOverheatAfterFoodChange(__instance);
+        }
+
+        [HarmonyPatch(typeof(Player), nameof(Player.UpdateFood))]
+        private static class Player_UpdateFood_ExpiredCoolingFood
+        {
+            private static bool FoodRemoved(bool removed, Player player)
             {
-                if (__instance == Player.m_localPlayer)
-                    __state = SeasonState.HasCoolingFood(__instance);
+                if (removed)
+                    RefreshLegacyOverheatAfterFoodChange(player);
+                return removed;
             }
 
-            private static void Postfix(Player __instance, bool __state)
+            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
             {
-                if (__instance == Player.m_localPlayer && __state != SeasonState.HasCoolingFood(__instance))
-                    seasonState.CheckOverheatStatus(__instance);
+                List<CodeInstruction> code = new List<CodeInstruction>(instructions);
+                MethodInfo remove = AccessTools.Method(typeof(List<Player.Food>), nameof(List<Player.Food>.Remove), new[] { typeof(Player.Food) });
+                int index = code.FindIndex(instruction => instruction.Calls(remove));
+                if (index < 0 || code.FindIndex(index + 1, instruction => instruction.Calls(remove)) >= 0)
+                {
+                    LogWarning("Cannot find the food expiration removal in Player.UpdateFood. Legacy overheat will still update on explicit food changes.");
+                    return code;
+                }
+                // Retain the native removal result and all existing control flow.
+                code.InsertRange(index + 1, new[]
+                {
+                    new CodeInstruction(OpCodes.Ldarg_0),
+                    new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(Player_UpdateFood_ExpiredCoolingFood), nameof(FoodRemoved)))
+                });
+                return code;
             }
         }
 
@@ -829,35 +859,57 @@ namespace Seasons
             private static bool removeFrostResistanceFromArmor;
             private static readonly int s_wetStatusHash = SEMan.s_statusEffectWet;
 
-            public static bool ShouldRemoveFrostResistance(Player player) => coldStatusPlayer == player && removeFrostResistanceFromArmor;
-
-            private static void Prefix(Player __instance, ref Tuple<Player, bool> __state)
+            private struct ColdStatusContext
             {
-                __state = Tuple.Create(coldStatusPlayer, removeFrostResistanceFromArmor);
-                coldStatusPlayer = __instance;
-                removeFrostResistanceFromArmor = false;
-                int warmPieces = SeasonState.GetWarmClothesCount(__instance);
-
-                if (__instance.GetCurrentBiome() == Heightmap.Biome.Mountain ? gettingWetInMountainsCausesCold.Value : gettingWetInWinterCausesCold.Value && seasonState.GetCurrentSeason() == Season.Winter)
-                {
-                    bool isWetInColdEnv = (EnvMan.IsCold() || EnvMan.IsFreezing()) && __instance.GetSEMan().HaveStatusEffect(s_wetStatusHash);
-
-                    bool isProtectedFromCold = wearing2WarmPiecesPreventsWetCold.Value && warmPieces > 1;
-
-                    removeFrostResistanceFromArmor = isWetInColdEnv && (!isProtectedFromCold || __instance.IsSwimming());
-                }
-
-                if (mountainInWinterRequires2WarmPieces.Value && __instance.GetCurrentBiome() == Heightmap.Biome.Mountain && seasonState.GetCurrentSeason() == Season.Winter && warmPieces < 2)
-                    removeFrostResistanceFromArmor = true;
+                internal Player Player;
+                internal bool RemoveFrostResistance;
+                internal bool Captured;
             }
 
-            private static void Finalizer(Tuple<Player, bool> __state)
+            public static bool ShouldRemoveFrostResistance(Player player) => coldStatusPlayer == player && removeFrostResistanceFromArmor;
+
+            private static void Prefix(Player __instance, out ColdStatusContext __state)
             {
-                if (__state == null)
+                __state = new ColdStatusContext
+                {
+                    Player = coldStatusPlayer,
+                    RemoveFrostResistance = removeFrostResistanceFromArmor,
+                    Captured = true
+                };
+                coldStatusPlayer = __instance;
+                removeFrostResistanceFromArmor = false;
+                bool mountain = __instance.GetCurrentBiome() == Heightmap.Biome.Mountain;
+                bool winter = seasonState.GetCurrentSeason() == Season.Winter;
+                int warmPieces = -1;
+
+                if ((mountain ? gettingWetInMountainsCausesCold.Value : gettingWetInWinterCausesCold.Value && winter) &&
+                    (EnvMan.IsCold() || EnvMan.IsFreezing()) && __instance.GetSEMan().HaveStatusEffect(s_wetStatusHash))
+                {
+                    if (__instance.IsSwimming() || !wearing2WarmPiecesPreventsWetCold.Value)
+                        removeFrostResistanceFromArmor = true;
+                    else
+                    {
+                        // This count deliberately includes ALL equipped slots, not just armor.
+                        warmPieces = SeasonState.GetWarmClothesCount(__instance);
+                        removeFrostResistanceFromArmor = warmPieces < 2;
+                    }
+                }
+
+                if (mountainInWinterRequires2WarmPieces.Value && mountain && winter && !removeFrostResistanceFromArmor)
+                {
+                    if (warmPieces < 0)
+                        warmPieces = SeasonState.GetWarmClothesCount(__instance);
+                    removeFrostResistanceFromArmor = warmPieces < 2;
+                }
+            }
+
+            private static void Finalizer(ColdStatusContext __state)
+            {
+                if (!__state.Captured)
                     return;
 
-                coldStatusPlayer = __state.Item1;
-                removeFrostResistanceFromArmor = __state.Item2;
+                coldStatusPlayer = __state.Player;
+                removeFrostResistanceFromArmor = __state.RemoveFrostResistance;
             }
         }
 
