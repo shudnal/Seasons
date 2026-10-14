@@ -554,25 +554,52 @@ namespace Seasons
         [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateWear))]
         public static class WearNTear_UpdateWear_RainProtection
         {
-            private static void Prefix(WearNTear __instance, ZNetView ___m_nview, ref bool ___m_noRoofWear, ref bool? __state)
+            private static bool AllowRoofWear(WearNTear piece) => piece.m_noRoofWear &&
+                (!seasonState.GetRainProtection() || IsProtectedPosition(piece.transform.position));
+
+            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
             {
-                if (!seasonState.GetRainProtection())
-                    return;
+                List<CodeInstruction> code = new List<CodeInstruction>(instructions);
+                FieldInfo roofWear = AccessTools.Field(typeof(WearNTear), nameof(WearNTear.m_noRoofWear));
+                MethodInfo shield = AccessTools.Method(typeof(ShieldGenerator), nameof(ShieldGenerator.IsInsideShieldCached),
+                    new[] { typeof(Vector3), typeof(int).MakeByRefType() });
+                int shieldCall = code.FindIndex(instruction => instruction.Calls(shield));
+                int reads = code.Count(instruction => instruction.LoadsField(roofWear));
+                if (shieldCall < 0 || reads != 2 ||
+                    code.FindIndex(shieldCall + 1, instruction => instruction.Calls(shield)) >= 0 ||
+                    code.FindIndex(instruction => instruction.LoadsField(roofWear)) <= shieldCall)
+                {
+                    LogWarning("Cannot find the weather wear block in WearNTear.UpdateWear. Seasonal rain protection was not applied.");
+                    return code;
+                }
 
-                if (___m_nview == null || !___m_nview.IsValid())
-                    return;
+                LocalBuilder allowWear = generator.DeclareLocal(typeof(bool));
+                List<CodeInstruction> result = new List<CodeInstruction>(code.Count + 5);
+                for (int i = 0; i < code.Count; ++i)
+                {
+                    CodeInstruction instruction = code[i];
+                    if (instruction.LoadsField(roofWear))
+                    {
+                        // Discard only the receiver of this field read. Do not mutate the field.
+                        CodeInstruction discard = new CodeInstruction(OpCodes.Pop);
+                        discard.labels.AddRange(instruction.labels);
+                        discard.blocks.AddRange(instruction.blocks);
+                        result.Add(discard);
+                        result.Add(new CodeInstruction(OpCodes.Ldloc, allowWear));
+                    }
+                    else
+                        result.Add(instruction);
 
-                if (IsProtectedPosition(__instance.transform.position))
-                    return;
-
-                __state = ___m_noRoofWear;
-                ___m_noRoofWear = false;
-            }
-
-            private static void Finalizer(ref bool ___m_noRoofWear, bool? __state)
-            {
-                if (__state.HasValue)
-                    ___m_noRoofWear = __state.Value;
+                    if (i == shieldCall)
+                    {
+                        // Native authority, creation delay and active-area checks have passed.
+                        // Keep the shield result on the stack for its original consumer.
+                        result.Add(new CodeInstruction(OpCodes.Ldarg_0));
+                        result.Add(new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(WearNTear_UpdateWear_RainProtection), nameof(AllowRoofWear))));
+                        result.Add(new CodeInstruction(OpCodes.Stloc, allowWear));
+                    }
+                }
+                return result;
             }
         }
 
