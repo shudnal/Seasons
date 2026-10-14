@@ -1434,15 +1434,19 @@ namespace Seasons
                 SetCurrentDay(dayInSeason, forceSeasonChange);
         }
 
-        public void StartSeasonChange()
+        public void StartSeasonChange() => StartSeasonChangeCore(null);
+
+        private void StartSeasonChangeCore(int? winterStartDay)
         {
             if (!showFadeOnSeasonChange.Value || Hud.instance == null || Hud.instance.m_loadingScreen.isActiveAndEnabled || Hud.instance.m_loadingScreen.alpha > 0)
-                OnSeasonChange();
+                OnSeasonChange(winterStartDay);
             else
-                Seasons.instance.StartCoroutine(seasonState.SeasonChangedFadeEffect());
+                Seasons.instance.StartCoroutine(FadeSeasonChange(winterStartDay));
         }
 
-        public IEnumerator SeasonChangedFadeEffect()
+        public IEnumerator SeasonChangedFadeEffect() => FadeSeasonChange(null);
+
+        private IEnumerator FadeSeasonChange(int? winterStartDay)
         {
             m_seasonIsChanging = true;
             Player player = Player.m_localPlayer;
@@ -1460,7 +1464,7 @@ namespace Seasons
                 if (!CanFade())
                 {
                     if (SameWorld())
-                        OnSeasonChange();
+                        OnSeasonChange(winterStartDay);
                     yield break;
                 }
 
@@ -1477,7 +1481,7 @@ namespace Seasons
                 }
 
                 if (SameWorld())
-                    OnSeasonChange();
+                    OnSeasonChange(winterStartDay);
 
                 while (CanFade() && hud.m_loadingScreen.alpha > 0f)
                 {
@@ -1494,8 +1498,12 @@ namespace Seasons
             }
         }
 
-        private void OnSeasonChange()
+        private void OnSeasonChange(int? winterStartDay)
         {
+            // Initial world synchronization and daily/configuration refreshes never run this pass.
+            if (winterStartDay.HasValue && m_season == Season.Winter)
+                SeasonalWorldMaintenance.OnWinterStarted(winterStartDay.Value);
+
             UpdateBiomesSetup();
             UpdateGlobalKeys();
             UpdateWinterBloomEffect();
@@ -1807,6 +1815,7 @@ namespace Seasons
 
             bool dayChanged = seasonState.m_day != seasonDay.Item2;
             bool seasonChanged = seasonState.m_season != seasonDay.Item1;
+            bool enteredWinter = seasonChanged && seasonState.m_day > 0 && seasonDay.Item1 == Season.Winter;
 
             seasonState.m_season = seasonDay.Item1;
             seasonState.m_day = seasonDay.Item2;
@@ -1815,7 +1824,9 @@ namespace Seasons
                 LogInfo($"Season: {seasonState.m_season}, day: {seasonState.m_day}");
 
             if (seasonChanged)
-                seasonState.StartSeasonChange();
+                seasonState.StartSeasonChangeCore(enteredWinter
+                    ? (int?)(seasonState.GetCurrentWorldDay() - seasonState.m_day + 1)
+                    : null);
             else if (dayChanged)
                 OnDayChange();
             if (seasonChanged || dayChanged)
