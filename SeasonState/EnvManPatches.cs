@@ -78,6 +78,7 @@ namespace Seasons
             private static void Postfix()
             {
                 totalSecondsCached = 0;
+                SeasonFuzzyTimer.Invalidate();
             }
         }
 
@@ -189,7 +190,10 @@ namespace Seasons
                     // Delimit the observed live weather interval before UpdateState
                     // can rebuild the timeline, including small explicit time skips.
                     if (updateLoadedSeasonalSnow)
+                    {
+                        SeasonFuzzyTimer.Invalidate();
                         SeasonalSnow.ReconcileLoadedSnowAfterTimeSkip();
+                    }
                     seasonState.UpdateState(timeForSeasonToChange, forceSeasonChange);
                 }
             }

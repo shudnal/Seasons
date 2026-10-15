@@ -64,6 +64,7 @@ namespace Seasons
 
         public SeasonState(bool initialize = false)
         {
+            SeasonFuzzyTimer.Invalidate();
             if (!initialize)
                 return;
 
@@ -428,6 +429,7 @@ namespace Seasons
 
         public static void UpdateSeasonSettings()
         {
+            SeasonFuzzyTimer.Invalidate();
             if (!IsActive)
                 return;
 
@@ -934,6 +936,7 @@ namespace Seasons
 
         public static void UpdateWorldSettings()
         {
+            SeasonFuzzyTimer.Invalidate();
             if (!IsActive)
                 return;
 
@@ -1073,9 +1076,18 @@ namespace Seasons
             return string.Format(seasonalGlobalKeyDay.Value, day.ToString());
         }
 
-        public double GetTimeToCurrentSeasonEnd()
+        public double GetTimeToCurrentSeasonEnd() => GetTimeToCurrentSeasonEnd(GetTotalSeconds());
+
+        internal double GetTimeToCurrentSeasonEnd(double totalSeconds)
         {
-            return GetEndOfCurrentSeason() + (seasonState.DayStartFraction() * (1f - ((0.25f - GetDayFractionForSeasonChange()) * seasonState.DayStartFraction() / 0.25f)) * seasonState.GetDayLengthInSeconds()) - seasonState.GetTotalSeconds();
+            // Keep the existing calendar and morning offset, using one clock sample.
+            long dayLength = GetDayLengthInSeconds();
+            double startOfDay = totalSeconds - totalSeconds % dayLength;
+            double startOfSeason = startOfDay - (GetCurrentDay() - (IsPendingSeasonChange() ? 0 : 1)) * dayLength;
+            int worldDay = (int)(totalSeconds / dayLength);
+            float dayStart = DayStartFraction(GetSeason(worldDay), GetDayInSeason(worldDay));
+            float morningOffset = dayStart * (1f - ((0.25f - GetDayFractionForSeasonChange()) * dayStart / 0.25f)) * dayLength;
+            return startOfSeason + GetSecondsInSeason() + morningOffset - totalSeconds;
         }
 
         public double GetEndOfCurrentSeason()
@@ -1793,12 +1805,14 @@ namespace Seasons
 
         public static void CheckSeasonChange()
         {
+            SeasonFuzzyTimer.Invalidate();
             if (IsActive)
                 seasonState.UpdateState(forceSeasonChange: true);
         }
 
         public static void ResetCurrentSeasonDay()
         {
+            SeasonFuzzyTimer.Invalidate();
             WorldInitialized = false;
             _pendingSeasonChange = 0;
             cacheRevision.AssignValueSafe(0u);
@@ -1807,6 +1821,7 @@ namespace Seasons
 
         public static void OnSeasonDayChange()
         {
+            SeasonFuzzyTimer.Invalidate();
             if (!IsActive)
                 return;
 

@@ -81,6 +81,7 @@ namespace Seasons
 
         public static ConfigEntry<bool> showCurrentSeasonBuff;
         public static ConfigEntry<TimerFormat> seasonsTimerFormat;
+        public static ConfigEntry<string> fuzzySeasonTimerStages;
         public static ConfigEntry<bool> hideSecondsInTimer;
         public static ConfigEntry<bool> showCurrentSeasonInRaven;
         public static ConfigEntry<TimerFormat> seasonsTimerFormatInRaven;
@@ -362,6 +363,7 @@ namespace Seasons
             CurrentDay,
             TimeToEnd,
             CurrentDayAndTimeToEnd,
+            Fuzzy,
         }
 
         public enum StationHover
@@ -623,6 +625,11 @@ namespace Seasons
 
             showCurrentSeasonBuff = config("Season - Buff", "Show current season buff", defaultValue: true, "Show current season buff.");
             seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
+            fuzzySeasonTimerStages = clientConfig("Season - Buff", "Fuzzy timer stages", defaultValue: SeasonFuzzyTimer.DefaultStages,
+                "Comma-separated labels for the Fuzzy timer format. Each non-empty entry covers an equal part of the season. " +
+                "Use $localization_tokens, plain text, or both. Empty entries are ignored. An empty list uses the default labels.");
+            SeasonFuzzyTimer.Configure(fuzzySeasonTimerStages.Value);
+            fuzzySeasonTimerStages.SettingChanged += (sender, args) => SeasonFuzzyTimer.Configure(fuzzySeasonTimerStages.Value);
             hideSecondsInTimer = config("Season - Buff", "Hide seconds", defaultValue: true, "Hide seconds at season buff timer");
             showCurrentSeasonInRaven = config("Season - Buff", "Raven menu Show current season", defaultValue: true, "Show current season tooltip in Raven menu");
             seasonsTimerFormatInRaven = config("Season - Buff", "Raven menu Timer format", defaultValue: TimerFormat.CurrentDayAndTimeToEnd, "What to show at season buff timer in Raven menu");
@@ -635,9 +642,16 @@ namespace Seasons
             };
             showCurrentSeasonBuff.SettingChanged += seasonStatusDisplayHandler;
             seasonsTimerFormat.SettingChanged += seasonStatusDisplayHandler;
+            fuzzySeasonTimerStages.SettingChanged += seasonStatusDisplayHandler;
             hideSecondsInTimer.SettingChanged += seasonStatusDisplayHandler;
             showCurrentSeasonInRaven.SettingChanged += seasonStatusDisplayHandler;
             seasonsTimerFormatInRaven.SettingChanged += seasonStatusDisplayHandler;
+
+            EventHandler seasonTimerCalendarHandler = (sender, args) => SeasonFuzzyTimer.Invalidate();
+            dayLengthSec.SettingChanged += seasonTimerCalendarHandler;
+            controlNightLength.SettingChanged += seasonTimerCalendarHandler;
+            changeNightLengthGradually.SettingChanged += seasonTimerCalendarHandler;
+            changeSeasonOnlyAfterSleep.SettingChanged += seasonTimerCalendarHandler;
 
             showFadeOnSeasonChange = config("Season - Fade", "Show fade effect on season change", defaultValue: true, "Show black fade loading screen when season is changed.");
             fadeOnSeasonChangeDuration = config("Season - Fade", "Duration of fade effect", defaultValue: 0.5f, "Fade duration");
