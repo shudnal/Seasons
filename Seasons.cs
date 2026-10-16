@@ -1,4 +1,4 @@
-using BepInEx;
+﻿using BepInEx;
 using BepInEx.Bootstrap;
 using BepInEx.Configuration;
 using HarmonyLib;
@@ -62,10 +62,26 @@ namespace Seasons
         public static ConfigEntry<bool> controlYggdrasil;
         public static ConfigEntry<bool> controlTraders;
         public static ConfigEntry<bool> controlGrass;
+        public static ConfigEntry<bool> enableTreeRegrowth;
+        public static ConfigEntry<bool> controlWoodDrops;
+        public static ConfigEntry<bool> controlMeatDrops;
+        public static ConfigEntry<bool> controlFoodConsumption;
+        public static ConfigEntry<bool> controlStaminaConsumption;
+        public static ConfigEntry<bool> controlRestedDuration;
+        public static ConfigEntry<bool> controlFuelConsumption;
+        public static ConfigEntry<bool> controlBeehiveProduction;
+        public static ConfigEntry<bool> controlSapCollection;
+        public static ConfigEntry<bool> controlLivestockProcreation;
+
+        public static ConfigEntry<bool> controlNightLength;
+        public static ConfigEntry<bool> controlWindIntensity;
+        public static ConfigEntry<bool> enableTorchWarmth;
+
         public static ConfigEntry<bool> customTextures;
 
         public static ConfigEntry<bool> showCurrentSeasonBuff;
         public static ConfigEntry<TimerFormat> seasonsTimerFormat;
+        public static ConfigEntry<string> fuzzySeasonTimerStages;
         public static ConfigEntry<bool> hideSecondsInTimer;
         public static ConfigEntry<bool> showCurrentSeasonInRaven;
         public static ConfigEntry<TimerFormat> seasonsTimerFormatInRaven;
@@ -77,6 +93,7 @@ namespace Seasons
         public static ConfigEntry<bool> freezingSwimmingInWinter;
         public static ConfigEntry<bool> seasonalStatsOutdoorsOnly;
         public static ConfigEntry<bool> changeSeasonOnlyAfterSleep;
+        public static ConfigEntry<bool> pickablesPerishInWinter;
         public static ConfigEntry<int> cropsDiesAfterSetDayInWinter;
         public static ConfigEntry<string> cropsToSurviveInWinter;
         public static ConfigEntry<string> cropsToControlGrowth;
@@ -109,6 +126,8 @@ namespace Seasons
         public static ConfigEntry<float> seasonalSnowLeakyPieceMeltMultiplier;
         public static ConfigEntry<float> seasonalSnowRoofPieceMeltMultiplier;
         public static ConfigEntry<float> seasonalSnowCoveredPieceMeltMultiplier;
+        public static ConfigEntry<float> seasonalSnowFootstepReduction;
+        public static ConfigEntry<bool> seasonalSnowFootstepsCanClear;
 
         public static ConfigEntry<bool> enableFrozenWater;
         public static ConfigEntry<Vector2> waterFreezesInWinterDays;
@@ -116,7 +135,33 @@ namespace Seasons
         public static ConfigEntry<Vector2> iceFloesInWinterDays;
         public static ConfigEntry<bool> enableNightMusicOnFrozenOcean;
         public static ConfigEntry<float> frozenOceanSlipperiness;
-        public static ConfigEntry<bool> enableVanillaSlippingOnShallowFrozenWater;
+        public static ConfigEntry<bool> frozenOceanSlidingEnabled;
+        public static ConfigEntry<bool> frozenOceanUseVanillaSlippingPlayers;
+        public static ConfigEntry<bool> frozenOceanUseVanillaSlippingCreatures;
+        public static ConfigEntry<float> frozenOceanSlidingSpeedMultiplier;
+        public static ConfigEntry<float> frozenOceanSlidingAcceleration;
+        public static ConfigEntry<float> frozenOceanSlidingSteering;
+        public static ConfigEntry<float> frozenOceanSlidingBraking;
+        public static ConfigEntry<float> frozenOceanSlidingCoasting;
+        public static ConfigEntry<float> frozenOceanSlidingMinimumSpeed;
+        public static ConfigEntry<float> frozenOceanSlidingFriction;
+        public static ConfigEntry<bool> frozenOceanGlidingEnabled;
+        public static ConfigEntry<float> frozenOceanGlidingRunUpTime;
+        public static ConfigEntry<float> frozenOceanGlidingRunUpSpeed;
+        public static ConfigEntry<float> frozenOceanGlidingRunUpAngle;
+        public static ConfigEntry<float> frozenOceanGlidingSpeedBonus;
+        public static ConfigEntry<float> frozenOceanGlidingChargeTime;
+        public static ConfigEntry<float> frozenOceanGlidingReleaseGrace;
+        public static ConfigEntry<float> frozenOceanGlidingBonusDuration;
+        public static ConfigEntry<float> frozenOceanGlidingCoastDuration;
+        public static ConfigEntry<float> frozenOceanGlidingEndSpeed;
+        public static ConfigEntry<float> frozenOceanGlidingAnimationBonus;
+        public static ConfigEntry<bool> frozenOceanGlidingFovEnabled;
+        public static ConfigEntry<float> frozenOceanGlidingFovScale;
+        public static ConfigEntry<float> frozenOceanGlidingTurnSpeed;
+        public static ConfigEntry<float> frozenOceanGlidingTurnLoss;
+        public static ConfigEntry<float> frozenOceanGlidingFriction;
+        public static ConfigEntry<float> frozenOceanSlidingInputDeadZone;
         public static ConfigEntry<bool> placeShipAboveFrozenOcean;
         public static ConfigEntry<bool> placeFloatingContainersAboveFrozenOcean;
         public static ConfigEntry<float> iceFloesHealth;
@@ -135,6 +180,7 @@ namespace Seasons
         public static ConfigEntry<float> summerHeatMaxOverflow;
         public static ConfigEntry<bool> summerHeatWorldHazeEnabled;
         public static ConfigEntry<bool> summerHeatPersonalDistortionEnabled;
+        public static ConfigEntry<bool> summerHeatDamageEnabled;
         public static ConfigEntry<float> summerHeatDamageTickInterval;
         public static ConfigEntry<float> summerHeatDamageHealthPerTickMinHealthPercentage;
         public static ConfigEntry<float> summerHeatDamageHealthPerTick;
@@ -319,6 +365,7 @@ namespace Seasons
             CurrentDay,
             TimeToEnd,
             CurrentDayAndTimeToEnd,
+            Fuzzy,
         }
 
         public enum StationHover
@@ -458,12 +505,45 @@ namespace Seasons
             controlEnvironments = serverConfig("Season - Control", "Control environments", defaultValue: true, "Enables seasonal weathers");
             controlRandomEvents = serverConfig("Season - Control", "Control random events", defaultValue: true, "Enables seasonal random events");
             controlLightings = serverConfig("Season - Control", "Control lightings", defaultValue: true, "Enables seasonal lightings change (basically gamma or brightness)");
-            controlStats = serverConfig("Season - Control", "Control stats", defaultValue: true, "Enables seasonal stats change (status effect)");
+            controlStats = serverConfig("Season - Control", "Control stats", defaultValue: true, "Enables seasonal stats change through the season status effect. Does not control the separate food, stamina, fuel, production or drop multipliers; use their individual switches.");
             controlMinimap = serverConfig("Season - Control", "Control minimap", defaultValue: true, "Enables seasonal minimap colors");
             controlYggdrasil = serverConfig("Season - Control", "Control yggdrasil branch and roots", defaultValue: true, "Enables seasonal coloring of yggdrasil branch in the sky and roots on the ground");
             controlTraders = serverConfig("Season - Control", "Control trader seasonal items list", defaultValue: true, "Enables seasonal changes of trader additional item availability");
             controlGrass = serverConfig("Season - Control", "Control grass", defaultValue: true, "Enables seasonal changes of grass thickness, size and sparseness");
             customTextures = serverConfig("Season - Control", "Custom textures", defaultValue: true, "Enables custom textures");
+
+            enableTreeRegrowth = serverConfig("Season - Control", "Enable tree regrowth", defaultValue: true,
+                "Allow Seasons to replant trees after eligible stumps are destroyed, using the configured seasonal chances. Disabling also cancels pending replanting while disabled; existing trees and saplings are not removed.");
+            controlWoodDrops = serverConfig("Season - Control", "Control wood drops", defaultValue: true,
+                "Apply seasonal wood drop multipliers. Disable to leave wood drops unchanged by Seasons without clearing the configured resource list or seasonal multipliers.");
+            controlMeatDrops = serverConfig("Season - Control", "Control meat drops", defaultValue: true,
+                "Apply seasonal meat drop multipliers. Disable to leave meat drops unchanged by Seasons without clearing the configured resource list or seasonal multipliers.");
+            controlFoodConsumption = serverConfig("Season - Control", "Control food consumption", defaultValue: true,
+                "Apply the separate seasonal food-duration drain multiplier. Disable to leave food consumption unchanged by this mechanic; other status effects and mods still apply.");
+            controlStaminaConsumption = serverConfig("Season - Control", "Control stamina consumption", defaultValue: true,
+                "Apply the separate seasonal stamina-consumption multiplier. Disable to leave stamina costs unchanged by this mechanic; seasonal status-effect stats, Summer Heat and other mods still apply.");
+            controlRestedDuration = serverConfig("Season - Control", "Control rested duration", defaultValue: true,
+                "Apply seasonal multipliers when calculating Rested duration and its comfort bonus. Disable to leave that calculation unchanged by Seasons. Already granted Rested time is not rewritten.");
+            controlFuelConsumption = serverConfig("Season - Control", "Control fuel consumption", defaultValue: true,
+                "Apply seasonal fuel-consumption multipliers to fireplaces, fueled cooking stations and hot tubs. Disable to leave their normal updates unchanged. This does not control torch durability or general smelter production.");
+            controlBeehiveProduction = serverConfig("Season - Control", "Control beehive production", defaultValue: true,
+                "Apply seasonal honey-production multipliers, including winter dormancy. Disable to use normal honey production, bee activity and messages; stored honey and production progress are preserved.");
+            controlSapCollection = serverConfig("Season - Control", "Control sap collection", defaultValue: true,
+                "Apply seasonal sap-collection speed multipliers. Disable to use normal collection updates without changing stored sap or production progress.");
+            controlLivestockProcreation = serverConfig("Season - Control", "Control livestock procreation", defaultValue: true,
+                "Apply seasonal breeding changes to probability, pregnancy duration and population-check distances. Disable to leave those values unchanged by Seasons; animals and ongoing pregnancies are not reset.");
+
+            controlNightLength = serverConfig("Season - Control", "Control night length", defaultValue: true,
+                "Apply seasonal changes to the day/night ratio, morning times and sleep destination. Disable to leave those calculations to the game and other mods. Day length in seconds is a separate setting.");
+            controlWindIntensity = serverConfig("Season - Control", "Control wind intensity", defaultValue: true,
+                "Apply the additional seasonal wind-strength multiplier. Disable to keep weather-derived wind unchanged by this multiplier; seasonal weather selection remains independently controlled.");
+
+            enableTorchWarmth = serverConfig("Season - Control", "Enable torch warmth", defaultValue: true,
+                "Allow season-specific torch warmth and its durability-drain adjustment. Disable to remove only Seasons' torch overrides, preserving configured values and unrelated changes. Seasonal weather and other heat sources are unaffected.");
+            enableTorchWarmth.SettingChanged += (sender, args) => { seasonState?.UpdateTorchesFireWarmth(); LoadingTips.UpdateLoadingTips(); };
+
+            controlNightLength.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
+            controlFuelConsumption.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
 
             controlEnvironments.SettingChanged += (sender, args) => SeasonState.UpdateEnvironmentControlState();
             controlRandomEvents.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
@@ -480,16 +560,19 @@ namespace Seasons
             seasonalStatsOutdoorsOnly = serverConfig("Season", "Seasonal stats works only outdoors", defaultValue: true, "Make seasonal stats works only outdoors");
             freezingSwimmingInWinter = serverConfig("Season", "Get freezing when swimming in cold water in winter", defaultValue: true, "Swimming in cold water during winter will get you freezing debuff");
             changeSeasonOnlyAfterSleep = serverConfig("Season", "Change season only after sleep", defaultValue: false, "Season can be changed regular way only after sleep");
-            cropsDiesAfterSetDayInWinter = serverConfig("Season", "Crops will die after set day in winter", defaultValue: 3, "Crops and pickables will perish after set day in winter");
-            fireHeatProtectsFromPerish = serverConfig("Season", "Crops will survive if protected by fire", defaultValue: true, "Crops and pickables will not perish in winter if there are fire source nearby");
-            chanceToProduceACropInWinter = serverConfig("Season", "Crops will have a chance to survive winter", defaultValue: 0.33f, new ConfigDescription("Crops and pickables will have given chance to produce a harvest instead of complete perish.",
+            pickablesPerishInWinter = serverConfig("Season", "Pickables can perish in winter", defaultValue: true,
+                "Allow winter freezing and perishing of mature crops and other growth-controlled harvestable plants (Pickable). Disable to preserve their available harvests. Does not change seasonal growth or respawn rates, growing Plant health, or winter loss of cultivated ground. Does not restore harvests already lost.");
+            cropsDiesAfterSetDayInWinter = serverConfig("Season", "Crops will die after set day in winter", defaultValue: 3,
+                "First day within winter when vulnerable mature Pickables can begin freezing, if Pickables can perish in winter is enabled. This is not the crop's age. A value greater than the winter length prevents this perishing path; zero does not disable it. Does not affect growing Plants.");
+            fireHeatProtectsFromPerish = serverConfig("Season", "Crops will survive if protected by fire", defaultValue: true, "Nearby active heat sources protect mature Pickables from winter perishing and growing Plants from Seasons' TooCold status. Does not resume winter growth or replace cultivation and other native growth requirements.");
+            chanceToProduceACropInWinter = serverConfig("Season", "Crops will have a chance to survive winter", defaultValue: 0.33f, new ConfigDescription("Chance for a mature Pickable to retain its harvest when its winter freezing timer expires. Only used when Pickables can perish in winter is enabled. Does not protect growing Plants or change their TooCold status; use Crops will survive in winter for frost resistance.",
                                                                                                                                new AcceptableValueRange<float>(0f, 1f),
                                                                                                                                new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
-            secondsToFreezeForCropInWinter = serverConfig("Season", "Crops will be freezing for seconds until perish", defaultValue: 120f, "After crop is hit by winter it will not perish immediately but will start to gradually freeze to death.");
-            cultivatedGroundTurnsIntoDirtInWinter = serverConfig("Season", "Cultivated ground turns into regular Dirt in Winter", defaultValue: true, "With the onset of winter, any ground cultivated by player turns into ordinary dirt and has to be recultivated. It happens once per year.");
+            secondsToFreezeForCropInWinter = serverConfig("Season", "Crops will be freezing for seconds until perish", defaultValue: 120f, "Freezing duration in seconds for vulnerable mature Pickables before the winter survival roll, if Pickables can perish in winter is enabled. Zero or negative values remove the delay, not perishing. Does not affect growing Plants or their TooCold status.");
+            cultivatedGroundTurnsIntoDirtInWinter = serverConfig("Season", "Cultivated ground turns into regular Dirt in Winter", defaultValue: true, "Winter removes cultivation from eligible terrain once per year. This is independent of Pickable perishing and frost resistance: growing Plants that require cultivated soil can become NotCultivated. Disabling prevents future removal but does not restore already changed soil.");
 
             cropsToSurviveInWinter = serverConfig("Season", "Crops will survive in winter", defaultValue: "Pickable_Carrot,Pickable_Barley,Pickable_Barley_Wild,Pickable_Flax,Pickable_Flax_Wild,Pickable_Thistle,Pickable_Mushroom_Magecap",
-                                                                                                GetDescriptionSeparatedStrings("Crops and pickables from the list will not perish after set day in winter"));
+                                                                                                GetDescriptionSeparatedStrings("Frost-resistant prefab names. Listed Pickables do not perish in winter; growing Plant prefabs that produce a listed grown prefab are also protected from Seasons' TooCold status. This list does not resume winter growth or replace cultivation and other native growth requirements."));
             cropsToControlGrowth = serverConfig("Season", "Crops to control growth", defaultValue: "Pickable_Barley,Pickable_Barley_Wild,Pickable_Dandelion,Pickable_Flax,Pickable_Flax_Wild,Pickable_SeedCarrot,Pickable_SeedOnion,Pickable_SeedTurnip,Pickable_Thistle,Pickable_Turnip",
                                                                                             GetDescriptionSeparatedStrings("All consumable crops will be added automatically. Set only unconsumable crops here." +
                                                                                             "Crops and pickables from the list will be controlled by growth multiplier in addition to consumable crops"));
@@ -513,6 +596,7 @@ namespace Seasons
             mountainInWinterRequires2WarmPieces = serverConfig("Season", "Mountains in Winter require 2 warm armor pieces", defaultValue: true, "If enabled - you have to wear 2 armor pieces with frost resistance in Winter or get frost resistance mead.");
 
 
+            pickablesPerishInWinter.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
             cropsDiesAfterSetDayInWinter.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
             seasonalStatsOutdoorsOnly.SettingChanged += (sender, args) => SE_Season.UpdateSeasonStatusEffectStats();
             freezingSwimmingInWinter.SettingChanged += (sender, args) => LoadingTips.UpdateLoadingTips();
@@ -543,6 +627,11 @@ namespace Seasons
 
             showCurrentSeasonBuff = config("Season - Buff", "Show current season buff", defaultValue: true, "Show current season buff.");
             seasonsTimerFormat = config("Season - Buff", "Timer format", defaultValue: TimerFormat.CurrentDay, "What to show at season buff timer");
+            fuzzySeasonTimerStages = clientConfig("Season - Buff", "Fuzzy timer stages", defaultValue: SeasonFuzzyTimer.DefaultStages,
+                "Comma-separated labels for the Fuzzy timer format. Each non-empty entry covers an equal part of the season. " +
+                "Use $localization_tokens, plain text, or both. Empty entries are ignored. An empty list uses the default labels.");
+            SeasonFuzzyTimer.Configure(fuzzySeasonTimerStages.Value);
+            fuzzySeasonTimerStages.SettingChanged += (sender, args) => SeasonFuzzyTimer.Configure(fuzzySeasonTimerStages.Value);
             hideSecondsInTimer = config("Season - Buff", "Hide seconds", defaultValue: true, "Hide seconds at season buff timer");
             showCurrentSeasonInRaven = config("Season - Buff", "Raven menu Show current season", defaultValue: true, "Show current season tooltip in Raven menu");
             seasonsTimerFormatInRaven = config("Season - Buff", "Raven menu Timer format", defaultValue: TimerFormat.CurrentDayAndTimeToEnd, "What to show at season buff timer in Raven menu");
@@ -555,9 +644,16 @@ namespace Seasons
             };
             showCurrentSeasonBuff.SettingChanged += seasonStatusDisplayHandler;
             seasonsTimerFormat.SettingChanged += seasonStatusDisplayHandler;
+            fuzzySeasonTimerStages.SettingChanged += seasonStatusDisplayHandler;
             hideSecondsInTimer.SettingChanged += seasonStatusDisplayHandler;
             showCurrentSeasonInRaven.SettingChanged += seasonStatusDisplayHandler;
             seasonsTimerFormatInRaven.SettingChanged += seasonStatusDisplayHandler;
+
+            EventHandler seasonTimerCalendarHandler = (sender, args) => SeasonFuzzyTimer.Invalidate();
+            dayLengthSec.SettingChanged += seasonTimerCalendarHandler;
+            controlNightLength.SettingChanged += seasonTimerCalendarHandler;
+            changeNightLengthGradually.SettingChanged += seasonTimerCalendarHandler;
+            changeSeasonOnlyAfterSleep.SettingChanged += seasonTimerCalendarHandler;
 
             showFadeOnSeasonChange = config("Season - Fade", "Show fade effect on season change", defaultValue: true, "Show black fade loading screen when season is changed.");
             fadeOnSeasonChangeDuration = config("Season - Fade", "Duration of fade effect", defaultValue: 0.5f, "Fade duration");
@@ -603,6 +699,11 @@ namespace Seasons
             seasonalSnowCoveredPieceMeltMultiplier = serverConfig("Season - Winter snow", "Snow melt speed multiplier - covered pieces", defaultValue: 2f,
                 "Melts existing snow under a newly added roof at 0.0018 buildup per active second times this value. Independent of fireplace and roof-piece multipliers. Zero stops covered melting but still blocks snowfall.");
 
+            seasonalSnowFootstepReduction = serverConfig("Season - Winter snow", "Snow reduction per footstep", defaultValue: 0.01f,
+                new ConfigDescription("Seasonal snow buildup removed by each footstep on a building piece. Applies to players and creatures. This is an absolute amount, not a percentage of the remaining snow. Set to 0 to disable trampling.", new AcceptableValueRange<float>(0f, 1f)));
+            seasonalSnowFootstepsCanClear = serverConfig("Season - Winter snow", "Footsteps can clear snow completely", defaultValue: false,
+                "Allow footsteps to reduce seasonal snow buildup to zero. When disabled, footsteps stop at the piece's configured minimum buildup, including the reduced range, and do not change snow already below that minimum. Heat and hoe clearing are not affected.");
+
             showSnowDiagnosticsOnHover = clientConfig("Season - Winter snow", "Show snow diagnostics on hover", defaultValue: false,
                 "Shows technical seasonal snow runtime information while hovering a building piece.");
             showSnowDiagnosticsOnHover.SettingChanged += (sender, args) => SeasonalSnowDiagnostics.ClearCache();
@@ -630,9 +731,6 @@ namespace Seasons
                 new ConfigDescription("Base health scaled by floe volume and world level during spawning. Existing floes require respawning to change health.", new SeasonalIceFloeSettings.HealthRange()));
             SeasonalIceFloeSettings.Initialize(Config);
             enableNightMusicOnFrozenOcean = config("Season - Winter ocean", "Enable music while travelling frozen ocean at night", defaultValue: true, "Enables special frozen ocean music");
-            frozenOceanSlipperiness = serverConfig("Season - Winter ocean", "Frozen ocean surface slipperiness factor", defaultValue: 1f, "Slipperiness factor of the frozen ocean surface");
-            enableVanillaSlippingOnShallowFrozenWater = serverConfig("Season - Winter ocean", "Enable vanilla slipping on shallow frozen water", defaultValue: true,
-                "Enable Valheim's stronger native slipping on frozen shallow water up to 4 meters deep outside the Ocean biome. Deeper water and the Ocean biome keep Seasons' smoother sliding. Ice skates always use native slipping; ice shoes disable Seasons sliding.");
             placeShipAboveFrozenOcean = serverConfig("Season - Winter ocean", "Place ship above frozen ocean surface", defaultValue: false, "Place ship above frozen ocean surface to move them without destroying");
             placeFloatingContainersAboveFrozenOcean = serverConfig("Season - Winter ocean", "Place floating containers above frozen ocean surface", defaultValue: false, "Place floating containers above frozen ocean surface");
 
@@ -642,6 +740,67 @@ namespace Seasons
             iceFloesInWinterDays.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateWaterState();
             placeShipAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateShipsPositions();
             placeFloatingContainersAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateFloatingPositions();
+
+            const string slipperinessSection = "Winter ocean - Slipperiness";
+            frozenOceanSlidingEnabled = serverConfig(slipperinessSection, "Enabled", defaultValue: true,
+                "Enable slipping on seasonal frozen water for players and creatures, including ice skates. Does not change native slippery surfaces.");
+            frozenOceanUseVanillaSlippingPlayers = serverConfig(slipperinessSection, "Use vanilla slipping for players", defaultValue: false,
+                "Use Valheim's native slipping for ordinary players on seasonal frozen water instead of Seasons controlled inertia and long glide. Disables Seasons run-up, cadence and FOV cues. Skates remain native, and ice shoes remain unaffected. Requires Enabled and a nonzero Basic slipperiness factor.");
+            frozenOceanUseVanillaSlippingCreatures = serverConfig(slipperinessSection, "Use vanilla slipping for creatures", defaultValue: false,
+                "Use Valheim's native slipping for non-player creatures on seasonal frozen water instead of Seasons short controlled inertia. Vanilla slipping can carry creatures far and interfere with AI movement. Requires Enabled and a nonzero Basic slipperiness factor.");
+            frozenOceanSlipperiness = serverConfig(slipperinessSection, "Basic slipperiness factor", defaultValue: 1.25f,
+                new ConfigDescription("Scales the basic coast duration and reduces lateral grip and braking. Zero disables seasonal ice slipping entirely.", new AcceptableValueRange<float>(0f, 5f)));
+            frozenOceanSlidingSpeedMultiplier = serverConfig(slipperinessSection, "Movement speed multiplier", defaultValue: 1f,
+                new ConfigDescription("Scales requested walking, jogging and running speed on seasonal ice. Limited to 100% of the speed already calculated by the game and other mods. Does not erase existing momentum or external impulses.", new AcceptableValueRange<float>(0.1f, 1f)));
+            frozenOceanSlidingAcceleration = serverConfig(slipperinessSection, "Movement acceleration", defaultValue: 12f,
+                new ConfigDescription("Basic forward acceleration in meters per second squared. The earned launch uses Long glide speed bonus instead.", new AcceptableValueRange<float>(0.1f, 50f)));
+            frozenOceanSlidingSteering = serverConfig(slipperinessSection, "Basic steering acceleration", defaultValue: 5f,
+                new ConfigDescription("Lateral grip in meters per second squared, divided by Basic slipperiness factor. Lower values preserve sideways momentum longer.", new AcceptableValueRange<float>(0.1f, 50f)));
+            frozenOceanSlidingBraking = serverConfig(slipperinessSection, "Basic braking deceleration", defaultValue: 4f,
+                new ConfigDescription("Braking against movement input in meters per second squared, divided by Basic slipperiness factor.", new AcceptableValueRange<float>(0.1f, 50f)));
+            frozenOceanSlidingCoasting = serverConfig(slipperinessSection, "Basic coasting deceleration", defaultValue: 1.5f,
+                new ConfigDescription("Deceleration without movement input in meters per second squared, divided by Basic slipperiness factor.", new AcceptableValueRange<float>(0.01f, 20f)));
+            frozenOceanSlidingMinimumSpeed = serverConfig(slipperinessSection, "Basic coasting minimum speed", defaultValue: 1f,
+                new ConfigDescription("Below this horizontal speed, idle movement settles using basic braking instead of the slower coasting deceleration.", new AcceptableValueRange<float>(0.01f, 10f)));
+            frozenOceanSlidingFriction = serverConfig(slipperinessSection, "Basic collider friction", defaultValue: 0.05f,
+                new ConfigDescription("Capsule friction during ordinary player movement on seasonal ice. Higher values add physical contact losses on top of configured deceleration.", new AcceptableValueRange<float>(0f, 1f)));
+            frozenOceanGlidingEnabled = serverConfig(slipperinessSection, "Long glide enabled", defaultValue: true,
+                "Allow ordinary-shoe players to earn a long glide by running steadily on seasonal ice, then releasing movement. Actions cancel the glide to basic inertia.");
+            frozenOceanGlidingRunUpTime = serverConfig(slipperinessSection, "Steady run duration", defaultValue: 3f,
+                new ConfigDescription("Seconds of actual grounded running in approximately the same direction before visual glide preparation begins. Returning to running during the boosted part of a glide skips this stage, but still requires the full charge duration.", new AcceptableValueRange<float>(0f, 20f)));
+            frozenOceanGlidingRunUpSpeed = serverConfig(slipperinessSection, "Run-up speed fraction", defaultValue: 0.85f,
+                new ConfigDescription("Minimum fraction of the fully modified running speed required to prepare and launch a glide. Running against an obstacle does not charge it.", new AcceptableValueRange<float>(0.1f, 1f)));
+            frozenOceanGlidingRunUpAngle = serverConfig(slipperinessSection, "Run-up alignment angle", defaultValue: 25f,
+                new ConfigDescription("Maximum angle between actual velocity, movement input and the heading captured at the start of preparation. Larger turns restart preparation.", new AcceptableValueRange<float>(0f, 90f)));
+            frozenOceanGlidingChargeTime = serverConfig(slipperinessSection, "Glide charge duration", defaultValue: 2f,
+                new ConfigDescription("Seconds of steady running during which the running animation and FOV cue ramp up. Completing this stage earns one glide boost; releasing movement earlier keeps basic inertia. Also required when renewing a boosted glide.", new AcceptableValueRange<float>(0.1f, 20f)));
+            frozenOceanGlidingReleaseGrace = serverConfig(slipperinessSection, "Glide release grace", defaultValue: 0.25f,
+                new ConfigDescription("Seconds to retain a completed charge when Run is released slightly before movement. Does not extend readiness through actions, obstacles, a surface change or UI input capture.", new AcceptableValueRange<float>(0f, 2f)));
+            frozenOceanGlidingSpeedBonus = serverConfig(slipperinessSection, "Long glide speed bonus", defaultValue: 0.1f,
+                new ConfigDescription("Speed fraction added once when releasing movement after a completed charge. 0.10 launches at 110% of the last fully modified running speed. Never stacks by multiplying the current glide speed.", new AcceptableValueRange<float>(0f, 1f)));
+            frozenOceanGlidingBonusDuration = serverConfig(slipperinessSection, "Long glide bonus duration", defaultValue: 30f,
+                new ConfigDescription("Seconds for a straight unobstructed glide to lose its speed bonus and reach 100% running speed. Returning to aligned running while still above 100% and within this interval skips the initial steady-run stage.", new AcceptableValueRange<float>(0.1f, 300f)));
+            frozenOceanGlidingCoastDuration = serverConfig(slipperinessSection, "Long glide coast duration", defaultValue: 10f,
+                new ConfigDescription("Seconds after the bonus phase to slow from 100% to Long glide end speed fraction, then return to basic inertia. Turns, contact friction and obstacles can end a glide earlier.", new AcceptableValueRange<float>(0.1f, 120f)));
+            frozenOceanGlidingEndSpeed = serverConfig(slipperinessSection, "Long glide end speed fraction", defaultValue: 0.9f,
+                new ConfigDescription("Fraction of the captured running speed at which the animated glide ends. The duration limit also ends it even if an external impulse kept the body moving faster.", new AcceptableValueRange<float>(0.1f, 1f)));
+            frozenOceanGlidingAnimationBonus = serverConfig(slipperinessSection, "Run-up animation speed bonus", defaultValue: 0.175f,
+                new ConfigDescription("Visual locomotion-speed bonus at full charge. 0.175 is 30% less than the former 0.25 run-up bonus. Does not accelerate the body or change attack, dodge or jump animation speed.", new AcceptableValueRange<float>(0f, 1f)));
+            frozenOceanGlidingFovEnabled = clientConfig(slipperinessSection, "Glide FOV cue", defaultValue: true,
+                "Add a visual FOV offset during glide preparation and boosted gliding. Does not change the configured camera FOV or gameplay speed.");
+            frozenOceanGlidingFovScale = clientConfig(slipperinessSection, "Glide FOV degrees per percent", defaultValue: 1f,
+                new ConfigDescription("Additional FOV degrees per positive speed-bonus percentage point. 1 gives +10 degrees at a 10% bonus. Preparation ramps toward the same cue; speed below 100% never narrows the normal FOV.", new AcceptableValueRange<float>(0f, 3f)));
+            frozenOceanGlidingTurnSpeed = serverConfig(slipperinessSection, "Long glide turn speed", defaultValue: 25f,
+                new ConfigDescription("Maximum steering rate in degrees per second while using mouse look or controller look. Zero keeps the entry direction.", new AcceptableValueRange<float>(0f, 180f)));
+            frozenOceanGlidingTurnLoss = serverConfig(slipperinessSection, "Long glide turning speed loss", defaultValue: 0.4f,
+                new ConfigDescription("Additional speed lost in meters per second for each radian of actual trajectory turn. Steering cannot accelerate the player.", new AcceptableValueRange<float>(0f, 10f)));
+            frozenOceanGlidingFriction = serverConfig(slipperinessSection, "Long glide collider friction", defaultValue: 0f,
+                new ConfigDescription("Capsule friction during the animated long glide. Zero leaves deceleration to the glide calculation.", new AcceptableValueRange<float>(0f, 1f)));
+            frozenOceanSlidingInputDeadZone = serverConfig(slipperinessSection, "Movement input dead zone", defaultValue: 0.1f,
+                new ConfigDescription("Analog movement magnitude below which input is treated as released. Keyboard movement always cancels a long glide.", new AcceptableValueRange<float>(0.001f, 0.5f)));
+            frozenOceanSlidingEnabled.SettingChanged += (sender, args) => CharacterExtentions_FrozenOceanSliding.ResetWorldState();
+            frozenOceanUseVanillaSlippingPlayers.SettingChanged += (sender, args) => CharacterExtentions_FrozenOceanSliding.ResetWorldState();
+            frozenOceanGlidingEnabled.SettingChanged += (sender, args) => CharacterExtentions_FrozenOceanSliding.ResetWorldState();
 
             summerHeatCoolingFoods = serverConfig("Season - Summer heat", "Cooling foods", defaultValue: "Eyescream,$item_eyescream", GetDescriptionSeparatedStrings("Foods that help cool you down in summer. Use prefab names or localization keys. While a cooling food is active, new heat bursts are blocked. It also protects from the older warm-clothes overheat status when the main Summer Heat mechanic is disabled."));
             summerHeatEnabled = serverConfig("Season - Summer heat", "Enabled", defaultValue: true, "Turns the new Summer Heat mechanic on or off. When disabled, the heat meter, status effect, bonuses, penalties and visual heat effects are removed. The older warm-clothes overheat status can still work if 'Warm clothes add heat' is enabled.");
@@ -691,6 +850,8 @@ namespace Seasons
             summerHeatColdArmorHeating = serverConfig("Season - Summer heat - Armor heat", "Cold armor heating", defaultValue: 0.25f, new ConfigDescription("Extra heat gain from chest and leg armor with frost resistance. At 25%, each warm item makes you heat up 25% faster.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
             summerHeatColdArmorCoolingPenalty = serverConfig("Season - Summer heat - Armor heat", "Cold armor cooling penalty", defaultValue: 0.1f, new ConfigDescription("How much frost-resistant chest and leg armor slows cooling. At 10%, each warm item makes cooling 10% weaker.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
 
+            summerHeatDamageEnabled = serverConfig("Season - Summer heat - Damage in red zone", "Enable heat damage", defaultValue: true,
+                "Allow Summer Heat to deal periodic health damage. Disable to keep heat accumulation, zones, visual feedback and other heat modifiers without this damage. Damage tuning values are preserved.");
             summerHeatDamageTickInterval = serverConfig("Season - Summer heat - Damage in red zone", "Damage tick interval", defaultValue: 2f, "Seconds between damage ticks while heat is forcing your health down.");
             summerHeatDamageHealthPerTickMinHealthPercentage = serverConfig("Season - Summer heat - Damage in red zone", "Soft HP cap percentage", defaultValue: 0.8f, new ConfigDescription("Lowest health percentage that Summer Heat can push you toward. You will take constant damage when your HP is higher than this percent. This damage only lowers current HP toward the set mark; it does not reduce your real maximum HP. Values below 1% are treated as 1%.", new AcceptableValueRange<float>(0f, 1f), new CustomConfigs.ConfigurationManagerAttributes { ShowRangeAsPercent = true }));
             summerHeatDamageHealthPerTick = serverConfig("Season - Summer heat - Damage in red zone", "Damage per tick", defaultValue: 2f, "How much damage is dealt each tick while Summer Heat is pushing your HP down toward the soft cap.");
@@ -1186,7 +1347,7 @@ namespace Seasons
             ZoneSystem zones = ZoneSystem.instance;
             yield return waitFor5Seconds;
 
-            if (!scene || ZNetScene.instance != scene || !zones || ZoneSystem.instance != zones || !prefab)
+            if (!enableTreeRegrowth.Value || !scene || ZNetScene.instance != scene || !zones || ZoneSystem.instance != zones || !prefab)
                 yield break;
 
             if (zones.IsBlocked(position))

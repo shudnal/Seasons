@@ -1,18 +1,10 @@
 ﻿using System;
 using UnityEngine;
-using System.Runtime.CompilerServices;
 
 namespace Seasons
 {
     public static class TerrainDecultivation
     {
-        private sealed class FailedAttempt
-        {
-            public uint Revision;
-            public int WorldDay;
-        }
-
-        private static ConditionalWeakTable<TerrainComp, FailedAttempt> failedAttempts = new ConditionalWeakTable<TerrainComp, FailedAttempt>();
         public static int terrainCompVersion;
         public static int m_operations;
         public static Vector3 m_lastOpPoint;
@@ -26,7 +18,6 @@ namespace Seasons
 
         public static void ResetRuntimeState()
         {
-            failedAttempts = new ConditionalWeakTable<TerrainComp, FailedAttempt>();
             terrainCompVersion = 0;
             m_operations = 0;
             m_lastOpPoint = Vector3.zero;
@@ -40,38 +31,56 @@ namespace Seasons
 
         public static bool DecultivateGround(ZDO zdo) => TryDecultivateGround(zdo, out bool changed) && changed;
 
-        internal static bool IsDecultivationDue(ZDO zdo, int worldDay, int yearLength)
+        // Public single-record callers keep the same entry point. The winter pass resolves
+        // its loaded compilers and fallback geometry once for the whole database.
+        internal static bool TryDecultivateGround(ZDO zdo, out bool changed)
         {
-            return !zdo.GetInt(SeasonsVars.s_terrainDecultivated, out int processedDay)
-                || Math.Abs((long)worldDay - processedDay) >= yearLength;
+            changed = false;
+            if (ZNet.instance == null || !ZNet.instance.IsServer())
+                return false;
+
+            TerrainComp compiler = TerrainComp.s_instances.Find(instance => instance != null &&
+                instance.m_nview != null && instance.m_nview.GetZDO() == zdo);
+            Heightmap terrain = compiler != null ? compiler.m_hmap : ZoneSystem.instance?.m_zonePrefab?.GetComponentInChildren<Heightmap>(true);
+            bool success = TryDecultivateGround(zdo, compiler, terrain, out changed);
+            if (success && changed)
+                RefreshLoadedCompiler(compiler);
+            return success;
         }
 
-        // Success includes a fully inspected no-op; unavailable or unsupported data remains retryable.
-        internal static bool TryDecultivateGround(ZDO zdo, out bool changed)
+        internal static bool TryDecultivateGround(ZDO zdo, TerrainComp compiler, Heightmap terrain, out bool changed)
         {
             changed = false;
             try
             {
-                return DecultivateGroundCore(zdo, out changed);
+                return DecultivateGroundCore(zdo, compiler, terrain, out changed);
             }
             catch (Exception error)
             {
                 changed = false;
-                Seasons.LogWarning($"Seasons could not process terrain decultivation; the processed day was not advanced:\n{error}");
+                Seasons.LogWarning($"Seasons could not decultivate terrain; its winter marker was not advanced:\n{error}");
                 return false;
             }
         }
 
-        private static bool DecultivateGroundCore(ZDO zdo, out bool changed)
+        internal static void RefreshLoadedCompiler(TerrainComp compiler)
+        {
+            if (compiler == null || !compiler.m_initialized)
+                return;
+            compiler.CheckLoad();
+            compiler.m_lastHash = compiler.ComputePaintMaskHash();
+        }
+
+        private static bool DecultivateGroundCore(ZDO zdo, TerrainComp loadedCompiler, Heightmap terrainPrefab, out bool changed)
         {
             changed = false;
-            // Remote owners must process their own loaded compiler, otherwise their next Save can undo this edit.
-            if (zdo == null || !zdo.IsValid() || (zdo.HasOwner() && !zdo.IsOwner()) || WorldGenerator.instance?.m_world?.m_biomeData?.IsReady != true)
+            // The server performs the winter transition pass, including remotely owned data.
+            if (zdo == null || !zdo.IsValid() || WorldGenerator.instance?.m_world?.m_biomeData?.IsReady != true)
                 return false;
 
             byte[] byteArray = zdo.GetByteArray(ZDOVars.s_TCData);
             if (byteArray == null)
-                return false;
+                return true; // No saved paint exists to decultivate.
 
             ZPackage zPackageRead = new ZPackage(Utils.Decompress(byteArray));
             terrainCompVersion = zPackageRead.ReadInt();
@@ -89,8 +98,6 @@ namespace Seasons
             m_lastOpRadius = zPackageRead.ReadSingle();
 
             int heightCount = zPackageRead.ReadInt();
-            TerrainComp loadedCompiler = TerrainComp.s_instances.Find(compiler => compiler != null && compiler.m_nview != null && compiler.m_nview.GetZDO() == zdo);
-            Heightmap terrainPrefab = loadedCompiler != null ? loadedCompiler.m_hmap : ZoneSystem.instance?.m_zonePrefab?.GetComponentInChildren<Heightmap>(true);
             if (terrainPrefab == null || heightCount != (terrainPrefab.m_width + 1) * (terrainPrefab.m_width + 1))
             {
                 Seasons.LogWarning("Seasons cannot decultivate ground: the terrain dimensions could not be resolved safely.");
@@ -235,12 +242,6 @@ namespace Seasons
             }
             byte[] bytes = Utils.Compress(zPackageWrite.GetArray());
             zdo.Set(ZDOVars.s_TCData, bytes);
-            // CheckLoad updates arrays and m_lastDataRevision before another operation can save stale paint.
-            if (loadedCompiler != null)
-            {
-                loadedCompiler.CheckLoad();
-                loadedCompiler.m_lastHash = loadedCompiler.ComputePaintMaskHash();
-            }
             changed = true;
 
             return true;
@@ -270,57 +271,5 @@ namespace Seasons
             return true;
         }
 
-        internal static void ProcessQueuedTerrain(ZDO zdo)
-        {
-            // Resolve live authority/day again when the bounded queue reaches this ID.
-            if (!SeasonState.IsActive || !ZoneSystemVariantController.IsTimeToDecultivateGround()
-                || zdo == null || !zdo.IsValid() || ZDOMan.instance == null || ZDOMan.instance.GetZDO(zdo.m_uid) != zdo
-                || (!zdo.IsOwner() && (zdo.HasOwner() || ZNet.instance == null || !ZNet.instance.IsServer()))
-                || WorldGenerator.instance?.m_world?.m_biomeData?.IsReady != true)
-                return;
-
-            int worldDay = Seasons.seasonState.GetCurrentWorldDay();
-            if (!IsDecultivationDue(zdo, worldDay, Seasons.seasonState.GetYearLengthInDays()))
-                return;
-            TerrainComp compiler = TerrainComp.s_instances.Find(instance => instance != null && instance.m_nview != null && instance.m_nview.GetZDO() == zdo);
-            if (compiler != null && (!compiler.m_initialized
-                || (failedAttempts.TryGetValue(compiler, out FailedAttempt previous) && previous.Revision == zdo.DataRevision && previous.WorldDay == worldDay)))
-                return;
-
-            if (TryDecultivateGround(zdo, out _))
-            {
-                zdo.Set(SeasonsVars.s_terrainDecultivated, worldDay);
-                if (compiler != null)
-                    failedAttempts.Remove(compiler);
-            }
-            else if (compiler != null)
-            {
-                FailedAttempt failed = failedAttempts.GetValue(compiler, _ => new FailedAttempt());
-                failed.Revision = zdo.DataRevision;
-                failed.WorldDay = worldDay;
-            }
-        }
-
-        [HarmonyLib.HarmonyPatch(typeof(TerrainComp), nameof(TerrainComp.Update))]
-        private static class TerrainComp_Update_DecultivateOwnedTerrain
-        {
-            private static void Prefix(TerrainComp __instance)
-            {
-                if (!SeasonState.IsActive || !ZoneSystemVariantController.IsTimeToDecultivateGround()
-                    || !__instance.m_initialized || __instance.m_nview == null || !__instance.m_nview.IsValid() || !__instance.m_nview.IsOwner())
-                    return;
-
-                ZDO zdo = __instance.m_nview.GetZDO();
-                int worldDay = Seasons.seasonState.GetCurrentWorldDay();
-                if (!IsDecultivationDue(zdo, worldDay, Seasons.seasonState.GetYearLengthInDays()))
-                    return;
-
-                if (WorldGenerator.instance?.m_world?.m_biomeData?.IsReady != true
-                    || (failedAttempts.TryGetValue(__instance, out FailedAttempt previous) && previous.Revision == zdo.DataRevision && previous.WorldDay == worldDay))
-                    return;
-
-                SeasonalWorldMaintenance.RequestTerrain(zdo);
-            }
-        }
     }
 }

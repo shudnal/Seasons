@@ -18,6 +18,9 @@ namespace Seasons.Compatibility
         private static Type environmentManagerType;
         private static Type biomeManagerType;
         private static FieldInfo environmentManagerInitializedField;
+        private static MethodInfo environmentSetMethod;
+        private static bool environmentUpdateMembersResolved;
+        private const BindingFlags StaticMembers = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
         private static FieldInfo biomeToDisplayNameField;
         private static bool seasonsWorldInitialized;
         private static bool ewdBiomeSetupAppliedLast;
@@ -91,13 +94,46 @@ namespace Seasons.Compatibility
             return biomeManagerType != null;
         }
 
-        private static bool IsEnvironmentManagerInitialized()
+        private static bool TryResolveEnvironmentUpdateMembers()
         {
             if (!TryGetEnvironmentManagerType())
                 return false;
+            if (environmentUpdateMembersResolved)
+                return environmentSetMethod != null;
 
-            environmentManagerInitializedField ??= AccessTools.Field(environmentManagerType, "Initialized");
-            return environmentManagerInitializedField?.GetValue(null) is bool initialized && initialized;
+            environmentUpdateMembersResolved = true;
+            // Probe optional API shapes without AccessTools warnings for missing members.
+            // Recent EWD versions moved the shared initialization gate to SyncedDataManager.
+            environmentManagerInitializedField = environmentManagerType.GetField("Initialized", StaticMembers)
+                ?? assembly.GetType("ExpandWorldData.SyncedDataManager")?.GetField("Initialized", StaticMembers);
+            if (environmentManagerInitializedField?.FieldType != typeof(bool))
+                environmentManagerInitializedField = null;
+
+            foreach (Type argument in new[] { typeof(Dictionary<string, string>), typeof(string) })
+            {
+                MethodInfo method = environmentManagerType.GetMethod("Set", StaticMembers, null, new[] { argument }, null);
+                if (method != null && !method.ContainsGenericParameters &&
+                    (method.ReturnType == typeof(bool) || method.ReturnType == typeof(void)))
+                {
+                    environmentSetMethod = method;
+                    break;
+                }
+            }
+
+            if (environmentSetMethod == null || environmentManagerInitializedField == null)
+            {
+                environmentSetMethod = null;
+                Seasons.LogWarning("Expand World Data environment reload compatibility is unavailable: " +
+                    "the Set entry point or initialization gate is not supported. Seasonal weather selection remains available.");
+                return false;
+            }
+            return true;
+        }
+
+        private static bool IsEnvironmentManagerInitialized()
+        {
+            return TryResolveEnvironmentUpdateMembers() &&
+                environmentManagerInitializedField.GetValue(null) is bool initialized && initialized;
         }
 
         private static void ReapplySeasonEnvironmentsAfterEwdUpdate()
@@ -139,7 +175,7 @@ namespace Seasons.Compatibility
                 if (!TryGetEnvironmentManagerType())
                     return false;
 
-                target ??= AccessTools.Method(environmentManagerType, "Initialize", Type.EmptyTypes);
+                target ??= environmentManagerType.GetMethod("Initialize", StaticMembers, null, Type.EmptyTypes, null);
                 if (target == null)
                     return false;
 
@@ -164,15 +200,12 @@ namespace Seasons.Compatibility
 
             public static bool Prepare(MethodBase original)
             {
-                if (!TryGetEnvironmentManagerType())
+                if (!TryResolveEnvironmentUpdateMembers() || environmentSetMethod.ReturnType != typeof(void))
                     return false;
 
-                target ??= AccessTools.Method(environmentManagerType, "Set", new Type[] { typeof(string) });
-                if (target == null)
-                    return false;
-
+                target = environmentSetMethod;
                 if (original == null)
-                    Seasons.LogInfo("ExpandWorldData.EnvironmentManager:Set method is patched to reapply Seasons environments after EWD environment changes");
+                    Seasons.LogInfo("Expand World Data environment reload hook: " + target);
 
                 return true;
             }
@@ -182,6 +215,32 @@ namespace Seasons.Compatibility
             public static void Postfix()
             {
                 ReapplySeasonEnvironmentsAfterEwdUpdate();
+            }
+        }
+
+        [HarmonyPatch]
+        public static class EWD_EnvironmentManager_SetResult_ReapplySeasonEnvironments
+        {
+            public static MethodBase target;
+
+            public static bool Prepare(MethodBase original)
+            {
+                if (!TryResolveEnvironmentUpdateMembers() || environmentSetMethod.ReturnType != typeof(bool))
+                    return false;
+
+                target = environmentSetMethod;
+                if (original == null)
+                    Seasons.LogInfo("Expand World Data environment reload hook: " + target);
+                return true;
+            }
+
+            public static MethodBase TargetMethod() => target;
+
+            public static void Postfix(bool __result)
+            {
+                // Failed parsing and migration retries do not publish a new environment list.
+                if (__result)
+                    ReapplySeasonEnvironmentsAfterEwdUpdate();
             }
         }
 
