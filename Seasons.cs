@@ -136,7 +136,8 @@ namespace Seasons
         public static ConfigEntry<bool> enableNightMusicOnFrozenOcean;
         public static ConfigEntry<float> frozenOceanSlipperiness;
         public static ConfigEntry<bool> frozenOceanSlidingEnabled;
-        public static ConfigEntry<bool> frozenOceanUseVanillaSlipping;
+        public static ConfigEntry<bool> frozenOceanUseVanillaSlippingPlayers;
+        public static ConfigEntry<bool> frozenOceanUseVanillaSlippingCreatures;
         public static ConfigEntry<float> frozenOceanSlidingSpeedMultiplier;
         public static ConfigEntry<float> frozenOceanSlidingAcceleration;
         public static ConfigEntry<float> frozenOceanSlidingSteering;
@@ -743,8 +744,10 @@ namespace Seasons
             const string slipperinessSection = "Winter ocean - Slipperiness";
             frozenOceanSlidingEnabled = serverConfig(slipperinessSection, "Enabled", defaultValue: true,
                 "Enable slipping on seasonal frozen water for players and creatures, including ice skates. Does not change native slippery surfaces.");
-            frozenOceanUseVanillaSlipping = serverConfig(slipperinessSection, "Use vanilla slipping", defaultValue: false,
-                "Use Valheim's native slipping on seasonal frozen water instead of Seasons basic inertia and long glide for ordinary players. Disables Seasons run-up, cadence and FOV cues. Creatures and ice skates already use native slipping; ice shoes remain unaffected. Requires Enabled and a nonzero Basic slipperiness factor.");
+            frozenOceanUseVanillaSlippingPlayers = serverConfig(slipperinessSection, "Use vanilla slipping for players", defaultValue: false,
+                "Use Valheim's native slipping for ordinary players on seasonal frozen water instead of Seasons controlled inertia and long glide. Disables Seasons run-up, cadence and FOV cues. Skates remain native, and ice shoes remain unaffected. Requires Enabled and a nonzero Basic slipperiness factor.");
+            frozenOceanUseVanillaSlippingCreatures = serverConfig(slipperinessSection, "Use vanilla slipping for creatures", defaultValue: false,
+                "Use Valheim's native slipping for non-player creatures on seasonal frozen water instead of Seasons short controlled inertia. Vanilla slipping can carry creatures far and interfere with AI movement. Requires Enabled and a nonzero Basic slipperiness factor.");
             frozenOceanSlipperiness = serverConfig(slipperinessSection, "Basic slipperiness factor", defaultValue: 1.25f,
                 new ConfigDescription("Scales the basic coast duration and reduces lateral grip and braking. Zero disables seasonal ice slipping entirely.", new AcceptableValueRange<float>(0f, 5f)));
             frozenOceanSlidingSpeedMultiplier = serverConfig(slipperinessSection, "Movement speed multiplier", defaultValue: 1f,
@@ -796,7 +799,7 @@ namespace Seasons
             frozenOceanSlidingInputDeadZone = serverConfig(slipperinessSection, "Movement input dead zone", defaultValue: 0.1f,
                 new ConfigDescription("Analog movement magnitude below which input is treated as released. Keyboard movement always cancels a long glide.", new AcceptableValueRange<float>(0.001f, 0.5f)));
             frozenOceanSlidingEnabled.SettingChanged += (sender, args) => CharacterExtentions_FrozenOceanSliding.ResetWorldState();
-            frozenOceanUseVanillaSlipping.SettingChanged += (sender, args) => CharacterExtentions_FrozenOceanSliding.ResetWorldState();
+            frozenOceanUseVanillaSlippingPlayers.SettingChanged += (sender, args) => CharacterExtentions_FrozenOceanSliding.ResetWorldState();
             frozenOceanGlidingEnabled.SettingChanged += (sender, args) => CharacterExtentions_FrozenOceanSliding.ResetWorldState();
 
             summerHeatCoolingFoods = serverConfig("Season - Summer heat", "Cooling foods", defaultValue: "Eyescream,$item_eyescream", GetDescriptionSeparatedStrings("Foods that help cool you down in summer. Use prefab names or localization keys. While a cooling food is active, new heat bursts are blocked. It also protects from the older warm-clothes overheat status when the main Summer Heat mechanic is disabled."));

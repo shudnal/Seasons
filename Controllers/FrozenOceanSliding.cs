@@ -27,7 +27,9 @@ namespace Seasons
 
         private static bool ShouldUseVanillaIceSlipping(Character character) =>
             SlidingEnabled && character && !character.m_iceShoes &&
-            (frozenOceanUseVanillaSlipping.Value || character.m_skating || !(character is Player));
+            (character.m_skating || (character is Player
+                ? frozenOceanUseVanillaSlippingPlayers.Value
+                : frozenOceanUseVanillaSlippingCreatures.Value));
 
         private static bool ResolveVanillaSlipping(bool vanillaSlipping, Character character)
         {

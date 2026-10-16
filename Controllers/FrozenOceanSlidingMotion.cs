@@ -34,7 +34,7 @@ namespace Seasons
             internal int Transitions;
         }
 
-        // Only the owning local player has custom momentum. Creatures never enter this state.
+        // Only the owning local player keeps persistent slide state. Creatures use stateless inertia.
         private static PlayerSlide playerSlide;
 
         internal static void ResetWorldState()
@@ -129,11 +129,19 @@ namespace Seasons
             Mathf.Clamp(Finite(value) ? value : fallback, minimum, maximum);
         private static Vector3 Horizontal(Vector3 value) => new Vector3(value.x, 0f, value.z);
 
-        private static bool CanOwnSlide(Player player) => SlidingEnabled && !frozenOceanUseVanillaSlipping.Value &&
+        private static bool CanOwnSlide(Player player) => SlidingEnabled && !frozenOceanUseVanillaSlippingPlayers.Value &&
             player && player == Player.m_localPlayer &&
             player.m_nview && player.m_nview.IsValid() && player.m_nview.IsOwner() && player.m_body &&
             !player.m_iceShoes && !player.m_skating && !player.IsDead() && !player.IsTeleporting() &&
             !player.IsAttached() && !player.IsSwimming() && !player.IsFlying() && !player.IsDebugFlying() && !player.InCutscene();
+
+        // Creature movement has no persistent slide state or extra AI update.
+        // Only the network owner supplies the short ice correction to native walking.
+        private static bool CanUseCreatureSlide(Character character) =>
+            SlidingEnabled && !frozenOceanUseVanillaSlippingCreatures.Value &&
+            character && !(character is Player) && !character.m_iceShoes && !character.m_skating &&
+            !character.IsDead() && character.m_body && character.m_nview &&
+            character.m_nview.IsValid() && character.m_nview.IsOwner() && character.IsOnIce();
 
         private static void PreparePlayerSurface(Character character, bool onIce)
         {
@@ -323,6 +331,20 @@ namespace Seasons
                     velocity.z = result.z;
                 }
             }
+            else if (CanUseCreatureSlide(character) && Finite(dt) && dt > 0f)
+            {
+                Vector3 actual = Horizontal(character.m_body.linearVelocity);
+                Vector3 desired = Horizontal(velocity);
+                if (Finite(actual) && Finite(desired))
+                {
+                    Vector3 result = CreatureVelocity(character, actual, desired, dt);
+                    if (Finite(result))
+                    {
+                        velocity.x = result.x;
+                        velocity.z = result.z;
+                    }
+                }
+            }
             // Route the real patched method. The local physics velocity is separate
             // from m_currentVel, which still drives ordinary locomotion animation.
             character.ApplyRootMotion(ref velocity);
@@ -371,6 +393,41 @@ namespace Seasons
             // Independent forward/lateral control must not generate unbounded strafe acceleration.
             // External impulses may exceed the running cap, but cannot grow through steering.
             return Vector3.ClampMagnitude(direction * forward + lateral, Mathf.Max(speed, targetSpeed));
+        }
+
+        private static Vector3 CreatureVelocity(Character character, Vector3 actual, Vector3 desired, float dt)
+        {
+            // Do not prolong attacks, immobilization or external pushback.
+            if (!character.CanMove() || character.InAttack() || character.InDodge() ||
+                character.IsAttached() || character.m_pushForce.sqrMagnitude > 0f)
+                return desired;
+
+            float factor = Parameter(frozenOceanSlipperiness.Value, 1.25f, 0.01f, 5f);
+            float braking = Parameter(frozenOceanSlidingBraking.Value, 4f, 0.1f, 50f) / factor;
+            float deadZone = Parameter(frozenOceanSlidingInputDeadZone.Value, 0.1f, 0.001f, 0.5f);
+            Vector3 input = Horizontal(character.m_moveDir);
+            if (!Finite(input))
+                return desired;
+
+            // Creatures coast at the basic braking rate, not the longer player coasting
+            // rate. This bounds their travel after AI stops requesting movement.
+            if (input.sqrMagnitude <= deadZone * deadZone)
+                return Vector3.MoveTowards(actual, Vector3.zero, braking * dt);
+
+            float targetSpeed = desired.magnitude;
+            if (targetSpeed <= 0.000001f)
+                return desired;
+            // The AI supplies heading directly; its native velocity supplies the speed cap.
+            Vector3 direction = input.normalized;
+            float forward = Vector3.Dot(actual, direction);
+            Vector3 lateral = actual - direction * forward;
+            float acceleration = forward < 0f || forward > targetSpeed ? braking :
+                Parameter(frozenOceanSlidingAcceleration.Value, 12f, 0.1f, 50f);
+            forward = Mathf.MoveTowards(forward, targetSpeed, acceleration * dt);
+            lateral = Vector3.MoveTowards(lateral, Vector3.zero,
+                Parameter(frozenOceanSlidingSteering.Value, 5f, 0.1f, 50f) / factor * dt);
+            // No new impulse: target native movement and actual velocity set the speed cap.
+            return Vector3.ClampMagnitude(direction * forward + lateral, Mathf.Max(actual.magnitude, targetSpeed));
         }
 
         private static Vector3 GlideVelocity(PlayerSlide state, Vector3 actual, float dt)
@@ -431,7 +488,7 @@ namespace Seasons
 
         public static string GetSlidingStatus()
         {
-            if (SlidingEnabled && frozenOceanUseVanillaSlipping.Value && Player.m_localPlayer &&
+            if (SlidingEnabled && frozenOceanUseVanillaSlippingPlayers.Value && Player.m_localPlayer &&
                 !Player.m_localPlayer.m_iceShoes && Player.m_localPlayer.IsOnIce())
                 return "state=vanilla";
             PlayerSlide state = playerSlide;
