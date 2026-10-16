@@ -9,7 +9,7 @@ using static Seasons.ZoneSystemVariantController;
 
 namespace Seasons
 {
-    // Seasonal IceSurface is a separate movement domain. Never seed vanilla momentum from it.
+    // Seasonal IceSurface is a separate movement domain. Do not transfer custom momentum into native slipping.
     public static partial class CharacterExtentions_FrozenOceanSliding
     {
         private static bool walkingHookReady;
@@ -27,7 +27,7 @@ namespace Seasons
 
         private static bool ShouldUseVanillaIceSlipping(Character character) =>
             SlidingEnabled && character && !character.m_iceShoes &&
-            (character.m_skating || !(character is Player));
+            (frozenOceanUseVanillaSlipping.Value || character.m_skating || !(character is Player));
 
         private static bool ResolveVanillaSlipping(bool vanillaSlipping, Character character)
         {

@@ -129,7 +129,8 @@ namespace Seasons
             Mathf.Clamp(Finite(value) ? value : fallback, minimum, maximum);
         private static Vector3 Horizontal(Vector3 value) => new Vector3(value.x, 0f, value.z);
 
-        private static bool CanOwnSlide(Player player) => SlidingEnabled && player && player == Player.m_localPlayer &&
+        private static bool CanOwnSlide(Player player) => SlidingEnabled && !frozenOceanUseVanillaSlipping.Value &&
+            player && player == Player.m_localPlayer &&
             player.m_nview && player.m_nview.IsValid() && player.m_nview.IsOwner() && player.m_body &&
             !player.m_iceShoes && !player.m_skating && !player.IsDead() && !player.IsTeleporting() &&
             !player.IsAttached() && !player.IsSwimming() && !player.IsFlying() && !player.IsDebugFlying() && !player.InCutscene();
@@ -430,6 +431,9 @@ namespace Seasons
 
         public static string GetSlidingStatus()
         {
+            if (SlidingEnabled && frozenOceanUseVanillaSlipping.Value && Player.m_localPlayer &&
+                !Player.m_localPlayer.m_iceShoes && Player.m_localPlayer.IsOnIce())
+                return "state=vanilla";
             PlayerSlide state = playerSlide;
             if (state == null || !state.Player || !state.Player.m_body)
                 return "state=inactive";

@@ -15,7 +15,8 @@ Leaving seasonal ice releases the seasonal state; it does not zero the Rigidbody
 
 | Actor / equipment | Seasonal frozen water |
 | --- | --- |
-| Player, ordinary footwear | Basic Seasons inertia, steady run preparation, optional timed glide |
+| Player, ordinary footwear (default) | Basic Seasons inertia, steady run preparation, optional timed glide |
+| Player, ordinary footwear (`Use vanilla slipping`) | Native slippery movement; no Seasons basic inertia, run-up, long glide, cadence or FOV cue |
 | Player, ice skates (`m_skating`) | Native slipping and skating, with native coefficients |
 | Ice shoes / snowshoes (`m_iceShoes`) | No additional seasonal slipping; takes precedence over skates |
 | Non-player character | Native slipping; no Seasons movement state or custom slide triggers |
@@ -24,6 +25,13 @@ The master toggle disables both custom movement and the native-slip extension on
 seasonal ice, including creatures and skates. It does not disable slipping on the
 game's own surfaces. A zero basic slipperiness factor also disables the seasonal
 extension. The old shallow-water switch has been removed entirely.
+
+`Use vanilla slipping` switches ordinary players on seasonal ice to the game's
+native slippery movement, without altering the other surface and footwear rules.
+Changing this setting clears existing Seasons slide preparation, glide and
+animation ownership without resetting Rigidbody velocity. Native movement takes
+over on the next walking update. The master toggle and nonzero basic factor are
+still required; the basic factor's magnitude does not modify native coefficients.
 
 ## Running and preparing a glide
 
@@ -193,6 +201,7 @@ preferences are client-side. Existing basic-inertia parameters remain available.
 | Setting | Default | Purpose |
 | --- | ---: | --- |
 | Enabled | true | Entire seasonal sliding extension |
+| Use vanilla slipping | false | Use native slippery movement for ordinary players on seasonal ice instead of Seasons basic and long glide |
 | Basic slipperiness factor | 1.25 | Divides basic braking, lateral grip and idle loss |
 | Movement speed multiplier | 1.00 | Driven target only, range 0.1..1.0 |
 | Movement acceleration | 12 | Basic acceleration, m/s squared |
@@ -229,6 +238,9 @@ Parameters are read during play. The running-speed reference is captured from re
 running and retained for that glide; changing equipment cancels it. Changing a
 profile duration or loss parameter affects subsequent steps without restoring lost
 speed. Disabling the master or long-glide toggle immediately releases local state.
+Toggling `Use vanilla slipping` also releases custom state. While enabled, custom
+speed, braking, preparation, glide, cadence and FOV settings do not affect native
+slipping.
 
 The read-only `seasons_sliding` command reports mode, ground contact, actual speed,
 captured running speed, their ratio, steady-run and charge progress, readiness,
@@ -251,6 +263,9 @@ hook availability. It does not enable background sampling or change gameplay.
   basic inertia after landing, with no automatic return of charge.
 - Open UI during a glide versus during preparation. Test master/long-glide/FOV
   toggles, thaw, death, logout and free-fly for leftover visual state.
+- Enable `Use vanilla slipping` while gliding, then disable it while on ice.
+  Verify that native movement and animation work without leftover speed, FOV or
+  cadence effects. Repeat with ice shoes, skates, creatures and native icy ground.
 - Verify another client sees the cadence and glide animation. Compare with camera
   and movement mods and inspect any optional-integration warnings.
 
