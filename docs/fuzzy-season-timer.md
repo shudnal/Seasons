@@ -26,25 +26,45 @@ The three built-in tokens are translated in every language column of `EmbeddedLo
 
 ## Morning announcement
 
-`Season - Buff / Show Fuzzy season period on morning` is a client setting,
-disabled by default. When enabled, each `EnvMan.OnMorning` event displays
-the current season and its Fuzzy label on a separate line, such as
-`Spring: Reigns` or `Весна: В разгаре`. It uses the same configurable
-labels, localization and cached time calculation as the status-effect Fuzzy
-timer. It does not require the status-effect timer or the Raven tooltip
-to be set to Fuzzy.
+Three independent client settings control Fuzzy announcements in the
+`Season - Buff` section:
 
-The new toggle is independent of `Show seasonal messages on morning`.
-That older toggle still replaces the vanilla day number with an arrival
-or upcoming-season message on the first and last season days. When the
-day number is visible, the Fuzzy line appears below it; when the day
-number is suppressed, the Fuzzy line appears on its own. First/last-day
-seasonal announcements are preserved with the Fuzzy line below them.
+| Setting | Default | Behavior |
+| --- | --- | --- |
+| `Show Fuzzy season period on morning` | `false` | Enable morning Fuzzy announcements |
+| `Show Fuzzy as second morning line` | `false` | Append Fuzzy below another center-screen morning message; otherwise only show it if no other morning message was displayed |
+| `Show Fuzzy only when period changes` | `true` | Announce a stage only on the first morning when it differs from the previous morning; disabling this allows announcements every morning |
 
-The existing morning message is not placed in the top-left queue. On ordinary
-days the new line does not clear that queue or duplicate the vanilla day
-message in the message log. The setting does not change the calendar
-or update the Fuzzy stage on a whole-day boundary.
+The existing `Show seasonal messages on morning` setting always takes
+priority when enabled: on the first and last day of a season it replaces
+the vanilla day number with `Season has come` or `Season is coming`.
+No Fuzzy line is added on those days, even when the second-line option
+is enabled and the period changed.
+
+On other days, Fuzzy is considered only when its main switch is on and,
+by default, the period changed since the previous morning. If the game
+or another mod already displayed a center-screen morning message (such as
+the day number), Fuzzy is shown **only** when the second-line setting is on.
+If the day number was suppressed and no other center-screen message was
+displayed, Fuzzy appears by itself, for example `Весна: В разгаре`.
+
+The change-only check uses the exact timestamp at which the current
+Fuzzy interval started compared with the previous morning's calendar time.
+It accounts for changing morning times when Seasons varies the night length,
+rather than assuming yesterday's morning was exactly one day-length ago.
+This does not round the season into whole-day stages. If several labels
+start between two mornings, only the currently active one is eligible.
+The first day of a new season counts as a new period, including when
+only one label is configured. When seasonal first-day announcements are
+enabled, they still take priority.
+
+The text uses the same configured labels, localization and cache as
+the status-effect Fuzzy timer. Neither status-effect nor Raven timer
+must be set to Fuzzy. The morning hook compares the center-message
+fade queue before and after the original `OnMorning` call, and requires
+non-empty center text; it does not mistake stale text from a previous
+message or an empty suppressed message for a displayed day number. Normal Fuzzy announcements do not clear the top-left message
+queue or add another message-log entry. No extra per-frame work is added.
 
 ## Timing and cache
 
@@ -73,3 +93,8 @@ Build and run these checks in Valheim. No game build or runtime test was perform
 4. Move time forward and backward across stages, sleep, change season/day overrides, and change the day/season duration. Confirm that the next text request uses the new state.
 5. Switch language, leave/rejoin the world, and switch worlds. Check both UI locations. The last stage must not loop back to the first while a season transition is delayed.
 6. Check a configured real-world calendar. Fuzzy must use that calendar rather than the time since the client joined.
+7. With both morning options at their defaults, verify the new Fuzzy switch alone does not replace a visible day number. Suppress the native day message and check that Fuzzy appears on the first morning after a stage change but not on subsequent mornings.
+8. Enable the second-line option: check that the Fuzzy line appears below the day number only on a new period morning. Disable change-only to show the extra line every ordinary morning. The Fuzzy icon/Raven formats must remain independent.
+9. Enable seasonal morning announcements and test the first and last days with both Fuzzy options enabled: only the seasonal announcement should appear. Disable the seasonal option and verify the first-day Fuzzy stage is eligible again. Repeat with a one-label list and with multiple stage changes inside one day.
+10. Check hidden or replaced vanilla day messages from another mod, including a blank suppressed message. With the second-line option off, Fuzzy must appear only when no other non-empty center-screen morning message was actually shown.
+11. Use a season with changing night lengths and a Fuzzy stage boundary close to morning. Verify that yesterday's actual morning fraction determines the change-only result, rather than today's fraction applied to both days.

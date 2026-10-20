@@ -479,46 +479,57 @@ namespace Seasons
                 MessageHud.instance.ShowMessage(MessageHud.MessageType.Center, message, log: seasonalAnnouncement);
             }
 
+            [HarmonyPriority(Priority.First)]
+            private static void Prefix(ref int __state)
+            {
+                MessageHud hud = MessageHud.instance;
+                __state = hud ? hud._crossFadeTextBuffer.Count : 0;
+            }
+
             [HarmonyPriority(Priority.Last)]
-            private static void Postfix(EnvMan __instance)
+            private static void Postfix(int __state)
             {
                 if (!overrideNewDayMessagesOnSeasonStartEnd.Value && !showFuzzySeasonPeriodOnMorning.Value)
                     return;
 
-                if (Player.m_localPlayer == null || MessageHud.instance == null)
+                MessageHud hud = MessageHud.instance;
+                if (Player.m_localPlayer == null || !hud)
                     return;
 
-                string announcement = null;
+                // Seasonal first/last-day announcements have absolute priority.
+                // Never append a Fuzzy line to either of them.
                 if (overrideNewDayMessagesOnSeasonStartEnd.Value)
                 {
                     if (seasonState.GetCurrentDay() == 1)
-                        announcement = GetSeasonTooltip(seasonState.GetCurrentSeason());
-                    else if (seasonState.GetCurrentDay() == seasonState.GetDaysInSeason())
-                        announcement = GetSeasonIsComing(seasonState.GetNextSeason());
+                    {
+                        ShowMessage(GetSeasonTooltip(seasonState.GetCurrentSeason()), seasonalAnnouncement: true);
+                        return;
+                    }
+                    if (seasonState.GetCurrentDay() == seasonState.GetDaysInSeason())
+                    {
+                        ShowMessage(GetSeasonIsComing(seasonState.GetNextSeason()), seasonalAnnouncement: true);
+                        return;
+                    }
                 }
 
-                string fuzzy = showFuzzySeasonPeriodOnMorning.Value && SeasonState.IsActive
-                    ? SeasonFuzzyTimer.GetText() : null;
-                if (string.IsNullOrEmpty(fuzzy))
-                {
-                    if (announcement != null)
-                        ShowMessage(announcement, seasonalAnnouncement: true);
+                if (!showFuzzySeasonPeriodOnMorning.Value || !SeasonState.IsActive)
                     return;
-                }
 
-                // Preserve the native day number only if it was actually shown.
-                // Another mod can suppress it; the Fuzzy line must remain independent.
-                string heading = announcement;
-                if (heading == null && MessageHud.instance.m_messageCenterText != null)
-                {
-                    string nativeDay = Localization.instance.Localize("$msg_newday", __instance.GetCurrentDay().ToString());
-                    if (MessageHud.instance.m_messageCenterText.text == nativeDay)
-                        heading = nativeDay;
-                }
+                string fuzzy = SeasonFuzzyTimer.GetMorningText(showFuzzyOnlyWhenPeriodChanges.Value);
+                if (string.IsNullOrEmpty(fuzzy))
+                    return;
+
+                // A center message creates two fade entries. Compare against the count
+                // before OnMorning, not the possibly stale text from a previous message.
+                bool morningMessageShown = hud._crossFadeTextBuffer.Count > __state &&
+                    hud.m_messageCenterText && !string.IsNullOrWhiteSpace(hud.m_messageCenterText.text);
+                if (morningMessageShown && !showFuzzyAsSecondMorningLine.Value)
+                    return;
 
                 string fuzzyLine = $"{GetSeasonName(seasonState.GetCurrentSeason())}: {fuzzy}";
-                ShowMessage(heading == null ? fuzzyLine : $"{heading}\n{fuzzyLine}",
-                    seasonalAnnouncement: announcement != null);
+                if (morningMessageShown && hud.m_messageCenterText != null)
+                    fuzzyLine = $"{hud.m_messageCenterText.text}\n{fuzzyLine}";
+                ShowMessage(fuzzyLine, seasonalAnnouncement: false);
             }
         }
 

@@ -61,6 +61,38 @@ namespace Seasons
             return s_text;
         }
 
+        // Use the actual stage's start boundary, not rounded season-day indices.
+        // One day can contain multiple stages; only the stage current this morning
+        // is relevant. The first day begins a new season even with a single label.
+        internal static string GetMorningText(bool onlyWhenPeriodChanges)
+        {
+            string text = GetText();
+            if (!onlyWhenPeriodChanges || string.IsNullOrEmpty(text))
+                return text;
+
+            if (seasonState.GetCurrentDay() == 1)
+                return text;
+
+            if (s_labels.Length == 1)
+                return string.Empty;
+
+            double now = seasonState.GetTotalSeconds();
+            double dayLength = seasonState.GetDayLengthInSeconds();
+            double previousMorning = now - dayLength;
+            if (controlNightLength.Value)
+            {
+                // Morning falls at a different fraction of the day when night length
+                // varies. Compare against yesterday's actual morning, not the same
+                // clock fraction as today's morning.
+                int today = seasonState.GetWorldDay(now);
+                int yesterday = today - 1;
+                float todayMorning = seasonState.DayStartFraction(seasonState.GetSeason(today), seasonState.GetDayInSeason(today));
+                float previousDayMorning = seasonState.DayStartFraction(seasonState.GetSeason(yesterday), seasonState.GetDayInSeason(yesterday));
+                previousMorning += (previousDayMorning - todayMorning) * dayLength;
+            }
+            return s_validFrom > previousMorning ? text : string.Empty;
+        }
+
         private static double Boundary(double start, double duration, int index) =>
             start + duration * ((double)index / s_labels.Length);
     }

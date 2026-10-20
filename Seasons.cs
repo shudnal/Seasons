@@ -87,6 +87,8 @@ namespace Seasons
         public static ConfigEntry<TimerFormat> seasonsTimerFormatInRaven;
         public static ConfigEntry<bool> overrideNewDayMessagesOnSeasonStartEnd;
         public static ConfigEntry<bool> showFuzzySeasonPeriodOnMorning;
+        public static ConfigEntry<bool> showFuzzyAsSecondMorningLine;
+        public static ConfigEntry<bool> showFuzzyOnlyWhenPeriodChanges;
 
         public static ConfigEntry<bool> disableBloomInWinter;
         public static ConfigEntry<bool> enableSeasonalItems;
@@ -638,7 +640,11 @@ namespace Seasons
             seasonsTimerFormatInRaven = config("Season - Buff", "Raven menu Timer format", defaultValue: TimerFormat.CurrentDayAndTimeToEnd, "What to show at season buff timer in Raven menu");
             overrideNewDayMessagesOnSeasonStartEnd = config("Season - Buff", "Show seasonal messages on morning", defaultValue: true, "Show messages \"Season is coming\" on last day and \"Season has come\" on first day of season");
             showFuzzySeasonPeriodOnMorning = clientConfig("Season - Buff", "Show Fuzzy season period on morning", defaultValue: false,
-                "Show the current season and its Fuzzy period as a separate line in the morning message. Works independently of the day number, seasonal morning messages and status effect timer format.");
+                "Allow a morning message showing the current season and its Fuzzy period. Seasonal first/last-day announcements take priority. The other morning options decide when and whether to append it to another message.");
+            showFuzzyAsSecondMorningLine = clientConfig("Season - Buff", "Show Fuzzy as second morning line", defaultValue: false,
+                "Add the Fuzzy period below an existing morning message, including the day number. When disabled, show Fuzzy only if no other center-screen morning message was displayed. First/last-day seasonal announcements always take priority.");
+            showFuzzyOnlyWhenPeriodChanges = clientConfig("Season - Buff", "Show Fuzzy only when period changes", defaultValue: true,
+                "Show Fuzzy in the morning only when its stage differs from the previous morning. Uses the exact stage boundaries and works with any number of configured Fuzzy labels. Disable to allow showing it every morning.");
 
             EventHandler seasonStatusDisplayHandler = (sender, args) =>
             {
