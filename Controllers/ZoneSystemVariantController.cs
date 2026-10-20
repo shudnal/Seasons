@@ -1569,21 +1569,55 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(Leviathan), nameof(Leviathan.Awake))]
+    public static class Leviathan_Awake_FrozenOceanLeviathan
+    {
+        private static void Postfix(Leviathan __instance)
+        {
+            if (IsWaterSurfaceFrozen() && !IsIgnoredPosition(__instance.transform.position))
+                Leviathan_FixedUpdate_FrozenOceanLeviathan.Submerge(__instance);
+        }
+    }
+
     [HarmonyPatch(typeof(Leviathan), nameof(Leviathan.FixedUpdate))]
     public static class Leviathan_FixedUpdate_FrozenOceanLeviathan
     {
-        private static bool Prefix(Leviathan __instance, Rigidbody ___m_body, ZNetView ___m_nview)
+        internal static void Submerge(Leviathan leviathan)
+        {
+            if (!leviathan || !leviathan.m_body || !leviathan.m_nview ||
+                !leviathan.m_nview.IsValid() || !ZoneSystem.instance)
+                return;
+
+            ZDO zdo = leviathan.m_nview.GetZDO();
+            bool isOwner = leviathan.m_nview.IsOwner();
+            if (!isOwner && zdo.GetOwner() != 0L)
+                return;
+
+            // Use the stable frozen-water level even before distant water volumes load.
+            Vector3 position = leviathan.m_body.position;
+            position.y = WaterLevel - _winterWaterSurfaceOffset - 5f;
+            if (leviathan.m_body.position.y != position.y)
+                leviathan.m_body.position = position;
+
+            if (!isOwner)
+            {
+                // ZSyncTransform.ClientSync would otherwise restore the unowned ZDO's
+                // original surface height. This is local only: no ownership or revision.
+                Vector3 zdoPosition = zdo.GetPosition();
+                if (zdoPosition.y != position.y)
+                {
+                    zdoPosition.y = position.y;
+                    zdo.SetPosition(zdoPosition);
+                }
+            }
+        }
+
+        private static bool Prefix(Leviathan __instance)
         {
             if (IsIgnoredPosition(__instance.transform.position) || !IsWaterSurfaceFrozen())
                 return true;
 
-            if (___m_nview.IsValid() && ___m_nview.IsOwner())
-            {
-                Vector3 position2 = ___m_body.position;
-                position2.y = Floating.GetLiquidLevel(___m_body.position, 0) - 5f;
-                ___m_body.position = position2;
-            }
-
+            Submerge(__instance);
             return false;
         }
     }
