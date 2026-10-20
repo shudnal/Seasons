@@ -24,6 +24,28 @@ Spaces around entries and empty entries are ignored. An empty list uses the thre
 
 The three built-in tokens are translated in every language column of `EmbeddedLocalizations.csv`. The existing pre-build `UpdateTranslations` target generates embedded JSON from that CSV. Do not maintain a separate set of JSON changes for these tokens.
 
+## Morning announcement
+
+`Season - Buff / Show Fuzzy season period on morning` is a client setting,
+disabled by default. When enabled, each `EnvMan.OnMorning` event displays
+the current season and its Fuzzy label on a separate line, such as
+`Spring: Reigns` or `Весна: В разгаре`. It uses the same configurable
+labels, localization and cached time calculation as the status-effect Fuzzy
+timer. It does not require the status-effect timer or the Raven tooltip
+to be set to Fuzzy.
+
+The new toggle is independent of `Show seasonal messages on morning`.
+That older toggle still replaces the vanilla day number with an arrival
+or upcoming-season message on the first and last season days. When the
+day number is visible, the Fuzzy line appears below it; when the day
+number is suppressed, the Fuzzy line appears on its own. First/last-day
+seasonal announcements are preserved with the Fuzzy line below them.
+
+The existing morning message is not placed in the top-left queue. On ordinary
+days the new line does not clear that queue or duplicate the vanilla day
+message in the message log. The setting does not change the calendar
+or update the Fuzzy stage on a whole-day boundary.
+
 ## Timing and cache
 
 The selected stage uses the same season duration, time source, current day, pending-transition rule, and morning offset as the numeric timer. Calendar values are not rounded to days or integer seconds.

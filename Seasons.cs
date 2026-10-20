@@ -86,6 +86,7 @@ namespace Seasons
         public static ConfigEntry<bool> showCurrentSeasonInRaven;
         public static ConfigEntry<TimerFormat> seasonsTimerFormatInRaven;
         public static ConfigEntry<bool> overrideNewDayMessagesOnSeasonStartEnd;
+        public static ConfigEntry<bool> showFuzzySeasonPeriodOnMorning;
 
         public static ConfigEntry<bool> disableBloomInWinter;
         public static ConfigEntry<bool> enableSeasonalItems;
@@ -636,6 +637,8 @@ namespace Seasons
             showCurrentSeasonInRaven = config("Season - Buff", "Raven menu Show current season", defaultValue: true, "Show current season tooltip in Raven menu");
             seasonsTimerFormatInRaven = config("Season - Buff", "Raven menu Timer format", defaultValue: TimerFormat.CurrentDayAndTimeToEnd, "What to show at season buff timer in Raven menu");
             overrideNewDayMessagesOnSeasonStartEnd = config("Season - Buff", "Show seasonal messages on morning", defaultValue: true, "Show messages \"Season is coming\" on last day and \"Season has come\" on first day of season");
+            showFuzzySeasonPeriodOnMorning = clientConfig("Season - Buff", "Show Fuzzy season period on morning", defaultValue: false,
+                "Show the current season and its Fuzzy period as a separate line in the morning message. Works independently of the day number, seasonal morning messages and status effect timer format.");
 
             EventHandler seasonStatusDisplayHandler = (sender, args) =>
             {

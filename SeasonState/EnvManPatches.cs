@@ -472,25 +472,53 @@ namespace Seasons
         [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.OnMorning))]
         public static class EnvMan_OnMorning_SeasonChangeAnnouncement
         {
-            private static void ShowMessage(string message)
+            private static void ShowMessage(string message, bool seasonalAnnouncement)
             {
-                MessageHud.instance.m_msgQeue.Clear();
-                MessageHud.instance.ShowMessage(MessageHud.MessageType.Center, message);
+                if (seasonalAnnouncement)
+                    MessageHud.instance.m_msgQeue.Clear();
+                MessageHud.instance.ShowMessage(MessageHud.MessageType.Center, message, log: seasonalAnnouncement);
             }
 
-            private static void Postfix()
+            [HarmonyPriority(Priority.Last)]
+            private static void Postfix(EnvMan __instance)
             {
-                if (!overrideNewDayMessagesOnSeasonStartEnd.Value)
+                if (!overrideNewDayMessagesOnSeasonStartEnd.Value && !showFuzzySeasonPeriodOnMorning.Value)
                     return;
 
-                Player player = Player.m_localPlayer;
-                if (player == null)
+                if (Player.m_localPlayer == null || MessageHud.instance == null)
                     return;
 
-                if (seasonState.GetCurrentDay() == 1)
-                    ShowMessage(GetSeasonTooltip(seasonState.GetCurrentSeason()));
-                else if (seasonState.GetCurrentDay() == seasonState.GetDaysInSeason())
-                    ShowMessage(GetSeasonIsComing(seasonState.GetNextSeason()));
+                string announcement = null;
+                if (overrideNewDayMessagesOnSeasonStartEnd.Value)
+                {
+                    if (seasonState.GetCurrentDay() == 1)
+                        announcement = GetSeasonTooltip(seasonState.GetCurrentSeason());
+                    else if (seasonState.GetCurrentDay() == seasonState.GetDaysInSeason())
+                        announcement = GetSeasonIsComing(seasonState.GetNextSeason());
+                }
+
+                string fuzzy = showFuzzySeasonPeriodOnMorning.Value && SeasonState.IsActive
+                    ? SeasonFuzzyTimer.GetText() : null;
+                if (string.IsNullOrEmpty(fuzzy))
+                {
+                    if (announcement != null)
+                        ShowMessage(announcement, seasonalAnnouncement: true);
+                    return;
+                }
+
+                // Preserve the native day number only if it was actually shown.
+                // Another mod can suppress it; the Fuzzy line must remain independent.
+                string heading = announcement;
+                if (heading == null && MessageHud.instance.m_messageCenterText != null)
+                {
+                    string nativeDay = Localization.instance.Localize("$msg_newday", __instance.GetCurrentDay().ToString());
+                    if (MessageHud.instance.m_messageCenterText.text == nativeDay)
+                        heading = nativeDay;
+                }
+
+                string fuzzyLine = $"{GetSeasonName(seasonState.GetCurrentSeason())}: {fuzzy}";
+                ShowMessage(heading == null ? fuzzyLine : $"{heading}\n{fuzzyLine}",
+                    seasonalAnnouncement: announcement != null);
             }
         }
 
