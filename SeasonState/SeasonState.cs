@@ -64,6 +64,7 @@ namespace Seasons
 
         public SeasonState(bool initialize = false)
         {
+            SeasonFuzzyTimer.Invalidate();
             if (!initialize)
                 return;
 
@@ -276,6 +277,9 @@ namespace Seasons
 
         public int GetNightLength(Season season, int dayInSeason)
         {
+            if (!controlNightLength.Value)
+                return SeasonSettings.nightLentghDefault;
+
             int currentNightLength = GetSeasonSettings(season).m_nightLength;
             if (!changeNightLengthGradually.Value)
                 return currentNightLength;
@@ -425,6 +429,7 @@ namespace Seasons
 
         public static void UpdateSeasonSettings()
         {
+            SeasonFuzzyTimer.Invalidate();
             if (!IsActive)
                 return;
 
@@ -931,6 +936,7 @@ namespace Seasons
 
         public static void UpdateWorldSettings()
         {
+            SeasonFuzzyTimer.Invalidate();
             if (!IsActive)
                 return;
 
@@ -1070,9 +1076,18 @@ namespace Seasons
             return string.Format(seasonalGlobalKeyDay.Value, day.ToString());
         }
 
-        public double GetTimeToCurrentSeasonEnd()
+        public double GetTimeToCurrentSeasonEnd() => GetTimeToCurrentSeasonEnd(GetTotalSeconds());
+
+        internal double GetTimeToCurrentSeasonEnd(double totalSeconds)
         {
-            return GetEndOfCurrentSeason() + (seasonState.DayStartFraction() * (1f - ((0.25f - GetDayFractionForSeasonChange()) * seasonState.DayStartFraction() / 0.25f)) * seasonState.GetDayLengthInSeconds()) - seasonState.GetTotalSeconds();
+            // Keep the existing calendar and morning offset, using one clock sample.
+            long dayLength = GetDayLengthInSeconds();
+            double startOfDay = totalSeconds - totalSeconds % dayLength;
+            double startOfSeason = startOfDay - (GetCurrentDay() - (IsPendingSeasonChange() ? 0 : 1)) * dayLength;
+            int worldDay = (int)(totalSeconds / dayLength);
+            float dayStart = DayStartFraction(GetSeason(worldDay), GetDayInSeason(worldDay));
+            float morningOffset = dayStart * (1f - ((0.25f - GetDayFractionForSeasonChange()) * dayStart / 0.25f)) * dayLength;
+            return startOfSeason + GetSecondsInSeason() + morningOffset - totalSeconds;
         }
 
         public double GetEndOfCurrentSeason()
@@ -1104,7 +1119,7 @@ namespace Seasons
 
         public bool GetTorchAsFiresource()
         {
-            return settings.m_torchAsFiresource;
+            return enableTorchWarmth.Value && settings.m_torchAsFiresource;
         }
 
         public float GetTorchDurabilityDrain()
@@ -1119,17 +1134,17 @@ namespace Seasons
 
         public float GetBeehiveProductionMultiplier(Season season)
         {
-            return GetSeasonSettings(season).m_beehiveProductionMultiplier;
+            return controlBeehiveProduction.Value ? GetSeasonSettings(season).m_beehiveProductionMultiplier : 1f;
         }
 
         public float GetFoodDrainMultiplier()
         {
-            return settings.m_foodDrainMultiplier;
+            return controlFoodConsumption.Value ? settings.m_foodDrainMultiplier : 1f;
         }
 
         public float GetStaminaDrainMultiplier()
         {
-            return settings.m_staminaDrainMultiplier;
+            return controlStaminaConsumption.Value ? settings.m_staminaDrainMultiplier : 1f;
         }
 
         public float GetFireplaceDrainMultiplier()
@@ -1139,7 +1154,7 @@ namespace Seasons
 
         public float GetFireplaceDrainMultiplier(Season season)
         {
-            return GetSeasonSettings(season).m_fireplaceDrainMultiplier;
+            return controlFuelConsumption.Value ? GetSeasonSettings(season).m_fireplaceDrainMultiplier : 1f;
         }
 
         public float GetSapCollectingSpeedMultiplier()
@@ -1149,7 +1164,7 @@ namespace Seasons
 
         public float GetSapCollectingSpeedMultiplier(Season season)
         {
-            return GetSeasonSettings(season).m_sapCollectingSpeedMultiplier;
+            return controlSapCollection.Value ? GetSeasonSettings(season).m_sapCollectingSpeedMultiplier : 1f;
         }
 
         public bool GetRainProtection()
@@ -1159,27 +1174,27 @@ namespace Seasons
 
         public float GetWoodFromTreesMultiplier()
         {
-            return settings.m_woodFromTreesMultiplier;
+            return controlWoodDrops.Value ? settings.m_woodFromTreesMultiplier : 1f;
         }
 
         public float GetMeatFromAnimalsMultiplier()
         {
-            return settings.m_meatFromAnimalsMultiplier;
+            return controlMeatDrops.Value ? settings.m_meatFromAnimalsMultiplier : 1f;
         }
 
         public float GetWindIntensityMultiplier()
         {
-            return settings.m_windIntensityMultiplier;
+            return controlWindIntensity.Value ? settings.m_windIntensityMultiplier : 1f;
         }
 
         public float GetRestedBuffDurationMultiplier()
         {
-            return settings.m_restedBuffDurationMultiplier;
+            return controlRestedDuration.Value ? settings.m_restedBuffDurationMultiplier : 1f;
         }
 
         public float GetLivestockProcreationMultiplier()
         {
-            return settings.m_livestockProcreationMultiplier;
+            return controlLivestockProcreation.Value ? settings.m_livestockProcreationMultiplier : 1f;
         }
 
         public bool GetOverheatIn2WarmClothes()
@@ -1189,7 +1204,7 @@ namespace Seasons
 
         public float GetTreesReqrowthChance()
         {
-            return settings.m_treesRegrowthChance;
+            return enableTreeRegrowth.Value ? settings.m_treesRegrowthChance : 0f;
         }
 
         public SeasonSettings GetSeasonSettings(Season season)
@@ -1431,15 +1446,19 @@ namespace Seasons
                 SetCurrentDay(dayInSeason, forceSeasonChange);
         }
 
-        public void StartSeasonChange()
+        public void StartSeasonChange() => StartSeasonChangeCore(null);
+
+        private void StartSeasonChangeCore(int? winterStartDay)
         {
             if (!showFadeOnSeasonChange.Value || Hud.instance == null || Hud.instance.m_loadingScreen.isActiveAndEnabled || Hud.instance.m_loadingScreen.alpha > 0)
-                OnSeasonChange();
+                OnSeasonChange(winterStartDay);
             else
-                Seasons.instance.StartCoroutine(seasonState.SeasonChangedFadeEffect());
+                Seasons.instance.StartCoroutine(FadeSeasonChange(winterStartDay));
         }
 
-        public IEnumerator SeasonChangedFadeEffect()
+        public IEnumerator SeasonChangedFadeEffect() => FadeSeasonChange(null);
+
+        private IEnumerator FadeSeasonChange(int? winterStartDay)
         {
             m_seasonIsChanging = true;
             Player player = Player.m_localPlayer;
@@ -1457,7 +1476,7 @@ namespace Seasons
                 if (!CanFade())
                 {
                     if (SameWorld())
-                        OnSeasonChange();
+                        OnSeasonChange(winterStartDay);
                     yield break;
                 }
 
@@ -1474,7 +1493,7 @@ namespace Seasons
                 }
 
                 if (SameWorld())
-                    OnSeasonChange();
+                    OnSeasonChange(winterStartDay);
 
                 while (CanFade() && hud.m_loadingScreen.alpha > 0f)
                 {
@@ -1491,8 +1510,12 @@ namespace Seasons
             }
         }
 
-        private void OnSeasonChange()
+        private void OnSeasonChange(int? winterStartDay)
         {
+            // Initial world synchronization and daily/configuration refreshes never run this pass.
+            if (winterStartDay.HasValue && m_season == Season.Winter)
+                SeasonalWorldMaintenance.OnWinterStarted(winterStartDay.Value);
+
             UpdateBiomesSetup();
             UpdateGlobalKeys();
             UpdateWinterBloomEffect();
@@ -1553,19 +1576,18 @@ namespace Seasons
             if (torch.m_shared.m_itemType != ItemDrop.ItemData.ItemType.Torch)
                 return;
 
-            if (seasonState.GetTorchAsFiresource() && IsActive && (EnvMan.IsWet() || IsCold()))
-                torch.m_shared.m_durabilityDrain = seasonState.GetTorchDurabilityDrain();
-            else
-                torch.m_shared.m_durabilityDrain = 0.0333f;
+            bool adjustDrain = seasonState.GetTorchAsFiresource() && IsActive && (EnvMan.IsWet() || IsCold());
+            SeasonalTorchOverrides.UpdateDurability(torch, adjustDrain, seasonState.GetTorchDurabilityDrain());
         }
 
         public void UpdateTorchesFireWarmth()
         {
-            UpdateTorchFireWarmth("GoblinTorch");
-            UpdateTorchFireWarmth(SeasonSettings.itemNameTorch);
-
+            // Visit inventory copies before releasing their prefab's captured override.
             if (Player.m_localPlayer != null)
                 PatchTorchesInInventory(Player.m_localPlayer.GetInventory());
+
+            UpdateTorchFireWarmth("GoblinTorch");
+            UpdateTorchFireWarmth(SeasonSettings.itemNameTorch);
         }
 
         public void PatchTorchesInInventory(Inventory inventory)
@@ -1590,6 +1612,9 @@ namespace Seasons
             if (prefab == null)
                 return;
 
+            ItemDrop item = prefab.GetComponent<ItemDrop>();
+            PatchTorchItemData(item?.m_itemData);
+
             EffectArea component = prefab.GetComponentInChildren<EffectArea>(includeInactive: true);
             if (component == null)
                 return;
@@ -1607,26 +1632,26 @@ namespace Seasons
                     )
                 );
 
-            component.m_type = heatEnabled ? EffectArea.Type.Heat | EffectArea.Type.Fire : EffectArea.Type.Fire;
-            component.m_isHeatType = component.m_type.HasFlag(EffectArea.Type.Heat);
-
-            ItemDrop item = prefab.GetComponent<ItemDrop>();
-            PatchTorchItemData(item?.m_itemData);
-
-            if (Player.m_localPlayer != null && Player.m_localPlayer.m_visEquipment != null)
+            // This event-driven refresh must also remove inherited seasonal heat from
+            // already equipped remote-player and creature visuals on this client.
+            int prefabHash = prefabName.GetStableHashCode();
+            foreach (Character character in Character.GetAllCharacters())
             {
-                if (Player.m_localPlayer.m_visEquipment.m_rightItem == prefabName.GetStableHashCode() && (Player.m_localPlayer.m_visEquipment.m_rightItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea rightEffect))
-                {
-                    rightEffect.m_type = component.m_type;
-                    rightEffect.m_isHeatType = component.m_isHeatType;
-                }
+                if (character is not Humanoid humanoid || !humanoid.m_visEquipment)
+                    continue;
 
-                if (Player.m_localPlayer.m_visEquipment.m_leftItem == prefabName.GetStableHashCode() && (Player.m_localPlayer.m_visEquipment.m_leftItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea leftEffect))
-                {
-                    leftEffect.m_type = component.m_type;
-                    leftEffect.m_isHeatType = component.m_isHeatType;
-                }
+                VisEquipment equipment = humanoid.m_visEquipment;
+                if (equipment.m_rightItem == prefabHash &&
+                    equipment.m_rightItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea rightEffect)
+                    SeasonalTorchOverrides.UpdateArea(rightEffect, heatEnabled, component);
+
+                if (equipment.m_leftItem == prefabHash &&
+                    equipment.m_leftItemInstance?.GetComponentInChildren<EffectArea>(includeInactive: true) is EffectArea leftEffect)
+                    SeasonalTorchOverrides.UpdateArea(leftEffect, heatEnabled, component);
             }
+            // Equipped visuals can inherit an already-patched prefab. Resolve them first
+            // so disabling cannot turn the inherited Heat bit into a new baseline.
+            SeasonalTorchOverrides.UpdateArea(component, heatEnabled);
         }
 
         public void UpdateMinimapBorder()
@@ -1780,12 +1805,14 @@ namespace Seasons
 
         public static void CheckSeasonChange()
         {
+            SeasonFuzzyTimer.Invalidate();
             if (IsActive)
                 seasonState.UpdateState(forceSeasonChange: true);
         }
 
         public static void ResetCurrentSeasonDay()
         {
+            SeasonFuzzyTimer.Invalidate();
             WorldInitialized = false;
             _pendingSeasonChange = 0;
             cacheRevision.AssignValueSafe(0u);
@@ -1794,6 +1821,7 @@ namespace Seasons
 
         public static void OnSeasonDayChange()
         {
+            SeasonFuzzyTimer.Invalidate();
             if (!IsActive)
                 return;
 
@@ -1802,6 +1830,7 @@ namespace Seasons
 
             bool dayChanged = seasonState.m_day != seasonDay.Item2;
             bool seasonChanged = seasonState.m_season != seasonDay.Item1;
+            bool enteredWinter = seasonChanged && seasonState.m_day > 0 && seasonDay.Item1 == Season.Winter;
 
             seasonState.m_season = seasonDay.Item1;
             seasonState.m_day = seasonDay.Item2;
@@ -1810,11 +1839,16 @@ namespace Seasons
                 LogInfo($"Season: {seasonState.m_season}, day: {seasonState.m_day}");
 
             if (seasonChanged)
-                seasonState.StartSeasonChange();
+                seasonState.StartSeasonChangeCore(enteredWinter
+                    ? (int?)(seasonState.GetCurrentWorldDay() - seasonState.m_day + 1)
+                    : null);
             else if (dayChanged)
                 OnDayChange();
             if (seasonChanged || dayChanged)
+            {
+                SummerHeatController.Instance?.RefreshState();
                 SeasonalIceFloeBatching.RefreshSourceMaterials();
+            }
         }
 
         private static void OnDayChange()

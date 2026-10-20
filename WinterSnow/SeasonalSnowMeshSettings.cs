@@ -190,14 +190,16 @@ namespace Seasons
             CopySources.TryGetValue(prefabName, out string source) &&
             SnowTemplates.TryGetValue(source, out GameObject template) && template;
 
-        private static bool TryCopySnowMesh(WearNTear instance)
+        private static bool TryCopySnowMesh(WearNTear instance, string prefabName = null)
         {
             if (!SeasonalSnow.WinterReady || !instance || instance.m_snow || CopySources.Count == 0 ||
                 !copySourceScene || copySourceScene != ZNetScene.instance ||
                 !instance.gameObject.scene.IsValid())
                 return false;
 
-            string prefabName = Utils.GetPrefabName(instance.gameObject);
+            prefabName ??= Instances.TryGetValue(instance, out InstanceState identity)
+                ? identity.prefabName
+                : PrefabVariantController.GetPrefabName(instance.gameObject);
             if (IsPrefabIgnored(prefabName) || IsPrefabDisabled(prefabName) || !CopySources.TryGetValue(prefabName, out string source) ||
                 !SnowTemplates.TryGetValue(source, out GameObject template) || !template ||
                 copySourceScene.GetPrefab(prefabName) == instance.gameObject)
@@ -227,7 +229,9 @@ namespace Seasons
                 !copySourceScene || copySourceScene != ZNetScene.instance)
                 return false;
 
-            string prefabName = Utils.GetPrefabName(instance.gameObject);
+            string prefabName = Instances.TryGetValue(instance, out InstanceState identity)
+                ? identity.prefabName
+                : PrefabVariantController.GetPrefabName(instance.gameObject);
             if (copySourceScene.GetPrefab(prefabName) == instance.gameObject)
                 return false;
 
@@ -246,7 +250,7 @@ namespace Seasons
                 changed = true;
             }
 
-            return TryCopySnowMesh(instance) || changed;
+            return TryCopySnowMesh(instance, prefabName) || changed;
         }
 
         private static void RemoveCopiedSnowMesh(WearNTear instance)
@@ -352,7 +356,7 @@ namespace Seasons
 
             string prefabName = Instances.TryGetValue(instance, out InstanceState state)
                 ? state.prefabName
-                : Utils.GetPrefabName(instance.gameObject);
+                : PrefabVariantController.GetPrefabName(instance.gameObject);
             return IsPrefabIgnored(prefabName) &&
                 (!ZNetScene.instance || ZNetScene.instance.GetPrefab(prefabName) != instance.gameObject);
         }
@@ -364,7 +368,7 @@ namespace Seasons
 
             string prefabName = Instances.TryGetValue(instance, out InstanceState state)
                 ? state.prefabName
-                : Utils.GetPrefabName(instance.gameObject);
+                : PrefabVariantController.GetPrefabName(instance.gameObject);
             return DisabledPrefabs.Contains(prefabName) &&
                 (!ZNetScene.instance || ZNetScene.instance.GetPrefab(prefabName) != instance.gameObject);
         }
@@ -474,7 +478,7 @@ namespace Seasons
             if (!instance.m_snow && !instance.m_snowWorn && !instance.m_snowBroken)
                 return;
 
-            string prefabName = state?.prefabName ?? Utils.GetPrefabName(instance.gameObject);
+            string prefabName = state?.prefabName ?? PrefabVariantController.GetPrefabName(instance.gameObject);
             if (ZNetScene.instance != null && ZNetScene.instance.GetPrefab(prefabName) == instance.gameObject)
             {
                 // Some mods register live scene objects as prefabs rather than prefab assets.

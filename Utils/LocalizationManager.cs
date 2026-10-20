@@ -217,6 +217,7 @@ public class Localizer
         // AddWord replaces translations but does not invalidate Valheim's localized-string cache.
         // Other mods can request our tokens before this plugin has finished loading them.
         __instance.m_cache.EvictAll();
+        Seasons.SeasonFuzzyTimer.Invalidate();
     }
 
 
