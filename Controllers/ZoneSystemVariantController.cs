@@ -1569,6 +1569,84 @@ namespace Seasons
         }
     }
 
+    [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.CanSenseTarget), new[] { typeof(Character), typeof(bool) })]
+    public static class BaseAI_CanSenseTarget_FrozenOceanSerpent
+    {
+        private static bool Prefix(BaseAI __instance, Character target, ref bool __result)
+        {
+            if (__instance is MonsterAI serpent && MonsterAI_UpdateTarget_FrozenOceanSerpent.IsBlockedTarget(serpent, target))
+            {
+                __result = false;
+                return false;
+            }
+            return true;
+        }
+    }
+
+    // FindEnemy's HuntPlayer fallback bypasses CanSenseTarget.
+    [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.FindEnemy))]
+    public static class BaseAI_FindEnemy_FrozenOceanSerpent
+    {
+        private static void Postfix(BaseAI __instance, ref Character __result)
+        {
+            if (__result && __instance is MonsterAI serpent &&
+                MonsterAI_UpdateTarget_FrozenOceanSerpent.IsBlockedTarget(serpent, __result))
+                __result = null;
+        }
+    }
+
+    [HarmonyPatch(typeof(MonsterAI), nameof(MonsterAI.UpdateTarget))]
+    public static class MonsterAI_UpdateTarget_FrozenOceanSerpent
+    {
+        private static readonly int s_serpentPrefab = "Serpent".GetStableHashCode();
+
+        private static bool IsFrozenSerpent(MonsterAI ai) =>
+            IsWaterSurfaceFrozen() && ai.m_nview.IsValid() &&
+            ai.m_nview.GetZDO().GetPrefab() == s_serpentPrefab;
+
+        internal static bool IsBlockedTarget(MonsterAI ai, Character target) =>
+            target && IsFrozenSerpent(ai) && target.transform.position.y > WaterLevel;
+
+        private static bool ClearTargetsAboveIce(MonsterAI ai)
+        {
+            float iceLevel = WaterLevel;
+            bool cleared = false;
+            if (ai.m_targetCreature && ai.m_targetCreature.transform.position.y > iceLevel)
+            {
+                ai.m_targetCreature = null;
+                cleared = true;
+            }
+            if (ai.m_targetStatic && ai.m_targetStatic.transform.position.y > iceLevel)
+            {
+                ai.m_targetStatic = null;
+                cleared = true;
+            }
+            if (cleared)
+            {
+                if (!ai.m_targetCreature)
+                    ai.SetTargetInfo(ZDOID.None);
+                if (!ai.m_targetCreature && !ai.m_targetStatic)
+                    ai.SetAlerted(false);
+            }
+            return cleared;
+        }
+
+        private static void Prefix(MonsterAI __instance)
+        {
+            if (IsFrozenSerpent(__instance))
+                ClearTargetsAboveIce(__instance);
+        }
+
+        private static void Postfix(MonsterAI __instance, ref bool canHearTarget, ref bool canSeeTarget)
+        {
+            if (IsFrozenSerpent(__instance) && ClearTargetsAboveIce(__instance))
+            {
+                canHearTarget = false;
+                canSeeTarget = false;
+            }
+        }
+    }
+
     [HarmonyPatch(typeof(Leviathan), nameof(Leviathan.Awake))]
     public static class Leviathan_Awake_FrozenOceanLeviathan
     {
