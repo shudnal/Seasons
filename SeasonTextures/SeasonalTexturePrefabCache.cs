@@ -763,22 +763,27 @@ namespace Seasons
                 public FloatRange hue;
                 public FloatRange saturation;
                 public FloatRange luminance;
+                // HSL chroma: max(r,g,b) - min(r,g,b). Unlike saturation it stays small for dark nearly grey pixels.
+                public FloatRange chroma;
 
-                public ColorFits(float hue1 = 0f, float hue2 = 360f, float s1 = 0f, float s2 = 1f, float l1 = 0f, float l2 = 1f)
+                public ColorFits(float hue1 = 0f, float hue2 = 360f, float s1 = 0f, float s2 = 1f, float l1 = 0f, float l2 = 1f, float c1 = 0f, float c2 = 1f)
                 {
                     hue = new FloatRange(hue1, hue2);
                     saturation = new FloatRange(s1, s2);
                     luminance = new FloatRange(l1, l2);
+                    chroma = new FloatRange(c1, c2);
                 }
 
                 public bool Fits(HSLColor hslcolor)
                 {
-                    return hue.Fits(hslcolor.h) && saturation.Fits(hslcolor.s) && luminance.Fits(hslcolor.l);
+                    return hue.Fits(hslcolor.h) && saturation.Fits(hslcolor.s) && luminance.Fits(hslcolor.l) && chroma.Fits(Chroma(hslcolor));
                 }
+
+                public static float Chroma(HSLColor hslcolor) => (1f - Math.Abs(2f * hslcolor.l - 1f)) * hslcolor.s;
 
                 public override string ToString()
                 {
-                    return $"hue:{hue} sat:{saturation} lum:{luminance}";
+                    return $"hue:{hue} sat:{saturation} lum:{luminance} chroma:{chroma}";
                 }
             }
 
@@ -1001,7 +1006,8 @@ namespace Seasons
                     },
                     new List<ColorFits>()
                     {
-                        new ColorFits(2),
+                        // grey texture tinted by _TerrainColorTex: ignore near-grey noise (block-compressed HD replacements)
+                        new ColorFits(2, c1: 0.15f),
                     }
                 ));
 
@@ -1013,7 +1019,8 @@ namespace Seasons
                     },
                     new List<ColorFits>()
                     {
-                        new ColorFits(2),
+                        // grey texture tinted by _TerrainColorTex: ignore near-grey noise (block-compressed HD replacements)
+                        new ColorFits(2, c1: 0.15f),
                     }
                 ));
 
@@ -1025,7 +1032,8 @@ namespace Seasons
                     },
                     new List<ColorFits>()
                     {
-                        new ColorFits(2),
+                        // grey texture tinted by _TerrainColorTex: ignore near-grey noise (block-compressed HD replacements)
+                        new ColorFits(2, c1: 0.15f),
                     }
                 ));
 

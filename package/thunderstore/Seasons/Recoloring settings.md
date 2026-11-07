@@ -72,6 +72,7 @@ Consists of rules to get what color should be replaced. Operates HSL color schem
 * hue - (start 0, end 360) - range of hue value of color to fit (start and end included)
 * saturation - (start 0, end 1) - range of saturation value of color to fit (start and end included)
 * luminance - (start 0, end 1) - range of luminance (Luminosity, Lightness) value of color to fit (start and end included)
+* chroma - (start 0, end 1) - range of chroma (max of RGB minus min of RGB) of color to fit (start and end included). Unlike saturation it stays low for dark, nearly grey pixels, so it tells grey from coloured reliably
 
 If several color rules set - at least one of them should be met for pixel with that color to be recolored.
 
