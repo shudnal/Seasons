@@ -78,6 +78,7 @@ namespace Seasons
             private static void Postfix()
             {
                 totalSecondsCached = 0;
+                SeasonFuzzyTimer.Invalidate();
             }
         }
 
@@ -189,7 +190,10 @@ namespace Seasons
                     // Delimit the observed live weather interval before UpdateState
                     // can rebuild the timeline, including small explicit time skips.
                     if (updateLoadedSeasonalSnow)
+                    {
+                        SeasonFuzzyTimer.Invalidate();
                         SeasonalSnow.ReconcileLoadedSnowAfterTimeSkip();
+                    }
                     seasonState.UpdateState(timeForSeasonToChange, forceSeasonChange);
                 }
             }
@@ -201,6 +205,9 @@ namespace Seasons
             [HarmonyPriority(Priority.First)]
             public static bool Prefix(float fraction, ref float __result)
             {
+                if (!controlNightLength.Value)
+                    return true;
+
                 float dayStart = seasonState.DayStartFraction();
 
                 if (dayStart == EnvMan.c_MorningL)
@@ -231,6 +238,9 @@ namespace Seasons
             [HarmonyPriority(Priority.First)]
             public static bool Prefix(EnvMan __instance, int day, ref double __result)
             {
+                if (!controlNightLength.Value)
+                    return true;
+
                 __result = (day * __instance.m_dayLengthSec) + (double)(__instance.m_dayLengthSec * seasonState.DayStartFraction(seasonState.GetSeason(day), seasonState.GetDayInSeason(day)));
                 return false;
             }
@@ -242,6 +252,9 @@ namespace Seasons
             [HarmonyPriority(Priority.First)]
             public static bool Prefix(EnvMan __instance, ref bool ___m_skipTime, ref double ___m_skipToTime, ref double ___m_timeSkipSpeed)
             {
+                if (!controlNightLength.Value)
+                    return true;
+
                 float dayStart = seasonState.DayStartFraction();
                 if (dayStart == EnvMan.c_MorningL)
                     return true;
@@ -459,25 +472,64 @@ namespace Seasons
         [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.OnMorning))]
         public static class EnvMan_OnMorning_SeasonChangeAnnouncement
         {
-            private static void ShowMessage(string message)
+            private static void ShowMessage(string message, bool seasonalAnnouncement)
             {
-                MessageHud.instance.m_msgQeue.Clear();
-                MessageHud.instance.ShowMessage(MessageHud.MessageType.Center, message);
+                if (seasonalAnnouncement)
+                    MessageHud.instance.m_msgQeue.Clear();
+                MessageHud.instance.ShowMessage(MessageHud.MessageType.Center, message, log: seasonalAnnouncement);
             }
 
-            private static void Postfix()
+            [HarmonyPriority(Priority.First)]
+            private static void Prefix(ref int __state)
             {
-                if (!overrideNewDayMessagesOnSeasonStartEnd.Value)
+                MessageHud hud = MessageHud.instance;
+                __state = hud ? hud._crossFadeTextBuffer.Count : 0;
+            }
+
+            [HarmonyPriority(Priority.Last)]
+            private static void Postfix(int __state)
+            {
+                if (!overrideNewDayMessagesOnSeasonStartEnd.Value && !showFuzzySeasonPeriodOnMorning.Value)
                     return;
 
-                Player player = Player.m_localPlayer;
-                if (player == null)
+                MessageHud hud = MessageHud.instance;
+                if (Player.m_localPlayer == null || !hud)
                     return;
 
-                if (seasonState.GetCurrentDay() == 1)
-                    ShowMessage(GetSeasonTooltip(seasonState.GetCurrentSeason()));
-                else if (seasonState.GetCurrentDay() == seasonState.GetDaysInSeason())
-                    ShowMessage(GetSeasonIsComing(seasonState.GetNextSeason()));
+                // Seasonal first/last-day announcements have absolute priority.
+                // Never append a Fuzzy line to either of them.
+                if (overrideNewDayMessagesOnSeasonStartEnd.Value)
+                {
+                    if (seasonState.GetCurrentDay() == 1)
+                    {
+                        ShowMessage(GetSeasonTooltip(seasonState.GetCurrentSeason()), seasonalAnnouncement: true);
+                        return;
+                    }
+                    if (seasonState.GetCurrentDay() == seasonState.GetDaysInSeason())
+                    {
+                        ShowMessage(GetSeasonIsComing(seasonState.GetNextSeason()), seasonalAnnouncement: true);
+                        return;
+                    }
+                }
+
+                if (!showFuzzySeasonPeriodOnMorning.Value || !SeasonState.IsActive)
+                    return;
+
+                string fuzzy = SeasonFuzzyTimer.GetMorningText(showFuzzyOnlyWhenPeriodChanges.Value);
+                if (string.IsNullOrEmpty(fuzzy))
+                    return;
+
+                // A center message creates two fade entries. Compare against the count
+                // before OnMorning, not the possibly stale text from a previous message.
+                bool morningMessageShown = hud._crossFadeTextBuffer.Count > __state &&
+                    hud.m_messageCenterText && !string.IsNullOrWhiteSpace(hud.m_messageCenterText.text);
+                if (morningMessageShown && !showFuzzyAsSecondMorningLine.Value)
+                    return;
+
+                string fuzzyLine = $"{GetSeasonName(seasonState.GetCurrentSeason())}: {fuzzy}";
+                if (morningMessageShown && hud.m_messageCenterText != null)
+                    fuzzyLine = $"{hud.m_messageCenterText.text}\n{fuzzyLine}";
+                ShowMessage(fuzzyLine, seasonalAnnouncement: false);
             }
         }
 
@@ -486,7 +538,8 @@ namespace Seasons
         {
             private static void Postfix(ref Vector3 __result)
             {
-                __result *= seasonState.GetWindIntensityMultiplier();
+                if (controlWindIntensity.Value)
+                    __result *= seasonState.GetWindIntensityMultiplier();
             }
         }
 
@@ -495,7 +548,8 @@ namespace Seasons
         {
             private static void Postfix(ref float __result)
             {
-                __result *= seasonState.GetWindIntensityMultiplier();
+                if (controlWindIntensity.Value)
+                    __result *= seasonState.GetWindIntensityMultiplier();
             }
         }
     }

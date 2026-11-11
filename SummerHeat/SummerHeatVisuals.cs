@@ -172,7 +172,7 @@ namespace Seasons
             _summerHeatColorApplied = true;
         }
 
-        private static void RestoreCameraDistortion()
+        internal static void RestoreCameraDistortion()
         {
             if (_heatDistortion != null && _summerHeatColorApplied)
             {
@@ -229,10 +229,9 @@ namespace Seasons
     {
         private static void Postfix(Character __instance)
         {
-            if (__instance != Player.m_localPlayer)
+            if (__instance != Player.m_localPlayer || !SummerHeat.IsMechanicActive)
                 return;
 
-            SummerHeatVisuals.UpdateHazeState();
             SummerHeatVisuals.ApplyCameraDistortion(GameCamera.instance?.m_heatDistortImageEffect);
         }
     }

@@ -21,15 +21,17 @@ namespace Seasons
                 return;
 
             UpdateTipBasedOnValue("$seasons_loadscreen_tip_ice", enableFrozenWater.Value);
-            UpdateTipBasedOnValue("$seasons_loadscreen_tip_torch", seasonState.GetSeasonSettings(Season.Winter).m_torchAsFiresource);
+            UpdateTipBasedOnValue("$seasons_loadscreen_tip_torch", enableTorchWarmth.Value && seasonState.GetSeasonSettings(Season.Winter).m_torchAsFiresource);
             UpdateTipBasedOnValue("$seasons_loadscreen_tip_harvests", seasonState.GetSeasonSettings(Season.Spring).m_plantsGrowthMultiplier != 1 || seasonState.GetSeasonSettings(Season.Summer).m_plantsGrowthMultiplier != 1);
-            UpdateTipBasedOnValue("$seasons_loadscreen_tip_nights", seasonState.GetSeasonSettings(Season.Winter).m_nightLength > SeasonSettings.nightLentghDefault || controlLightings.Value);
+            UpdateTipBasedOnValue("$seasons_loadscreen_tip_nights", controlNightLength.Value && seasonState.GetSeasonSettings(Season.Winter).m_nightLength > SeasonSettings.nightLentghDefault);
             UpdateTipBasedOnValue("$seasons_loadscreen_tip_overheat", !summerHeatEnabled.Value && summerHeatAddsExtraWarmCloth.Value && seasonState.GetSeasonSettings(Season.Summer).m_overheatIn2WarmClothes);
             UpdateTipBasedOnValue("$seasons_loadscreen_tip_summer_heat", summerHeatEnabled.Value);
             UpdateTipBasedOnValue("$seasons_loadscreen_tip_summer_heat_cold_food", summerHeatEnabled.Value && !string.IsNullOrWhiteSpace(summerHeatCoolingFoods.Value));
             UpdateTipBasedOnValue("$seasons_loadscreen_tip_summer_heat_risk", summerHeatEnabled.Value);
-            UpdateTipBasedOnValue("$seasons_loadscreen_tip_firewood", seasonState.GetSeasonSettings(Season.Winter).m_fireplaceDrainMultiplier > 1f);
-            UpdateTipBasedOnValue("$seasons_loadscreen_tip_perish", cropsDiesAfterSetDayInWinter.Value != 0);
+            UpdateTipBasedOnValue("$seasons_loadscreen_tip_firewood", seasonState.GetFireplaceDrainMultiplier(Season.Winter) > 1f);
+            UpdateTipBasedOnValue("$seasons_loadscreen_tip_perish", pickablesPerishInWinter.Value
+                && seasonState.GetSeasonSettings(Season.Winter).m_plantsGrowthMultiplier == 0f
+                && cropsDiesAfterSetDayInWinter.Value <= seasonState.GetDaysInSeason(Season.Winter));
             UpdateTipBasedOnValue("$seasons_loadscreen_tip_traders", controlTraders.Value);
             UpdateTipBasedOnValue("$seasons_loadscreen_tip_stats", controlStats.Value);
             UpdateTipBasedOnValue("$seasons_loadscreen_tip_wolves", controlRandomEvents.Value);

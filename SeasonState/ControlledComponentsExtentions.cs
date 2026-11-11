@@ -20,7 +20,7 @@ namespace Seasons
 
         public static bool IsVulnerableToWinter(this Pickable pickable)
         {
-            return seasonState.GetPlantsGrowthMultiplier() == 0f &&
+            return pickablesPerishInWinter.Value && seasonState.GetPlantsGrowthMultiplier() == 0f &&
                     seasonState.GetCurrentSeason() == Season.Winter
                     && !pickable.ShouldSurviveWinter()
                     && !pickable.SurvivedCurrentWinter();
@@ -44,6 +44,9 @@ namespace Seasons
 
         public static double GetSecondsToFreeze(this Pickable pickable)
         {
+            if (!pickablesPerishInWinter.Value)
+                return 0d;
+
             if (pickable.m_nview && pickable.m_nview.IsValid() && ZNet.instance)
             {
                 long freezingTime = pickable.m_nview.GetZDO().GetLong(SeasonsVars.s_cropStartedFreezingHash, 0L);
@@ -81,6 +84,8 @@ namespace Seasons
 
         public static void SetFreezing(this Pickable pickable, bool freezing)
         {
+            // Disabled perishing cannot start a timer. Existing owner-side checks clear it.
+            freezing &= pickablesPerishInWinter.Value;
             if (pickable.m_nview && pickable.m_nview.IsValid() && ZNet.instance && pickable.m_nview.GetZDO() is ZDO zdo)
             {
                 if (freezing && zdo.GetLong(SeasonsVars.s_cropStartedFreezingHash, 0L) == 0L && seasonState.GetCurrentSeason() == Season.Winter && seasonState.GetCurrentDay() >= cropsDiesAfterSetDayInWinter.Value)
@@ -101,6 +106,9 @@ namespace Seasons
 
         public static string GetColdStatus(this Pickable pickable)
         {
+            if (!pickablesPerishInWinter.Value)
+                return string.Empty;
+
             if (pickable.ShouldSurviveWinter())
                 return "$seasons_plant_frost_resistant";
             else if (pickable.ProtectedWithHeat())

@@ -1,4 +1,10 @@
-﻿[*.cs]
+﻿[*]
+end_of_line = crlf
+
+[*.{sh,patch}]
+end_of_line = lf
+
+[*.cs]
 
 # IDE0090: Use 'new(...)'
 dotnet_diagnostic.IDE0090.severity = none

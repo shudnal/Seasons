@@ -64,6 +64,7 @@
     <Compile Include="WinterSnow\SeasonalSnowHeat.cs" />
     <Compile Include="WinterSnow\SeasonalSnowInteraction.cs" />
     <Compile Include="WinterSnow\SeasonalSnowClearing.cs" />
+    <Compile Include="WinterSnow\SeasonalSnowTrampling.cs" />
     <Compile Include="WinterSnow\SnowClearingTool.cs" />
     <Compile Include="WinterSnow\SeasonalSnowGeometry.cs" />
     <Compile Include="WinterSnow\SeasonalSnowSimulationPatches.cs" />
@@ -103,11 +104,14 @@
     <Compile Include="SeasonState\SeasonStatePatches.cs" />
     <Compile Include="SeasonState\EnvManPatches.cs" />
     <Compile Include="SeasonState\SeasonState.cs" />
+    <Compile Include="SeasonState\SeasonalTorchOverrides.cs" />
     <Compile Include="SeasonSettings\SeasonStats.cs" />
     <Compile Include="SeasonSettings\SeasonTraderItems.cs" />
     <Compile Include="SeasonSettings\SeasonWorldSettings.cs" />
     <Compile Include="SE_Season.cs" />
     <Compile Include="Controllers\FrozenOceanSliding.cs" />
+    <Compile Include="Controllers\FrozenOceanSlidingMotion.cs" />
+    <Compile Include="Controllers\FrozenOceanSlidingFeedback.cs" />
     <Compile Include="Controllers\PrefabVariantController.cs" />
     <Compile Include="Controllers\ZoneSystemVariantController.cs" />
     <Compile Include="Controllers\SeasonalIceFloeSettings.cs" />
@@ -127,6 +131,7 @@
     <Compile Include="Utils\ItemNameTokens.cs" />
     <Compile Include="Utils\LocalizationManager.cs" />
     <Compile Include="Utils\StatusEffectHud.cs" />
+    <Compile Include="Utils\SeasonFuzzyTimer.cs" />
     <Compile Include="Utils\SummerHeatUtils.cs" />
     <Compile Include="SeasonsVars.cs" />
   </ItemGroup>

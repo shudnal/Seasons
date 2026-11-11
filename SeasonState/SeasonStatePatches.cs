@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Emit;
 using UnityEngine;
 using static Seasons.Seasons;
 
@@ -175,6 +176,7 @@ namespace Seasons
                 if (__instance.IsIgnored())
                     return;
 
+                // DO NOT START invokation unconditionally
                 if (!__instance.CheckForPerishInWinter() && !__instance.IsInvoking("UpdateRespawn"))
                     __instance.InvokeRepeating("UpdateRespawn", UnityEngine.Random.Range(1f, 5f), repeatRate: 60f);
             }
@@ -252,7 +254,7 @@ namespace Seasons
                     }
                 }
 
-                if (__instance.IsIgnored() || seasonState.GetCurrentSeason() != Season.Winter || !__instance.CanBePicked())
+                if (!pickablesPerishInWinter.Value || __instance.IsIgnored() || seasonState.GetCurrentSeason() != Season.Winter || !__instance.CanBePicked())
                     return;
 
                 if (string.IsNullOrWhiteSpace(__result))
@@ -382,7 +384,7 @@ namespace Seasons
         {
             private static void Prefix(Beehive __instance, ref Tuple<string> __state)
             {
-                if (IsProtectedPosition(__instance.transform.position))
+                if (!controlBeehiveProduction.Value || IsProtectedPosition(__instance.transform.position))
                     return;
 
                 __state = Tuple.Create(__instance.m_happyText);
@@ -404,7 +406,7 @@ namespace Seasons
         {
             private static void Postfix(Beehive __instance, ref float __result)
             {
-                if (IsProtectedPosition(__instance.transform.position))
+                if (!controlBeehiveProduction.Value || IsProtectedPosition(__instance.transform.position))
                     return;
 
                 __result *= seasonState.GetBeehiveProductionMultiplier();
@@ -451,7 +453,7 @@ namespace Seasons
         {
             private static void Postfix(Beehive __instance, ref GameObject ___m_beeEffect)
             {
-                if (IsProtectedPosition(__instance.transform.position))
+                if (!controlBeehiveProduction.Value || IsProtectedPosition(__instance.transform.position))
                     return;
 
                 if (seasonState.GetBeehiveProductionMultiplier() == 0f && ___m_beeEffect != null)
@@ -488,7 +490,7 @@ namespace Seasons
         {
             private static void Prefix(Player __instance, ref float v)
             {
-                if (__instance == null)
+                if (!controlStaminaConsumption.Value || __instance == null)
                     return;
 
                 if (__instance.InInterior() || __instance.InShelter())
@@ -503,7 +505,7 @@ namespace Seasons
         {
             private static void Postfix(Fireplace __instance, ref double __result)
             {
-                if (IsProtectedPosition(__instance.transform.position))
+                if (!controlFuelConsumption.Value || IsProtectedPosition(__instance.transform.position))
                     return;
 
                 __result *= (double)Math.Max(0f, seasonState.GetFireplaceDrainMultiplier());
@@ -518,7 +520,7 @@ namespace Seasons
                 if (__instance.m_name != "$piece_bathtub")
                     return;
 
-                if (IsProtectedPosition(__instance.transform.position))
+                if (!controlFuelConsumption.Value || IsProtectedPosition(__instance.transform.position))
                     return;
 
                 __result *= (double)Math.Max(0f, seasonState.GetFireplaceDrainMultiplier());
@@ -530,7 +532,7 @@ namespace Seasons
         {
             private static void Prefix(CookingStation __instance, ref float dt)
             {
-                if (IsProtectedPosition(__instance.transform.position))
+                if (!controlFuelConsumption.Value || IsProtectedPosition(__instance.transform.position))
                     return;
 
                 dt *= Math.Max(0f, seasonState.GetFireplaceDrainMultiplier());
@@ -542,7 +544,7 @@ namespace Seasons
         {
             private static void Postfix(SapCollector __instance, ref float __result)
             {
-                if (IsProtectedPosition(__instance.transform.position))
+                if (!controlSapCollection.Value || IsProtectedPosition(__instance.transform.position))
                     return;
 
                 __result *= Math.Max(0f, seasonState.GetSapCollectingSpeedMultiplier());
@@ -552,25 +554,52 @@ namespace Seasons
         [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateWear))]
         public static class WearNTear_UpdateWear_RainProtection
         {
-            private static void Prefix(WearNTear __instance, ZNetView ___m_nview, ref bool ___m_noRoofWear, ref bool? __state)
+            private static bool AllowRoofWear(WearNTear piece) => piece.m_noRoofWear &&
+                (!seasonState.GetRainProtection() || IsProtectedPosition(piece.transform.position));
+
+            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
             {
-                if (!seasonState.GetRainProtection())
-                    return;
+                List<CodeInstruction> code = new List<CodeInstruction>(instructions);
+                FieldInfo roofWear = AccessTools.Field(typeof(WearNTear), nameof(WearNTear.m_noRoofWear));
+                MethodInfo shield = AccessTools.Method(typeof(ShieldGenerator), nameof(ShieldGenerator.IsInsideShieldCached),
+                    new[] { typeof(Vector3), typeof(int).MakeByRefType() });
+                int shieldCall = code.FindIndex(instruction => instruction.Calls(shield));
+                int reads = code.Count(instruction => instruction.LoadsField(roofWear));
+                if (shieldCall < 0 || reads != 2 ||
+                    code.FindIndex(shieldCall + 1, instruction => instruction.Calls(shield)) >= 0 ||
+                    code.FindIndex(instruction => instruction.LoadsField(roofWear)) <= shieldCall)
+                {
+                    LogWarning("Cannot find the weather wear block in WearNTear.UpdateWear. Seasonal rain protection was not applied.");
+                    return code;
+                }
 
-                if (___m_nview == null || !___m_nview.IsValid())
-                    return;
+                LocalBuilder allowWear = generator.DeclareLocal(typeof(bool));
+                List<CodeInstruction> result = new List<CodeInstruction>(code.Count + 5);
+                for (int i = 0; i < code.Count; ++i)
+                {
+                    CodeInstruction instruction = code[i];
+                    if (instruction.LoadsField(roofWear))
+                    {
+                        // Discard only the receiver of this field read. Do not mutate the field.
+                        CodeInstruction discard = new CodeInstruction(OpCodes.Pop);
+                        discard.labels.AddRange(instruction.labels);
+                        discard.blocks.AddRange(instruction.blocks);
+                        result.Add(discard);
+                        result.Add(new CodeInstruction(OpCodes.Ldloc, allowWear));
+                    }
+                    else
+                        result.Add(instruction);
 
-                if (IsProtectedPosition(__instance.transform.position))
-                    return;
-
-                __state = ___m_noRoofWear;
-                ___m_noRoofWear = false;
-            }
-
-            private static void Finalizer(ref bool ___m_noRoofWear, bool? __state)
-            {
-                if (__state.HasValue)
-                    ___m_noRoofWear = __state.Value;
+                    if (i == shieldCall)
+                    {
+                        // Native authority, creation delay and active-area checks have passed.
+                        // Keep the shield result on the stack for its original consumer.
+                        result.Add(new CodeInstruction(OpCodes.Ldarg_0));
+                        result.Add(new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(WearNTear_UpdateWear_RainProtection), nameof(AllowRoofWear))));
+                        result.Add(new CodeInstruction(OpCodes.Stloc, allowWear));
+                    }
+                }
+                return result;
             }
         }
 
@@ -615,7 +644,7 @@ namespace Seasons
         {
             private static void Prefix(Destructible __instance, ZNetView ___m_nview)
             {
-                if (UnityEngine.Random.Range(0.0f, 1.0f) > seasonState.GetTreesReqrowthChance())
+                if (!enableTreeRegrowth.Value || UnityEngine.Random.Range(0.0f, 1.0f) > seasonState.GetTreesReqrowthChance())
                     return;
 
                 if (___m_nview == null || !___m_nview.IsValid() || !___m_nview.IsOwner())
@@ -797,27 +826,56 @@ namespace Seasons
             }
         }
 
+        // Legacy overheat only needs an update when the food list actually changes.
+        private static void RefreshLegacyOverheatAfterFoodChange(Player player)
+        {
+            if (summerHeatEnabled.Value || !summerHeatAddsExtraWarmCloth.Value ||
+                player != Player.m_localPlayer || seasonState.GetCurrentSeason() != Season.Summer ||
+                !seasonState.GetOverheatIn2WarmClothes())
+                return;
+            seasonState.CheckOverheatStatus(player);
+        }
+
         [HarmonyPatch]
         public static class Player_Food_OverheatIn2WarmClothesExcludeEyescream
         {
             private static IEnumerable<MethodBase> TargetMethods()
             {
-                yield return AccessTools.Method(typeof(Player), nameof(Player.UpdateFood));
                 yield return AccessTools.Method(typeof(Player), nameof(Player.ClearFood));
                 yield return AccessTools.Method(typeof(Player), nameof(Player.EatFood));
                 yield return AccessTools.Method(typeof(Player), nameof(Player.RemoveOneFood));
             }
 
-            private static void Prefix(Player __instance, ref bool __state)
+            private static void Postfix(Player __instance) => RefreshLegacyOverheatAfterFoodChange(__instance);
+        }
+
+        [HarmonyPatch(typeof(Player), nameof(Player.UpdateFood))]
+        private static class Player_UpdateFood_ExpiredCoolingFood
+        {
+            private static bool FoodRemoved(bool removed, Player player)
             {
-                if (__instance == Player.m_localPlayer)
-                    __state = SeasonState.HasCoolingFood(__instance);
+                if (removed)
+                    RefreshLegacyOverheatAfterFoodChange(player);
+                return removed;
             }
 
-            private static void Postfix(Player __instance, bool __state)
+            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
             {
-                if (__instance == Player.m_localPlayer && __state != SeasonState.HasCoolingFood(__instance))
-                    seasonState.CheckOverheatStatus(__instance);
+                List<CodeInstruction> code = new List<CodeInstruction>(instructions);
+                MethodInfo remove = AccessTools.Method(typeof(List<Player.Food>), nameof(List<Player.Food>.Remove), new[] { typeof(Player.Food) });
+                int index = code.FindIndex(instruction => instruction.Calls(remove));
+                if (index < 0 || code.FindIndex(index + 1, instruction => instruction.Calls(remove)) >= 0)
+                {
+                    LogWarning("Cannot find the food expiration removal in Player.UpdateFood. Legacy overheat will still update on explicit food changes.");
+                    return code;
+                }
+                // Retain the native removal result and all existing control flow.
+                code.InsertRange(index + 1, new[]
+                {
+                    new CodeInstruction(OpCodes.Ldarg_0),
+                    new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(Player_UpdateFood_ExpiredCoolingFood), nameof(FoodRemoved)))
+                });
+                return code;
             }
         }
 
@@ -828,35 +886,57 @@ namespace Seasons
             private static bool removeFrostResistanceFromArmor;
             private static readonly int s_wetStatusHash = SEMan.s_statusEffectWet;
 
-            public static bool ShouldRemoveFrostResistance(Player player) => coldStatusPlayer == player && removeFrostResistanceFromArmor;
-
-            private static void Prefix(Player __instance, ref Tuple<Player, bool> __state)
+            private struct ColdStatusContext
             {
-                __state = Tuple.Create(coldStatusPlayer, removeFrostResistanceFromArmor);
-                coldStatusPlayer = __instance;
-                removeFrostResistanceFromArmor = false;
-                int warmPieces = SeasonState.GetWarmClothesCount(__instance);
-
-                if (__instance.GetCurrentBiome() == Heightmap.Biome.Mountain ? gettingWetInMountainsCausesCold.Value : gettingWetInWinterCausesCold.Value && seasonState.GetCurrentSeason() == Season.Winter)
-                {
-                    bool isWetInColdEnv = (EnvMan.IsCold() || EnvMan.IsFreezing()) && __instance.GetSEMan().HaveStatusEffect(s_wetStatusHash);
-
-                    bool isProtectedFromCold = wearing2WarmPiecesPreventsWetCold.Value && warmPieces > 1;
-
-                    removeFrostResistanceFromArmor = isWetInColdEnv && (!isProtectedFromCold || __instance.IsSwimming());
-                }
-
-                if (mountainInWinterRequires2WarmPieces.Value && __instance.GetCurrentBiome() == Heightmap.Biome.Mountain && seasonState.GetCurrentSeason() == Season.Winter && warmPieces < 2)
-                    removeFrostResistanceFromArmor = true;
+                internal Player Player;
+                internal bool RemoveFrostResistance;
+                internal bool Captured;
             }
 
-            private static void Finalizer(Tuple<Player, bool> __state)
+            public static bool ShouldRemoveFrostResistance(Player player) => coldStatusPlayer == player && removeFrostResistanceFromArmor;
+
+            private static void Prefix(Player __instance, out ColdStatusContext __state)
             {
-                if (__state == null)
+                __state = new ColdStatusContext
+                {
+                    Player = coldStatusPlayer,
+                    RemoveFrostResistance = removeFrostResistanceFromArmor,
+                    Captured = true
+                };
+                coldStatusPlayer = __instance;
+                removeFrostResistanceFromArmor = false;
+                bool mountain = __instance.GetCurrentBiome() == Heightmap.Biome.Mountain;
+                bool winter = seasonState.GetCurrentSeason() == Season.Winter;
+                int warmPieces = -1;
+
+                if ((mountain ? gettingWetInMountainsCausesCold.Value : gettingWetInWinterCausesCold.Value && winter) &&
+                    (EnvMan.IsCold() || EnvMan.IsFreezing()) && __instance.GetSEMan().HaveStatusEffect(s_wetStatusHash))
+                {
+                    if (__instance.IsSwimming() || !wearing2WarmPiecesPreventsWetCold.Value)
+                        removeFrostResistanceFromArmor = true;
+                    else
+                    {
+                        // This count deliberately includes ALL equipped slots, not just armor.
+                        warmPieces = SeasonState.GetWarmClothesCount(__instance);
+                        removeFrostResistanceFromArmor = warmPieces < 2;
+                    }
+                }
+
+                if (mountainInWinterRequires2WarmPieces.Value && mountain && winter && !removeFrostResistanceFromArmor)
+                {
+                    if (warmPieces < 0)
+                        warmPieces = SeasonState.GetWarmClothesCount(__instance);
+                    removeFrostResistanceFromArmor = warmPieces < 2;
+                }
+            }
+
+            private static void Finalizer(ColdStatusContext __state)
+            {
+                if (!__state.Captured)
                     return;
 
-                coldStatusPlayer = __state.Item1;
-                removeFrostResistanceFromArmor = __state.Item2;
+                coldStatusPlayer = __state.Player;
+                removeFrostResistanceFromArmor = __state.RemoveFrostResistance;
             }
         }
 

@@ -68,6 +68,7 @@ namespace Seasons
         private static string s_openLegItemsValue = string.Empty;
 
         private float _evaluationTimer;
+        private bool _calendarHeatWindowActive;
         private float _overflowHeat;
         private SummerHeatMode _mode = SummerHeatMode.Stable;
         private SummerHeatState _state;
@@ -107,7 +108,10 @@ namespace Seasons
         private void OnDestroy()
         {
             if (Instance == this)
+            {
                 Instance = null;
+                SummerHeatVisuals.RestoreCameraDistortion();
+            }
 
             SummerHeatVisuals.UpdateHazeState();
         }
@@ -125,17 +129,30 @@ namespace Seasons
                 EvaluateState(forceStatusRefresh: false);
             }
 
-            UpdateHeat(dt);
+            if (!enabled || !_state.MechanicActive)
+                return;
 
+            UpdateHeat(dt);
             SummerHeatVisuals.UpdateHazeState();
         }
 
-        internal static void EnsureForPlayer(Player player)
+        internal static void EnsureForPlayer(Player player, bool refresh = false)
         {
             if (player == null || player != Player.m_localPlayer)
                 return;
 
-            if (!player.TryGetComponent(out SummerHeatController _))
+            if (Instance != null && Instance.Player == player)
+            {
+                if (refresh)
+                    Instance.RefreshState();
+                return;
+            }
+            if (player.TryGetComponent(out SummerHeatController controller))
+            {
+                Instance = controller;
+                controller.RefreshState();
+            }
+            else
                 player.gameObject.AddComponent<SummerHeatController>();
         }
 
@@ -174,6 +191,7 @@ namespace Seasons
 
         internal void RefreshState(bool forceStatusRefresh = true)
         {
+            _evaluationTimer = 0f;
             EvaluateState(forceStatusRefresh);
         }
 
@@ -214,17 +232,29 @@ namespace Seasons
 
         private void EvaluateState(bool forceStatusRefresh)
         {
-            if (!Seasons.summerHeatEnabled.Value)
+            _calendarHeatWindowActive = IsSeasonHeatWindowActive();
+            if (!Seasons.summerHeatEnabled.Value || (!_calendarHeatWindowActive && GetLiveTotalHeat() <= 0f))
             {
                 ClearHeatState(forceStatusRefresh);
+                enabled = false;
                 return;
             }
 
+            enabled = true;
             _isDaytime = !EnvMan.IsNight();
             _currentBiome = Player != null ? Player.GetCurrentBiome() : Heightmap.Biome.None;
             _biomeAllowsSummerHeat = AllowsSummerHeatBiome(_currentBiome);
 
-            bool seasonHeatWindowActive = _biomeAllowsSummerHeat && IsSeasonHeatWindowActive();
+            if (!_biomeAllowsSummerHeat)
+            {
+                ClearHeatState(forceStatusRefresh);
+                // During the heat season, retain the existing biome evaluation interval.
+                // Outside it, only season/day/configuration and spawn events can wake us.
+                enabled = _calendarHeatWindowActive;
+                return;
+            }
+
+            bool seasonHeatWindowActive = _calendarHeatWindowActive;
             EnvSetup currentEnvironment = EnvMan.instance?.m_currentEnv;
             _currentEnvironmentName = GetEnvironmentName(currentEnvironment);
 
@@ -292,30 +322,13 @@ namespace Seasons
             _armorState = SummerHeatArmorState.Empty;
 
             EnsureStatusEffect(shouldHaveEffect: false);
-
+            SummerHeatVisuals.RestoreCameraDistortion();
             SummerHeatVisuals.UpdateHazeState();
         }
 
         private void UpdateHeat(float dt)
         {
             float previousTotal = _state.TotalHeatPercent;
-
-            if (!Seasons.summerHeatEnabled.Value)
-            {
-                ClearHeatState(forceStatusRefresh: true);
-                return;
-            }
-
-            if (!_biomeAllowsSummerHeat)
-            {
-                _overflowHeat = 0f;
-                _state.SetHeat(0f, 0f, 0f, DaytimeHeatCap, HeatZone.Neutral, 0f, 0f, 0f);
-                _state.Direction = previousTotal > 0f ? -1 : 0;
-                _state.IsCooling = previousTotal > 0f;
-                _state.MechanicActive = false;
-                EnsureStatusEffect(shouldHaveEffect: false);
-                return;
-            }
 
             float heatCap = GetCurrentHeatCap();
             float environmentalDelta = 0f;
@@ -382,6 +395,12 @@ namespace Seasons
             float heatCap = GetCurrentHeatCap();
             float heat = Mathf.Clamp(_state.HeatPercent, 0f, heatCap);
             float totalHeat = Mathf.Max(0f, heat + _overflowHeat);
+            if (!_calendarHeatWindowActive && totalHeat <= 0f)
+            {
+                ClearHeatState(forceStatusRefresh);
+                enabled = false;
+                return;
+            }
             HeatZone zone = GetZoneForHeat(heat, _state.Zone, _biomeAllowsSummerHeat, _isDaytime, _overflowHeat);
             float greenFactor = CalculateGreenFactor(heat);
             float redFactor = CalculateRedFactor(heat);
@@ -422,8 +441,8 @@ namespace Seasons
 
             ApplyHeadArmor(player, isInDirectSun, ref state);
             ApplyCloakArmor(player, ref state);
-            ApplyBodyArmor(player, ItemDrop.ItemData.ItemType.Chest, GetConfiguredItemList(Seasons.summerHeatOpenChestItems, ref s_openChestItemsValue, s_openChestItems), ref state.HeatingModifier, ref state.CoolingModifier, ref state.ChestState);
-            ApplyBodyArmor(player, ItemDrop.ItemData.ItemType.Legs, GetConfiguredItemList(Seasons.summerHeatOpenLegItems, ref s_openLegItemsValue, s_openLegItems), ref state.HeatingModifier, ref state.CoolingModifier, ref state.LegsState);
+            ApplyBodyArmor(player.m_chestItem, GetConfiguredItemList(Seasons.summerHeatOpenChestItems, ref s_openChestItemsValue, s_openChestItems), ref state.HeatingModifier, ref state.CoolingModifier, ref state.ChestState);
+            ApplyBodyArmor(player.m_legItem, GetConfiguredItemList(Seasons.summerHeatOpenLegItems, ref s_openLegItemsValue, s_openLegItems), ref state.HeatingModifier, ref state.CoolingModifier, ref state.LegsState);
 
             state.HeatingModifier = Mathf.Clamp(state.HeatingModifier, -0.95f, 3f);
             state.CoolingModifier = Mathf.Clamp(state.CoolingModifier, -0.95f, 3f);
@@ -432,7 +451,7 @@ namespace Seasons
 
         private static void ApplyHeadArmor(Player player, bool isInDirectSun, ref SummerHeatArmorState state)
         {
-            ItemDrop.ItemData helmet = GetEquippedItem(player, ItemDrop.ItemData.ItemType.Helmet);
+            ItemDrop.ItemData helmet = player.m_helmetItem;
             if (helmet == null)
             {
                 bool hasBareHeadHair = IsBareHeadHair(player);
@@ -464,7 +483,7 @@ namespace Seasons
 
         private static void ApplyCloakArmor(Player player, ref SummerHeatArmorState state)
         {
-            ItemDrop.ItemData cloak = GetEquippedItem(player, ItemDrop.ItemData.ItemType.Shoulder);
+            ItemDrop.ItemData cloak = player.m_shoulderItem;
             if (cloak == null)
             {
                 state.HeatingModifier -= ClampEffect(Seasons.summerHeatNoCloakHeatingReduction.Value);
@@ -493,9 +512,8 @@ namespace Seasons
             state.CloakState = "$seasons_status_summer_heat_armor_cloak";
         }
 
-        private static void ApplyBodyArmor(Player player, ItemDrop.ItemData.ItemType itemType, HashSet<string> openItems, ref float heatingModifier, ref float coolingModifier, ref string stateKey)
+        private static void ApplyBodyArmor(ItemDrop.ItemData item, HashSet<string> openItems, ref float heatingModifier, ref float coolingModifier, ref string stateKey)
         {
-            ItemDrop.ItemData item = GetEquippedItem(player, itemType);
             if (item == null)
             {
                 heatingModifier -= ClampEffect(Seasons.summerHeatEmptyArmorSlotHeatingReduction.Value);
@@ -522,14 +540,6 @@ namespace Seasons
 
             heatingModifier += ClampEffect(Seasons.summerHeatClosedArmorHeating.Value);
             stateKey = "$seasons_status_summer_heat_armor_closed_armor";
-        }
-
-        private static ItemDrop.ItemData GetEquippedItem(Player player, ItemDrop.ItemData.ItemType itemType)
-        {
-            if (player == null || player.GetInventory() is not Inventory inventory)
-                return null;
-
-            return inventory.GetEquippedItems().FirstOrDefault(item => item != null && item.m_shared != null && item.m_shared.m_itemType == itemType);
         }
 
         private static bool IsFrostResistantItem(ItemDrop.ItemData item)
@@ -962,7 +972,7 @@ namespace Seasons
     {
         private static void Postfix(Player __instance)
         {
-            SummerHeatController.EnsureForPlayer(__instance);
+            SummerHeatController.EnsureForPlayer(__instance, refresh: true);
         }
     }
 }
