@@ -58,7 +58,8 @@ namespace Seasons
             {
                 if (!SlidingEnabled || __instance.IsDead() || !__instance.IsOnIce() || __instance.m_iceShoes)
                     return;
-                bool gliding = playerSlide != null && ReferenceEquals(playerSlide.Player, __instance) && playerSlide.Mode == SlideMode.Glide;
+                bool gliding = playerSlide != null && ReferenceEquals(playerSlide.Player, __instance) &&
+                    (playerSlide.Mode == SlideMode.Glide || (playerSlide.Mode == SlideMode.Recharge && __instance.m_running));
                 float friction = ShouldUseVanillaIceSlipping(__instance) ? 0f : gliding
                     ? Parameter(frozenOceanGlidingFriction.Value, 0f, 0f, 1f)
                     : Parameter(frozenOceanSlidingFriction.Value, 0.05f, 0f, 1f);
@@ -88,9 +89,9 @@ namespace Seasons
         private static class Player_SetControls_FrozenOceanSliding
         {
             [HarmonyPrefix]
-            private static void Prefix(Player __instance, Vector3 movedir, bool attack, bool attackHold,
+            private static void Prefix(Player __instance, ref Vector3 movedir, bool attack, bool attackHold,
                 bool secondaryAttack, bool secondaryAttackHold, bool block, bool blockHold,
-                bool jump, bool crouch, bool autoRun, bool dodge)
+                bool jump, bool crouch, ref bool run, bool autoRun, bool dodge)
             {
                 PlayerSlide state = playerSlide;
                 if (state == null || !ReferenceEquals(state.Player, __instance))
@@ -100,7 +101,7 @@ namespace Seasons
                     state.MovementHeld = false;
                     // UI focus is not a movement command. It may keep an existing glide,
                     // but must never turn a suppressed run input into a release gesture.
-                    if (state.Mode == SlideMode.RunUp)
+                    if (IsPreparing(state))
                         InterruptSlide(__instance, SlideReason.Input);
                     return;
                 }
@@ -108,18 +109,44 @@ namespace Seasons
                     jump || crouch || dodge || autoRun;
                 float deadZone = Parameter(frozenOceanSlidingInputDeadZone.Value, 0.1f, 0.001f, 0.5f);
                 bool movement = !Finite(movedir) || movedir.sqrMagnitude > deadZone * deadZone;
-                if (!movement && (state.Mode == SlideMode.RunUp || state.Mode == SlideMode.Glide))
-                    // Held-state reads do not consume native button-down events. Opposing
-                    // keyboard keys are not a release gesture even if their vector is zero.
+                if (!movement && (IsPreparing(state) || state.Mode == SlideMode.Glide))
+                    // Opposing keyboard keys are not a release or a Shift-only gesture.
                     movement = ZInput.GetButton("Forward") || ZInput.GetButton("Backward") ||
                         ZInput.GetButton("Left") || ZInput.GetButton("Right");
                 state.MovementHeld = movement;
-                // Run is only a modifier; pressing, holding or releasing it cannot end a glide.
-                // Actual interactions and item actions are handled by their own hooks below.
                 if (action)
+                {
                     InterruptSlide(__instance, SlideReason.Input);
-                else if (movement && state.Mode == SlideMode.Glide)
-                    InterruptForMovement(state);
+                    return;
+                }
+
+                if ((state.Mode != SlideMode.Glide && state.Mode != SlideMode.Recharge) ||
+                    !CanOwnSlide(__instance) || !state.OnIce || !__instance.IsOnIce() ||
+                    !frozenOceanGlidingEnabled.Value || HasBlockingAction(__instance))
+                    return;
+
+                // The native controller clears Run when there is no directional input.
+                // A held Run alone during glide/recharge supplies the current travel
+                // heading in camera-relative coordinates to the original SetControls.
+                // CheckRun then handles the normal stamina drain and run eligibility.
+                bool held = ZInput.GetButton("Run") || ZInput.GetButton("JoyRun");
+                state.RechargeRunHeld = held || run;
+                if (!movement && state.RechargeRunHeld && __instance.HaveStamina())
+                {
+                    Vector3 direction = Horizontal(__instance.m_body.linearVelocity);
+                    Vector3 look = Horizontal(__instance.GetLookDir());
+                    if (direction.sqrMagnitude > 0.000001f && look.sqrMagnitude > 0.000001f)
+                    {
+                        direction.Normalize();
+                        look.Normalize();
+                        movedir = new Vector3(Vector3.Dot(direction, Vector3.Cross(Vector3.up, look)),
+                            0f, Vector3.Dot(direction, look));
+                        run = true;
+                        state.MovementHeld = true;
+                    }
+                }
+                // Movement plus Run is resolved only after the native CheckRun result.
+                // Movement without Run still exits gliding to basic inertia.
             }
         }
 

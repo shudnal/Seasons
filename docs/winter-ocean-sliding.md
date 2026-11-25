@@ -71,7 +71,7 @@ actions and input captured by UI do not charge a glide.
 Releasing Shift slightly before movement retains a completed charge for **0.25
 seconds**, making the release gesture tolerant of keyboard event ordering. This
 window neither accumulates charge nor preserves it through an action, obstacle,
-UI capture, or loss of ice contact. Shift alone never cancels an active glide.
+UI capture, or loss of ice contact. Holding Run during an active glide starts powered recharge.
 
 The visual cadence bonus defaults to **25%**. It increases with an eased charge
 curve and fades toward native locomotion parameters over 0.25 seconds on
@@ -119,29 +119,34 @@ walking rotation without changing its look yaw.
 
 ## Renewing the boost
 
-During the acceleration and bonus phases (the first **32 seconds**), while actual
-speed is above **100%**, returning directly to aligned running skips the initial
-2-second stage. The full **2-second charge** is still required before the next launch.
+During any active long glide, hold Run alone or Run with directional input.
+Run alone continues the current travel direction. Directional input controls
+the turn. The original SetControls and CheckRun handle running eligibility,
+stamina consumption, modifiers and skill gain. No separate stamina drain is
+added.
 
-Movement immediately cancels the glide animation and returns to basic handling.
-Only a successful native running calculation and aligned movement consume the
-one-use fast-recharge permission. Walking, braking, attacking, jumping, a large
-turn or a late restart does not retain that permission. After the bonus phase,
-preparation starts from the full 2 + 2 seconds again.
+Powered recharge skips the initial steady-run stage and keeps the full
+2-second charge. It preserves existing horizontal speed up to the configured
+peak instead of braking to the native run target. Below the native run speed,
+normal acceleration can recover speed. Steering rotates the current velocity
+without removing its lateral component. The long-glide friction remains
+active while actually running. Charge requires sufficient speed and alignment
+with the current movement direction; large turns can delay completion.
 
-Every new launch has a fresh finite profile and a bounded 120% peak; bonuses do
-not stack. Tapping movement or Shift without completing preparation cannot inject
-another boost. Repeated travel therefore requires actual running and its normal
-stamina costs, rather than indefinite passive gliding.
+Release movement after completing the charge to begin a fresh glide from
+actual speed toward the configured peak. Releasing early, running out of
+stamina or cancelling the recharge returns to basic movement and coasting;
+the previous glide is not resumed. Bonuses do not stack. A new boost requires
+the normal stamina cost of running.
 
 ## Other controls and interruptions
 
-Movement keys / stick input, attack, block, jump, dodge, crouch, auto-run,
-interaction, item use, equipment changes and other movement or animation actions
-cancel the long glide and its animation. Opposing keyboard keys are not a release
-gesture. Actions are not consumed or suppressed: their native logic still runs.
-Run / Shift / JoyRun is only a modifier; pressing, holding or releasing it alone
-does not cancel a glide, change drag or grant acceleration.
+Movement without Run, attack, block, jump, dodge, crouch, auto-run,
+interaction, item use, equipment changes and other movement or animation
+actions cancel the long glide and its animation. Opposing keyboard keys are
+not a release gesture. Actions are not consumed or suppressed: their native
+logic still runs. Run alone starts recharge only during an active glide or
+recharge, not from idle or ordinary movement.
 
 Opening a map, inventory, console or other UI does not by itself cancel an active
 glide. Input capture does prevent charging or starting a new glide: the controller's
@@ -289,10 +294,11 @@ movement, animation, camera settings or networking.
 - Glide straight and inspect speed/FOV at 0, 1, 2, 17, 32 and 42 seconds. Repeat with a
   different running skill/equipment speed and at different physics/frame rates.
 - Release Shift just before W within the grace window; repeat outside that window.
-  Press/hold/release Shift during a glide: no cancellation or free acceleration.
-- Return to aligned Shift + movement at 15 seconds: only 2 seconds of preparation.
-  Repeat after 32 seconds, below 100% following a turn, and without running.
-- Tap movement and release immediately: no renewed boost. Hit an obstacle and
+- Hold Run alone, then Run with movement during a glide. Confirm normal stamina
+  drain, no speed dip, a direct 2-second charge, and steering without losing
+  lateral speed. Repeat in the acceleration, bonus and coast phases.
+- Release before recharge finishes: basic coasting, no renewed boost. Repeat
+  without stamina. Movement without Run must still cancel. Hit an obstacle and
   confirm the acceleration does not reconstruct lost speed and FOV fades smoothly.
 - Turn, attack, jump, dodge, interact and change footwear. Check air control and
   basic inertia after landing, with no automatic return of charge.

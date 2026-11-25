@@ -19,7 +19,7 @@ namespace Seasons
         private static float glideFovBlendVelocity;
         private static float glideFovLimit;
 
-        private static float ChargeFeedback(PlayerSlide state) => state.Mode == SlideMode.RunUp
+        private static float ChargeFeedback(PlayerSlide state) => IsPreparing(state)
             ? Mathf.SmoothStep(0f, 1f, state.ChargeTime / ChargeDuration) : 0f;
 
         private static float GetTargetGlideFovBlend()
@@ -46,7 +46,7 @@ namespace Seasons
                 return Mathf.Clamp01(actualBonus / bonus);
             }
 
-            return state.Mode == SlideMode.RunUp
+            return IsPreparing(state)
                 ? Mathf.Max(Mathf.Clamp01(actualBonus / bonus), ChargeFeedback(state))
                 : 0f;
         }
@@ -107,7 +107,7 @@ namespace Seasons
 
         private static void UpdateRunCadence(PlayerSlide state, float dt)
         {
-            float target = state.Mode == SlideMode.RunUp && state.Player.m_running && !HasBlockingAction(state.Player)
+            float target = IsPreparing(state) && state.Player.m_running && !HasBlockingAction(state.Player)
                 ? ChargeFeedback(state) : 0f;
             state.CadenceFeedback = Mathf.MoveTowards(state.CadenceFeedback, target, dt / FeedbackTransitionTime);
         }
@@ -186,8 +186,8 @@ namespace Seasons
                 text.AppendLine("Mode: Native slipping");
             else if (state == null)
                 text.AppendLine("Mode: Inactive");
-            else if (state.Mode == SlideMode.RunUp)
-                SlidingDiagnosticLine(text, "Mode: RunUp / {0}", IsCharged(state) ? "Ready" :
+            else if (IsPreparing(state))
+                SlidingDiagnosticLine(text, "Mode: {0} / {1}", state.Mode, IsCharged(state) ? "Ready" :
                     state.RunUpTime < SteadyRunDuration ? "Steady" : "Charge");
             else if (state.Mode == SlideMode.Glide)
             {
@@ -230,7 +230,8 @@ namespace Seasons
             }
 
             SlidingDiagnosticLine(text, "Input: {0:F2} | Run: {1} | Ground: {2} | Ice: {3}", input.magnitude, player.m_running, player.IsOnGround(), ice);
-            SlidingDiagnosticLine(text, "Held: {0} | Blocked: {1} | Input allowed: {2}", state?.MovementHeld ?? false, HasBlockingAction(player), CanReadSlideInput(player));
+            SlidingDiagnosticLine(text, "Held: {0} | Run held: {1} | Stamina: {2:F1}", state?.MovementHeld ?? false, state?.RechargeRunHeld ?? false, player.GetStamina());
+            SlidingDiagnosticLine(text, "Blocked: {0} | Input allowed: {1}", HasBlockingAction(player), CanReadSlideInput(player));
 
             GameCamera camera = GameCamera.instance;
             if (camera && camera.m_camera)

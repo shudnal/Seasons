@@ -8,7 +8,7 @@ namespace Seasons
 {
     public static partial class CharacterExtentions_FrozenOceanSliding
     {
-        private enum SlideMode { Basic, RunUp, Glide }
+        private enum SlideMode { Basic, RunUp, Recharge, Glide }
         private enum SlideReason { Surface, Running, Released, Input, Action, Airborne, Slow, Disabled, Expired, Reset }
 
         private sealed class PlayerSlide
@@ -28,8 +28,7 @@ namespace Seasons
             internal float LaunchStartFraction;
             internal float PeakFraction;
             internal float CadenceFeedback;
-            internal bool QuickRechargePending;
-            internal Vector3 RechargeHeading;
+            internal bool RechargeRunHeld;
             internal bool MovementHeld;
             internal bool Interrupted;
             internal bool AnimationOwned;
@@ -82,7 +81,7 @@ namespace Seasons
             if (state == null || !ReferenceEquals(state.Player, character))
                 return;
             ClearPreparation(state);
-            state.QuickRechargePending = false;
+            state.RechargeRunHeld = false;
             state.GlideTime = 0f;
             state.Interrupted = true;
             ChangeMode(state, SlideMode.Basic, reason);
@@ -108,23 +107,14 @@ namespace Seasons
         private static float RunAlignment => Mathf.Cos(Parameter(frozenOceanGlidingRunUpAngle.Value, 45f, 0f, 90f) * Mathf.Deg2Rad);
         private static bool IsCharged(PlayerSlide state) => state.RunUpTime >= SteadyRunDuration && state.ChargeTime >= ChargeDuration;
 
-        private static void InterruptForMovement(PlayerSlide state)
+        private static bool IsPreparing(PlayerSlide state) => state.Mode == SlideMode.RunUp || state.Mode == SlideMode.Recharge;
+
+        private static void BeginRecharge(PlayerSlide state)
         {
-            if (!CanOwnSlide(state.Player))
-            {
-                ResetWorldState();
-                return;
-            }
-            Vector3 actual = Horizontal(state.Player.m_body.linearVelocity);
-            bool canRecharge = state.OnIce && state.Player.IsOnIce() && frozenOceanGlidingEnabled.Value &&
-                state.Mode == SlideMode.Glide && state.GlideTime > 0f && state.GlideTime < state.LaunchDuration + BonusDuration &&
-                Finite(actual) && state.RunSpeed > 0f && actual.magnitude > state.RunSpeed && !HasBlockingAction(state.Player);
-            InterruptSlide(state.Player, SlideReason.Input);
-            // Consume this permission at the next native speed calculation. Movement alone
-            // cancels the animation, but only an actual CheckRun success can renew the charge.
-            state.Interrupted = false;
-            state.QuickRechargePending = canRecharge;
-            state.RechargeHeading = canRecharge ? actual.normalized : Vector3.zero;
+            ClearPreparation(state);
+            state.RunUpTime = SteadyRunDuration;
+            state.GlideTime = 0f;
+            ChangeMode(state, SlideMode.Recharge, SlideReason.Running);
         }
 
         private static bool HasBlockingAction(Player player) => !player.CanMove() ||
@@ -214,16 +204,21 @@ namespace Seasons
             {
                 if (!longGlide || blocked)
                     InterruptSlide(player, !longGlide ? SlideReason.Disabled : SlideReason.Action);
-                else if (moving)
-                    InterruptForMovement(state);
-                else
+                else if (!moving)
                     return state.TargetSpeed = 0f;
+                else if (player.m_running && CanReadSlideInput(player) && input.sqrMagnitude > deadZone * deadZone)
+                    BeginRecharge(state);
+                else
+                {
+                    InterruptSlide(player, SlideReason.Input);
+                    return state.TargetSpeed;
+                }
             }
 
             if (!longGlide || blocked || !CanReadSlideInput(player))
             {
                 ClearPreparation(state);
-                state.QuickRechargePending = false;
+                state.RechargeRunHeld = false;
                 ChangeMode(state, SlideMode.Basic, !longGlide ? SlideReason.Disabled :
                     blocked ? SlideReason.Action : SlideReason.Input);
                 return state.TargetSpeed;
@@ -233,8 +228,8 @@ namespace Seasons
             // A short grace window also tolerates releasing Shift just before the movement keys.
             if (!moving)
             {
-                state.QuickRechargePending = false;
-                if (state.Mode == SlideMode.RunUp && IsCharged(state) && state.RunSpeed > 0f &&
+                state.RechargeRunHeld = false;
+                if (IsPreparing(state) && IsCharged(state) && state.RunSpeed > 0f &&
                     actualSpeed >= state.RunSpeed * RunSpeedFraction &&
                     Vector3.Dot(actual.normalized, state.RunHeading) >= RunAlignment)
                 {
@@ -250,8 +245,8 @@ namespace Seasons
                 Vector3.Dot(actual.normalized, input.normalized) >= RunAlignment;
             if (!player.m_running)
             {
-                state.QuickRechargePending = false;
-                if (state.Mode == SlideMode.RunUp && IsCharged(state) && aligned &&
+                state.RechargeRunHeld = false;
+                if (IsPreparing(state) && IsCharged(state) && aligned &&
                     actualSpeed >= state.RunSpeed * RunSpeedFraction &&
                     Vector3.Dot(state.RunHeading, input.normalized) >= RunAlignment)
                 {
@@ -266,24 +261,23 @@ namespace Seasons
 
             state.RunSpeed = state.TargetSpeed;
             bool charging = aligned && state.RunSpeed > 0f && actualSpeed >= state.RunSpeed * RunSpeedFraction;
+            if (state.Mode == SlideMode.Recharge)
+            {
+                // Powered steering may change the heading. Only aligned, sufficiently
+                // fast native running earns the charge; never restart the steady-run stage.
+                state.RunHeading = input.normalized;
+                state.RunUpTime = SteadyRunDuration;
+                state.ChargeTime = charging ? Mathf.Min(ChargeDuration, state.ChargeTime + dt) : 0f;
+                state.ReleaseTime = 0f;
+                return state.TargetSpeed;
+            }
             if (!charging)
             {
                 ClearPreparation(state);
-                state.QuickRechargePending = false;
                 ChangeMode(state, SlideMode.Basic, SlideReason.Slow);
                 return state.TargetSpeed;
             }
 
-            if (state.QuickRechargePending)
-            {
-                bool sameDirection = Vector3.Dot(state.RechargeHeading, input.normalized) >= RunAlignment;
-                state.QuickRechargePending = false;
-                if (sameDirection)
-                {
-                    state.RunHeading = input.normalized;
-                    state.RunUpTime = SteadyRunDuration;
-                }
-            }
             if (state.RunHeading.sqrMagnitude == 0f || Vector3.Dot(state.RunHeading, input.normalized) < RunAlignment ||
                 Vector3.Dot(state.RunHeading, actual.normalized) < RunAlignment)
             {
@@ -308,6 +302,7 @@ namespace Seasons
                 ? Vector3.SignedAngle(look, actual, Vector3.up) : 0f;
             ClearPreparation(state);
             state.GlideTime = 0f;
+            state.RechargeRunHeld = false;
             // Capture the earned acceleration once. Live tuning cannot restart it.
             state.LaunchDuration = LaunchDuration;
             state.PeakFraction = 1f + GlideBonus;
@@ -341,10 +336,13 @@ namespace Seasons
                 {
                     // CanMove may bypass the native speed branch. Immobilizing actions
                     // must still cancel the glide, without restoring a launch velocity.
-                    if (state.Mode == SlideMode.Glide && (HasBlockingAction(state.Player) || !frozenOceanGlidingEnabled.Value))
+                    if ((state.Mode == SlideMode.Glide || state.Mode == SlideMode.Recharge) &&
+                        (HasBlockingAction(state.Player) || !frozenOceanGlidingEnabled.Value))
                         InterruptSlide(state.Player, SlideReason.Action);
                     Vector3 result = state.Mode == SlideMode.Glide
-                        ? GlideVelocity(state, actual, dt) : BasicVelocity(state, actual, dt);
+                        ? GlideVelocity(state, actual, dt)
+                        : state.Mode == SlideMode.Recharge && state.Player.m_running
+                            ? RechargeVelocity(state, actual, dt) : BasicVelocity(state, actual, dt);
                     seasonalCorrection = state.OnIce && Finite(result) &&
                         (result.x != actual.x || result.z != actual.z);
                     velocity.x = result.x;
@@ -414,6 +412,29 @@ namespace Seasons
             // Independent forward/lateral control must not generate unbounded strafe acceleration.
             // External impulses may exceed the running cap, but cannot grow through steering.
             return Vector3.ClampMagnitude(direction * forward + lateral, Mathf.Max(speed, targetSpeed));
+        }
+
+        private static Vector3 RechargeVelocity(PlayerSlide state, Vector3 actual, float dt)
+        {
+            Vector3 input = Horizontal(state.Player.m_moveDir);
+            float speed = actual.magnitude;
+            // Preserve glide momentum while running, but do not create a second
+            // speed bonus before the next earned launch. Normal running can recover
+            // speed below its native target; excess external momentum settles to the peak.
+            float factor = Parameter(frozenOceanSlipperiness.Value, 1.25f, 0.01f, 5f);
+            float target = Mathf.Clamp(speed, state.TargetSpeed, state.TargetSpeed * (1f + GlideBonus));
+            float acceleration = speed > target
+                ? Parameter(frozenOceanSlidingBraking.Value, 4f, 0.1f, 50f) / factor
+                : Parameter(frozenOceanSlidingAcceleration.Value, 12f, 0.1f, 50f);
+            float nextSpeed = Mathf.MoveTowards(speed, target, acceleration * dt);
+            if (speed <= 0.000001f)
+                return input.normalized * nextSpeed;
+
+            // Rotate the existing momentum rather than damping its lateral component.
+            float turn = Parameter(frozenOceanSlidingSteering.Value, 5f, 0.1f, 50f) / factor;
+            Vector3 direction = Vector3.RotateTowards(actual / speed, input.normalized,
+                turn * dt / Mathf.Max(speed, 1f), 0f);
+            return direction * nextSpeed;
         }
 
         private static Vector3 CreatureVelocity(Character character, Vector3 actual, Vector3 desired, float dt)
