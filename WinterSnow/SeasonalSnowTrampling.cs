@@ -13,7 +13,7 @@ namespace Seasons
     {
         private const string RequestRpc = "Seasons_TrampleSnowPiece";
 
-        internal static void OnStep(WearNTear piece) => SeasonalSnowController.Instance.TrampleSnow(piece);
+        internal static bool OnStep(WearNTear piece) => SeasonalSnowController.Instance.TrampleSnow(piece);
 
         internal static void Request(long owner, ZDOID target) =>
             ZRoutedRpc.instance.InvokeRoutedRPC(owner, RequestRpc, target);
@@ -31,20 +31,22 @@ namespace Seasons
 
     internal sealed partial class SeasonalSnowController
     {
-        internal void TrampleSnow(WearNTear piece)
+        internal bool TrampleSnow(WearNTear piece)
         {
             float reduction = seasonalSnowFootstepReduction.Value;
             if (!(reduction > 0f) || !snowPieces.TryGetValue(piece, out SnowPiece state))
-                return;
+                return false;
             float minimum = seasonalSnowFootstepsCanClear.Value ? 0f : state.Minimum;
             if (!(state.Snow > minimum))
-                return;
+                return false;
 
             long owner = state.Zdo.GetOwner();
             if (owner == 0L || state.View.IsOwner())
                 ApplySnowTrampling(state, reduction, minimum);
             else
                 SnowTramplingAction.Request(owner, state.Id);
+
+            return true;
         }
 
         internal void ReceiveSnowTrampling(ZDOID target)
@@ -83,7 +85,7 @@ namespace Seasons
     internal static class FootStep_GetGroundMaterial_TrampleSeasonalSnow
     {
         [HarmonyPriority(Priority.Last)]
-        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {
             List<CodeInstruction> codes = instructions.ToList();
             FieldInfo material = AccessTools.Field(typeof(WearNTear), nameof(WearNTear.m_materialType));
@@ -105,17 +107,23 @@ namespace Seasons
                 return codes;
             }
 
-            // The native non-null branch already put componentInParent on the stack.
-            // Keep it for the existing material switch; do not repeat GetComponentInParent or change the result.
+            // Reuse the WearNTear already on the stack. A trampled step uses the native snow effect;
+            // otherwise keep the receiver for the original material switch.
+            Label originalMaterial = generator.DefineLabel();
             CodeInstruction duplicate = new CodeInstruction(OpCodes.Dup);
             duplicate.labels.AddRange(codes[index].labels);
             duplicate.blocks.AddRange(codes[index].blocks);
             codes[index].labels.Clear();
             codes[index].blocks.Clear();
+            codes[index].labels.Add(originalMaterial);
             codes.InsertRange(index, new[]
             {
                 duplicate,
-                new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(SnowTramplingAction), nameof(SnowTramplingAction.OnStep)))
+                new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(SnowTramplingAction), nameof(SnowTramplingAction.OnStep))),
+                new CodeInstruction(OpCodes.Brfalse, originalMaterial),
+                new CodeInstruction(OpCodes.Pop),
+                new CodeInstruction(OpCodes.Ldc_I4, (int)FootStep.GroundMaterial.Snow),
+                new CodeInstruction(OpCodes.Ret)
             });
             return codes;
         }
