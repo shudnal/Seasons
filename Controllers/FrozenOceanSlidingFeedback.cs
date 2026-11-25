@@ -167,6 +167,9 @@ namespace Seasons
         {
             var text = new StringBuilder(768);
             SlidingDiagnosticLine(text, "<color=#ABDCEF>Seasons - Sliding diagnostics</color> | t={0:F1}s", now);
+            Vector3 position = player.transform.position;
+            Vector2s zone = ZoneSystem.GetZone(position);
+            SlidingDiagnosticLine(text, "Zone: ({0}, {1}) | X/Z: {2:F2}, {3:F2}", zone.x, zone.y, position.x, position.z);
 
             PlayerSlide state = playerSlide != null && ReferenceEquals(playerSlide.Player, player) ? playerSlide : null;
             Vector3 velocity = Horizontal(player.m_body.linearVelocity);
