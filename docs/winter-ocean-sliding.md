@@ -55,11 +55,11 @@ Rigidbody speed limit and does not erase collision, combat or jump impulses.
 
 A first full preparation has two consecutive stages:
 
-1. Run on seasonal ice in approximately the same direction for **3 seconds**.
+1. Run on seasonal ice in approximately the same direction for **2 seconds**.
 2. Continue for **2 seconds** while locomotion cadence and the FOV cue ramp up.
 
-The second stage must finish to earn a launch. At full charge the FOV cue reaches
-**+10 degrees** by default; release movement to glide. An earlier release keeps
+The second stage must finish to earn a launch. At full charge the camera approaches
+**105 degrees horizontal FOV** by default; release movement to glide. An earlier release keeps
 basic inertia and gives no boost. Readiness remains available while qualifying
 running continues. Actual speed and heading are checked again on release.
 
@@ -73,41 +73,43 @@ seconds**, making the release gesture tolerant of keyboard event ordering. This
 window neither accumulates charge nor preserves it through an action, obstacle,
 UI capture, or loss of ice contact. Shift alone never cancels an active glide.
 
-The visual cadence bonus defaults to **17.5%**: the former 25% run-up bonus reduced
-by 30%. This reduces the *bonus*, not the complete base animation speed. The old
-additional 10% movement multiplier no longer contributes to movement or cadence.
-Only synchronized forward/sideways locomotion parameters are scaled. There is no
-`Animator.speed` override and no animation-speed change for attacks, dodges or jumps.
-The exact visual result depends on the player's existing Animator blend tree.
+The visual cadence bonus defaults to **25%**. It increases with an eased charge
+curve and fades toward native locomotion parameters over 0.25 seconds on
+release or cancellation. Only synchronized forward/sideways locomotion parameters
+are scaled. There is no `Animator.speed` override or forced animation clip transition.
+Native animation damping and state transitions remain in use. The exact visual
+blend depends on the player's existing Animator controller.
 
 ## Finite glide speed profile
 
-A completed charge grants one launch toward **110%** of the captured running
-speed. It is applied through the existing walking force path, not by a second
-`AddForce` or a direct Rigidbody assignment. Launch never multiplies the current
-glide speed, and external speed already above the launch target is not amplified.
-The charge is consumed even if another movement mod suppresses that force.
+A completed charge grants one **2-second eased acceleration** toward **120%**
+of the captured running speed. It starts at actual entry speed and uses the
+existing walking force path, without a second `AddForce` or a direct Rigidbody
+assignment. The scheduled gain never amplifies momentum above the peak.
 
-For a straight, unobstructed glide without additional contact losses:
+For a straight, unobstructed glide starting at 100% running speed without
+additional contact losses:
 
-| Time after release | Speed relative to captured running speed | Additional FOV |
+| Time after release | Speed relative to captured running speed | FOV cue target |
 | --- | ---: | ---: |
-| 0 seconds | 110% | +10 degrees |
-| 15 seconds | 105% | +5 degrees |
-| 30 seconds | 100% | 0 degrees |
-| 35 seconds | 95% | 0 degrees |
-| 40 seconds | 90%; switch to basic inertia | 0 degrees |
+| 0 seconds | 100% | Maximum |
+| 1 second | 110% | Maximum |
+| 2 seconds | 120% | Maximum |
+| 17 seconds | 110% | Half of the FOV increase |
+| 32 seconds | 100% | Normal |
+| 37 seconds | 95% | Normal |
+| 42 seconds | 90%; switch to basic inertia | Normal |
 
-The first interval removes the configured speed bonus linearly. The second
-interval removes the remaining configured fraction linearly. The animated glide
-ends at its duration limit even if an external impulse kept the body faster.
-Reaching the configured end-speed fraction earlier also ends it.
+After acceleration, the next 30 seconds remove the speed bonus linearly.
+The final 10 seconds remove the remaining fraction linearly. The glide ends
+at its duration limit even if an external impulse kept the body faster.
+During acceleration the lower of the run-up and end-speed fractions is the
+cutoff; afterward reaching the end-speed fraction ends the glide.
 
-Every step subtracts the scheduled loss from **actual horizontal Rigidbody
-velocity**. The nominal profile is a loss schedule, not a target servo. Turns,
-contact friction, obstacles and other mods may reduce the speed further; Seasons
-does not restore those losses or pull the player back to an old launch vector.
-Vertical speed is never used to increase horizontal speed.
+Every step applies only the scheduled speed change to **actual horizontal
+Rigidbody velocity**. The profile is not a target servo. Turns, contact friction,
+obstacles and other mods may reduce speed further; missed acceleration and speed
+losses are not reconstructed. Vertical speed never increases horizontal speed.
 
 While gliding, look yaw steers the trajectory at a bounded angular rate. The entry
 heading offset is retained, so entry does not snap travel toward the camera.
@@ -117,17 +119,17 @@ walking rotation without changing its look yaw.
 
 ## Renewing the boost
 
-During the first **30 seconds**, while actual speed is still above **100%**,
-returning directly to aligned running skips the initial 3-second stage. The full
-**2-second charge** is still required before the next launch.
+During the acceleration and bonus phases (the first **32 seconds**), while actual
+speed is above **100%**, returning directly to aligned running skips the initial
+2-second stage. The full **2-second charge** is still required before the next launch.
 
 Movement immediately cancels the glide animation and returns to basic handling.
 Only a successful native running calculation and aligned movement consume the
 one-use fast-recharge permission. Walking, braking, attacking, jumping, a large
 turn or a late restart does not retain that permission. After the bonus phase,
-preparation starts from the full 3 + 2 seconds again.
+preparation starts from the full 2 + 2 seconds again.
 
-Every new launch has a fresh finite profile and a bounded 110% target; bonuses do
+Every new launch has a fresh finite profile and a bounded 120% peak; bonuses do
 not stack. Tapping movement or Shift without completing preparation cannot inject
 another boost. Repeated travel therefore requires actual running and its normal
 stamina costs, rather than indefinite passive gliding.
@@ -155,19 +157,21 @@ no retained charge. Other surfaces keep their own movement domain.
 
 ## FOV integration and compatibility
 
-The FOV cue grows with the 2-second charge. During the glide it follows the
-**actual positive speed bonus**, capped by the configured launch bonus. One
-percentage point gives one additional degree by default. Speeds below 100% never
-narrow the base view. Remaining physical bonus can remain visible while recharging.
-The cue and its scale are local visual preferences, independent of server physics.
+The FOV cue eases in with the 2-second charge and approaches the configured
+**Maximum glide FOV**, an absolute horizontal angle in degrees (105 by default).
+Unity's vertical camera angle is calculated from that value and the current
+aspect ratio. A wider normal view is never narrowed. During acceleration the
+cue accounts for the remaining scheduled gain; afterward it follows the actual
+positive speed bonus. Remaining physical bonus can remain visible during renewal.
+FOV settings are local visual preferences, independent of server physics.
 
-The camera transpiler adds the offset to the existing main- and sky-camera writes
-in `GameCamera.UpdateCamera`. It does not modify `m_fov`, `m_fovBase`, `m_fovTarget`,
-player preferences or a cached base FOV. Offsets cannot accumulate across frames.
-Cancellation, death, footwear changes, disabling, thaw, logout and camera replacement
-leave no persistent FOV override: the next normal camera write uses its own base.
-Free-fly is not affected. Other camera effects using the native FOV fields remain
-upstream of the additional offset.
+A 0.25-second SmoothDamp transition updates once per camera update and is shared
+by the existing main- and sky-camera writes. It fades after interruption, even
+when the player's slide state has been released. The camera transpiler uses the
+incoming FOV and does not modify `m_fov`, `m_fovBase`, `m_fovTarget` or player
+preferences. There is no accumulated offset. Death, teleport, player or camera
+replacement and free-fly clear the cue immediately. Other native camera effects
+remain upstream.
 
 Both camera writes must have the recognized non-accumulating FOV source. If another
 transpiler has replaced the path or it is ambiguous, only the visual cue is omitted
@@ -223,33 +227,36 @@ preferences are client-side. Existing basic-inertia parameters remain available.
 | Basic coasting minimum speed | 1 | Below this speed use basic braking |
 | Basic collider friction | 0.05 | Additional physical contact friction |
 | Long glide enabled | true | Enable preparation and animated travel |
-| Steady run duration | 3 | Initial stable running, seconds |
+| Steady run duration | 2 | Initial stable running, seconds |
 | Run-up speed fraction | 0.85 | Minimum actual / requested running speed |
-| Run-up alignment angle | 25 | Maximum deviation, degrees |
+| Run-up alignment angle | 45 | Maximum deviation, degrees |
 | Glide charge duration | 2 | Visual preparation; also required for renewal |
 | Glide release grace | 0.25 | Run/movement release ordering tolerance, seconds |
-| Long glide speed bonus | 0.10 | Earned launch bonus; not running acceleration |
-| Long glide bonus duration | 30 | Time from launch to 100%, seconds |
+| Long glide speed bonus | 0.20 | Earned peak speed bonus |
+| Long glide acceleration duration | 2 | Eased acceleration after release, seconds |
+| Long glide bonus duration | 30 | Time from peak to 100%, seconds |
 | Long glide coast duration | 10 | Additional time to end-speed fraction, seconds |
 | Long glide end speed fraction | 0.90 | Early exit threshold and profile endpoint |
-| Run-up animation speed bonus | 0.175 | Visual locomotion bonus at full charge |
+| Run-up animation speed bonus | 0.25 | Visual locomotion bonus at full charge |
 | Glide FOV cue | true | Local visual toggle |
-| Glide FOV degrees per percent | 1 | Local additional degrees per bonus point |
+| Maximum glide FOV | 105 | Local absolute horizontal FOV, degrees |
 | Long glide turn speed | 25 | Degrees per second |
-| Long glide turning speed loss | 0.4 | m/s lost per radian turned |
+| Long glide turning speed loss | 0.2 | m/s lost per radian turned |
 | Long glide collider friction | 0 | Contact friction during animated gliding |
 | Movement input dead zone | 0.10 | Analog release threshold |
 
 The old `Run-up duration`, `Run-up speed bonus`, `Run-up full bonus time`,
-`Long glide deceleration` and `Long glide minimum speed` keys are no longer bound:
+`Long glide deceleration`, `Long glide minimum speed` and
+`Glide FOV degrees per percent` keys are no longer bound:
 their values describe the previous model and are not silently reused for the new
 one. Existing `Movement speed multiplier` values above one are clamped to one.
 No other settings or localization files are rewritten.
 
-Parameters are read during play. The running-speed reference is captured from real
-running and retained for that glide; changing equipment cancels it. Changing a
-profile duration or loss parameter affects subsequent steps without restoring lost
-speed. Disabling the master or long-glide toggle immediately releases local state.
+Parameters are read during play. The running-speed reference, peak bonus and
+acceleration duration are captured for each launch; changing them cannot replay
+the acceleration. Equipment changes cancel the glide. Other profile duration
+and loss changes affect subsequent steps without restoring lost speed.
+Disabling the master or long-glide toggle immediately releases local state.
 Toggling `Use vanilla slipping for players` also releases custom player state.
 Neither native mode uses the basic movement settings; run-up, glide, cadence and
 FOV settings apply only to the Seasons player mode. Creature mode uses basic
@@ -265,14 +272,14 @@ hook availability. It does not enable background sampling or change gameplay.
 
 - Run continuously on ice: body speed does not accelerate with charge; cadence and
   FOV do. Release after a full charge, and separately just before it completes.
-- Glide straight and inspect speed/FOV at 0, 15, 30 and 40 seconds. Repeat with a
+- Glide straight and inspect speed/FOV at 0, 1, 2, 17, 32 and 42 seconds. Repeat with a
   different running skill/equipment speed and at different physics/frame rates.
 - Release Shift just before W within the grace window; repeat outside that window.
   Press/hold/release Shift during a glide: no cancellation or free acceleration.
 - Return to aligned Shift + movement at 15 seconds: only 2 seconds of preparation.
-  Repeat after 30 seconds, below 100% following a turn, and without running.
+  Repeat after 32 seconds, below 100% following a turn, and without running.
 - Tap movement and release immediately: no renewed boost. Hit an obstacle and
-  confirm neither the nominal profile nor FOV reconstructs the lost speed.
+  confirm the acceleration does not reconstruct lost speed and FOV fades smoothly.
 - Turn, attack, jump, dodge, interact and change footwear. Check air control and
   basic inertia after landing, with no automatic return of charge.
 - Open UI during a glide versus during preparation. Test master/long-glide/FOV

@@ -155,12 +155,13 @@ namespace Seasons
         public static ConfigEntry<float> frozenOceanGlidingSpeedBonus;
         public static ConfigEntry<float> frozenOceanGlidingChargeTime;
         public static ConfigEntry<float> frozenOceanGlidingReleaseGrace;
+        public static ConfigEntry<float> frozenOceanGlidingAccelerationDuration;
         public static ConfigEntry<float> frozenOceanGlidingBonusDuration;
         public static ConfigEntry<float> frozenOceanGlidingCoastDuration;
         public static ConfigEntry<float> frozenOceanGlidingEndSpeed;
         public static ConfigEntry<float> frozenOceanGlidingAnimationBonus;
         public static ConfigEntry<bool> frozenOceanGlidingFovEnabled;
-        public static ConfigEntry<float> frozenOceanGlidingFovScale;
+        public static ConfigEntry<float> frozenOceanGlidingMaxFov;
         public static ConfigEntry<float> frozenOceanGlidingTurnSpeed;
         public static ConfigEntry<float> frozenOceanGlidingTurnLoss;
         public static ConfigEntry<float> frozenOceanGlidingFriction;
@@ -762,7 +763,7 @@ namespace Seasons
             frozenOceanSlidingSpeedMultiplier = serverConfig(slipperinessSection, "Movement speed multiplier", defaultValue: 1f,
                 new ConfigDescription("Scales requested walking, jogging and running speed on seasonal ice. Limited to 100% of the speed already calculated by the game and other mods. Does not erase existing momentum or external impulses.", new AcceptableValueRange<float>(0.1f, 1f)));
             frozenOceanSlidingAcceleration = serverConfig(slipperinessSection, "Movement acceleration", defaultValue: 12f,
-                new ConfigDescription("Basic forward acceleration in meters per second squared. The earned launch uses Long glide speed bonus instead.", new AcceptableValueRange<float>(0.1f, 50f)));
+                new ConfigDescription("Basic forward acceleration in meters per second squared. Long glides use their own acceleration duration.", new AcceptableValueRange<float>(0.1f, 50f)));
             frozenOceanSlidingSteering = serverConfig(slipperinessSection, "Basic steering acceleration", defaultValue: 5f,
                 new ConfigDescription("Lateral grip in meters per second squared, divided by Basic slipperiness factor. Lower values preserve sideways momentum longer.", new AcceptableValueRange<float>(0.1f, 50f)));
             frozenOceanSlidingBraking = serverConfig(slipperinessSection, "Basic braking deceleration", defaultValue: 4f,
@@ -775,33 +776,35 @@ namespace Seasons
                 new ConfigDescription("Capsule friction during ordinary player movement on seasonal ice. Higher values add physical contact losses on top of configured deceleration.", new AcceptableValueRange<float>(0f, 1f)));
             frozenOceanGlidingEnabled = serverConfig(slipperinessSection, "Long glide enabled", defaultValue: true,
                 "Allow ordinary-shoe players to earn a long glide by running steadily on seasonal ice, then releasing movement. Actions cancel the glide to basic inertia.");
-            frozenOceanGlidingRunUpTime = serverConfig(slipperinessSection, "Steady run duration", defaultValue: 3f,
+            frozenOceanGlidingRunUpTime = serverConfig(slipperinessSection, "Steady run duration", defaultValue: 2f,
                 new ConfigDescription("Seconds of actual grounded running in approximately the same direction before visual glide preparation begins. Returning to running during the boosted part of a glide skips this stage, but still requires the full charge duration.", new AcceptableValueRange<float>(0f, 20f)));
             frozenOceanGlidingRunUpSpeed = serverConfig(slipperinessSection, "Run-up speed fraction", defaultValue: 0.85f,
                 new ConfigDescription("Minimum fraction of the fully modified running speed required to prepare and launch a glide. Running against an obstacle does not charge it.", new AcceptableValueRange<float>(0.1f, 1f)));
-            frozenOceanGlidingRunUpAngle = serverConfig(slipperinessSection, "Run-up alignment angle", defaultValue: 25f,
+            frozenOceanGlidingRunUpAngle = serverConfig(slipperinessSection, "Run-up alignment angle", defaultValue: 45f,
                 new ConfigDescription("Maximum angle between actual velocity, movement input and the heading captured at the start of preparation. Larger turns restart preparation.", new AcceptableValueRange<float>(0f, 90f)));
             frozenOceanGlidingChargeTime = serverConfig(slipperinessSection, "Glide charge duration", defaultValue: 2f,
                 new ConfigDescription("Seconds of steady running during which the running animation and FOV cue ramp up. Completing this stage earns one glide boost; releasing movement earlier keeps basic inertia. Also required when renewing a boosted glide.", new AcceptableValueRange<float>(0.1f, 20f)));
             frozenOceanGlidingReleaseGrace = serverConfig(slipperinessSection, "Glide release grace", defaultValue: 0.25f,
                 new ConfigDescription("Seconds to retain a completed charge when Run is released slightly before movement. Does not extend readiness through actions, obstacles, a surface change or UI input capture.", new AcceptableValueRange<float>(0f, 2f)));
-            frozenOceanGlidingSpeedBonus = serverConfig(slipperinessSection, "Long glide speed bonus", defaultValue: 0.1f,
-                new ConfigDescription("Speed fraction added once when releasing movement after a completed charge. 0.10 launches at 110% of the last fully modified running speed. Never stacks by multiplying the current glide speed.", new AcceptableValueRange<float>(0f, 1f)));
+            frozenOceanGlidingSpeedBonus = serverConfig(slipperinessSection, "Long glide speed bonus", defaultValue: 0.2f,
+                new ConfigDescription("Maximum earned speed bonus during a long glide. 0.20 gives a peak of 120% of the last fully modified running speed after acceleration. Does not stack.", new AcceptableValueRange<float>(0f, 1f)));
+            frozenOceanGlidingAccelerationDuration = serverConfig(slipperinessSection, "Long glide acceleration duration", defaultValue: 2f,
+                new ConfigDescription("Seconds to accelerate smoothly from the entry speed toward the peak glide speed after releasing movement. Turning and other speed losses are not recovered.", new AcceptableValueRange<float>(0.1f, 20f)));
             frozenOceanGlidingBonusDuration = serverConfig(slipperinessSection, "Long glide bonus duration", defaultValue: 30f,
-                new ConfigDescription("Seconds for a straight unobstructed glide to lose its speed bonus and reach 100% running speed. Returning to aligned running while still above 100% and within this interval skips the initial steady-run stage.", new AcceptableValueRange<float>(0.1f, 300f)));
+                new ConfigDescription("Seconds after acceleration for a straight unobstructed glide to lose its speed bonus and reach 100% running speed. Returning to aligned running before the bonus phase ends while still above 100% skips the initial steady-run stage.", new AcceptableValueRange<float>(0.1f, 300f)));
             frozenOceanGlidingCoastDuration = serverConfig(slipperinessSection, "Long glide coast duration", defaultValue: 10f,
                 new ConfigDescription("Seconds after the bonus phase to slow from 100% to Long glide end speed fraction, then return to basic inertia. Turns, contact friction and obstacles can end a glide earlier.", new AcceptableValueRange<float>(0.1f, 120f)));
             frozenOceanGlidingEndSpeed = serverConfig(slipperinessSection, "Long glide end speed fraction", defaultValue: 0.9f,
                 new ConfigDescription("Fraction of the captured running speed at which the animated glide ends. The duration limit also ends it even if an external impulse kept the body moving faster.", new AcceptableValueRange<float>(0.1f, 1f)));
-            frozenOceanGlidingAnimationBonus = serverConfig(slipperinessSection, "Run-up animation speed bonus", defaultValue: 0.175f,
-                new ConfigDescription("Visual locomotion-speed bonus at full charge. 0.175 is 30% less than the former 0.25 run-up bonus. Does not accelerate the body or change attack, dodge or jump animation speed.", new AcceptableValueRange<float>(0f, 1f)));
+            frozenOceanGlidingAnimationBonus = serverConfig(slipperinessSection, "Run-up animation speed bonus", defaultValue: 0.25f,
+                new ConfigDescription("Visual locomotion-speed bonus at full charge. Rises smoothly during preparation and fades on release or cancellation. Does not accelerate the body or change attack, dodge or jump animation speed.", new AcceptableValueRange<float>(0f, 1f)));
             frozenOceanGlidingFovEnabled = clientConfig(slipperinessSection, "Glide FOV cue", defaultValue: true,
                 "Add a visual FOV offset during glide preparation and boosted gliding. Does not change the configured camera FOV or gameplay speed.");
-            frozenOceanGlidingFovScale = clientConfig(slipperinessSection, "Glide FOV degrees per percent", defaultValue: 1f,
-                new ConfigDescription("Additional FOV degrees per positive speed-bonus percentage point. 1 gives +10 degrees at a 10% bonus. Preparation ramps toward the same cue; speed below 100% never narrows the normal FOV.", new AcceptableValueRange<float>(0f, 3f)));
+            frozenOceanGlidingMaxFov = clientConfig(slipperinessSection, "Maximum glide FOV", defaultValue: 105f,
+                new ConfigDescription("Maximum horizontal field of view in degrees during glide preparation and boosted gliding. Converted to the camera's vertical FOV for the current aspect ratio. Never narrows a wider normal view.", new AcceptableValueRange<float>(60f, 150f)));
             frozenOceanGlidingTurnSpeed = serverConfig(slipperinessSection, "Long glide turn speed", defaultValue: 25f,
                 new ConfigDescription("Maximum steering rate in degrees per second while using mouse look or controller look. Zero keeps the entry direction.", new AcceptableValueRange<float>(0f, 180f)));
-            frozenOceanGlidingTurnLoss = serverConfig(slipperinessSection, "Long glide turning speed loss", defaultValue: 0.4f,
+            frozenOceanGlidingTurnLoss = serverConfig(slipperinessSection, "Long glide turning speed loss", defaultValue: 0.2f,
                 new ConfigDescription("Additional speed lost in meters per second for each radian of actual trajectory turn. Steering cannot accelerate the player.", new AcceptableValueRange<float>(0f, 10f)));
             frozenOceanGlidingFriction = serverConfig(slipperinessSection, "Long glide collider friction", defaultValue: 0f,
                 new ConfigDescription("Capsule friction during the animated long glide. Zero leaves deceleration to the glide calculation.", new AcceptableValueRange<float>(0f, 1f)));

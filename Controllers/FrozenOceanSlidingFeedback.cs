@@ -10,46 +10,114 @@ namespace Seasons
     {
         private static bool cadenceHookReady;
         private static bool fovHookReady;
+        private const float FeedbackTransitionTime = 0.25f;
+        private static GameCamera fovCamera;
+        private static Player fovPlayer;
+        private static float glideFovBlend;
+        private static float glideFovBlendVelocity;
+        private static float glideFovLimit;
 
         private static float ChargeFeedback(PlayerSlide state) => state.Mode == SlideMode.RunUp
-            ? Mathf.Clamp01(state.ChargeTime / ChargeDuration) : 0f;
+            ? Mathf.SmoothStep(0f, 1f, state.ChargeTime / ChargeDuration) : 0f;
 
-        private static float GetGlideFovOffset()
+        private static float GetTargetGlideFovBlend()
         {
             if (!frozenOceanGlidingFovEnabled.Value || !frozenOceanGlidingEnabled.Value ||
                 !TrySlide(Player.m_localPlayer, out PlayerSlide state) || !state.OnIce || !state.Player.IsOnIce() ||
-                HasBlockingAction(state.Player))
+                HasBlockingAction(state.Player) || state.RunSpeed <= 0f)
                 return 0f;
-            float bonus = 0f;
+
+            float bonus = state.Mode == SlideMode.Glide ? state.PeakFraction - 1f : GlideBonus;
+            if (bonus <= 0f)
+                return 0f;
             Vector3 actual = Horizontal(state.Player.m_body.linearVelocity);
-            if (state.RunSpeed > 0f && Finite(actual))
+            if (!Finite(actual))
+                return 0f;
+
+            float actualBonus = actual.magnitude / state.RunSpeed - 1f;
+            if (state.Mode == SlideMode.Glide)
             {
-                float actualBonus = Mathf.Clamp(actual.magnitude / state.RunSpeed - 1f, 0f, GlideBonus);
-                if (state.Mode == SlideMode.Glide)
-                    bonus = actualBonus;
-                else if (state.Mode == SlideMode.RunUp)
-                    // Keep any remaining physical bonus visible while the next charge builds.
-                    bonus = Mathf.Max(actualBonus, GlideBonus * ChargeFeedback(state));
+                // Keep the charged cue through the scheduled acceleration, while
+                // allowing actual speed losses to reduce it even before peak speed.
+                if (state.GlideTime < state.LaunchDuration)
+                    actualBonus += state.PeakFraction - GlideSpeedProfile(state, state.GlideTime);
+                return Mathf.Clamp01(actualBonus / bonus);
             }
-            return bonus * 100f * Parameter(frozenOceanGlidingFovScale.Value, 1f, 0f, 3f);
+
+            return state.Mode == SlideMode.RunUp
+                ? Mathf.Max(Mathf.Clamp01(actualBonus / bonus), ChargeFeedback(state))
+                : 0f;
         }
+
+        private static void UpdateGlideFov(GameCamera camera, float dt)
+        {
+            if (!fovHookReady || camera != GameCamera.instance)
+                return;
+
+            Player player = Player.m_localPlayer;
+            if (fovCamera != camera || fovPlayer != player)
+            {
+                fovCamera = camera;
+                fovPlayer = player;
+                glideFovBlend = glideFovBlendVelocity = 0f;
+            }
+
+            // A normal interruption fades the camera even if playerSlide was released.
+            // Never carry this visual state into a different life or free-fly camera.
+            if (!player || player.IsDead() || player.IsTeleporting() || camera.m_freeFly)
+            {
+                glideFovBlend = glideFovBlendVelocity = 0f;
+                return;
+            }
+
+            float target = GetTargetGlideFovBlend();
+            if (glideFovBlend == 0f && glideFovBlendVelocity == 0f && target == 0f)
+                return;
+
+            if (Finite(dt) && dt > 0f)
+            {
+                glideFovBlend = Mathf.Clamp01(Mathf.SmoothDamp(glideFovBlend, target, ref glideFovBlendVelocity,
+                    FeedbackTransitionTime, Mathf.Infinity, dt));
+                if (Mathf.Abs(glideFovBlend - target) < 0.0001f && Mathf.Abs(glideFovBlendVelocity) < 0.001f)
+                {
+                    glideFovBlend = target;
+                    glideFovBlendVelocity = 0f;
+                }
+            }
+
+            // Configured FOV is horizontal, Unity's fieldOfView is vertical.
+            glideFovLimit = Camera.HorizontalToVerticalFieldOfView(
+                Parameter(frozenOceanGlidingMaxFov.Value, 105f, 60f, 150f), camera.m_camera.aspect);
+        }
+
+        private static float GetGlideFovOffset() =>
+            fovCamera && fovCamera == GameCamera.instance
+                ? Mathf.Max(0f, glideFovLimit - fovCamera.m_fov) * glideFovBlend
+                : 0f;
 
         private static float ResolveGlideFov(float baseFov, GameCamera camera)
         {
-            if (!camera || camera != GameCamera.instance || camera.m_freeFly || !Finite(baseFov))
+            if (camera != fovCamera || camera.m_freeFly || !Finite(baseFov) || glideFovBlend <= 0f)
                 return baseFov;
-            float offset = GetGlideFovOffset();
-            // This is the incoming camera value for this write, not last frame's fieldOfView.
-            // Never mutate m_fov, m_fovBase or m_fovTarget, and never narrow the base view.
-            return offset > 0f ? baseFov + Mathf.Min(offset, Mathf.Max(0f, 179f - baseFov)) : baseFov;
+            // Use the incoming base FOV on both camera writes. Never narrow it.
+            return Mathf.Lerp(baseFov, Mathf.Max(baseFov, glideFovLimit), glideFovBlend);
+        }
+
+        private static void UpdateRunCadence(PlayerSlide state, float dt)
+        {
+            float target = state.Mode == SlideMode.RunUp && state.Player.m_running && !HasBlockingAction(state.Player)
+                ? ChargeFeedback(state) : 0f;
+            state.CadenceFeedback = Mathf.MoveTowards(state.CadenceFeedback, target, dt / FeedbackTransitionTime);
         }
 
         private static float ResolveRunCadence(float value, Character character)
         {
-            if (!frozenOceanGlidingEnabled.Value || !Finite(value) || !TrySlide(character, out PlayerSlide state) ||
-                !state.OnIce || !character.IsOnIce() || !character.m_running || HasBlockingAction(state.Player))
+            if (!Finite(value) || !TrySlide(character, out PlayerSlide state) || !state.OnIce ||
+                state.CadenceFeedback <= 0f || !character.IsOnIce())
                 return value;
-            float result = value * (1f + ChargeFeedback(state) * Parameter(frozenOceanGlidingAnimationBonus.Value, 0.175f, 0f, 1f));
+            // Fade the extra locomotion cadence on release or cancellation. Native
+            // ZSyncAnimation smoothing and Animator state transitions remain intact.
+            float result = value * (1f + state.CadenceFeedback * Parameter(frozenOceanGlidingAnimationBonus.Value, 0.25f, 0f, 1f));
             return Finite(result) ? result : value;
         }
 
@@ -95,6 +163,9 @@ namespace Seasons
         [HarmonyPatch(typeof(GameCamera), nameof(GameCamera.UpdateCamera))]
         private static class GameCamera_UpdateCamera_GlideFov
         {
+            // Advance the visual transition once per native camera update.
+            private static void Prefix(GameCamera __instance, float dt) => UpdateGlideFov(__instance, dt);
+
             [HarmonyTranspiler, HarmonyPriority(Priority.Last)]
             private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
             {

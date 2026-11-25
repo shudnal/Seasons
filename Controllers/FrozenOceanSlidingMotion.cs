@@ -24,7 +24,10 @@ namespace Seasons
             internal Vector3 RunHeading;
             internal float RunSpeed;
             internal float GlideTime;
-            internal bool LaunchPending;
+            internal float LaunchDuration;
+            internal float LaunchStartFraction;
+            internal float PeakFraction;
+            internal float CadenceFeedback;
             internal bool QuickRechargePending;
             internal Vector3 RechargeHeading;
             internal bool MovementHeld;
@@ -71,7 +74,6 @@ namespace Seasons
                 return;
             ClearPreparation(state);
             state.QuickRechargePending = false;
-            state.LaunchPending = false;
             state.GlideTime = 0f;
             state.Interrupted = true;
             ChangeMode(state, SlideMode.Basic, reason);
@@ -86,14 +88,15 @@ namespace Seasons
             state.RunHeading = Vector3.zero;
         }
 
-        private static float SteadyRunDuration => Parameter(frozenOceanGlidingRunUpTime.Value, 3f, 0f, 20f);
+        private static float SteadyRunDuration => Parameter(frozenOceanGlidingRunUpTime.Value, 2f, 0f, 20f);
         private static float ChargeDuration => Parameter(frozenOceanGlidingChargeTime.Value, 2f, 0.1f, 20f);
-        private static float GlideBonus => Parameter(frozenOceanGlidingSpeedBonus.Value, 0.1f, 0f, 1f);
+        private static float GlideBonus => Parameter(frozenOceanGlidingSpeedBonus.Value, 0.2f, 0f, 1f);
+        private static float LaunchDuration => Parameter(frozenOceanGlidingAccelerationDuration.Value, 2f, 0.1f, 20f);
         private static float BonusDuration => Parameter(frozenOceanGlidingBonusDuration.Value, 30f, 0.1f, 300f);
         private static float CoastDuration => Parameter(frozenOceanGlidingCoastDuration.Value, 10f, 0.1f, 120f);
         private static float EndSpeedFraction => Parameter(frozenOceanGlidingEndSpeed.Value, 0.9f, 0.1f, 1f);
         private static float RunSpeedFraction => Parameter(frozenOceanGlidingRunUpSpeed.Value, 0.85f, 0.1f, 1f);
-        private static float RunAlignment => Mathf.Cos(Parameter(frozenOceanGlidingRunUpAngle.Value, 25f, 0f, 90f) * Mathf.Deg2Rad);
+        private static float RunAlignment => Mathf.Cos(Parameter(frozenOceanGlidingRunUpAngle.Value, 45f, 0f, 90f) * Mathf.Deg2Rad);
         private static bool IsCharged(PlayerSlide state) => state.RunUpTime >= SteadyRunDuration && state.ChargeTime >= ChargeDuration;
 
         private static void InterruptForMovement(PlayerSlide state)
@@ -105,7 +108,7 @@ namespace Seasons
             }
             Vector3 actual = Horizontal(state.Player.m_body.linearVelocity);
             bool canRecharge = state.OnIce && state.Player.IsOnIce() && frozenOceanGlidingEnabled.Value &&
-                state.Mode == SlideMode.Glide && !state.LaunchPending && state.GlideTime < BonusDuration &&
+                state.Mode == SlideMode.Glide && state.GlideTime > 0f && state.GlideTime < state.LaunchDuration + BonusDuration &&
                 Finite(actual) && state.RunSpeed > 0f && actual.magnitude > state.RunSpeed && !HasBlockingAction(state.Player);
             InterruptSlide(state.Player, SlideReason.Input);
             // Consume this permission at the next native speed calculation. Movement alone
@@ -296,14 +299,21 @@ namespace Seasons
                 ? Vector3.SignedAngle(look, actual, Vector3.up) : 0f;
             ClearPreparation(state);
             state.GlideTime = 0f;
-            state.LaunchPending = true;
+            // Capture the earned acceleration once. Live tuning cannot restart it.
+            state.LaunchDuration = LaunchDuration;
+            state.PeakFraction = 1f + GlideBonus;
+            state.LaunchStartFraction = Mathf.Min(actual.magnitude / state.RunSpeed, state.PeakFraction);
             ChangeMode(state, SlideMode.Glide, SlideReason.Released);
         }
 
-        private static float GlideSpeedProfile(float seconds)
+        private static float GlideSpeedProfile(PlayerSlide state, float seconds)
         {
+            if (seconds < state.LaunchDuration)
+                return Mathf.SmoothStep(state.LaunchStartFraction, state.PeakFraction, seconds / state.LaunchDuration);
+
+            seconds -= state.LaunchDuration;
             if (seconds < BonusDuration)
-                return 1f + GlideBonus * (1f - Mathf.Clamp01(seconds / BonusDuration));
+                return Mathf.Lerp(state.PeakFraction, 1f, seconds / BonusDuration);
             return Mathf.Lerp(1f, EndSpeedFraction, Mathf.Clamp01((seconds - BonusDuration) / CoastDuration));
         }
 
@@ -329,6 +339,7 @@ namespace Seasons
                         (result.x != actual.x || result.z != actual.z);
                     velocity.x = result.x;
                     velocity.z = result.z;
+                    UpdateRunCadence(state, dt);
                 }
             }
             else if (CanUseCreatureSlide(character) && Finite(dt) && dt > 0f)
@@ -433,20 +444,16 @@ namespace Seasons
         private static Vector3 GlideVelocity(PlayerSlide state, Vector3 actual, float dt)
         {
             float speed = actual.magnitude;
-            float duration = BonusDuration + CoastDuration;
-            bool launching = state.LaunchPending;
-            state.LaunchPending = false;
+            float duration = state.LaunchDuration + BonusDuration + CoastDuration;
+            float launchMinimum = state.RunSpeed * Mathf.Min(RunSpeedFraction, EndSpeedFraction);
+            float endMinimum = state.RunSpeed * EndSpeedFraction;
             if (state.RunSpeed <= 0f || speed <= 0.000001f || state.GlideTime >= duration ||
-                (launching ? speed < state.RunSpeed * RunSpeedFraction : speed <= state.RunSpeed * EndSpeedFraction))
+                (state.GlideTime < state.LaunchDuration ? speed < launchMinimum : speed <= endMinimum))
             {
                 InterruptSlide(state.Player, state.GlideTime >= duration ? SlideReason.Expired : SlideReason.Slow);
                 return BasicVelocity(state, actual, dt);
             }
             Vector3 direction = actual / speed;
-            if (launching)
-                // One earned launch through the existing movement force path, not repeated
-                // multiplication. External momentum above this target is never amplified.
-                speed = Mathf.Max(speed, state.RunSpeed * (1f + GlideBonus));
             Vector3 look = Horizontal(state.Player.GetLookDir());
             float turn = 0f;
             if (Finite(look) && look.sqrMagnitude > 0.000001f)
@@ -458,13 +465,15 @@ namespace Seasons
                 direction = steered;
             }
             float nextTime = Mathf.Min(duration, state.GlideTime + dt);
-            // Subtract the profile's loss from actual velocity. Never restore speed lost to
-            // turns, collisions or another movement mod by chasing the nominal profile.
-            float loss = state.RunSpeed * Mathf.Max(0f, GlideSpeedProfile(state.GlideTime) - GlideSpeedProfile(nextTime)) +
-                Parameter(frozenOceanGlidingTurnLoss.Value, 0.4f, 0f, 10f) * turn;
+            // Apply only the scheduled change to actual speed, not a target velocity.
+            // The finite launch gain never restores losses or multiplies existing momentum.
+            float speedDelta = state.RunSpeed * (GlideSpeedProfile(state, nextTime) - GlideSpeedProfile(state, state.GlideTime));
+            if (speedDelta > 0f)
+                speedDelta = Mathf.Min(speedDelta, Mathf.Max(0f, state.RunSpeed * state.PeakFraction - speed));
+            float turnLoss = Parameter(frozenOceanGlidingTurnLoss.Value, 0.2f, 0f, 10f) * turn;
             state.GlideTime = nextTime;
-            speed = Mathf.Max(0f, speed - loss);
-            if (nextTime >= duration || speed <= state.RunSpeed * EndSpeedFraction)
+            speed = Mathf.Max(0f, speed + speedDelta - turnLoss);
+            if (nextTime >= duration || (nextTime < state.LaunchDuration ? speed < launchMinimum : speed <= endMinimum))
                 InterruptSlide(state.Player, nextTime >= duration ? SlideReason.Expired : SlideReason.Slow);
             return direction * speed;
         }
@@ -499,7 +508,7 @@ namespace Seasons
                 "state={0} grounded={1} speed={2:F2} runSpeed={3:F2} ratio={4:F1}% steady={5:F2}/{6:F2} charge={7:F2}/{8:F2} ready={9} glide={10:F2}/{11:F2} animation={12} transitions={13} reason={14} fovOffset={15:F2} cadenceHook={16} fovHook={17}",
                 state.Mode, state.OnIce, speed, state.RunSpeed, state.RunSpeed > 0f ? 100f * speed / state.RunSpeed : 0f,
                 state.RunUpTime, SteadyRunDuration, state.ChargeTime, ChargeDuration, IsCharged(state),
-                state.GlideTime, BonusDuration + CoastDuration, state.AnimationOwned, state.Transitions, state.Reason,
+                state.GlideTime, (state.Mode == SlideMode.Glide ? state.LaunchDuration : LaunchDuration) + BonusDuration + CoastDuration, state.AnimationOwned, state.Transitions, state.Reason,
                 GetGlideFovOffset(), cadenceHookReady, fovHookReady);
         }
     }
