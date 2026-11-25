@@ -119,9 +119,10 @@ walking rotation without changing its look yaw.
 
 ## Renewing the boost
 
-During any active long glide, hold Run alone or Run with directional input.
-Run alone continues the current travel direction. Directional input controls
-the turn. The original SetControls and CheckRun handle running eligibility,
+During any active long glide, press and hold Run alone or use Run with directional
+input. Run alone continues the current travel direction. A Run key still held
+from the previous launch is not a new recharge gesture; release and press it
+again or use directional input. Directional input controls the turn. The original SetControls and CheckRun handle running eligibility,
 stamina consumption, modifiers and skill gain. No separate stamina drain is
 added.
 

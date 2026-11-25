@@ -28,7 +28,8 @@ namespace Seasons
             internal float LaunchStartFraction;
             internal float PeakFraction;
             internal float CadenceFeedback;
-            internal bool RechargeRunHeld;
+            internal bool RunKeyHeld;
+            internal bool GlideRunReleased;
             internal bool MovementHeld;
             internal bool Interrupted;
             internal bool AnimationOwned;
@@ -81,7 +82,6 @@ namespace Seasons
             if (state == null || !ReferenceEquals(state.Player, character))
                 return;
             ClearPreparation(state);
-            state.RechargeRunHeld = false;
             state.GlideTime = 0f;
             state.Interrupted = true;
             ChangeMode(state, SlideMode.Basic, reason);
@@ -218,7 +218,6 @@ namespace Seasons
             if (!longGlide || blocked || !CanReadSlideInput(player))
             {
                 ClearPreparation(state);
-                state.RechargeRunHeld = false;
                 ChangeMode(state, SlideMode.Basic, !longGlide ? SlideReason.Disabled :
                     blocked ? SlideReason.Action : SlideReason.Input);
                 return state.TargetSpeed;
@@ -228,8 +227,8 @@ namespace Seasons
             // A short grace window also tolerates releasing Shift just before the movement keys.
             if (!moving)
             {
-                state.RechargeRunHeld = false;
-                if (IsPreparing(state) && IsCharged(state) && state.RunSpeed > 0f &&
+                if (IsPreparing(state) && IsCharged(state) &&
+                    (state.Mode != SlideMode.Recharge || !state.RunKeyHeld) && state.RunSpeed > 0f &&
                     actualSpeed >= state.RunSpeed * RunSpeedFraction &&
                     Vector3.Dot(actual.normalized, state.RunHeading) >= RunAlignment)
                 {
@@ -245,8 +244,8 @@ namespace Seasons
                 Vector3.Dot(actual.normalized, input.normalized) >= RunAlignment;
             if (!player.m_running)
             {
-                state.RechargeRunHeld = false;
-                if (IsPreparing(state) && IsCharged(state) && aligned &&
+                if (IsPreparing(state) && IsCharged(state) &&
+                    (state.Mode != SlideMode.Recharge || !state.RunKeyHeld) && aligned &&
                     actualSpeed >= state.RunSpeed * RunSpeedFraction &&
                     Vector3.Dot(state.RunHeading, input.normalized) >= RunAlignment)
                 {
@@ -302,7 +301,8 @@ namespace Seasons
                 ? Vector3.SignedAngle(look, actual, Vector3.up) : 0f;
             ClearPreparation(state);
             state.GlideTime = 0f;
-            state.RechargeRunHeld = false;
+            // A Run key still held from preparation is not a new recharge gesture.
+            state.GlideRunReleased = !state.RunKeyHeld;
             // Capture the earned acceleration once. Live tuning cannot restart it.
             state.LaunchDuration = LaunchDuration;
             state.PeakFraction = 1f + GlideBonus;

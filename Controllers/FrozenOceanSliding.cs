@@ -114,6 +114,7 @@ namespace Seasons
                     movement = ZInput.GetButton("Forward") || ZInput.GetButton("Backward") ||
                         ZInput.GetButton("Left") || ZInput.GetButton("Right");
                 state.MovementHeld = movement;
+                state.RunKeyHeld = ZInput.GetButton("Run") || ZInput.GetButton("JoyRun");
                 if (action)
                 {
                     InterruptSlide(__instance, SlideReason.Input);
@@ -129,9 +130,10 @@ namespace Seasons
                 // A held Run alone during glide/recharge supplies the current travel
                 // heading in camera-relative coordinates to the original SetControls.
                 // CheckRun then handles the normal stamina drain and run eligibility.
-                bool held = ZInput.GetButton("Run") || ZInput.GetButton("JoyRun");
-                state.RechargeRunHeld = held || run;
-                if (!movement && state.RechargeRunHeld && __instance.HaveStamina())
+                if (state.Mode == SlideMode.Glide && !state.RunKeyHeld)
+                    state.GlideRunReleased = true;
+                if (!movement && state.RunKeyHeld &&
+                    (state.Mode == SlideMode.Recharge || state.GlideRunReleased) && __instance.HaveStamina())
                 {
                     Vector3 direction = Horizontal(__instance.m_body.linearVelocity);
                     Vector3 look = Horizontal(__instance.GetLookDir());

@@ -230,7 +230,7 @@ namespace Seasons
             }
 
             SlidingDiagnosticLine(text, "Input: {0:F2} | Run: {1} | Ground: {2} | Ice: {3}", input.magnitude, player.m_running, player.IsOnGround(), ice);
-            SlidingDiagnosticLine(text, "Held: {0} | Run held: {1} | Stamina: {2:F1}", state?.MovementHeld ?? false, state?.RechargeRunHeld ?? false, player.GetStamina());
+            SlidingDiagnosticLine(text, "Held: {0} | Run held: {1} | Stamina: {2:F1}", state?.MovementHeld ?? false, state?.RunKeyHeld ?? false, player.GetStamina());
             SlidingDiagnosticLine(text, "Blocked: {0} | Input allowed: {1}", HasBlockingAction(player), CanReadSlideInput(player));
 
             GameCamera camera = GameCamera.instance;
