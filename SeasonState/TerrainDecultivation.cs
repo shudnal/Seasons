@@ -85,7 +85,7 @@ namespace Seasons
             ZPackage zPackageRead = new ZPackage(Utils.Decompress(byteArray));
             terrainCompVersion = zPackageRead.ReadInt();
 
-            if (terrainCompVersion != ZoneSystemVariantController.s_terrainCompVersion)
+            if (terrainCompVersion != 1 && terrainCompVersion != ZoneSystemVariantController.s_terrainCompVersion)
             {
                 Seasons.LogWarning("Seasons cannot decultivate ground: unsupported terrain compiler data version.");
                 return false;
@@ -152,6 +152,8 @@ namespace Seasons
                 }
             }
 
+            // Valheim 1.0.30 appends the native snow recovery timestamp to version 2.
+            double lastSnowTimerIncrement = terrainCompVersion == 2 ? zPackageRead.ReadDouble() : 0d;
             if (zPackageRead.GetPos() != zPackageRead.Size())
             {
                 Seasons.LogWarning("Seasons cannot decultivate ground: unexpected trailing terrain data.");
@@ -240,6 +242,9 @@ namespace Seasons
                     zPackageWrite.Write(m_paintMask[j].a);
                 }
             }
+            // Keep the input format. Native Load accepts version 1 and upgrades it on Save.
+            if (terrainCompVersion == 2)
+                zPackageWrite.Write(lastSnowTimerIncrement);
             byte[] bytes = Utils.Compress(zPackageWrite.GetArray());
             zdo.Set(ZDOVars.s_TCData, bytes);
             changed = true;

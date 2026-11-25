@@ -252,7 +252,7 @@ namespace Seasons
         public static int s_zoneCtrlPrefab;
         
         public static int s_terrainCompilerPrefab;
-        public const int s_terrainCompVersion = 1;
+        public const int s_terrainCompVersion = 2;
 
         private const float _FoamDepthFrozen = 10f;
         private const float _WaveVel = 0f;
