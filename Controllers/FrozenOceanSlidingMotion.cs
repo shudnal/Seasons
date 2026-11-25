@@ -24,6 +24,7 @@ namespace Seasons
             internal Vector3 RunHeading;
             internal float RunSpeed;
             internal float GlideTime;
+            internal float GlideElapsed;
             internal float LaunchDuration;
             internal float LaunchStartFraction;
             internal float PeakFraction;
@@ -37,6 +38,11 @@ namespace Seasons
             internal int Transitions;
             internal float DiagnosticTurnDegrees;
             internal float DiagnosticTurnLoss;
+            internal float LaunchWindAlong;
+            internal float DiagnosticWindIntensity;
+            internal float DiagnosticWindAlong;
+            internal float DiagnosticWindSide;
+            internal float DiagnosticWindDecay;
         }
 
         // Only the owning local player keeps persistent slide state. Creatures use stateless inertia.
@@ -82,7 +88,7 @@ namespace Seasons
             if (state == null || !ReferenceEquals(state.Player, character))
                 return;
             ClearPreparation(state);
-            state.GlideTime = 0f;
+            state.GlideTime = state.GlideElapsed = 0f;
             state.Interrupted = true;
             ChangeMode(state, SlideMode.Basic, reason);
             // Do not touch Rigidbody velocity or restore a previous launch vector.
@@ -113,7 +119,7 @@ namespace Seasons
         {
             ClearPreparation(state);
             state.RunUpTime = SteadyRunDuration;
-            state.GlideTime = 0f;
+            state.GlideTime = state.GlideElapsed = 0f;
             ChangeMode(state, SlideMode.Recharge, SlideReason.Running);
         }
 
@@ -300,14 +306,22 @@ namespace Seasons
             state.LookOffset = Finite(look) && look.sqrMagnitude > 0.000001f
                 ? Vector3.SignedAngle(look, actual, Vector3.up) : 0f;
             ClearPreparation(state);
-            state.GlideTime = 0f;
+            state.GlideTime = state.GlideElapsed = 0f;
             // A Run key still held from preparation is not a new recharge gesture.
             state.GlideRunReleased = !state.RunKeyHeld;
             // Capture the earned acceleration once. Live tuning cannot restart it.
             state.LaunchDuration = LaunchDuration;
-            state.PeakFraction = 1f + GlideBonus;
+            Vector3 wind = Horizontal(EnvMan.instance.GetWindForce());
+            state.LaunchWindAlong = Mathf.Clamp(Vector3.Dot(actual.normalized, wind), -1f, 1f);
+            float windBonus = Parameter(frozenOceanGlidingWindSpeed.Value, 0.05f, 0f, 0.2f) * state.LaunchWindAlong;
+            // Freeze the earned peak for this launch; a wind change must not replay acceleration.
+            state.PeakFraction = 1f + Mathf.Max(0f, GlideBonus + windBonus);
             state.LaunchStartFraction = Mathf.Min(actual.magnitude / state.RunSpeed, state.PeakFraction);
             state.DiagnosticTurnDegrees = state.DiagnosticTurnLoss = 0f;
+            state.DiagnosticWindIntensity = wind.magnitude;
+            state.DiagnosticWindAlong = state.LaunchWindAlong;
+            state.DiagnosticWindSide = 0f;
+            state.DiagnosticWindDecay = 1f;
             ChangeMode(state, SlideMode.Glide, SlideReason.Released);
         }
 
@@ -422,7 +436,10 @@ namespace Seasons
             // speed bonus before the next earned launch. Normal running can recover
             // speed below its native target; excess external momentum settles to the peak.
             float factor = Parameter(frozenOceanSlipperiness.Value, 1.25f, 0.01f, 5f);
-            float target = Mathf.Clamp(speed, state.TargetSpeed, state.TargetSpeed * (1f + GlideBonus));
+            // Keep momentum earned with the previous glide's tailwind, without
+            // reading or applying wind during powered movement.
+            float peak = Mathf.Max(1f + GlideBonus, state.PeakFraction);
+            float target = Mathf.Clamp(speed, state.TargetSpeed, state.TargetSpeed * peak);
             float acceleration = speed > target
                 ? Parameter(frozenOceanSlidingBraking.Value, 4f, 0.1f, 50f) / factor
                 : Parameter(frozenOceanSlidingAcceleration.Value, 12f, 0.1f, 50f);
@@ -485,17 +502,30 @@ namespace Seasons
                 return BasicVelocity(state, actual, dt);
             }
             Vector3 direction = actual / speed;
+            Vector3 wind = Horizontal(EnvMan.instance.GetWindForce());
             Vector3 look = Horizontal(state.Player.GetLookDir());
             float turn = 0f;
+            float windSide = 0f;
             if (Finite(look) && look.sqrMagnitude > 0.000001f)
             {
                 Vector3 desired = Quaternion.AngleAxis(state.LookOffset, Vector3.up) * look.normalized;
+                Vector3 right = Vector3.Cross(Vector3.up, desired);
+                windSide = Mathf.Clamp(Vector3.Dot(wind, right), -1f, 1f);
+                float drift = Parameter(frozenOceanGlidingWindLateral.Value, 0.1f, 0f, 0.5f) * windSide;
+                if (drift != 0f)
+                    desired = (desired + right * drift).normalized;
                 Vector3 steered = Vector3.RotateTowards(direction, desired,
                     Parameter(frozenOceanGlidingTurnSpeed.Value, 25f, 0f, 180f) * Mathf.Deg2Rad * dt, 0f);
                 turn = Vector3.Angle(direction, steered) * Mathf.Deg2Rad;
                 direction = steered;
             }
-            float nextTime = Mathf.Min(duration, state.GlideTime + dt);
+
+            float windAlong = Mathf.Clamp(Vector3.Dot(wind, direction), -1f, 1f);
+            float windDecay = 1f - Parameter(frozenOceanGlidingWindDeceleration.Value, 0.25f, 0f, 0.75f) * windAlong;
+            // Acceleration keeps its real duration. Only the two slowing phases
+            // advance at the wind-adjusted rate, which is always strictly positive.
+            float launchStep = Mathf.Min(dt, Mathf.Max(0f, state.LaunchDuration - state.GlideTime));
+            float nextTime = Mathf.Min(duration, state.GlideTime + launchStep + (dt - launchStep) * windDecay);
             // Apply only the scheduled change to actual speed, not a target velocity.
             // The finite launch gain never restores losses or multiplies existing momentum.
             float speedDelta = state.RunSpeed * (GlideSpeedProfile(state, nextTime) - GlideSpeedProfile(state, state.GlideTime));
@@ -506,7 +536,12 @@ namespace Seasons
             {
                 state.DiagnosticTurnDegrees += turn * Mathf.Rad2Deg;
                 state.DiagnosticTurnLoss += turnLoss;
+                state.DiagnosticWindIntensity = wind.magnitude;
+                state.DiagnosticWindAlong = windAlong;
+                state.DiagnosticWindSide = windSide;
+                state.DiagnosticWindDecay = windDecay;
             }
+            state.GlideElapsed += dt;
             state.GlideTime = nextTime;
             speed = Mathf.Max(0f, speed + speedDelta - turnLoss);
             if (nextTime >= duration || (nextTime < state.LaunchDuration ? speed < launchMinimum : speed <= endMinimum))
@@ -541,11 +576,11 @@ namespace Seasons
                 return "state=inactive";
             float speed = Horizontal(state.Player.m_body.linearVelocity).magnitude;
             return string.Format(CultureInfo.InvariantCulture,
-                "state={0} grounded={1} speed={2:F2} runSpeed={3:F2} ratio={4:F1}% steady={5:F2}/{6:F2} charge={7:F2}/{8:F2} ready={9} glide={10:F2}/{11:F2} animation={12} transitions={13} reason={14} fovOffset={15:F2} cadenceHook={16} fovHook={17}",
+                "state={0} grounded={1} speed={2:F2} runSpeed={3:F2} ratio={4:F1}% steady={5:F2}/{6:F2} charge={7:F2}/{8:F2} ready={9} glide={10:F2}/{11:F2} animation={12} transitions={13} reason={14} fovOffset={15:F2} cadenceHook={16} fovHook={17} glideElapsed={18:F2}",
                 state.Mode, state.OnIce, speed, state.RunSpeed, state.RunSpeed > 0f ? 100f * speed / state.RunSpeed : 0f,
                 state.RunUpTime, SteadyRunDuration, state.ChargeTime, ChargeDuration, IsCharged(state),
                 state.GlideTime, (state.Mode == SlideMode.Glide ? state.LaunchDuration : LaunchDuration) + BonusDuration + CoastDuration, state.AnimationOwned, state.Transitions, state.Reason,
-                GetGlideFovOffset(), cadenceHookReady, fovHookReady);
+                GetGlideFovOffset(), cadenceHookReady, fovHookReady, state.GlideElapsed);
         }
     }
 }

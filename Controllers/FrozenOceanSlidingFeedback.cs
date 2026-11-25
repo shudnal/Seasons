@@ -191,13 +191,13 @@ namespace Seasons
                     state.RunUpTime < SteadyRunDuration ? "Steady" : "Charge");
             else if (state.Mode == SlideMode.Glide)
             {
-                float elapsed = state.GlideTime;
-                if (elapsed < state.LaunchDuration)
-                    SlidingDiagnosticLine(text, "Mode: Glide / Acceleration {0:F2}/{1:F2}s", elapsed, state.LaunchDuration);
-                else if (elapsed < state.LaunchDuration + BonusDuration)
-                    SlidingDiagnosticLine(text, "Mode: Glide / Bonus {0:F2}/{1:F2}s", elapsed - state.LaunchDuration, BonusDuration);
+                float progress = state.GlideTime;
+                if (progress < state.LaunchDuration)
+                    SlidingDiagnosticLine(text, "Mode: Glide / Acceleration {0:F2}/{1:F2}s", progress, state.LaunchDuration);
+                else if (progress < state.LaunchDuration + BonusDuration)
+                    SlidingDiagnosticLine(text, "Mode: Glide / Bonus {0:F2}/{1:F2}", progress - state.LaunchDuration, BonusDuration);
                 else
-                    SlidingDiagnosticLine(text, "Mode: Glide / Coast {0:F2}/{1:F2}s", elapsed - state.LaunchDuration - BonusDuration, CoastDuration);
+                    SlidingDiagnosticLine(text, "Mode: Glide / Coast {0:F2}/{1:F2}", progress - state.LaunchDuration - BonusDuration, CoastDuration);
             }
             else
                 SlidingDiagnosticLine(text, "Mode: Basic / {0}", state.Reason);
@@ -214,8 +214,15 @@ namespace Seasons
                     float profile = GlideSpeedProfile(state, state.GlideTime);
                     float nominal = state.RunSpeed * profile;
                     SlidingDiagnosticLine(text, "Profile: {0:F2} m/s ({1:F1}%) | Diff: {2:+0.00;-0.00;0.00}", nominal, profile * 100f, speed - nominal);
-                    SlidingDiagnosticLine(text, "Glide: {0:F2}/{1:F2}s | Peak: {2:F0}% | End: {3:F0}%",
-                        state.GlideTime, state.LaunchDuration + BonusDuration + CoastDuration, state.PeakFraction * 100f, EndSpeedFraction * 100f);
+                    SlidingDiagnosticLine(text, "Glide: {0:F2}s | Profile time: {1:F2}/{2:F2}", state.GlideElapsed, state.GlideTime,
+                        state.LaunchDuration + BonusDuration + CoastDuration);
+                    SlidingDiagnosticLine(text, "Peak: {0:F1}% | End: {1:F0}% | Entry wind: {2:+0.00;-0.00;0.00}",
+                        state.PeakFraction * 100f, EndSpeedFraction * 100f, state.LaunchWindAlong);
+                    SlidingDiagnosticLine(text, "Wind: {0:F2} | Along: {1:+0.00;-0.00;0.00} | Side: {2:+0.00;-0.00;0.00}",
+                        state.DiagnosticWindIntensity, state.DiagnosticWindAlong, state.DiagnosticWindSide);
+                    SlidingDiagnosticLine(text, "Wind decay: x{0:F2} | Drift: {1:+0.0;-0.0;0.0}°",
+                        state.GlideTime < state.LaunchDuration ? 1f : state.DiagnosticWindDecay,
+                        Mathf.Atan(Parameter(frozenOceanGlidingWindLateral.Value, 0.1f, 0f, 0.5f) * state.DiagnosticWindSide) * Mathf.Rad2Deg);
                     SlidingDiagnosticLine(text, "Observed turns: {0:F1}° | Speed loss: {1:F3} m/s", state.DiagnosticTurnDegrees, state.DiagnosticTurnLoss);
                 }
                 else

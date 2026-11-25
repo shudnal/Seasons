@@ -165,6 +165,9 @@ namespace Seasons
         public static ConfigEntry<float> frozenOceanGlidingMaxFov;
         public static ConfigEntry<float> frozenOceanGlidingTurnSpeed;
         public static ConfigEntry<float> frozenOceanGlidingTurnLoss;
+        public static ConfigEntry<float> frozenOceanGlidingWindSpeed;
+        public static ConfigEntry<float> frozenOceanGlidingWindDeceleration;
+        public static ConfigEntry<float> frozenOceanGlidingWindLateral;
         public static ConfigEntry<float> frozenOceanGlidingFriction;
         public static ConfigEntry<float> frozenOceanSlidingInputDeadZone;
         public static ConfigEntry<bool> placeShipAboveFrozenOcean;
@@ -788,13 +791,13 @@ namespace Seasons
             frozenOceanGlidingReleaseGrace = serverConfig(slipperinessSection, "Glide release grace", defaultValue: 0.25f,
                 new ConfigDescription("Seconds to retain a completed charge when Run is released slightly before movement. Does not extend readiness through actions, obstacles, a surface change or UI input capture.", new AcceptableValueRange<float>(0f, 2f)));
             frozenOceanGlidingSpeedBonus = serverConfig(slipperinessSection, "Long glide speed bonus", defaultValue: 0.2f,
-                new ConfigDescription("Maximum earned speed bonus during a long glide. 0.20 gives a peak of 120% of the last fully modified running speed after acceleration. Does not stack.", new AcceptableValueRange<float>(0f, 1f)));
+                new ConfigDescription("Maximum earned speed bonus during a long glide in still air. 0.20 gives a peak of 120% of the last fully modified running speed after acceleration. Wind can modify the peak. Does not stack.", new AcceptableValueRange<float>(0f, 1f)));
             frozenOceanGlidingAccelerationDuration = serverConfig(slipperinessSection, "Long glide acceleration duration", defaultValue: 2f,
                 new ConfigDescription("Seconds to accelerate smoothly from the entry speed toward the peak glide speed after releasing movement. Turning and other speed losses are not recovered.", new AcceptableValueRange<float>(0.1f, 20f)));
             frozenOceanGlidingBonusDuration = serverConfig(slipperinessSection, "Long glide bonus duration", defaultValue: 30f,
-                new ConfigDescription("Seconds after acceleration for a straight unobstructed glide to lose its speed bonus and reach 100% running speed.", new AcceptableValueRange<float>(0.1f, 300f)));
+                new ConfigDescription("Seconds after acceleration for a straight unobstructed glide to lose its speed bonus and reach 100% running speed in still air.", new AcceptableValueRange<float>(0.1f, 300f)));
             frozenOceanGlidingCoastDuration = serverConfig(slipperinessSection, "Long glide coast duration", defaultValue: 10f,
-                new ConfigDescription("Seconds after the bonus phase to slow from 100% to Long glide end speed fraction, then return to basic inertia. Turns, contact friction and obstacles can end a glide earlier.", new AcceptableValueRange<float>(0.1f, 120f)));
+                new ConfigDescription("Seconds after the bonus phase in still air to slow from 100% to Long glide end speed fraction, then return to basic inertia. Wind changes the duration. Turns, contact friction and obstacles can end a glide earlier.", new AcceptableValueRange<float>(0.1f, 120f)));
             frozenOceanGlidingEndSpeed = serverConfig(slipperinessSection, "Long glide end speed fraction", defaultValue: 0.9f,
                 new ConfigDescription("Fraction of the captured running speed at which the animated glide ends. The duration limit also ends it even if an external impulse kept the body moving faster.", new AcceptableValueRange<float>(0.1f, 1f)));
             frozenOceanGlidingAnimationBonus = serverConfig(slipperinessSection, "Run-up animation speed bonus", defaultValue: 0.25f,
@@ -807,6 +810,12 @@ namespace Seasons
                 new ConfigDescription("Maximum steering rate in degrees per second while using mouse look or controller look. Zero keeps the entry direction.", new AcceptableValueRange<float>(0f, 180f)));
             frozenOceanGlidingTurnLoss = serverConfig(slipperinessSection, "Long glide turning speed loss", defaultValue: 0.2f,
                 new ConfigDescription("Additional speed lost in meters per second for each radian of actual trajectory turn. Steering cannot accelerate the player.", new AcceptableValueRange<float>(0f, 10f)));
+            frozenOceanGlidingWindSpeed = serverConfig(slipperinessSection, "Long glide wind speed influence", defaultValue: 0.05f,
+                new ConfigDescription("Speed fraction added or subtracted from the glide peak at release, scaled by the wind along the travel direction. 0.05 changes a 120% peak to 115% in maximum headwind or 125% in maximum tailwind. Zero disables this effect.", new AcceptableValueRange<float>(0f, 0.2f)));
+            frozenOceanGlidingWindDeceleration = serverConfig(slipperinessSection, "Long glide wind deceleration influence", defaultValue: 0.25f,
+                new ConfigDescription("Scales the rate of the two slowing phases using current wind along the travel direction. 0.25 gives 125% of the normal rate in maximum headwind or 75% in maximum tailwind. Does not change acceleration duration or running.", new AcceptableValueRange<float>(0f, 0.75f)));
+            frozenOceanGlidingWindLateral = serverConfig(slipperinessSection, "Long glide wind lateral influence", defaultValue: 0.1f,
+                new ConfigDescription("Adds the lateral component of wind to the glide steering direction. 0.10 gives up to about 5.7 degrees of drift. Zero disables wind drift. Does not affect running.", new AcceptableValueRange<float>(0f, 0.5f)));
             frozenOceanGlidingFriction = serverConfig(slipperinessSection, "Long glide collider friction", defaultValue: 0f,
                 new ConfigDescription("Capsule friction during the animated long glide. Zero leaves deceleration to the glide calculation.", new AcceptableValueRange<float>(0f, 1f)));
             frozenOceanSlidingInputDeadZone = serverConfig(slipperinessSection, "Movement input dead zone", defaultValue: 0.1f,

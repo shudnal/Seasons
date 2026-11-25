@@ -87,8 +87,8 @@ of the captured running speed. It starts at actual entry speed and uses the
 existing walking force path, without a second `AddForce` or a direct Rigidbody
 assignment. The scheduled gain never amplifies momentum above the peak.
 
-For a straight, unobstructed glide starting at 100% running speed without
-additional contact losses:
+For a straight, unobstructed glide starting at 100% running speed in still air
+without additional contact losses:
 
 | Time after release | Speed relative to captured running speed | FOV cue target |
 | --- | ---: | ---: |
@@ -116,6 +116,41 @@ heading offset is retained, so entry does not snap travel toward the camera.
 Controller look uses the same existing look direction. Turning loses speed and
 cannot generate acceleration. The character faces actual travel after the native
 walking rotation without changing its look yaw.
+
+## Wind during long glides
+
+Wind affects only Seasons long glides, not ordinary running, initial preparation,
+powered recharge, basic inertia, creatures or native slipping. Use the game's
+current horizontal `EnvMan.GetWindForce()`, which already includes intensity.
+
+At release, project wind onto the travel heading. Add the result multiplied by
+`Long glide wind speed influence` (0.05) to the normal speed bonus, clamped so
+the peak is at least the captured running speed. Capture this peak for the
+launch; later wind changes do not replay or restore acceleration.
+
+During the glide, project the current wind onto the actual travel direction
+and advance the slowing profile at `1 - along * wind deceleration influence`.
+The 2-second acceleration uses real time. The two slowing phases use profile
+time, retaining the 100% and 90% endpoints and a strictly positive rate.
+Wind cannot sustain an infinite glide or add a continuous forward impulse.
+
+For constant wind aligned with straight travel, with the default settings:
+
+| Wind along travel | Peak | Slowing rate | Glide duration |
+| --- | ---: | ---: | ---: |
+| Full headwind (-1) | 115% | 1.25 | 34 s |
+| Still air (0) | 120% | 1.00 | 42 s |
+| Full tailwind (+1) | 125% | 0.75 | 55.33 s |
+
+For crosswind, add the signed lateral wind component multiplied by
+`Long glide wind lateral influence` (0.10) to the desired steering heading.
+Maximum crosswind offsets the heading by about 5.7 degrees. The existing
+turn-rate limit and turn loss still apply. The live wind may change the
+trajectory and slowing rate without a separate force or velocity reset.
+
+Powered recharge does not read wind. Its speed cap retains the preceding
+glide's earned peak if it exceeds the normal peak, so a tailwind boost
+does not cause a speed dip when starting to run again.
 
 ## Renewing the boost
 
@@ -248,6 +283,9 @@ preferences are client-side. Existing basic-inertia parameters remain available.
 | Maximum glide FOV | 105 | Local absolute horizontal FOV, degrees |
 | Long glide turn speed | 25 | Degrees per second |
 | Long glide turning speed loss | 0.2 | m/s lost per radian turned |
+| Long glide wind speed influence | 0.05 | Wind-dependent peak bonus at release |
+| Long glide wind deceleration influence | 0.25 | Live wind-dependent slowing rate |
+| Long glide wind lateral influence | 0.10 | Live lateral steering offset |
 | Long glide collider friction | 0 | Contact friction during animated gliding |
 | Movement input dead zone | 0.10 | Analog release threshold |
 | Show sliding diagnostics on hover | false | Local live crosshair diagnostics for gameplay recordings |
@@ -284,8 +322,11 @@ H = preparation heading), actual horizontal camera FOV, requested cadence bonus,
 slipping animation flag, hook availability and the last exit from preparation
 or gliding. The last exit remains visible during the next preparation or after
 the slide state is reset. Turn totals include only steps observed while the
-diagnostics are enabled. The nominal profile excludes additional physical
-losses and external impulses. Diagnostics are client-only and do not change
+diagnostics are enabled. The display separates real glide elapsed time from
+wind-adjusted profile time and shows the entry wind, current along/side wind,
+slowing multiplier and steering drift. The nominal profile includes the
+captured wind-dependent peak and adjusted profile time, but excludes turn
+losses, other physical losses and external impulses. Diagnostics are client-only and do not change
 movement, animation, camera settings or networking.
 
 ## Manual checks
@@ -301,6 +342,10 @@ movement, animation, camera settings or networking.
 - Release before recharge finishes: basic coasting, no renewed boost. Repeat
   without stamina. Movement without Run must still cancel. Hit an obstacle and
   confirm the acceleration does not reconstruct lost speed and FOV fades smoothly.
+- Test calm, full headwind, tailwind and crosswind. Compare the peak, real and
+  profile times, slowing rate and drift. Change the wind during a glide and
+  recharge in a tailwind; confirm no abrupt speed change or wind acceleration
+  during running. Set all three wind settings to zero for the previous profile.
 - Turn, attack, jump, dodge, interact and change footwear. Check air control and
   basic inertia after landing, with no automatic return of charge.
 - Open UI during a glide versus during preparation. Test master/long-glide/FOV
