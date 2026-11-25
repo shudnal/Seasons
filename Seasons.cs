@@ -148,6 +148,7 @@ namespace Seasons
         public static ConfigEntry<float> frozenOceanSlidingCoasting;
         public static ConfigEntry<float> frozenOceanSlidingMinimumSpeed;
         public static ConfigEntry<float> frozenOceanSlidingFriction;
+        public static ConfigEntry<bool> showSlidingDiagnosticsOnHover;
         public static ConfigEntry<bool> frozenOceanGlidingEnabled;
         public static ConfigEntry<float> frozenOceanGlidingRunUpTime;
         public static ConfigEntry<float> frozenOceanGlidingRunUpSpeed;
@@ -810,6 +811,9 @@ namespace Seasons
                 new ConfigDescription("Capsule friction during the animated long glide. Zero leaves deceleration to the glide calculation.", new AcceptableValueRange<float>(0f, 1f)));
             frozenOceanSlidingInputDeadZone = serverConfig(slipperinessSection, "Movement input dead zone", defaultValue: 0.1f,
                 new ConfigDescription("Analog movement magnitude below which input is treated as released. Keyboard movement always cancels a long glide.", new AcceptableValueRange<float>(0.001f, 0.5f)));
+            showSlidingDiagnosticsOnHover = clientConfig(slipperinessSection, "Show sliding diagnostics on hover", defaultValue: false,
+                "Show live local sliding state, speeds, phase timers, FOV, animation and the last interruption in the crosshair hover text. Useful for recording gameplay tests.");
+            showSlidingDiagnosticsOnHover.SettingChanged += (sender, args) => CharacterExtentions_FrozenOceanSliding.ClearSlidingDiagnostics();
             frozenOceanSlidingEnabled.SettingChanged += (sender, args) => CharacterExtentions_FrozenOceanSliding.ResetWorldState();
             frozenOceanUseVanillaSlippingPlayers.SettingChanged += (sender, args) => CharacterExtentions_FrozenOceanSliding.ResetWorldState();
             frozenOceanGlidingEnabled.SettingChanged += (sender, args) => CharacterExtentions_FrozenOceanSliding.ResetWorldState();

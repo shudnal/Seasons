@@ -244,6 +244,7 @@ preferences are client-side. Existing basic-inertia parameters remain available.
 | Long glide turning speed loss | 0.2 | m/s lost per radian turned |
 | Long glide collider friction | 0 | Contact friction during animated gliding |
 | Movement input dead zone | 0.10 | Analog release threshold |
+| Show sliding diagnostics on hover | false | Local live crosshair diagnostics for gameplay recordings |
 
 The old `Run-up duration`, `Run-up speed bonus`, `Run-up full bonus time`,
 `Long glide deceleration`, `Long glide minimum speed` and
@@ -267,6 +268,19 @@ The read-only `seasons_sliding` command reports mode, ground contact, actual spe
 captured running speed, their ratio, steady-run and charge progress, readiness,
 elapsed glide time, animation ownership, transition reason, FOV offset and visual
 hook availability. It does not enable background sampling or change gameplay.
+
+Enable `Show sliding diagnostics on hover` to record the same movement cycle in
+the normal crosshair hover block, even without a hovered object. The display
+refreshes ten times per second. It shows the active phase and timers, actual
+horizontal speed, captured running speed, nominal glide profile and deviation,
+observed turn losses, input and run-up alignment (V = velocity, I = input,
+H = preparation heading), actual horizontal camera FOV, requested cadence bonus,
+slipping animation flag, hook availability and the last exit from preparation
+or gliding. The last exit remains visible during the next preparation or after
+the slide state is reset. Turn totals include only steps observed while the
+diagnostics are enabled. The nominal profile excludes additional physical
+losses and external impulses. Diagnostics are client-only and do not change
+movement, animation, camera settings or networking.
 
 ## Manual checks
 

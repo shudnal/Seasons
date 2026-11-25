@@ -9,7 +9,7 @@ namespace Seasons
     public static partial class CharacterExtentions_FrozenOceanSliding
     {
         private enum SlideMode { Basic, RunUp, Glide }
-        private enum SlideReason { Surface, Running, Released, Input, Action, Airborne, Slow, Disabled, Expired }
+        private enum SlideReason { Surface, Running, Released, Input, Action, Airborne, Slow, Disabled, Expired, Reset }
 
         private sealed class PlayerSlide
         {
@@ -35,6 +35,8 @@ namespace Seasons
             internal bool AnimationOwned;
             internal float LookOffset;
             internal int Transitions;
+            internal float DiagnosticTurnDegrees;
+            internal float DiagnosticTurnLoss;
         }
 
         // Only the owning local player keeps persistent slide state. Creatures use stateless inertia.
@@ -43,7 +45,10 @@ namespace Seasons
         internal static void ResetWorldState()
         {
             if (playerSlide != null)
+            {
+                RecordSlidingExit(playerSlide, SlideReason.Reset);
                 ReleaseAnimation(playerSlide);
+            }
             playerSlide = null;
         }
 
@@ -60,7 +65,11 @@ namespace Seasons
         private static void ChangeMode(PlayerSlide state, SlideMode mode, SlideReason reason)
         {
             if (state.Mode != mode)
+            {
+                if (mode == SlideMode.Basic)
+                    RecordSlidingExit(state, reason);
                 state.Transitions++;
+            }
             state.Mode = mode;
             state.Reason = reason;
             if (mode != SlideMode.Glide)
@@ -303,6 +312,7 @@ namespace Seasons
             state.LaunchDuration = LaunchDuration;
             state.PeakFraction = 1f + GlideBonus;
             state.LaunchStartFraction = Mathf.Min(actual.magnitude / state.RunSpeed, state.PeakFraction);
+            state.DiagnosticTurnDegrees = state.DiagnosticTurnLoss = 0f;
             ChangeMode(state, SlideMode.Glide, SlideReason.Released);
         }
 
@@ -471,6 +481,11 @@ namespace Seasons
             if (speedDelta > 0f)
                 speedDelta = Mathf.Min(speedDelta, Mathf.Max(0f, state.RunSpeed * state.PeakFraction - speed));
             float turnLoss = Parameter(frozenOceanGlidingTurnLoss.Value, 0.2f, 0f, 10f) * turn;
+            if (showSlidingDiagnosticsOnHover.Value)
+            {
+                state.DiagnosticTurnDegrees += turn * Mathf.Rad2Deg;
+                state.DiagnosticTurnLoss += turnLoss;
+            }
             state.GlideTime = nextTime;
             speed = Mathf.Max(0f, speed + speedDelta - turnLoss);
             if (nextTime >= duration || (nextTime < state.LaunchDuration ? speed < launchMinimum : speed <= endMinimum))

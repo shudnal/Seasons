@@ -1,6 +1,8 @@
 using HarmonyLib;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Reflection.Emit;
+using System.Text;
 using UnityEngine;
 using static Seasons.Seasons;
 
@@ -119,6 +121,165 @@ namespace Seasons
             // ZSyncAnimation smoothing and Animator state transitions remain intact.
             float result = value * (1f + state.CadenceFeedback * Parameter(frozenOceanGlidingAnimationBonus.Value, 0.25f, 0f, 1f));
             return Finite(result) ? result : value;
+        }
+
+        private const float SlidingDiagnosticsInterval = 0.1f;
+        private static Player slidingDiagnosticsPlayer;
+        private static string slidingDiagnosticsText;
+        private static float slidingDiagnosticsAt;
+        private static Player lastSlidingExitPlayer;
+        private static SlideMode lastSlidingExitMode;
+        private static SlideReason lastSlidingExitReason;
+        private static float lastSlidingExitAt;
+
+        internal static void ClearSlidingDiagnostics()
+        {
+            slidingDiagnosticsPlayer = lastSlidingExitPlayer = null;
+            slidingDiagnosticsText = null;
+            slidingDiagnosticsAt = 0f;
+            if (playerSlide != null)
+                playerSlide.DiagnosticTurnDegrees = playerSlide.DiagnosticTurnLoss = 0f;
+        }
+
+        private static void RecordSlidingExit(PlayerSlide state, SlideReason reason)
+        {
+            if (showSlidingDiagnosticsOnHover?.Value != true || state.Mode == SlideMode.Basic)
+                return;
+
+            // The next walking update can overwrite Reason or recreate the state.
+            // Keep the last exit visible while the next preparation is already running.
+            lastSlidingExitPlayer = state.Player;
+            lastSlidingExitMode = state.Mode;
+            lastSlidingExitReason = reason;
+            lastSlidingExitAt = Time.unscaledTime;
+            slidingDiagnosticsAt = 0f;
+        }
+
+        private static string DiagnosticAngle(Vector3 from, Vector3 to) =>
+            from.sqrMagnitude > 0.000001f && to.sqrMagnitude > 0.000001f
+                ? Vector3.Angle(from, to).ToString("F0", CultureInfo.InvariantCulture) + "°"
+                : "-";
+
+        private static void SlidingDiagnosticLine(StringBuilder text, string format, params object[] args) =>
+            text.AppendFormat(CultureInfo.InvariantCulture, format, args).Append('\n');
+
+        private static string ReadSlidingDiagnostics(Player player, float now)
+        {
+            var text = new StringBuilder(768);
+            SlidingDiagnosticLine(text, "<color=#ABDCEF>Seasons - Sliding diagnostics</color> | t={0:F1}s", now);
+
+            PlayerSlide state = playerSlide != null && ReferenceEquals(playerSlide.Player, player) ? playerSlide : null;
+            Vector3 velocity = Horizontal(player.m_body.linearVelocity);
+            Vector3 input = Horizontal(player.m_moveDir);
+            float speed = velocity.magnitude;
+            bool ice = player.IsOnIce();
+
+            if (!HooksReady)
+                text.AppendLine("Mode: Hooks unavailable");
+            else if (!ice)
+                text.AppendLine(player.IsOnGround() ? "Mode: Off seasonal ice" : "Mode: Airborne");
+            else if (!SlidingEnabled)
+                text.AppendLine("Mode: Disabled");
+            else if (player.m_iceShoes)
+                text.AppendLine("Mode: Ice shoes");
+            else if (player.m_skating || frozenOceanUseVanillaSlippingPlayers.Value)
+                text.AppendLine("Mode: Native slipping");
+            else if (state == null)
+                text.AppendLine("Mode: Inactive");
+            else if (state.Mode == SlideMode.RunUp)
+                SlidingDiagnosticLine(text, "Mode: RunUp / {0}", IsCharged(state) ? "Ready" :
+                    state.RunUpTime < SteadyRunDuration ? "Steady" : "Charge");
+            else if (state.Mode == SlideMode.Glide)
+            {
+                float elapsed = state.GlideTime;
+                if (elapsed < state.LaunchDuration)
+                    SlidingDiagnosticLine(text, "Mode: Glide / Acceleration {0:F2}/{1:F2}s", elapsed, state.LaunchDuration);
+                else if (elapsed < state.LaunchDuration + BonusDuration)
+                    SlidingDiagnosticLine(text, "Mode: Glide / Bonus {0:F2}/{1:F2}s", elapsed - state.LaunchDuration, BonusDuration);
+                else
+                    SlidingDiagnosticLine(text, "Mode: Glide / Coast {0:F2}/{1:F2}s", elapsed - state.LaunchDuration - BonusDuration, CoastDuration);
+            }
+            else
+                SlidingDiagnosticLine(text, "Mode: Basic / {0}", state.Reason);
+
+            if (state != null && state.RunSpeed > 0f)
+                SlidingDiagnosticLine(text, "Speed: {0:F2} m/s | Run ref: {1:F2} ({2:F1}%)", speed, state.RunSpeed, 100f * speed / state.RunSpeed);
+            else
+                SlidingDiagnosticLine(text, "Speed: {0:F2} m/s | Run ref: -", speed);
+
+            if (state != null)
+            {
+                if (state.Mode == SlideMode.Glide)
+                {
+                    float profile = GlideSpeedProfile(state, state.GlideTime);
+                    float nominal = state.RunSpeed * profile;
+                    SlidingDiagnosticLine(text, "Profile: {0:F2} m/s ({1:F1}%) | Diff: {2:+0.00;-0.00;0.00}", nominal, profile * 100f, speed - nominal);
+                    SlidingDiagnosticLine(text, "Glide: {0:F2}/{1:F2}s | Peak: {2:F0}% | End: {3:F0}%",
+                        state.GlideTime, state.LaunchDuration + BonusDuration + CoastDuration, state.PeakFraction * 100f, EndSpeedFraction * 100f);
+                    SlidingDiagnosticLine(text, "Observed turns: {0:F1}° | Speed loss: {1:F3} m/s", state.DiagnosticTurnDegrees, state.DiagnosticTurnLoss);
+                }
+                else
+                {
+                    SlidingDiagnosticLine(text, "Steady: {0:F2}/{1:F2}s | Charge: {2:F2}/{3:F2}s", state.RunUpTime, SteadyRunDuration, state.ChargeTime, ChargeDuration);
+                    SlidingDiagnosticLine(text, "Target: {0:F2} m/s | Release grace: {1:F2}/{2:F2}s",
+                        state.TargetSpeed, state.ReleaseTime, Parameter(frozenOceanGlidingReleaseGrace.Value, 0.25f, 0f, 2f));
+                    SlidingDiagnosticLine(text, "Alignment: V/I {0} | V/H {1} | I/H {2} (max {3:F0}°)",
+                        DiagnosticAngle(velocity, input), DiagnosticAngle(velocity, state.RunHeading), DiagnosticAngle(input, state.RunHeading),
+                        Parameter(frozenOceanGlidingRunUpAngle.Value, 45f, 0f, 90f));
+                }
+            }
+
+            SlidingDiagnosticLine(text, "Input: {0:F2} | Run: {1} | Ground: {2} | Ice: {3}", input.magnitude, player.m_running, player.IsOnGround(), ice);
+            SlidingDiagnosticLine(text, "Held: {0} | Blocked: {1} | Input allowed: {2}", state?.MovementHeld ?? false, HasBlockingAction(player), CanReadSlideInput(player));
+
+            GameCamera camera = GameCamera.instance;
+            if (camera && camera.m_camera)
+            {
+                float aspect = camera.m_camera.aspect;
+                float actualFov = Camera.VerticalToHorizontalFieldOfView(camera.m_camera.fieldOfView, aspect);
+                float baseFov = Camera.VerticalToHorizontalFieldOfView(camera.m_fov, aspect);
+                SlidingDiagnosticLine(text, "FOV H: {0:F1}° | Base: {1:F1}° | Max: {2:F1}°", actualFov, baseFov,
+                    Parameter(frozenOceanGlidingMaxFov.Value, 105f, 60f, 150f));
+            }
+
+            float cadence = cadenceHookReady && state != null && state.OnIce && ice
+                ? 100f * state.CadenceFeedback * Parameter(frozenOceanGlidingAnimationBonus.Value, 0.25f, 0f, 1f) : 0f;
+            SlidingDiagnosticLine(text, "Cadence: +{0:F1}% | Slip anim: {1}", cadence,
+                player.m_animator && player.m_animator.GetBool(Character.s_slipping));
+            SlidingDiagnosticLine(text, "Hooks: motion={0} cadence={1} FOV={2}", HooksReady, cadenceHookReady, fovHookReady);
+            if (ReferenceEquals(lastSlidingExitPlayer, player))
+                SlidingDiagnosticLine(text, "Last exit: {0} / {1} | {2:F1}s ago", lastSlidingExitMode, lastSlidingExitReason, now - lastSlidingExitAt);
+            else
+                text.AppendLine("Last exit: -");
+
+            return text.ToString().TrimEnd('\n');
+        }
+
+        [HarmonyPatch(typeof(Hud), nameof(Hud.UpdateCrosshair))]
+        private static class Hud_UpdateCrosshair_SlidingDiagnostics
+        {
+            [HarmonyPostfix, HarmonyPriority(Priority.Last)]
+            private static void Postfix(Hud __instance, Player player)
+            {
+                // Native UpdateCrosshair rewrites the hover text even without a target.
+                if (showSlidingDiagnosticsOnHover?.Value != true || player != Player.m_localPlayer || !player || !player.m_body ||
+                    !__instance.m_hoverName || (TextViewer.instance && TextViewer.instance.IsVisible()))
+                    return;
+
+                float now = Time.unscaledTime;
+                if (slidingDiagnosticsPlayer != player || slidingDiagnosticsText == null || now >= slidingDiagnosticsAt)
+                {
+                    slidingDiagnosticsPlayer = player;
+                    if (lastSlidingExitPlayer != player)
+                        lastSlidingExitPlayer = null;
+                    slidingDiagnosticsText = ReadSlidingDiagnostics(player, now);
+                    slidingDiagnosticsAt = now + SlidingDiagnosticsInterval;
+                }
+
+                string hover = __instance.m_hoverName.text;
+                __instance.m_hoverName.text = string.IsNullOrEmpty(hover)
+                    ? slidingDiagnosticsText : hover + "\n\n" + slidingDiagnosticsText;
+            }
         }
 
         [HarmonyPatch(typeof(Character), nameof(Character.UpdateWalking))]
