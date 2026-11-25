@@ -234,6 +234,8 @@ namespace Seasons
 
         public const float _winterWaterSurfaceOffset = 2f;
         public const float _colliderOffset = 0.01f;
+        // Extend each 64 m ice tile by 0.1 m at each horizontal edge.
+        private const float IceColliderHorizontalScale = 1f + 0.2f / ZoneSystem.c_ZoneSize;
         public const string _iceSurfaceName = "IceSurface";
         public static readonly int s_playerDroppedFish = "Seasons_PlayerDroppedFish".GetStableHashCode();
 
@@ -586,7 +588,7 @@ namespace Seasons
             else if (s_iceSurface.activeSelf)
                 s_iceSurface.SetActive(false);
 
-            s_iceSurface.transform.localScale = new Vector3(waterSurface.localScale.x, Math.Abs(_colliderOffset), waterSurface.localScale.z);
+            s_iceSurface.transform.localScale = new Vector3(waterSurface.localScale.x * IceColliderHorizontalScale, Math.Abs(_colliderOffset), waterSurface.localScale.z * IceColliderHorizontalScale);
             s_iceSurface.transform.localPosition = new Vector3(0, _colliderOffset, 0);
             MeshCollider templateCollider = s_iceSurface.GetComponent<MeshCollider>();
             if (templateCollider.sharedMesh != waterMesh.sharedMesh)
@@ -640,7 +642,7 @@ namespace Seasons
             // may enable the copy after it has been attached to this live water instance.
             GameObject iceSurface = Instantiate(s_iceSurface, water, false);
             iceSurface.name = _iceSurfaceName;
-            iceSurface.transform.localScale = new Vector3(waterSurface.localScale.x, Math.Abs(_colliderOffset), waterSurface.localScale.z);
+            iceSurface.transform.localScale = new Vector3(waterSurface.localScale.x * IceColliderHorizontalScale, Math.Abs(_colliderOffset), waterSurface.localScale.z * IceColliderHorizontalScale);
             MeshCollider iceCollider = iceSurface.GetComponent<MeshCollider>();
             if (iceCollider.sharedMesh != waterMesh.sharedMesh)
                 iceCollider.sharedMesh = waterMesh.sharedMesh;
