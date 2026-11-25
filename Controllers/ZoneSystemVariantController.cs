@@ -576,8 +576,7 @@ namespace Seasons
                 DontDestroyOnLoad(s_iceSurface);
                 s_iceSurface.layer = 0;
 
-                MeshCollider iceCollider = s_iceSurface.AddComponent<MeshCollider>();
-                iceCollider.cookingOptions = MeshColliderCookingOptions.UseFastMidphase;
+                BoxCollider iceCollider = s_iceSurface.AddComponent<BoxCollider>();
                 iceCollider.sharedMaterial = new PhysicsMaterial("Seasons Ice Surface")
                 {
                     staticFriction = 0.1f,
@@ -588,11 +587,19 @@ namespace Seasons
             else if (s_iceSurface.activeSelf)
                 s_iceSurface.SetActive(false);
 
-            s_iceSurface.transform.localScale = new Vector3(waterSurface.localScale.x * IceColliderHorizontalScale, Math.Abs(_colliderOffset), waterSurface.localScale.z * IceColliderHorizontalScale);
             s_iceSurface.transform.localPosition = new Vector3(0, _colliderOffset, 0);
-            MeshCollider templateCollider = s_iceSurface.GetComponent<MeshCollider>();
-            if (templateCollider.sharedMesh != waterMesh.sharedMesh)
-                templateCollider.sharedMesh = waterMesh.sharedMesh;
+            ConfigureIceCollider(s_iceSurface.GetComponent<BoxCollider>(), waterSurface, waterMesh.sharedMesh);
+        }
+
+        private static void ConfigureIceCollider(BoxCollider iceCollider, Transform waterSurface, Mesh mesh)
+        {
+            Bounds bounds = mesh.bounds;
+            iceCollider.transform.localScale = new Vector3(waterSurface.localScale.x * IceColliderHorizontalScale,
+                Math.Abs(_colliderOffset), waterSurface.localScale.z * IceColliderHorizontalScale);
+            // Preserve the old mesh footprint and top height. The thin box extends
+            // downward from the surface instead of raising the walking plane.
+            iceCollider.size = new Vector3(bounds.size.x, 1f, bounds.size.z);
+            iceCollider.center = new Vector3(bounds.center.x, bounds.max.y - 0.5f, bounds.center.z);
         }
 
         public static void RegisterWaterVolume(WaterVolume waterVolume)
@@ -633,7 +640,7 @@ namespace Seasons
             if (existing != null)
             {
                 // Reuse a copy already present in this spawned hierarchy, without duplicates.
-                if (existing.TryGetComponent(out MeshCollider _))
+                if (existing.TryGetComponent(out BoxCollider _))
                     state.m_iceSurface = existing.gameObject;
                 return;
             }
@@ -642,10 +649,7 @@ namespace Seasons
             // may enable the copy after it has been attached to this live water instance.
             GameObject iceSurface = Instantiate(s_iceSurface, water, false);
             iceSurface.name = _iceSurfaceName;
-            iceSurface.transform.localScale = new Vector3(waterSurface.localScale.x * IceColliderHorizontalScale, Math.Abs(_colliderOffset), waterSurface.localScale.z * IceColliderHorizontalScale);
-            MeshCollider iceCollider = iceSurface.GetComponent<MeshCollider>();
-            if (iceCollider.sharedMesh != waterMesh.sharedMesh)
-                iceCollider.sharedMesh = waterMesh.sharedMesh;
+            ConfigureIceCollider(iceSurface.GetComponent<BoxCollider>(), waterSurface, waterMesh.sharedMesh);
             state.m_iceSurface = iceSurface;
         }
 
