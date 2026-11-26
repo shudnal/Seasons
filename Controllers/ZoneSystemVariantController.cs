@@ -234,6 +234,7 @@ namespace Seasons
 
         public const float _winterWaterSurfaceOffset = 2f;
         public const float _colliderOffset = 0.01f;
+        private const float IceColliderOverlap = 1f;
         private const float IceColliderBevelWidth = 3f;
         private const float IceColliderBevelDepth = 0.01f;
         private const float IceColliderThickness = _winterWaterSurfaceOffset * 0.5f;
@@ -595,12 +596,12 @@ namespace Seasons
 
         private static Mesh CreateIceColliderMesh()
         {
-            float edge = ZoneSystem.c_ZoneSize * 0.5f;
+            float edge = ZoneSystem.c_ZoneSize * 0.5f + IceColliderOverlap;
             float top = edge - IceColliderBevelWidth;
             float bevel = -IceColliderBevelDepth;
             float bottom = -IceColliderThickness;
 
-            // Adjacent tiles meet at their lowered edges, without overlapping.
+            // Overlap the beveled edges so each outer edge lies below the neighboring slope.
             // Keep the top, bevel and bottom rings in one closed convex mesh.
             Mesh mesh = new Mesh
             {
