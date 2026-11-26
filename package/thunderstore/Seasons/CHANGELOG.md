@@ -2,6 +2,7 @@
 * updated for Valheim 1.0.30; winter loss of cultivation supports the new terrain data format
 * reworked sliding on frozen oceans: run steadily and release movement for a long, steerable glide with smooth camera and animation feedback; configure wind effects, maximum FOV and creature slipping or use native slipping instead
 * improved movement across frozen ocean zone boundaries
+* fixed flickering and repeated particle resets in hoe and cultivator placement previews
 * footsteps reduce seasonal snow on supported building pieces and use the snow footstep effect while clearing snow; configure the reduction and minimum snow depth
 * sea serpents no longer target creatures or structures above frozen water
 * added independent switches for seasonal resource drops, food, stamina, Rested, fuel, production, livestock, night length, wind, torch warmth and heat damage

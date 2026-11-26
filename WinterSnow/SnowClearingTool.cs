@@ -18,11 +18,10 @@ namespace Seasons
         private static Piece action;
         private static ObjectDB registeredDatabase;
         private static PieceTable registeredTable;
-        private static bool inputHookReady;
         private static bool buttonsHookReady;
         private static bool searchHookReady;
 
-        private static bool HooksReady => inputHookReady && buttonsHookReady && searchHookReady;
+        private static bool HooksReady => buttonsHookReady && searchHookReady;
         private static bool Available => HooksReady && SeasonState.WorldInitialized && SeasonalSnow.WinterReady;
         internal static bool IsAction(Piece piece) => action && piece == action;
         internal static bool IsHoe(ItemDrop.ItemData tool) => tool != null && tool.m_dropPrefab && tool.m_dropPrefab.name == "Hoe";
@@ -142,20 +141,6 @@ namespace Seasons
                 player.m_knownRecipes.Add(action.m_name);
         }
 
-        private static void DispatchRepair(Player player, ItemDrop.ItemData tool, Piece selected)
-        {
-            if (!IsAction(selected))
-            {
-                player.Repair(tool, selected);
-                return;
-            }
-            // Never fall back to repairing health if an integration hook becomes unavailable.
-            if (Available)
-                SnowClearingAction.Clear(player, tool);
-            else
-                player.Message(MessageHud.MessageType.TopLeft, "$msg_nosnow");
-        }
-
         private static bool IsSpecialRepair(Piece piece) => piece.m_repairPiece && !IsAction(piece);
 
         private static IEnumerable<CodeInstruction> RouteUiRepairFlag(IEnumerable<CodeInstruction> instructions, bool buttons)
@@ -225,40 +210,27 @@ namespace Seasons
             }
         }
 
-        [HarmonyPatch(typeof(Player), nameof(Player.UpdatePlacement))]
-        private static class Player_UpdatePlacement_SnowClearing
-        {
-            [HarmonyTranspiler]
-            private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
-            {
-                var code = new List<CodeInstruction>(instructions);
-                MethodInfo repair = AccessTools.Method(typeof(Player), nameof(Player.Repair));
-                int matches = code.FindAll(instruction => instruction.Calls(repair)).Count;
-                inputHookReady = matches == 1;
-                if (!inputHookReady)
-                {
-                    if (action)
-                        action.m_enabled = false;
-                    Seasons.LogWarning($"Snow-clearing input integration expected one Player.Repair call, found {matches}; the hoe action is disabled.");
-                    return code;
-                }
-                foreach (CodeInstruction instruction in code)
-                    if (instruction.Calls(repair))
-                    {
-                        instruction.opcode = OpCodes.Call;
-                        instruction.operand = AccessTools.Method(typeof(SnowClearingTool), nameof(DispatchRepair));
-                    }
-                return code;
-            }
-        }
-
-        // Fail closed for an external direct Repair call or a later incompatible UpdatePlacement replacement.
-        // The normal snow action bypasses Repair entirely, including other mods' repair callbacks.
         [HarmonyPatch(typeof(Player), nameof(Player.Repair))]
-        private static class Player_Repair_ProtectSnowClearing
+        private static class Player_Repair_SnowClearing
         {
             [HarmonyPrefix, HarmonyPriority(Priority.First)]
-            private static bool Prefix(Piece repairPiece) => !IsAction(repairPiece);
+            private static bool Prefix(Player __instance, ItemDrop.ItemData toolItem, Piece repairPiece)
+            {
+                if (!IsAction(repairPiece))
+                    return true;
+
+                // Keep native placement input and ordinary repairs unchanged.
+                // Only the selected snow-clearing action replaces repair.
+                if (Available)
+                {
+                    if (__instance.GetSelectedPiece() == repairPiece)
+                        SnowClearingAction.Clear(__instance, toolItem);
+                }
+                else
+                    __instance.Message(MessageHud.MessageType.TopLeft, "$msg_nosnow");
+
+                return false;
+            }
         }
 
         [HarmonyPatch(typeof(BuildUi), nameof(BuildUi.UpdatePieceButtons))]

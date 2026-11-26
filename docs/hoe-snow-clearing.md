@@ -1,8 +1,7 @@
 # Hoe snow clearing
 
-Base: `2796400dfd3406f699370c1484e9b8a138d1fb6f` (Seasons 1.10.4).
-Game source: `shudnal/assemblies_combined` at
-`5a2365409cff644d6adaccd2b308178cc4179b19` (Valheim 1.0.16).
+Seasons 1.11.0. Game source: `shudnal/assemblies_combined` at
+`216cb30f748e0ef9c74a8366395e9cc110f3cd8d` (Valheim 1.0.30).
 
 ## Player behavior
 
@@ -45,10 +44,13 @@ native no-cost mode can bypass. The input dispatch also rejects unavailable use.
 
 Two BuildUi transpilers treat only this action as an ordinary tile when creating
 buttons and filtering search results. All other repair/remove items remain special.
-The input transpiler routes the existing Player.Repair call to the snow action or
-the real, patched repair method as appropriate. A direct-call guard prevents our
-action from accidentally repairing health. Required hook mismatches disable the
-action rather than silently falling back to terrain placement or repair.
+The native placement input calls `Player.Repair` for the selected repair-style
+action. A prefix intercepts only the snow-clearing piece, verifies that it is
+still selected and available, and dispatches snow clearing instead of repairing
+health. Ordinary repairs retain their native path. `Player.UpdatePlacement`
+is not transpiled: its previous input transpiler caused terrain placement ghosts
+to deactivate and reactivate every frame while input was enabled. UI hook
+mismatches disable the snow-clearing action.
 
 The supplied `Assets/clear_snow.png` is embedded unchanged. Dedicated servers do not
 instantiate the UI action or load its icon; they still register the RPC handlers.
@@ -90,16 +92,16 @@ background polling loop.
 
 ## Localization and scope
 
-Only `EmbeddedLocalizations.csv` is edited for localization, adding
-`seasons_clear_snow` and `seasons_clear_snow_description` in all 15 existing language
-columns. The existing UpdateTranslations pre-build target generates embedded JSON
-locally. No JSON files, version fields, release notes, or unrelated runtime logic
-are changed in this branch.
+The `seasons_clear_snow` and `seasons_clear_snow_description` tokens are provided
+in the existing localization files. The UpdateTranslations pre-build target
+generates embedded JSON from `EmbeddedLocalizations.csv`.
 
 ## Manual verification
 
 Check tile selection, search, supplied icon, and localized name/description. Test
 mouse and gamepad placement, switching back to terrain actions, and hammer repair.
+Verify that hoe and cultivator placement particles animate normally with the
+inventory and console closed, and that their previews still hide when appropriate.
 Clear a healthy snow-covered roof, then try empty snow, open sky, bare terrain, an
 unsupported piece, low stamina, and a protected piece. Check single-piece scope,
 zero persistence through area/world reload, and later accumulation from snowfall.
