@@ -1,38 +1,43 @@
 # Expand World Data environment reload API
 
-The old hook assumed `EnvironmentManager.Set(string)` and an `Initialized` field
-on the same type. Current EWD source has a private
-`bool Set(Dictionary<string, string> files)` and shares its private static
-`Initialized` gate through `ExpandWorldData.SyncedDataManager`.
+Reviewed upstream source: EWD 1.83.0, `JereKuusela/valheim-expand_world_data`
+at `38fd723739075727861b2cf65b5bb0bb7d39c694`.
 
-Reviewed upstream source: `JereKuusela/valheim-expand_world_data` at
-`32005ab84d769699e568fccacbf605b89232424b`:
-
-- `ExpandWorldData/data/EnvironmentManager.cs`
+- `ExpandWorldData/environment/EnvironmentManager.cs`
+- `ExpandWorldData/biome/BiomeManager.cs`
 - `ExpandWorldData/data/SyncedDataManager.cs`
+- `ExpandWorldData/data/YamlDataManager.cs`
 - `ExpandWorldData/data/DataManager.cs`
 
-The compatibility resolver probes the exact dictionary and legacy string
-signatures with ordinary reflection. Optional-member probing does not emit the
-misleading HarmonyX warning for the absent legacy signature. It accepts only
-static, non-generic methods returning `bool` or `void`, and resolves the boolean
-initialization field in the legacy or shared manager.
+The current manager types are `ExpandWorldData.Environment.EnvironmentManager`,
+`ExpandWorldData.Biome.BiomeManager` and
+`ExpandWorldData.Data.SyncedDataManager`. The environment setter now returns
+`SetResult` and may rewrite files before retrying. Seasons hooks the private
+static `void Apply(List<EnvSetup>)` instead. This method publishes environment
+data only after parsing and backfill have succeeded, or when restoring defaults.
 
-Exactly one of two return-type-specific Harmony classes is enabled. Boolean
-setters only request seasonal reapplication after a successful result. Parsing
-failures and migration retries therefore do not reapply seasonal data. Legacy
-void setters retain their existing completion hook. Original arguments, return
-values, EWD synchronization, world reset and biome-list hooks are not replaced.
+The existing reflection resolver also retains the supported older
+`Set(Dictionary<string, string>)` and `Set(string)` signatures returning bool or
+void, and their legacy type names and initialization gates. Exactly one reload
+postfix is selected. Missing optional members do not produce AccessTools lookup
+warnings. Unsupported publication methods or initialization gates produce a
+single explicit compatibility warning.
 
-The existing Seasons world-readiness and active-state checks still apply. No
-reapplication is introduced inside EWD initialization. Unsupported API shapes
-produce one explicit Seasons warning and omit only the reload hook instead of
-patching an arbitrary method with the same name or suppressing Harmony logging.
+The initialization and world-reset guards remain unchanged. During initial world
+loading, Seasons waits for EWD to initialize its managers, apply pending client
+sync, and load the server data. Subsequent successful environment publications
+reapply seasonal environments. Failed parsing and intermediate file rewrites do
+not run the current publication hook.
+
+`BiomeManager.SetupBiomeEnvs(List<BiomeEnvSetup>)` is still the point at which EWD
+publishes authoritative biome environment entries. Preserve these entries so EWD
+can filter them by its global-key rules using the original EnvEntry identities.
+Seasons applies its seasonal rules after EWD's filter. Custom biome names are
+resolved from the current BiomeToDisplayName dictionary.
 
 Manual checks: initial world entry, successful environment-file reload, malformed
-YAML, migration-triggered reload, data synchronization to a second client and
-leaving/re-entering a world. Check both a current dictionary API and a legacy
-string API where available. The reporting user's exact EWD version was not given;
-the change is selected by runtime member shape, not a guessed version number.
+YAML, migration/backfill-triggered reload, restoring defaults, biome environment
+rules and custom biome names, data synchronization to a second client, and
+leaving/re-entering a world. Check a supported older EWD version as well.
 
 Source inspection only; no mod build or runtime tests were performed.

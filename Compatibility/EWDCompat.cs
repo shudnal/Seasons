@@ -18,7 +18,7 @@ namespace Seasons.Compatibility
         private static Type environmentManagerType;
         private static Type biomeManagerType;
         private static FieldInfo environmentManagerInitializedField;
-        private static MethodInfo environmentSetMethod;
+        private static MethodInfo environmentUpdateMethod;
         private static bool environmentUpdateMembersResolved;
         private const BindingFlags StaticMembers = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
         private static FieldInfo biomeToDisplayNameField;
@@ -78,7 +78,8 @@ namespace Seasons.Compatibility
             if (assembly == null && Chainloader.PluginInfos.TryGetValue(GUID, out PluginInfo ewd))
                 assembly = Assembly.GetAssembly(ewd.Instance.GetType());
 
-            environmentManagerType = assembly?.GetType("ExpandWorldData.EnvironmentManager");
+            environmentManagerType = assembly?.GetType("ExpandWorldData.Environment.EnvironmentManager")
+                ?? assembly?.GetType("ExpandWorldData.EnvironmentManager");
             return environmentManagerType != null;
         }
 
@@ -90,7 +91,8 @@ namespace Seasons.Compatibility
             if (assembly == null && Chainloader.PluginInfos.TryGetValue(GUID, out PluginInfo ewd))
                 assembly = Assembly.GetAssembly(ewd.Instance.GetType());
 
-            biomeManagerType = assembly?.GetType("ExpandWorldData.BiomeManager");
+            biomeManagerType = assembly?.GetType("ExpandWorldData.Biome.BiomeManager")
+                ?? assembly?.GetType("ExpandWorldData.BiomeManager");
             return biomeManagerType != null;
         }
 
@@ -99,32 +101,44 @@ namespace Seasons.Compatibility
             if (!TryGetEnvironmentManagerType())
                 return false;
             if (environmentUpdateMembersResolved)
-                return environmentSetMethod != null;
+                return environmentUpdateMethod != null;
 
             environmentUpdateMembersResolved = true;
             // Probe optional API shapes without AccessTools warnings for missing members.
-            // Recent EWD versions moved the shared initialization gate to SyncedDataManager.
             environmentManagerInitializedField = environmentManagerType.GetField("Initialized", StaticMembers)
+                ?? assembly.GetType("ExpandWorldData.Data.SyncedDataManager")?.GetField("Initialized", StaticMembers)
                 ?? assembly.GetType("ExpandWorldData.SyncedDataManager")?.GetField("Initialized", StaticMembers);
             if (environmentManagerInitializedField?.FieldType != typeof(bool))
                 environmentManagerInitializedField = null;
 
-            foreach (Type argument in new[] { typeof(Dictionary<string, string>), typeof(string) })
+            // EWD 1.83 applies environments only after successful parsing and any backfill.
+            // Hook that publication point instead of interpreting the new SetResult enum.
+            if (environmentManagerType.FullName == "ExpandWorldData.Environment.EnvironmentManager")
             {
-                MethodInfo method = environmentManagerType.GetMethod("Set", StaticMembers, null, new[] { argument }, null);
-                if (method != null && !method.ContainsGenericParameters &&
-                    (method.ReturnType == typeof(bool) || method.ReturnType == typeof(void)))
-                {
-                    environmentSetMethod = method;
-                    break;
-                }
+                MethodInfo apply = environmentManagerType.GetMethod("Apply", StaticMembers, null,
+                    new[] { typeof(List<EnvSetup>) }, null);
+                if (apply != null && !apply.ContainsGenericParameters && apply.ReturnType == typeof(void))
+                    environmentUpdateMethod = apply;
             }
 
-            if (environmentSetMethod == null || environmentManagerInitializedField == null)
+            // Keep the existing hooks for supported older EWD versions.
+            if (environmentUpdateMethod == null)
+                foreach (Type argument in new[] { typeof(Dictionary<string, string>), typeof(string) })
+                {
+                    MethodInfo method = environmentManagerType.GetMethod("Set", StaticMembers, null, new[] { argument }, null);
+                    if (method != null && !method.ContainsGenericParameters &&
+                        (method.ReturnType == typeof(bool) || method.ReturnType == typeof(void)))
+                    {
+                        environmentUpdateMethod = method;
+                        break;
+                    }
+                }
+
+            if (environmentUpdateMethod == null || environmentManagerInitializedField == null)
             {
-                environmentSetMethod = null;
+                environmentUpdateMethod = null;
                 Seasons.LogWarning("Expand World Data environment reload compatibility is unavailable: " +
-                    "the Set entry point or initialization gate is not supported. Seasonal weather selection remains available.");
+                    "the environment publication method or initialization gate is not supported. Seasonal weather selection remains available.");
                 return false;
             }
             return true;
@@ -180,7 +194,7 @@ namespace Seasons.Compatibility
                     return false;
 
                 if (original == null)
-                    Seasons.LogInfo("ExpandWorldData.EnvironmentManager:Initialize method is patched to reset Seasons EWD world state");
+                    Seasons.LogInfo(environmentManagerType.FullName + ":Initialize method is patched to reset Seasons EWD world state");
 
                 return true;
             }
@@ -194,16 +208,16 @@ namespace Seasons.Compatibility
         }
 
         [HarmonyPatch]
-        public static class EWD_EnvironmentManager_Set_ReapplySeasonEnvironments
+        public static class EWD_EnvironmentManager_Apply_ReapplySeasonEnvironments
         {
             public static MethodBase target;
 
             public static bool Prepare(MethodBase original)
             {
-                if (!TryResolveEnvironmentUpdateMembers() || environmentSetMethod.ReturnType != typeof(void))
+                if (!TryResolveEnvironmentUpdateMembers() || environmentUpdateMethod.ReturnType != typeof(void))
                     return false;
 
-                target = environmentSetMethod;
+                target = environmentUpdateMethod;
                 if (original == null)
                     Seasons.LogInfo("Expand World Data environment reload hook: " + target);
 
@@ -225,10 +239,10 @@ namespace Seasons.Compatibility
 
             public static bool Prepare(MethodBase original)
             {
-                if (!TryResolveEnvironmentUpdateMembers() || environmentSetMethod.ReturnType != typeof(bool))
+                if (!TryResolveEnvironmentUpdateMembers() || environmentUpdateMethod.ReturnType != typeof(bool))
                     return false;
 
-                target = environmentSetMethod;
+                target = environmentUpdateMethod;
                 if (original == null)
                     Seasons.LogInfo("Expand World Data environment reload hook: " + target);
                 return true;
@@ -254,12 +268,12 @@ namespace Seasons.Compatibility
                 if (!TryGetBiomeManagerType())
                     return false;
 
-                target ??= AccessTools.Method(biomeManagerType, "SetupBiomeEnvs", new Type[] { typeof(List<BiomeEnvSetup>) });
+                target ??= biomeManagerType.GetMethod("SetupBiomeEnvs", StaticMembers, null, new[] { typeof(List<BiomeEnvSetup>) }, null);
                 if (target == null)
                     return false;
 
                 if (original == null)
-                    Seasons.LogInfo("ExpandWorldData.BiomeManager:SetupBiomeEnvs method is patched to preserve EWD biome entries while applying seasonal rules");
+                    Seasons.LogInfo(biomeManagerType.FullName + ":SetupBiomeEnvs method is patched to preserve EWD biome entries while applying seasonal rules");
 
                 return true;
             }
