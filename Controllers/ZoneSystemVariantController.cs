@@ -234,8 +234,8 @@ namespace Seasons
 
         public const float _winterWaterSurfaceOffset = 2f;
         public const float _colliderOffset = 0.01f;
-        // Extend each 64 m ice tile by 0.1 m at each horizontal edge.
-        private const float IceColliderHorizontalScale = 1f + 0.2f / ZoneSystem.c_ZoneSize;
+        // Extend each 64 m ice tile by 1 m at each horizontal edge.
+        private const float IceColliderHorizontalScale = 1f + 2f / ZoneSystem.c_ZoneSize;
         private const float IceColliderThickness = _winterWaterSurfaceOffset * 0.5f;
         public const string _iceSurfaceName = "IceSurface";
         public static readonly int s_playerDroppedFish = "Seasons_PlayerDroppedFish".GetStableHashCode();
