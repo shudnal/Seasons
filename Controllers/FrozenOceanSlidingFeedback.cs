@@ -143,14 +143,29 @@ namespace Seasons
         }
 
         private const float PhysicsDeviationThreshold = 0.02f;
+        private const int PhysicsTraceBefore = 25;
+        private const int PhysicsTraceAfter = 25;
+
+        private struct PhysicsMotionSample
+        {
+            internal bool Grounded, Ice, Running, Slipping, HasSlide, OnIce, MovementHeld, RunHeld;
+            internal SlideMode Mode;
+            internal SlideReason Reason;
+            internal int GroundId, Transitions;
+            internal float RunUp, Charge, GlideTime, GlideElapsed, RunSpeed, TargetSpeed;
+            internal Vector3 GroundNormal, Input, CurrentVelocity;
+        }
 
         private struct PhysicsStepSample
         {
-            internal bool Valid, Grounded, Ice, SeasonalCorrection, ForceApplied;
+            internal bool Valid, Grounded, Ice, SeasonalCorrection, ForceApplied, TargetRecorded, ForceChecked;
             internal SlideMode Mode;
-            internal float Time, Dt, Threshold;
+            internal float Time, Dt, NextTime, Threshold;
+            internal int Frame, NextFrame;
             internal Vector2s FromZone, ToZone;
-            internal Vector3 Position, Before, Target, Requested, Applied, BeforePhysics, Queued, After;
+            internal PhysicsMotionSample StartMotion, EndMotion;
+            internal Vector3 StartPosition, PrePhysicsPosition, Position, Before, AtTarget, Target, AtForce,
+                Requested, Applied, BeforePhysics, Queued, After;
             internal Vector3 Impulse, GroundNormal, ContactNormal;
             internal int GroundId, ContactId, ContactPairs, IcePairs, ContactPoints;
 
@@ -164,12 +179,21 @@ namespace Seasons
         private static bool physicsDiagnosticsRecording;
         private static bool physicsDiagnosticsPending;
         private static PhysicsStepSample physicsStep, lastPhysicsStep, lastZoneStep, lastDeviationStep;
+        private static PhysicsStepSample[] physicsHistory, physicsCrossingTrace;
+        private static int physicsHistoryNext, physicsHistoryCount, physicsTraceCount, physicsTraceCrossingIndex;
+        private static BepInEx.Logging.ManualLogSource physicsTraceLog;
+
+        private static void ResetPhysicsTrace()
+        {
+            physicsHistoryNext = physicsHistoryCount = physicsTraceCount = physicsTraceCrossingIndex = 0;
+        }
 
         private static void ClearPhysicsDiagnostics()
         {
             physicsDiagnosticsRecording = physicsDiagnosticsPending = false;
             physicsDiagnosticsPlayer = null;
             physicsStep = lastPhysicsStep = lastZoneStep = lastDeviationStep = default;
+            ResetPhysicsTrace();
             if (physicsContactDiagnostics)
                 UnityEngine.Object.Destroy(physicsContactDiagnostics);
             physicsContactDiagnostics = null;
@@ -182,6 +206,8 @@ namespace Seasons
         {
             if (!RecordingPhysics(character))
                 return;
+            physicsStep.TargetRecorded = true;
+            physicsStep.AtTarget = character.m_body.linearVelocity;
             physicsStep.Target = velocity;
             physicsStep.SeasonalCorrection = seasonalCorrection;
         }
@@ -190,7 +216,8 @@ namespace Seasons
         {
             if (RecordingPhysics(character))
             {
-                physicsStep.Valid = true;
+                physicsStep.ForceChecked = true;
+                physicsStep.AtForce = character.m_body.linearVelocity;
                 physicsStep.Grounded = character.IsOnGround();
                 physicsStep.Ice = character.IsOnIce();
                 physicsStep.Mode = playerSlide != null && ReferenceEquals(playerSlide.Player, character)
@@ -228,6 +255,7 @@ namespace Seasons
                     !player.m_nview.IsOwner() || player.IsDead() || player.IsTeleporting() || player.IsDebugFlying())
                 {
                     physicsDiagnosticsRecording = physicsDiagnosticsPending = false;
+                    ResetPhysicsTrace();
                     return;
                 }
 
@@ -243,19 +271,27 @@ namespace Seasons
                     physicsStep.After = body.linearVelocity;
                     physicsStep.Position = body.position;
                     physicsStep.ToZone = ZoneSystem.GetZone(physicsStep.Position);
+                    physicsStep.NextTime = Time.fixedTime;
+                    physicsStep.NextFrame = Time.frameCount;
                     lastPhysicsStep = physicsStep;
                     if (physicsStep.FromZone != physicsStep.ToZone)
                         lastZoneStep = physicsStep;
-                    if (physicsStep.Grounded && Mathf.Abs(physicsStep.SpeedError) >= PhysicsDeviationThreshold)
+                    if ((physicsStep.Grounded || physicsStep.StartMotion.Grounded) &&
+                        Mathf.Abs(physicsStep.SpeedError) >= PhysicsDeviationThreshold)
                         lastDeviationStep = physicsStep;
+                    RecordCrossingTrace(physicsStep);
                 }
 
                 physicsStep = new PhysicsStepSample
                 {
+                    Valid = true,
                     Time = Time.fixedTime,
                     Dt = dt,
+                    Frame = Time.frameCount,
                     FromZone = ZoneSystem.GetZone(body.position),
+                    StartPosition = body.position,
                     Before = body.linearVelocity,
+                    StartMotion = ReadPhysicsMotion(player),
                     ContactNormal = Vector3.up
                 };
                 physicsDiagnosticsPending = false;
@@ -269,13 +305,144 @@ namespace Seasons
                     return;
                 Rigidbody body = __instance.m_body;
                 physicsDiagnosticsRecording = false;
-                if (!physicsStep.Valid || !body || body.isKinematic)
+                if (!body || body.isKinematic)
+                {
+                    ResetPhysicsTrace();
                     return;
+                }
+                // Retain steps that did not reach the walking target or force guard.
+                physicsStep.EndMotion = ReadPhysicsMotion((Player)__instance);
+                if (!physicsStep.ForceChecked)
+                {
+                    physicsStep.Grounded = physicsStep.EndMotion.Grounded;
+                    physicsStep.Ice = physicsStep.EndMotion.Ice;
+                    physicsStep.Mode = physicsStep.EndMotion.Mode;
+                    physicsStep.GroundId = physicsStep.EndMotion.GroundId;
+                    physicsStep.GroundNormal = physicsStep.EndMotion.GroundNormal;
+                }
+                physicsStep.PrePhysicsPosition = body.position;
                 physicsStep.BeforePhysics = body.linearVelocity;
                 // Unity reports the accumulated force in ForceMode.Force units.
                 physicsStep.Queued = body.GetAccumulatedForce(physicsStep.Dt) * (physicsStep.Dt / body.mass);
                 physicsDiagnosticsPending = true;
             }
+        }
+
+        private static PhysicsMotionSample ReadPhysicsMotion(Player player)
+        {
+            PlayerSlide state = playerSlide != null && ReferenceEquals(playerSlide.Player, player) ? playerSlide : null;
+            Collider ground = player.GetLastGroundCollider();
+            return new PhysicsMotionSample
+            {
+                Grounded = player.IsOnGround(),
+                Ice = player.IsOnIce(),
+                Running = player.m_running,
+                Slipping = player.m_slipping,
+                GroundId = ground ? ground.GetInstanceID() : 0,
+                GroundNormal = player.m_lastGroundNormal,
+                Input = player.m_moveDir,
+                CurrentVelocity = player.m_currentVel,
+                HasSlide = state != null,
+                OnIce = state?.OnIce ?? false,
+                Mode = state?.Mode ?? SlideMode.Basic,
+                Reason = state?.Reason ?? SlideReason.Surface,
+                MovementHeld = state?.MovementHeld ?? false,
+                RunHeld = state?.RunKeyHeld ?? false,
+                Transitions = state?.Transitions ?? 0,
+                RunUp = state?.RunUpTime ?? 0f,
+                Charge = state?.ChargeTime ?? 0f,
+                GlideTime = state?.GlideTime ?? 0f,
+                GlideElapsed = state?.GlideElapsed ?? 0f,
+                RunSpeed = state?.RunSpeed ?? 0f,
+                TargetSpeed = state?.TargetSpeed ?? 0f
+            };
+        }
+
+        private static void RecordCrossingTrace(PhysicsStepSample sample)
+        {
+            physicsHistory ??= new PhysicsStepSample[PhysicsTraceBefore];
+            bool crossing = sample.FromZone != sample.ToZone &&
+                (sample.Ice || sample.StartMotion.Ice || sample.EndMotion.Ice ||
+                 sample.StartMotion.OnIce || sample.EndMotion.OnIce || sample.IcePairs > 0);
+            if (physicsTraceCount == 0 && crossing)
+            {
+                physicsCrossingTrace ??= new PhysicsStepSample[PhysicsTraceBefore + 1 + PhysicsTraceAfter];
+                int oldest = (physicsHistoryNext - physicsHistoryCount + PhysicsTraceBefore) % PhysicsTraceBefore;
+                for (int i = 0; i < physicsHistoryCount; ++i)
+                    physicsCrossingTrace[i] = physicsHistory[(oldest + i) % PhysicsTraceBefore];
+                physicsTraceCrossingIndex = physicsTraceCount = physicsHistoryCount;
+            }
+
+            // A second crossing inside the same window is marked in the same trace.
+            if (physicsTraceCount > 0 || crossing)
+            {
+                physicsCrossingTrace[physicsTraceCount++] = sample;
+                if (physicsTraceCount == physicsTraceCrossingIndex + 1 + PhysicsTraceAfter)
+                {
+                    WriteCrossingTrace();
+                    physicsTraceCount = 0;
+                }
+            }
+
+            physicsHistory[physicsHistoryNext] = sample;
+            physicsHistoryNext = (physicsHistoryNext + 1) % PhysicsTraceBefore;
+            if (physicsHistoryCount < PhysicsTraceBefore)
+                ++physicsHistoryCount;
+        }
+
+        private static string DiagnosticVector(Vector3 value) =>
+            string.Format(CultureInfo.InvariantCulture, "({0:F3},{1:F3},{2:F3})", value.x, value.y, value.z);
+
+        private static void AppendTraceMotion(StringBuilder text, string label, PhysicsMotionSample motion)
+        {
+            SlidingDiagnosticLine(text,
+                "  {0}: state={1} reason={2} onIce={3} transitions={4} ground={5} ice={6} collider={7} normal={8} run={9} slip={10} held={11}/{12} input={13} currentVel={14} steady={15:F3} charge={16:F3} glide={17:F3}/{18:F3} runRef={19:F3} targetSpeed={20:F3}",
+                label, motion.HasSlide ? motion.Mode.ToString() : "None", motion.HasSlide ? motion.Reason.ToString() : "-",
+                motion.OnIce, motion.Transitions, motion.Grounded, motion.Ice, motion.GroundId, DiagnosticVector(motion.GroundNormal),
+                motion.Running, motion.Slipping, motion.MovementHeld, motion.RunHeld, DiagnosticVector(motion.Input),
+                DiagnosticVector(motion.CurrentVelocity), motion.RunUp, motion.Charge, motion.GlideTime, motion.GlideElapsed,
+                motion.RunSpeed, motion.TargetSpeed);
+        }
+
+        private static void WriteCrossingTrace()
+        {
+            var text = new StringBuilder(32768);
+            SlidingDiagnosticLine(text, "Sliding crossing trace: {0} steps before, {1} after. XYZ vectors; speeds in m/s.",
+                physicsTraceCrossingIndex, PhysicsTraceAfter);
+            for (int i = 0; i < physicsTraceCount; ++i)
+            {
+                PhysicsStepSample sample = physicsCrossingTrace[i];
+                SlidingDiagnosticLine(text,
+                    "[{0:+0;-0;0}] {1} zone=({2},{3})->({4},{5}) t={6:F3}->{7:F3} dt={8:F3} frame={9}->{10}",
+                    i - physicsTraceCrossingIndex, sample.FromZone != sample.ToZone ? "CROSS" : "STEP",
+                    sample.FromZone.x, sample.FromZone.y, sample.ToZone.x, sample.ToZone.y,
+                    sample.Time, sample.NextTime, sample.Dt, sample.Frame, sample.NextFrame);
+                SlidingDiagnosticLine(text, "  pos={0} prePhysics={1} next={2}",
+                    DiagnosticVector(sample.StartPosition), DiagnosticVector(sample.PrePhysicsPosition), DiagnosticVector(sample.Position));
+                SlidingDiagnosticLine(text,
+                    "  speed={0:F3}->{1:F3}->{2:F3} expected={3:F3} err={4:+0.000;-0.000;0.000} v={5} prePhysics={6} queued={7} next={8} residualXZ={9}",
+                    Horizontal(sample.Before).magnitude, Horizontal(sample.BeforePhysics).magnitude, Horizontal(sample.After).magnitude,
+                    Horizontal(sample.Expected).magnitude, sample.SpeedError, DiagnosticVector(sample.Before),
+                    DiagnosticVector(sample.BeforePhysics), DiagnosticVector(sample.Queued), DiagnosticVector(sample.After),
+                    DiagnosticXZ(sample.Residual));
+                SlidingDiagnosticLine(text,
+                    "  targetRecorded={0} atTarget={1} target={2} seasonal={3} forceChecked={4} atForce={5} request={6} guard={7} applied={8} sent={9}",
+                    sample.TargetRecorded, sample.TargetRecorded ? DiagnosticVector(sample.AtTarget) : "-",
+                    sample.TargetRecorded ? DiagnosticVector(sample.Target) : "-", sample.SeasonalCorrection,
+                    sample.ForceChecked, sample.ForceChecked ? DiagnosticVector(sample.AtForce) : "-",
+                    sample.ForceChecked ? DiagnosticVector(sample.Requested) : "-",
+                    sample.ForceChecked ? sample.Threshold.ToString("F3", CultureInfo.InvariantCulture) : "-",
+                    sample.ForceApplied, sample.ForceApplied ? DiagnosticVector(sample.Applied) : "-");
+                SlidingDiagnosticLine(text, "  contact: impulse={0} pairs={1} icePairs={2} points={3} collider={4} normal={5}",
+                    DiagnosticVector(sample.Impulse), sample.ContactPairs, sample.IcePairs, sample.ContactPoints,
+                    sample.ContactId, DiagnosticVector(sample.ContactNormal));
+                AppendTraceMotion(text, "start", sample.StartMotion);
+                AppendTraceMotion(text, "end", sample.EndMotion);
+            }
+            text.Append("End sliding crossing trace.");
+            // The explicit diagnostic switch is sufficient; general Seasons logging may be disabled.
+            physicsTraceLog ??= BepInEx.Logging.Logger.CreateLogSource("Seasons Sliding");
+            physicsTraceLog.LogInfo(text.ToString());
         }
 
         // Listen only on the local player while the hover diagnostics are enabled.
@@ -326,11 +493,12 @@ namespace Seasons
                 label, sample.Ice ? sample.Mode.ToString() : "Native", sample.FromZone.x, sample.FromZone.y,
                 sample.ToZone.x, sample.ToZone.y, sample.Time, sample.Dt);
             SlidingDiagnosticLine(text, "V: {0:F3} / target {1:F3} / pre {2:F3} / exp {3:F3} / got {4:F3} | err {5:+0.000;-0.000;0.000}",
-                Horizontal(sample.Before).magnitude, Horizontal(sample.Target).magnitude, Horizontal(sample.BeforePhysics).magnitude,
+                Horizontal(sample.Before).magnitude, sample.TargetRecorded ? Horizontal(sample.Target).magnitude : float.NaN, Horizontal(sample.BeforePhysics).magnitude,
                 Horizontal(sample.Expected).magnitude, Horizontal(sample.After).magnitude, sample.SpeedError);
-            SlidingDiagnosticLine(text, "dV X/Z: req {0} sent {1} queued {2} | guard {3:F3} | force {4} / seasonal {5}",
-                DiagnosticXZ(sample.Requested), DiagnosticXZ(sample.Applied), DiagnosticXZ(sample.Queued),
-                sample.Threshold, sample.ForceApplied, sample.SeasonalCorrection);
+            SlidingDiagnosticLine(text, "dV X/Z: req {0} sent {1} queued {2} | guard {3} | force {4} / seasonal {5}",
+                sample.ForceChecked ? DiagnosticXZ(sample.Requested) : "-", DiagnosticXZ(sample.Applied),
+                DiagnosticXZ(sample.Queued), sample.ForceChecked ? sample.Threshold.ToString("F3", CultureInfo.InvariantCulture) : "-",
+                sample.ForceApplied, sample.SeasonalCorrection);
             SlidingDiagnosticLine(text, "Residual {0} | J X/Z {1} Ns | pairs {2} (ice {3}) | ground {4} / contact {5}",
                 DiagnosticXZ(sample.Residual), DiagnosticXZ(sample.Impulse), sample.ContactPairs, sample.IcePairs,
                 sample.GroundId, sample.ContactId);
