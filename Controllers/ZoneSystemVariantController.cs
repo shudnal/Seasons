@@ -234,8 +234,8 @@ namespace Seasons
 
         public const float _winterWaterSurfaceOffset = 2f;
         public const float _colliderOffset = 0.01f;
-        // Extend each 64 m ice tile by 1 m at each horizontal edge.
-        private const float IceColliderHorizontalScale = 1f + 2f / ZoneSystem.c_ZoneSize;
+        private const float IceColliderBevelWidth = 1f;
+        private const float IceColliderBevelDepth = 0.05f;
         private const float IceColliderThickness = _winterWaterSurfaceOffset * 0.5f;
         public const string _iceSurfaceName = "IceSurface";
         public static readonly int s_playerDroppedFish = "Seasons_PlayerDroppedFish".GetStableHashCode();
@@ -577,7 +577,9 @@ namespace Seasons
                 DontDestroyOnLoad(s_iceSurface);
                 s_iceSurface.layer = 0;
 
-                BoxCollider iceCollider = s_iceSurface.AddComponent<BoxCollider>();
+                MeshCollider iceCollider = s_iceSurface.AddComponent<MeshCollider>();
+                iceCollider.convex = true;
+                iceCollider.sharedMesh = CreateIceColliderMesh();
                 iceCollider.sharedMaterial = new PhysicsMaterial("Seasons Ice Surface")
                 {
                     staticFriction = 0.1f,
@@ -588,19 +590,58 @@ namespace Seasons
             else if (s_iceSurface.activeSelf)
                 s_iceSurface.SetActive(false);
 
-            s_iceSurface.transform.localPosition = new Vector3(0, _colliderOffset, 0);
-            ConfigureIceCollider(s_iceSurface.GetComponent<BoxCollider>(), waterSurface, waterMesh.sharedMesh);
+            ConfigureIceCollider(s_iceSurface.transform, waterSurface, waterMesh.sharedMesh);
         }
 
-        private static void ConfigureIceCollider(BoxCollider iceCollider, Transform waterSurface, Mesh mesh)
+        private static Mesh CreateIceColliderMesh()
+        {
+            float edge = ZoneSystem.c_ZoneSize * 0.5f;
+            float top = edge - IceColliderBevelWidth;
+            float bevel = -IceColliderBevelDepth;
+            float bottom = -IceColliderThickness;
+
+            // Adjacent tiles meet at their lowered edges, without overlapping.
+            // Keep the top, bevel and bottom rings in one closed convex mesh.
+            Mesh mesh = new Mesh
+            {
+                name = "Seasons Ice Surface",
+                vertices = new[]
+                {
+                    new Vector3(-top, 0f, -top), new Vector3(-top, 0f, top),
+                    new Vector3(top, 0f, top), new Vector3(top, 0f, -top),
+                    new Vector3(-edge, bevel, -edge), new Vector3(-edge, bevel, edge),
+                    new Vector3(edge, bevel, edge), new Vector3(edge, bevel, -edge),
+                    new Vector3(-edge, bottom, -edge), new Vector3(-edge, bottom, edge),
+                    new Vector3(edge, bottom, edge), new Vector3(edge, bottom, -edge)
+                },
+                triangles = new[]
+                {
+                    0, 1, 2, 0, 2, 3,                 // Top
+                    0, 4, 5, 0, 5, 1,                 // Beveled edges
+                    1, 5, 6, 1, 6, 2,
+                    2, 6, 7, 2, 7, 3,
+                    3, 7, 4, 3, 4, 0,
+                    4, 8, 9, 4, 9, 5,                 // Vertical sides below the bevel
+                    5, 9, 10, 5, 10, 6,
+                    6, 10, 11, 6, 11, 7,
+                    7, 11, 8, 7, 8, 4,
+                    8, 10, 9, 8, 11, 10               // Bottom
+                }
+            };
+            return mesh;
+        }
+
+        private static void ConfigureIceCollider(Transform iceSurface, Transform waterSurface, Mesh mesh)
         {
             Bounds bounds = mesh.bounds;
-            iceCollider.transform.localScale = new Vector3(waterSurface.localScale.x * IceColliderHorizontalScale,
-                Math.Abs(_colliderOffset), waterSurface.localScale.z * IceColliderHorizontalScale);
-            // Extend the box downward without changing the walking plane.
-            float height = IceColliderThickness / Math.Abs(_colliderOffset);
-            iceCollider.size = new Vector3(bounds.size.x, height, bounds.size.z);
-            iceCollider.center = new Vector3(bounds.center.x, bounds.max.y - height * 0.5f, bounds.center.z);
+            Vector3 waterScale = waterSurface.localScale;
+            Vector3 parentScale = waterSurface.parent.lossyScale;
+
+            // Preserve the previous walking plane and unextended water center.
+            // The shared mesh uses world-meter dimensions, not water mesh units.
+            iceSurface.localPosition = new Vector3(bounds.center.x * waterScale.x,
+                _colliderOffset + bounds.max.y * Math.Abs(_colliderOffset), bounds.center.z * waterScale.z);
+            iceSurface.localScale = new Vector3(1f / parentScale.x, 1f / parentScale.y, 1f / parentScale.z);
         }
 
         public static void RegisterWaterVolume(WaterVolume waterVolume)
@@ -641,7 +682,7 @@ namespace Seasons
             if (existing != null)
             {
                 // Reuse a copy already present in this spawned hierarchy, without duplicates.
-                if (existing.TryGetComponent(out BoxCollider _))
+                if (existing.TryGetComponent(out MeshCollider _))
                     state.m_iceSurface = existing.gameObject;
                 return;
             }
@@ -650,7 +691,7 @@ namespace Seasons
             // may enable the copy after it has been attached to this live water instance.
             GameObject iceSurface = Instantiate(s_iceSurface, water, false);
             iceSurface.name = _iceSurfaceName;
-            ConfigureIceCollider(iceSurface.GetComponent<BoxCollider>(), waterSurface, waterMesh.sharedMesh);
+            ConfigureIceCollider(iceSurface.transform, waterSurface, waterMesh.sharedMesh);
             state.m_iceSurface = iceSurface;
         }
 
