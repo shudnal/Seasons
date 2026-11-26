@@ -236,6 +236,7 @@ namespace Seasons
         public const float _colliderOffset = 0.01f;
         // Extend each 64 m ice tile by 0.1 m at each horizontal edge.
         private const float IceColliderHorizontalScale = 1f + 0.2f / ZoneSystem.c_ZoneSize;
+        private const float IceColliderThickness = 1f;
         public const string _iceSurfaceName = "IceSurface";
         public static readonly int s_playerDroppedFish = "Seasons_PlayerDroppedFish".GetStableHashCode();
 
@@ -596,10 +597,10 @@ namespace Seasons
             Bounds bounds = mesh.bounds;
             iceCollider.transform.localScale = new Vector3(waterSurface.localScale.x * IceColliderHorizontalScale,
                 Math.Abs(_colliderOffset), waterSurface.localScale.z * IceColliderHorizontalScale);
-            // Preserve the old mesh footprint and top height. The thin box extends
-            // downward from the surface instead of raising the walking plane.
-            iceCollider.size = new Vector3(bounds.size.x, 1f, bounds.size.z);
-            iceCollider.center = new Vector3(bounds.center.x, bounds.max.y - 0.5f, bounds.center.z);
+            // Extend the box downward without changing the walking plane.
+            float height = IceColliderThickness / Math.Abs(_colliderOffset);
+            iceCollider.size = new Vector3(bounds.size.x, height, bounds.size.z);
+            iceCollider.center = new Vector3(bounds.center.x, bounds.max.y - height * 0.5f, bounds.center.z);
         }
 
         public static void RegisterWaterVolume(WaterVolume waterVolume)
