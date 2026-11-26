@@ -1527,7 +1527,6 @@ namespace Seasons
 
             if (UseTextureControllers())
             {
-                ClutterVariantController.UpdateShieldActiveState();
                 ClutterVariantController.Instance?.UpdateColors();
 
                 PrefabVariantController.UpdatePrefabColors();

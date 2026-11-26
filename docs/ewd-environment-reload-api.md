@@ -35,9 +35,18 @@ can filter them by its global-key rules using the original EnvEntry identities.
 Seasons applies its seasonal rules after EWD's filter. Custom biome names are
 resolved from the current BiomeToDisplayName dictionary.
 
+EWD's clutter manager also replaces the live clutter entries after a successful
+load. Seasons retains the unscaled defaults by entry identity and restores removed
+entries before forgetting them. New entries receive their own defaults and the
+current seasonal settings. Failed loads leave the tracked entries unchanged.
+EWD already requests a clutter rebuild; Seasons does not clear patches a second
+time for the same publication.
+
 Manual checks: initial world entry, successful environment-file reload, malformed
 YAML, migration/backfill-triggered reload, restoring defaults, biome environment
 rules and custom biome names, data synchronization to a second client, and
-leaving/re-entering a world. Check a supported older EWD version as well.
+leaving/re-entering a world. Reload custom clutter size/enabled values during winter,
+restore defaults, and reload malformed clutter YAML. Check a supported older EWD
+version as well.
 
 Source inspection only; no mod build or runtime tests were performed.

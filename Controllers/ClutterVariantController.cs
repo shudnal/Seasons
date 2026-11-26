@@ -52,7 +52,8 @@ namespace Seasons
         private ClutterSystem m_clutterSystem;
         private bool m_started;
 
-        private readonly Dictionary<string, Tuple<bool, float, float>> m_clutterDefaults = new Dictionary<string, Tuple<bool, float, float>>();
+        private readonly Dictionary<Clutter, Tuple<bool, float, float>> m_clutterDefaults = new Dictionary<Clutter, Tuple<bool, float, float>>();
+        private readonly HashSet<GameObject> m_registeredClutterPrefabs = new HashSet<GameObject>();
 
         public static ClutterVariantController Instance => m_instance;
         
@@ -91,51 +92,78 @@ namespace Seasons
             s_grassPatchSize = ClutterSystem.instance.m_grassPatchSize;
             s_amountScale = ClutterSystem.instance.m_amountScale;
 
-            m_clutterDefaults.Clear();
-            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c?.m_prefab != null))
-            {
-                string name = GetClutterName(clutter);
-                if (!m_clutterDefaults.ContainsKey(name))
-                    m_clutterDefaults.Add(name, Tuple.Create(clutter.m_enabled, clutter.m_scaleMin, clutter.m_scaleMax));
-                
-                if (!m_clutterDefaults.ContainsKey(clutter.m_prefab.name))
-                    m_clutterDefaults.Add(clutter.m_prefab.name, Tuple.Create(clutter.m_enabled, clutter.m_scaleMin, clutter.m_scaleMax));
-
-                if (!texturesVariants.controllers.TryGetValue(Utils.GetPrefabName(clutter.m_prefab), out PrefabController controller))
-                    continue;
-               
-                GameObject prefab = clutter.m_prefab;
-
-                foreach (KeyValuePair<string, CachedRenderer> cachedRenderer in controller.renderersInHierarchy)
-                {
-                    if (cachedRenderer.Value.type == typeof(InstanceRenderer).ToString())
-                    {
-                        AddCachedInstanceRenderer(prefab, cachedRenderer.Key, cachedRenderer.Value);
-                    }
-                    else
-                    {
-                        string path = cachedRenderer.Key;
-                        if (path.Contains(prefab.name))
-                        {
-                            path = cachedRenderer.Key[(cachedRenderer.Key.IndexOf(prefab.name) + prefab.name.Length)..];
-                            if (path.StartsWith("/"))
-                                path = path[1..];
-                        }
-
-                        string[] transformPath = path.Split(new char[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
-
-                        s_tempRenderers.Clear();
-                        CheckRenderersInHierarchy(prefab.transform, cachedRenderer.Value.type, transformPath, 0, s_tempRenderers);
-
-                        foreach (Renderer renderer in s_tempRenderers)
-                            AddMaterialVariants(prefab.name, renderer, cachedRenderer.Key, cachedRenderer.Value);
-                    }
-                }
-            }
+            foreach (Clutter clutter in m_clutterSystem.m_clutter)
+                CaptureClutter(clutter);
 
             m_started = true;
-            UpdateShieldActiveState();
             UpdateColors();
+        }
+
+        private void CaptureClutter(Clutter clutter)
+        {
+            if (clutter?.m_prefab == null || m_clutterDefaults.ContainsKey(clutter))
+                return;
+
+            m_clutterDefaults.Add(clutter, Tuple.Create(clutter.m_enabled, clutter.m_scaleMin, clutter.m_scaleMax));
+
+            if (!m_registeredClutterPrefabs.Add(clutter.m_prefab) ||
+                !texturesVariants.controllers.TryGetValue(Utils.GetPrefabName(clutter.m_prefab), out PrefabController controller))
+                return;
+           
+            GameObject prefab = clutter.m_prefab;
+
+            foreach (KeyValuePair<string, CachedRenderer> cachedRenderer in controller.renderersInHierarchy)
+            {
+                if (cachedRenderer.Value.type == typeof(InstanceRenderer).ToString())
+                {
+                    AddCachedInstanceRenderer(prefab, cachedRenderer.Key, cachedRenderer.Value);
+                }
+                else
+                {
+                    string path = cachedRenderer.Key;
+                    if (path.Contains(prefab.name))
+                    {
+                        path = cachedRenderer.Key[(cachedRenderer.Key.IndexOf(prefab.name) + prefab.name.Length)..];
+                        if (path.StartsWith("/"))
+                            path = path[1..];
+                    }
+
+                    string[] transformPath = path.Split(new char[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+
+                    s_tempRenderers.Clear();
+                    CheckRenderersInHierarchy(prefab.transform, cachedRenderer.Value.type, transformPath, 0, s_tempRenderers);
+
+                    foreach (Renderer renderer in s_tempRenderers)
+                        AddMaterialVariants(prefab.name, renderer, cachedRenderer.Key, cachedRenderer.Value);
+                }
+            }
+        }
+
+        internal void RefreshExternalClutter()
+        {
+            if (!m_started || !m_clutterSystem || m_clutterSystem != ClutterSystem.instance)
+                return;
+
+            // EWD publishes new entries, but restores the original entry objects when disabled.
+            // Restore removed entries before forgetting their unscaled values.
+            var current = new HashSet<Clutter>(m_clutterSystem.m_clutter.Where(c => c?.m_prefab != null));
+            if (current.SetEquals(m_clutterDefaults.Keys))
+                return;
+
+            foreach (Clutter clutter in m_clutterDefaults.Keys.Where(c => !current.Contains(c)).ToArray())
+            {
+                var defaults = m_clutterDefaults[clutter];
+                clutter.m_enabled = defaults.Item1;
+                clutter.m_scaleMin = defaults.Item2;
+                clutter.m_scaleMax = defaults.Item3;
+                m_clutterDefaults.Remove(clutter);
+            }
+
+            foreach (Clutter clutter in m_clutterSystem.m_clutter)
+                CaptureClutter(clutter);
+
+            // EWD already requests a clutter refresh after publishing its new entries.
+            UpdateColors(rebuildGrass: false);
         }
 
         private void OnEnable()
@@ -170,24 +198,57 @@ namespace Seasons
             return material;
         }
 
-        private void ApplyMaterialBindings(bool originals)
+        private bool ApplyMaterialBindings(bool originals)
         {
+            bool changed = false;
             foreach (var binding in m_instanceMaterials)
                 if (binding.Key)
                 {
                     Material current = binding.Key.m_material;
-                    if (current == binding.Value.Item2 || !originals && current == binding.Value.Item1)
-                        binding.Key.m_material = originals ? binding.Value.Item1 : binding.Value.Item2;
+                    Material target = originals ? binding.Value.Item1 : binding.Value.Item2;
+                    if (current != target && (current == binding.Value.Item2 || !originals && current == binding.Value.Item1))
+                    {
+                        binding.Key.m_material = target;
+                        changed = true;
+                    }
                 }
             foreach (var binding in m_rendererMaterials)
                 if (binding.Key)
                 {
                     Material[] current = binding.Key.sharedMaterials;
+                    bool rendererChanged = false;
                     for (int i = 0; i < current.Length && i < binding.Value.Item1.Length; i++)
-                        if (current[i] == binding.Value.Item2[i] || !originals && current[i] == binding.Value.Item1[i])
-                            current[i] = originals ? binding.Value.Item1[i] : binding.Value.Item2[i];
-                    binding.Key.sharedMaterials = current;
+                    {
+                        Material target = originals ? binding.Value.Item1[i] : binding.Value.Item2[i];
+                        if (current[i] != target && (current[i] == binding.Value.Item2[i] || !originals && current[i] == binding.Value.Item1[i]))
+                        {
+                            current[i] = target;
+                            rendererChanged = true;
+                        }
+                    }
+                    if (rendererChanged)
+                    {
+                        binding.Key.sharedMaterials = current;
+                        changed = true;
+                    }
                 }
+            return changed;
+        }
+
+        private static bool SetTextureIfChanged(Material material, string property, Texture value)
+        {
+            if (material.GetTexture(property) == value)
+                return false;
+            material.SetTexture(property, value);
+            return true;
+        }
+
+        private static bool SetColorIfChanged(Material material, string property, Color value)
+        {
+            if (material.GetColor(property).Equals(value))
+                return false;
+            material.SetColor(property, value);
+            return true;
         }
 
         private void AddCachedInstanceRenderer(GameObject prefab, string path, CachedRenderer cachedRenderer)
@@ -350,9 +411,11 @@ namespace Seasons
             }
         }
 
-        public void RevertColors()
+        public void RevertColors() => RevertColors(rebuildGrass: true);
+
+        private void RevertColors(bool rebuildGrass)
         {
-            ApplyMaterialBindings(originals: true);
+            bool changed = ApplyMaterialBindings(originals: true);
             foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
                 foreach (KeyValuePair<string, TextureVariants> texProp in materialVariants.Value)
                 {
@@ -360,32 +423,33 @@ namespace Seasons
                         continue;
 
                     if (texProp.Value.HaveOriginalTexture())
-                        materialVariants.Key.SetTexture(texProp.Key, texProp.Value.original);
+                        changed |= SetTextureIfChanged(materialVariants.Key, texProp.Key, texProp.Value.original);
 
                 }
 
             foreach (var material in m_originalColors)
                 if (material.Key)
                     foreach (var property in material.Value)
-                        material.Key.SetColor(property.Key, property.Value);
+                        changed |= SetColorIfChanged(material.Key, property.Key, property.Value);
 
-            RevertGrass();
+            ApplyGrassSettings(seasonal: false, changed, rebuildGrass);
 
-            RevertSeasonalClutter();
         }
 
-        public void UpdateColors()
+        public void UpdateColors() => UpdateColors(rebuildGrass: true);
+
+        private void UpdateColors(bool rebuildGrass)
         {
             if (!m_started || !m_clutterSystem || m_clutterSystem != ClutterSystem.instance || texturesVariants.IsUpdating)
                 return;
             if (!enabled || !UseTextureControllers() || !SeasonState.IsActive)
             {
-                RevertColors();
+                RevertColors(rebuildGrass);
                 return;
             }
 
             int variant = GetCurrentMainVariant();
-            ApplyMaterialBindings(originals: false);
+            bool changed = ApplyMaterialBindings(originals: false);
             foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
                 foreach (KeyValuePair<string, TextureVariants> texProp in materialVariants.Value)
                 {
@@ -400,17 +464,17 @@ namespace Seasons
                         RememberColor(materialVariants.Key, "_Color");
 
                         if (texProp.Key == "_TerrainColorTex" && materialVariants.Value.ContainsKey("_MainTex"))
-                            materialVariants.Key.SetTexture(texProp.Key, null);
+                            changed |= SetTextureIfChanged(materialVariants.Key, texProp.Key, null);
                         else
                         {
                             if (CustomTextures.HaveCustomTexture(texProp.Value.originalName, seasonState.GetCurrentSeason(), variant, texProp.Value.properties, out Texture2D customTexture))
-                                materialVariants.Key.SetTexture(texProp.Key, customTexture);
+                                changed |= SetTextureIfChanged(materialVariants.Key, texProp.Key, customTexture);
                             else
-                                materialVariants.Key.SetTexture(texProp.Key, texture);
+                                changed |= SetTextureIfChanged(materialVariants.Key, texProp.Key, texture);
                         }
 
                         if (materialVariants.Key.color == Color.clear)
-                            materialVariants.Key.color = m_originalColors[materialVariants.Key]["_Color"];
+                            changed |= SetColorIfChanged(materialVariants.Key, "_Color", m_originalColors[materialVariants.Key]["_Color"]);
                     }
                 }
 
@@ -422,10 +486,10 @@ namespace Seasons
                     RememberColor(colorVariants.Key, colorProp.Key);
 
                     int pos = (variant + m_materialVariantOffset.GetValueSafe(colorVariants.Key)) % seasonColorVariants;
-                    colorVariants.Key.SetColor(colorProp.Key, colorProp.Value[(int)seasonState.GetCurrentSeason() * seasonsCount + pos]);
+                    changed |= SetColorIfChanged(colorVariants.Key, colorProp.Key, colorProp.Value[(int)seasonState.GetCurrentSeason() * seasonsCount + pos]);
                 }
 
-            UpdateGrass();
+            ApplyGrassSettings(seasonal: true, changed, rebuildGrass);
         }
 
         private void RememberColor(Material material, string property)
@@ -444,107 +508,84 @@ namespace Seasons
             Instance.UpdateGrass();
         }
 
-        public void UpdateGrass()
+        public void UpdateGrass() =>
+            ApplyGrassSettings(enabled && UseTextureControllers() && SeasonState.IsActive, changed: false, rebuildGrass: true);
+
+        private void ApplyGrassSettings(bool seasonal, bool changed, bool rebuildGrass)
         {
             if (!m_started || !m_clutterSystem || m_clutterSystem != ClutterSystem.instance)
                 return;
-            if (!controlGrass.Value || !UseTextureControllers() || !SeasonState.IsActive)
+
+            changed |= RefreshShieldActiveState(seasonal);
+            SeasonGrass grass = seasonal && controlGrass.Value ? SeasonState.seasonGrassSettings.GetGrassSettings() : null;
+            float patchSize = grass?.m_grassPatchSize ?? s_grassPatchSize;
+            float amountScale = grass?.m_amountScale ?? s_amountScale;
+            if (!m_clutterSystem.m_grassPatchSize.Equals(patchSize))
             {
-                RevertGrass();
-                return;
+                m_clutterSystem.m_grassPatchSize = patchSize;
+                changed = true;
+            }
+            if (!m_clutterSystem.m_amountScale.Equals(amountScale))
+            {
+                m_clutterSystem.m_amountScale = amountScale;
+                changed = true;
             }
 
-            SeasonGrass seasonGrass = SeasonState.seasonGrassSettings.GetGrassSettings();
-
-            ClutterSystem.instance.m_grassPatchSize = seasonGrass.m_grassPatchSize;
-            ClutterSystem.instance.m_amountScale = seasonGrass.m_amountScale;
-
-            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c?.m_prefab != null))
-            {
-                if (!ControlGrassSize(clutter.m_prefab))
-                    continue;
-
-                if (!m_clutterDefaults.TryGetValue(GetClutterName(clutter), out Tuple<bool, float, float> defaultState))
-                    continue;
-
-                clutter.m_scaleMin = defaultState.Item2 * seasonGrass.m_scaleMin;
-                clutter.m_scaleMax = defaultState.Item3 * seasonGrass.m_scaleMax;
-
-                clutter.m_enabled = defaultState.Item1 && clutter.m_scaleMax != 0f;
-            }
-
-            UpdateSeasonalClutter();
-
-            ClutterSystem.instance.ClearAll();
-        }
-
-        public void RevertGrass()
-        {
-            if (!m_started || !m_clutterSystem || m_clutterSystem != ClutterSystem.instance)
-                return;
-            ClutterSystem.instance.m_grassPatchSize = s_grassPatchSize;
-            ClutterSystem.instance.m_amountScale = s_amountScale;
-
-            foreach (Clutter clutter in ClutterSystem.instance.m_clutter.Where(c => c?.m_prefab != null))
-            {
-                if (!ControlGrassSize(clutter.m_prefab))
-                    continue;
-
-                if (!m_clutterDefaults.TryGetValue(GetClutterName(clutter), out Tuple<bool, float, float> defaultState))
-                    continue;
-
-                clutter.m_scaleMin = defaultState.Item2;
-                clutter.m_scaleMax = defaultState.Item3;
-                
-                clutter.m_enabled = defaultState.Item1;
-            }
-
-            UpdateSeasonalClutter();
-
-            ClutterSystem.instance.ClearAll();
-        }
-
-        public void UpdateSeasonalClutter()
-        {
-            if (!m_started || !m_clutterSystem || m_clutterSystem != ClutterSystem.instance)
-                return;
-            if (!enabled || !UseTextureControllers() || !SeasonState.IsActive)
-            {
-                RevertSeasonalClutter();
-                return;
-            }
-            Dictionary<string, bool> seasonalClutter = SeasonState.seasonClutterSettings.GetSeasonalClutterState();
-            foreach (Clutter clutter in ClutterSystem.instance.m_clutter)
+            Dictionary<string, bool> seasonalClutter = seasonal ? SeasonState.seasonClutterSettings.GetSeasonalClutterState() : null;
+            foreach (Clutter clutter in m_clutterSystem.m_clutter)
             {
                 if (clutter == null)
                     continue;
 
-                if (clutter.m_name != null && seasonalClutter.TryGetValue(clutter.m_name, out bool nameEnabled))
-                    clutter.m_enabled = nameEnabled;
-                else if (clutter.m_prefab != null && seasonalClutter.TryGetValue(clutter?.m_prefab?.name, out bool prefabEnabled))
-                    clutter.m_enabled = prefabEnabled;
-            }
-        }
+                bool wanted = clutter.m_enabled;
+                if (m_clutterDefaults.TryGetValue(clutter, out var defaults))
+                {
+                    if (clutter.m_prefab && ControlGrassSize(clutter.m_prefab))
+                    {
+                        float min = defaults.Item2 * (grass?.m_scaleMin ?? 1f);
+                        float max = defaults.Item3 * (grass?.m_scaleMax ?? 1f);
+                        if (!clutter.m_scaleMin.Equals(min) || !clutter.m_scaleMax.Equals(max))
+                        {
+                            clutter.m_scaleMin = min;
+                            clutter.m_scaleMax = max;
+                            changed = true;
+                        }
+                        wanted = defaults.Item1 && (grass == null || max != 0f);
+                    }
 
-        public void RevertSeasonalClutter()
-        {
-            if (!m_started || !m_clutterSystem || m_clutterSystem != ClutterSystem.instance)
-                return;
-            foreach (Clutter clutter in ClutterSystem.instance.m_clutter)
-            {
-                if (clutter == null)
-                    continue;
+                    if (!seasonal)
+                        wanted = defaults.Item1;
+                }
 
-                if (m_clutterDefaults.TryGetValue(GetClutterName(clutter), out Tuple<bool, float, float> original))
-                    clutter.m_enabled = original.Item1;
+                if (seasonalClutter != null)
+                {
+                    if (clutter.m_name != null && seasonalClutter.TryGetValue(clutter.m_name, out bool nameEnabled))
+                        wanted = nameEnabled;
+                    else if (clutter.m_prefab && seasonalClutter.TryGetValue(clutter.m_prefab.name, out bool prefabEnabled))
+                        wanted = prefabEnabled;
+                }
+
+                // Shield copies are internal: they must never generate outside active protection.
+                if (clutter.m_prefab && s_shieldedPrefabs.ContainsKey(clutter.m_prefab.name))
+                    wanted = isAnyShieldActive;
+
+                if (clutter.m_enabled != wanted)
+                {
+                    clutter.m_enabled = wanted;
+                    changed = true;
+                }
             }
+
+            // FarLands extends the same patch system. Rebuild only when the final
+            // material bindings, visual properties or placement settings changed.
+            if (changed && rebuildGrass)
+                m_clutterSystem.ClearAll();
         }
 
         public IEnumerator UpdateDayState()
         {
             yield return new WaitForSeconds(fadeOnSeasonChangeDuration.Value);
 
-            UpdateShieldActiveState();
             UpdateColors();
         }
 
@@ -570,25 +611,6 @@ namespace Seasons
 
             double seedFactor = Math.Log10(Math.Abs((double)seed));
             return (Math.Sin(Math.Sign(seed) * seedFactor * day) + Math.Sin(Math.Sqrt(seedFactor) * Math.E * day) + Math.Sin(Math.PI * day)) / 2;
-        }
-
-        private static string GetClutterName(Clutter clutter)
-        {
-            if (clutter == null)
-                return "";
-
-            string name = clutter.m_name;
-
-            GameObject prefabObject = clutter.m_prefab;
-            string prefab = prefabObject ? prefabObject.name : "";
-
-            if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(prefab))
-                return $"{name}_{prefab}";
-
-            if (!string.IsNullOrWhiteSpace(prefab))
-                return prefab;
-
-            return name ?? "";
         }
 
         internal static void AddSeasonalClutter()
@@ -787,17 +809,31 @@ namespace Seasons
 
         private static bool isAnyShieldActive = false;
 
-        public static void UpdateShieldActiveState()
+        private static bool RefreshShieldActiveState(bool seasonal)
         {
-            bool active = SeasonState.IsActive && UseTextureControllers() && ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.IsThereAnyActiveShieldedArea();
+            bool active = seasonal && ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.IsThereAnyActiveShieldedArea();
             bool changed = isAnyShieldActive != active;
             isAnyShieldActive = active;
-            if (ClutterSystem.instance)
-            {
-                ClutterSystem.instance.m_clutter.Where(clutter => clutter != null && clutter.m_prefab != null && s_shieldedPrefabs.ContainsKey(clutter.m_prefab.name)).Do(clutter => clutter.m_enabled = isAnyShieldActive);
-                if (changed)
-                    ClutterSystem.instance.ClearAll();
-            }
+            return changed;
+        }
+
+        public static void UpdateShieldActiveState()
+        {
+            bool changed = RefreshShieldActiveState(Instance && Instance.m_started && Instance.enabled &&
+                SeasonState.IsActive && UseTextureControllers());
+            if (!ClutterSystem.instance)
+                return;
+
+            foreach (Clutter clutter in ClutterSystem.instance.m_clutter)
+                if (clutter?.m_prefab != null && s_shieldedPrefabs.ContainsKey(clutter.m_prefab.name) &&
+                    clutter.m_enabled != isAnyShieldActive)
+                {
+                    clutter.m_enabled = isAnyShieldActive;
+                    changed = true;
+                }
+
+            if (changed)
+                ClutterSystem.instance.ClearAll();
         }
 
         [HarmonyPatch]

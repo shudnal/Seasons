@@ -8,7 +8,8 @@
 * added independent switches for seasonal resource drops, food, stamina, Rested, fuel, production, livestock, night length, wind, torch warmth and heat damage
 * added a separate switch for mature crops and other supported harvests perishing in winter
 * added a Fuzzy season timer with configurable stages and optional morning announcements
-* restored compatibility with Expand World Data 1.83, including environment reloads and custom biome names
+* restored compatibility with Expand World Data 1.83, including environment reloads, custom biome names and live clutter settings
+* avoid unnecessary grass rebuilds during seasonal updates, reducing work with FarLands and without it
 * reduced seasonal overhead for summer heat, food, rain protection, terrain, frozen water and snow visuals
 
 # 1.10.6

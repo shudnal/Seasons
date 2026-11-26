@@ -286,6 +286,39 @@ namespace Seasons.Compatibility
             }
         }
 
+        [HarmonyPatch]
+        public static class EWD_ClutterManager_Set_RefreshSeasonalClutter
+        {
+            private static MethodBase target;
+
+            public static bool Prepare(MethodBase original)
+            {
+                if (assembly == null)
+                    return false;
+
+                Type manager = assembly.GetType("ExpandWorldData.Clutter.ClutterManager")
+                    ?? assembly.GetType("ExpandWorldData.ClutterManager");
+                MethodInfo method = manager?.GetMethod("Set", StaticMembers, null,
+                    new[] { typeof(Dictionary<string, string>) }, null);
+                if (method == null || (method.ReturnType != typeof(bool) &&
+                    method.ReturnType.FullName != "ExpandWorldData.Data.SetResult"))
+                    return false;
+
+                target = method;
+                return true;
+            }
+
+            public static MethodBase TargetMethod() => target;
+
+            public static void Postfix()
+            {
+                // Failed parsing and backfill keep the old entry objects, so no refresh is needed.
+                // A published list is reconciled by identity before EWD's scheduled rebuild.
+                if (seasonsWorldInitialized)
+                    ClutterVariantController.Instance?.RefreshExternalClutter();
+            }
+        }
+
         [HarmonyPatch(typeof(EnvMan), nameof(EnvMan.GetAvailableEnvironments), new Type[] { typeof(BiomeSector) })]
         public static class EnvMan_GetAvailableEnvironments_ApplySeasonalRulesAfterEWD
         {
