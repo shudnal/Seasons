@@ -3,9 +3,10 @@
 Footsteps on supported building pieces reduce their seasonal snow cap. This uses
 `FootStep.GetGroundMaterial`, inside the existing non-null `WearNTear` branch,
 just before its material switch. The transpiler reuses the `WearNTear` already on
-the evaluation stack. It does not repeat the ground query, raycast, or change the
-selected footstep material. If the material read is missing or ambiguous after
-other patches, it logs a warning and leaves the method unchanged.
+the evaluation stack. A step that reduces snow uses the native snow footstep
+effect; otherwise the native material switch remains unchanged. No extra
+ground query or raycast is needed. If the material read is missing or ambiguous
+after other patches, it logs a warning and leaves the method unchanged.
 
 ## Configuration
 
@@ -32,38 +33,35 @@ native Deep North snow, terrain snow, snowless pieces, or the ocean collider.
 
 ## Multiplayer and lifetime
 
-Only the character owner reports a step. This applies to both players and
-creatures with native footstep events. Repeated queries for the same character
-within one rendered frame count once. The mechanism does not generate footsteps
-for distant or off-screen creatures for which the game skips them.
+The native footstep path supplies player and creature steps. Seasons does not
+generate extra footsteps, deduplicate them by rendered frame, or repeat native
+ground and actor checks.
 
-If the character and piece have the same owner, the change is local. Otherwise a
-single scene-level routed RPC sends the actor ID, piece ID, and a sequence, not a
-snow amount. The receiver checks actor ownership, target ownership, sequence,
-and proximity to the piece's cached collider bounds. A small bounded burst budget
-limits repeated remote requests. An ownership change in flight rejects the step;
-there are no retries, ownership claims, new per-piece RPC registrations, or new
-per-frame scans. A piece without an owner uses the existing ownerless-write policy.
+The piece must already be tracked by the snow controller and its current snow
+must exceed the configured floor. If the piece has no owner or the local peer
+owns it, apply the reduction locally. Otherwise the scene-level routed RPC
+`Seasons_TrampleSnowPiece` sends only the piece's ZDOID to its owner. The receiving
+peer looks up the tracked piece, verifies current ownership and applies its own
+configured reduction and floor. There are no retries, ownership claims,
+per-piece RPC registrations, extra proximity checks or throttling.
 
-The piece must have a confirmed current-winter state and a ready active region.
-Stale snapshots or owner changes queue the existing refresh instead of applying
-a change to stale data. Before reducing snow, the controller integrates the old
-weather and heat interval. It then writes the exact reduced value and timestamp
-through `SeasonalSnowStorage`, reclassifies the piece, and updates its visual via
-the existing queue. The hover diagnostics record `Trampling` as the change cause
-on the client that applies the reduction. Remote clients receive a saved snapshot.
-
-Actor bookkeeping uses weak keys and is reset with the scene. The new RPC handler
-is removed only if it is still the handler this subsystem registered.
+After reducing snow, the controller rebases the weather and heat cursors to the
+current time so previously elapsed snowfall does not refill the cleared amount.
+It writes the reduced amount and timestamp through `SeasonalSnowStorage`,
+reclassifies the piece and queues its visual. The snow hover diagnostics record
+`Trampling` as the change cause on the peer that applies the reduction. Remote
+clients receive the saved snapshot through the existing synchronization.
+The RPC handler belongs to the current world's routed RPC instance.
 
 ## In-game verification
 
 Start from the feature branch containing this change. Enable the existing snow
 hover diagnostics. Use a normal and a reduced-buildup piece with confirmed snow.
 
-1. Walk across each piece. Verify a `0.01` reduction per accepted step, without
-   changing the normal footstep material. Stand still to check that there is no
-   background reduction from trampling.
+1. Walk across each piece. Verify a `0.01` reduction per accepted step and the
+   native snow footstep effect. At the minimum depth, the original footstep
+   material is used. Stand still to check that there is no background reduction
+   from trampling.
 2. Reach the appropriate minimum with complete clearing disabled. Check a cap
    already below the minimum: stepping must not raise it to that minimum.
 3. Enable complete clearing and reach zero. Unload the area or rejoin during dry

@@ -1,9 +1,8 @@
 # Seasonal ice sliding
 
-The balanced travel cycle builds on `feature/winter-ocean-sliding` at
-`00da7d9b570e60b5eacd22d9768b404775cd07d8` (Seasons 1.10.6).
-Game source reviewed: `shudnal/assemblies_combined` at
-`6bfb1776f3f59869fcf67afae3b12885e14ad6a1`.
+Seasons 1.11.0. Game source reviewed: Valheim 1.0.30,
+`shudnal/assemblies_combined` at
+`216cb30f748e0ef9c74a8366395e9cc110f3cd8d`.
 
 ## Surface and actor policy
 
@@ -12,6 +11,13 @@ There is no biome, water-depth, or underwater terrain query in its routing.
 Native slippery surfaces and floating floes are separate domains. No launch
 velocity, readiness, or native `m_slipperySpeed` is transferred between them.
 Leaving seasonal ice releases the seasonal state; it does not zero the Rigidbody.
+
+The frozen ocean uses a shared convex mesh on each spawned water volume. Each
+64 m zone has a 67 m wide collider with a 65 m flat top and 1 m bevels that descend
+0.25 m at the outer edges. Adjacent flat tops overlap by 1 m, keeping the walking
+surface level and the outer edges below the neighboring surface. The collider
+template remains inactive and independent of game prefabs. Small physical
+contact impulses can still occur at seams; Seasons does not restore lost speed.
 
 | Actor / equipment | Seasonal frozen water |
 | --- | --- |
@@ -251,8 +257,10 @@ creatures and footwear modes retain their previous behavior.
 ## Live configuration
 
 All entries are declared in the common `Seasons.ConfigInit` under
-**Season - Winter ocean - Slipperiness**. Gameplay values are server-controlled. FOV cue
-preferences are client-side. Existing basic-inertia parameters remain available.
+**Season - Winter ocean - Slipperiness**. Gameplay values are server-controlled
+by default. FOV cue and hover diagnostics are client-side by default. The previous
+`Frozen ocean surface slipperiness factor` setting in `Season - Winter ocean`
+is replaced by `Basic slipperiness factor` in the new section.
 
 | Setting | Default | Purpose |
 | --- | ---: | --- |
@@ -360,7 +368,7 @@ movement, animation, camera settings or networking.
 - Verify another client sees the cadence and glide animation. Compare with camera
   and movement mods and inspect any optional-integration warnings.
 
-Validation is static source/API and diff inspection only. No mod build, mod tests,
-or Valheim runtime execution is performed. Coefficients remain tunable starting
-values. Release version, mechanic toggles, EWD/Marketplace compatibility, crops,
-snow simulation, hoe clearing and floe physics are outside this change.
+The maintainer tested player running and gliding across zone seams, and creature
+sliding. Rare small seam impulses remain acceptable. Four-zone corner crossings
+and the remaining multiplayer and compatibility checks have not been confirmed.
+The source changes were also checked statically.
