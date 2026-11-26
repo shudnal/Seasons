@@ -134,11 +134,228 @@ namespace Seasons
 
         internal static void ClearSlidingDiagnostics()
         {
+            ClearPhysicsDiagnostics();
             slidingDiagnosticsPlayer = lastSlidingExitPlayer = null;
             slidingDiagnosticsText = null;
             slidingDiagnosticsAt = 0f;
             if (playerSlide != null)
                 playerSlide.DiagnosticTurnDegrees = playerSlide.DiagnosticTurnLoss = 0f;
+        }
+
+        private const float PhysicsDeviationThreshold = 0.02f;
+
+        private struct PhysicsStepSample
+        {
+            internal bool Valid, Grounded, Ice, SeasonalCorrection, ForceApplied;
+            internal SlideMode Mode;
+            internal float Time, Dt, Threshold;
+            internal Vector2s FromZone, ToZone;
+            internal Vector3 Position, Before, Target, Requested, Applied, BeforePhysics, Queued, After;
+            internal Vector3 Impulse, GroundNormal, ContactNormal;
+            internal int GroundId, ContactId, ContactPairs, IcePairs, ContactPoints;
+
+            internal Vector3 Expected => BeforePhysics + Queued;
+            internal Vector3 Residual => Horizontal(After - Expected);
+            internal float SpeedError => Horizontal(After).magnitude - Horizontal(Expected).magnitude;
+        }
+
+        private static Player physicsDiagnosticsPlayer;
+        private static PhysicsContactDiagnostics physicsContactDiagnostics;
+        private static bool physicsDiagnosticsRecording;
+        private static bool physicsDiagnosticsPending;
+        private static PhysicsStepSample physicsStep, lastPhysicsStep, lastZoneStep, lastDeviationStep;
+
+        private static void ClearPhysicsDiagnostics()
+        {
+            physicsDiagnosticsRecording = physicsDiagnosticsPending = false;
+            physicsDiagnosticsPlayer = null;
+            physicsStep = lastPhysicsStep = lastZoneStep = lastDeviationStep = default;
+            if (physicsContactDiagnostics)
+                UnityEngine.Object.Destroy(physicsContactDiagnostics);
+            physicsContactDiagnostics = null;
+        }
+
+        private static bool RecordingPhysics(Character character) =>
+            physicsDiagnosticsRecording && ReferenceEquals(physicsDiagnosticsPlayer, character);
+
+        private static void RecordPhysicsTarget(Character character, Vector3 velocity, bool seasonalCorrection)
+        {
+            if (!RecordingPhysics(character))
+                return;
+            physicsStep.Target = velocity;
+            physicsStep.SeasonalCorrection = seasonalCorrection;
+        }
+
+        private static float RecordPhysicsForceRequest(float threshold, Vector3 correction, Character character)
+        {
+            if (RecordingPhysics(character))
+            {
+                physicsStep.Valid = true;
+                physicsStep.Grounded = character.IsOnGround();
+                physicsStep.Ice = character.IsOnIce();
+                physicsStep.Mode = playerSlide != null && ReferenceEquals(playerSlide.Player, character)
+                    ? playerSlide.Mode : SlideMode.Basic;
+                physicsStep.Requested = correction;
+                physicsStep.Threshold = threshold;
+                Collider ground = character.GetLastGroundCollider();
+                physicsStep.GroundId = ground ? ground.GetInstanceID() : 0;
+                physicsStep.GroundNormal = character.m_lastGroundNormal;
+            }
+            return threshold;
+        }
+
+        private static void RecordPhysicsForceApplied(Vector3 correction, Character character)
+        {
+            if (!RecordingPhysics(character))
+                return;
+            physicsStep.ForceApplied = true;
+            physicsStep.Applied = correction;
+        }
+
+        // The original Character update is left intact. The following fixed update
+        // observes the previous simulation, not a render-frame velocity estimate.
+        [HarmonyPatch(typeof(Character), nameof(Character.CustomFixedUpdate))]
+        private static class Character_CustomFixedUpdate_PhysicsDiagnostics
+        {
+            [HarmonyPrefix, HarmonyPriority(Priority.First)]
+            private static void Prefix(Character __instance, float dt)
+            {
+                if (__instance != Player.m_localPlayer || showSlidingDiagnosticsOnHover?.Value != true || !walkingForceHookReady)
+                    return;
+                Player player = (Player)__instance;
+                Rigidbody body = player.m_body;
+                if (!body || body.isKinematic || !player.m_nview || !player.m_nview.IsValid() ||
+                    !player.m_nview.IsOwner() || player.IsDead() || player.IsTeleporting() || player.IsDebugFlying())
+                {
+                    physicsDiagnosticsRecording = physicsDiagnosticsPending = false;
+                    return;
+                }
+
+                if (!ReferenceEquals(physicsDiagnosticsPlayer, player))
+                {
+                    ClearPhysicsDiagnostics();
+                    physicsDiagnosticsPlayer = player;
+                    physicsContactDiagnostics = player.gameObject.AddComponent<PhysicsContactDiagnostics>();
+                }
+
+                if (physicsDiagnosticsPending)
+                {
+                    physicsStep.After = body.linearVelocity;
+                    physicsStep.Position = body.position;
+                    physicsStep.ToZone = ZoneSystem.GetZone(physicsStep.Position);
+                    lastPhysicsStep = physicsStep;
+                    if (physicsStep.FromZone != physicsStep.ToZone)
+                        lastZoneStep = physicsStep;
+                    if (physicsStep.Grounded && Mathf.Abs(physicsStep.SpeedError) >= PhysicsDeviationThreshold)
+                        lastDeviationStep = physicsStep;
+                }
+
+                physicsStep = new PhysicsStepSample
+                {
+                    Time = Time.fixedTime,
+                    Dt = dt,
+                    FromZone = ZoneSystem.GetZone(body.position),
+                    Before = body.linearVelocity,
+                    ContactNormal = Vector3.up
+                };
+                physicsDiagnosticsPending = false;
+                physicsDiagnosticsRecording = true;
+            }
+
+            [HarmonyPostfix, HarmonyPriority(Priority.Last)]
+            private static void Postfix(Character __instance)
+            {
+                if (!RecordingPhysics(__instance))
+                    return;
+                Rigidbody body = __instance.m_body;
+                physicsDiagnosticsRecording = false;
+                if (!physicsStep.Valid || !body || body.isKinematic)
+                    return;
+                physicsStep.BeforePhysics = body.linearVelocity;
+                // Unity reports the accumulated force in ForceMode.Force units.
+                physicsStep.Queued = body.GetAccumulatedForce(physicsStep.Dt) * (physicsStep.Dt / body.mass);
+                physicsDiagnosticsPending = true;
+            }
+        }
+
+        // Listen only on the local player while the hover diagnostics are enabled.
+        // Enter matters at seams; Stay alone misses the first contact with a tile.
+        private sealed class PhysicsContactDiagnostics : MonoBehaviour
+        {
+            private void OnCollisionEnter(Collision collision) => RecordContact(collision);
+            private void OnCollisionStay(Collision collision) => RecordContact(collision);
+
+            private void RecordContact(Collision collision)
+            {
+                if (!physicsDiagnosticsPending || !ReferenceEquals(physicsContactDiagnostics, this))
+                    return;
+                Collider collider = collision.collider;
+                if (!collider)
+                    return;
+                physicsStep.Impulse += collision.impulse;
+                physicsStep.ContactPairs++;
+                if (collider.name == ZoneSystemVariantController._iceSurfaceName)
+                    physicsStep.IcePairs++;
+                int count = collision.contactCount;
+                for (int i = 0; i < count; ++i)
+                {
+                    Vector3 normal = collision.GetContact(i).normal;
+                    if (physicsStep.ContactPoints == 0 ||
+                        Horizontal(normal).sqrMagnitude > Horizontal(physicsStep.ContactNormal).sqrMagnitude)
+                    {
+                        physicsStep.ContactNormal = normal;
+                        physicsStep.ContactId = collider.GetInstanceID();
+                    }
+                    physicsStep.ContactPoints++;
+                }
+            }
+        }
+
+        private static string DiagnosticXZ(Vector3 value) =>
+            string.Format(CultureInfo.InvariantCulture, "({0:F3},{1:F3})", value.x, value.z);
+
+        private static void AppendPhysicsStep(StringBuilder text, string label, PhysicsStepSample sample)
+        {
+            if (!sample.Valid)
+            {
+                SlidingDiagnosticLine(text, "{0}: -", label);
+                return;
+            }
+
+            SlidingDiagnosticLine(text, "{0}: {1} ({2},{3})->({4},{5}) | t={6:F2} | dt={7:F3}",
+                label, sample.Ice ? sample.Mode.ToString() : "Native", sample.FromZone.x, sample.FromZone.y,
+                sample.ToZone.x, sample.ToZone.y, sample.Time, sample.Dt);
+            SlidingDiagnosticLine(text, "V: {0:F3} / target {1:F3} / pre {2:F3} / exp {3:F3} / got {4:F3} | err {5:+0.000;-0.000;0.000}",
+                Horizontal(sample.Before).magnitude, Horizontal(sample.Target).magnitude, Horizontal(sample.BeforePhysics).magnitude,
+                Horizontal(sample.Expected).magnitude, Horizontal(sample.After).magnitude, sample.SpeedError);
+            SlidingDiagnosticLine(text, "dV X/Z: req {0} sent {1} queued {2} | guard {3:F3} | force {4} / seasonal {5}",
+                DiagnosticXZ(sample.Requested), DiagnosticXZ(sample.Applied), DiagnosticXZ(sample.Queued),
+                sample.Threshold, sample.ForceApplied, sample.SeasonalCorrection);
+            SlidingDiagnosticLine(text, "Residual {0} | J X/Z {1} Ns | pairs {2} (ice {3}) | ground {4} / contact {5}",
+                DiagnosticXZ(sample.Residual), DiagnosticXZ(sample.Impulse), sample.ContactPairs, sample.IcePairs,
+                sample.GroundId, sample.ContactId);
+            SlidingDiagnosticLine(text, "Normal G ({0:F3},{1:F3},{2:F3}) C ({3:F3},{4:F3},{5:F3}) | X/Z {6:F2},{7:F2}",
+                sample.GroundNormal.x, sample.GroundNormal.y, sample.GroundNormal.z, sample.ContactNormal.x,
+                sample.ContactNormal.y, sample.ContactNormal.z, sample.Position.x, sample.Position.z);
+        }
+
+        private static void AppendPhysicsDiagnostics(StringBuilder text, Player player)
+        {
+            if (!walkingForceHookReady)
+            {
+                text.AppendLine("Physics diagnostics: force hook unavailable");
+                return;
+            }
+            if (!ReferenceEquals(physicsDiagnosticsPlayer, player))
+                return;
+
+            AppendPhysicsStep(text, "Step", lastPhysicsStep);
+            if (!lastZoneStep.Valid || !lastPhysicsStep.Valid || lastZoneStep.Time != lastPhysicsStep.Time)
+                AppendPhysicsStep(text, "Last crossing", lastZoneStep);
+            if (!lastDeviationStep.Valid ||
+                (lastDeviationStep.Time != lastPhysicsStep.Time &&
+                 (!lastZoneStep.Valid || lastDeviationStep.Time != lastZoneStep.Time)))
+                AppendPhysicsStep(text, "Last deviation", lastDeviationStep);
         }
 
         private static void RecordSlidingExit(PlayerSlide state, SlideReason reason)
@@ -263,6 +480,7 @@ namespace Seasons
             else
                 text.AppendLine("Last exit: -");
 
+            AppendPhysicsDiagnostics(text, player);
             return text.ToString().TrimEnd('\n');
         }
 

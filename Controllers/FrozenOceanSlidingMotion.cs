@@ -380,6 +380,7 @@ namespace Seasons
             }
             // Route the real patched method. The local physics velocity is separate
             // from m_currentVel, which still drives ordinary locomotion animation.
+            RecordPhysicsTarget(character, velocity, seasonalCorrection);
             character.ApplyRootMotion(ref velocity);
             return seasonalCorrection;
         }
