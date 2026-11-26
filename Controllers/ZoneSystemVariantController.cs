@@ -234,7 +234,7 @@ namespace Seasons
 
         public const float _winterWaterSurfaceOffset = 2f;
         public const float _colliderOffset = 0.01f;
-        private const float IceColliderBevelWidth = 1f;
+        private const float IceColliderBevelWidth = 3f;
         private const float IceColliderBevelDepth = 0.05f;
         private const float IceColliderThickness = _winterWaterSurfaceOffset * 0.5f;
         public const string _iceSurfaceName = "IceSurface";
