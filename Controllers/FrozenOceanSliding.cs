@@ -13,7 +13,6 @@ namespace Seasons
     public static partial class CharacterExtentions_FrozenOceanSliding
     {
         private static bool walkingHookReady;
-        private static bool walkingForceHookReady;
         private static bool slipperyHookReady;
         private static bool HooksReady => walkingHookReady && slipperyHookReady;
         private static bool SlidingEnabled => HooksReady && frozenOceanSlidingEnabled.Value && frozenOceanSlipperiness.Value > 0f;
@@ -48,8 +47,6 @@ namespace Seasons
             {
                 if (playerSlide != null && ReferenceEquals(playerSlide.Player, __instance))
                     ResetWorldState();
-                if (ReferenceEquals(physicsDiagnosticsPlayer, __instance))
-                    ClearPhysicsDiagnostics();
             }
         }
 
@@ -233,10 +230,8 @@ namespace Seasons
             return -1;
         }
 
-        private static int FindMovementThreshold(List<CodeInstruction> code, int begin, int end,
-            out int forceLoadIndex, out int forceCallIndex)
+        private static int FindMovementThreshold(List<CodeInstruction> code, int begin, int end)
         {
-            forceLoadIndex = forceCallIndex = -1;
             var magnitude = AccessTools.PropertyGetter(typeof(Vector3), nameof(Vector3.magnitude));
             var body = AccessTools.Field(typeof(Character), nameof(Character.m_body));
             var addForce = AccessTools.Method(typeof(Rigidbody), nameof(Rigidbody.AddForce),
@@ -279,8 +274,6 @@ namespace Seasons
                 if (found >= 0)
                     return -1;
                 found = positions[i + 3];
-                forceLoadIndex = positions[i + 6];
-                forceCallIndex = positions[i + 8];
             }
             return found;
         }
@@ -305,7 +298,6 @@ namespace Seasons
                 int speedIndex = canMoveIndex < 0 ? -1 : code.FindIndex(canMoveIndex, instruction => instruction.Calls(multiply));
                 int rootMotionIndex = code.FindIndex(instruction => instruction.Calls(rootMotion));
                 int rootMotionMatches = code.FindAll(instruction => instruction.Calls(rootMotion)).Count;
-                walkingForceHookReady = false;
                 walkingHookReady = slippingIndex >= 0 && canMoveIndex > slippingIndex && speedIndex > canMoveIndex &&
                     speedIndex - canMoveIndex < 20 && rootMotionIndex > speedIndex && rootMotionMatches == 1 &&
                     animationFieldIndex > rootMotionIndex && animationIndex > animationFieldIndex;
@@ -315,9 +307,7 @@ namespace Seasons
                     return code;
                 }
 
-                int thresholdIndex = FindMovementThreshold(code, rootMotionIndex + 1, animationFieldIndex,
-                    out int forceLoadIndex, out int forceCallIndex);
-                walkingForceHookReady = thresholdIndex >= 0;
+                int thresholdIndex = FindMovementThreshold(code, rootMotionIndex + 1, animationFieldIndex);
                 LocalBuilder seasonalCorrection = generator.DeclareLocal(typeof(bool));
                 if (thresholdIndex < 0)
                     LogWarning("Small seasonal ice corrections retain the existing movement threshold: the force guard was changed or ambiguous.");
@@ -327,18 +317,10 @@ namespace Seasons
                     new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(CharacterExtentions_FrozenOceanSliding), nameof(ResolveSlippingAnimation))));
                 if (thresholdIndex >= 0)
                 {
-                    CodeInstruction forceLoad = code[forceLoadIndex];
-                    // Read the exact argument on the executed AddForce path, without replacing the call.
-                    InsertBefore(code, forceCallIndex, new CodeInstruction(forceLoad.opcode, forceLoad.operand),
-                        new CodeInstruction(OpCodes.Ldarg_0), new CodeInstruction(OpCodes.Call,
-                            AccessTools.Method(typeof(CharacterExtentions_FrozenOceanSliding), nameof(RecordPhysicsForceApplied))));
                     // Preserve the existing threshold producer and conditional branch.
                     InsertBefore(code, thresholdIndex, new CodeInstruction(OpCodes.Ldloc, seasonalCorrection),
                         new CodeInstruction(OpCodes.Ldarg_0), new CodeInstruction(OpCodes.Call,
-                            AccessTools.Method(typeof(CharacterExtentions_FrozenOceanSliding), nameof(ResolveMovementThreshold))),
-                        new CodeInstruction(forceLoad.opcode, forceLoad.operand), new CodeInstruction(OpCodes.Ldarg_0),
-                        new CodeInstruction(OpCodes.Call,
-                            AccessTools.Method(typeof(CharacterExtentions_FrozenOceanSliding), nameof(RecordPhysicsForceRequest))));
+                            AccessTools.Method(typeof(CharacterExtentions_FrozenOceanSliding), nameof(ResolveMovementThreshold))));
                 }
                 // Modify only the local physics velocity immediately before root motion.
                 // Keep m_currentVel and its native walking animation blend independent of inertia.
