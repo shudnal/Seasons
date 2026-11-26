@@ -89,7 +89,7 @@ namespace Seasons
 
             // Configured FOV is horizontal, Unity's fieldOfView is vertical.
             glideFovLimit = Camera.HorizontalToVerticalFieldOfView(
-                Parameter(frozenOceanGlidingMaxFov.Value, 105f, 60f, 150f), camera.m_camera.aspect);
+                Parameter(frozenOceanGlidingMaxFov.Value, 110f, 60f, 150f), camera.m_camera.aspect);
         }
 
         private static float GetGlideFovOffset() =>
@@ -250,7 +250,7 @@ namespace Seasons
                 float actualFov = Camera.VerticalToHorizontalFieldOfView(camera.m_camera.fieldOfView, aspect);
                 float baseFov = Camera.VerticalToHorizontalFieldOfView(camera.m_fov, aspect);
                 SlidingDiagnosticLine(text, "FOV H: {0:F1}° | Base: {1:F1}° | Max: {2:F1}°", actualFov, baseFov,
-                    Parameter(frozenOceanGlidingMaxFov.Value, 105f, 60f, 150f));
+                    Parameter(frozenOceanGlidingMaxFov.Value, 110f, 60f, 150f));
             }
 
             float cadence = cadenceHookReady && state != null && state.OnIce && ice

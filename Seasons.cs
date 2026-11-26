@@ -755,7 +755,7 @@ namespace Seasons
             placeShipAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateShipsPositions();
             placeFloatingContainersAboveFrozenOcean.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateFloatingPositions();
 
-            const string slipperinessSection = "Winter ocean - Slipperiness";
+            const string slipperinessSection = "Season - Winter ocean - Slipperiness";
             frozenOceanSlidingEnabled = serverConfig(slipperinessSection, "Enabled", defaultValue: true,
                 "Enable slipping on seasonal frozen water for players and creatures, including ice skates. Does not change native slippery surfaces.");
             frozenOceanUseVanillaSlippingPlayers = serverConfig(slipperinessSection, "Use vanilla slipping for players", defaultValue: false,
@@ -804,7 +804,7 @@ namespace Seasons
                 new ConfigDescription("Visual locomotion-speed bonus at full charge. Rises smoothly during preparation and fades on release or cancellation. Does not accelerate the body or change attack, dodge or jump animation speed.", new AcceptableValueRange<float>(0f, 1f)));
             frozenOceanGlidingFovEnabled = clientConfig(slipperinessSection, "Glide FOV cue", defaultValue: true,
                 "Add a visual FOV offset during glide preparation and boosted gliding. Does not change the configured camera FOV or gameplay speed.");
-            frozenOceanGlidingMaxFov = clientConfig(slipperinessSection, "Maximum glide FOV", defaultValue: 105f,
+            frozenOceanGlidingMaxFov = clientConfig(slipperinessSection, "Maximum glide FOV", defaultValue: 110f,
                 new ConfigDescription("Maximum horizontal field of view in degrees during glide preparation and boosted gliding. Converted to the camera's vertical FOV for the current aspect ratio. Never narrows a wider normal view.", new AcceptableValueRange<float>(60f, 150f)));
             frozenOceanGlidingTurnSpeed = serverConfig(slipperinessSection, "Long glide turn speed", defaultValue: 25f,
                 new ConfigDescription("Maximum steering rate in degrees per second while using mouse look or controller look. Zero keeps the entry direction.", new AcceptableValueRange<float>(0f, 180f)));

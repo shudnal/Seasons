@@ -59,7 +59,7 @@ A first full preparation has two consecutive stages:
 2. Continue for **2 seconds** while locomotion cadence and the FOV cue ramp up.
 
 The second stage must finish to earn a launch. At full charge the camera approaches
-**105 degrees horizontal FOV** by default; release movement to glide. An earlier release keeps
+**110 degrees horizontal FOV** by default; release movement to glide. An earlier release keeps
 basic inertia and gives no boost. Readiness remains available while qualifying
 running continues. Actual speed and heading are checked again on release.
 
@@ -199,7 +199,7 @@ no retained charge. Other surfaces keep their own movement domain.
 ## FOV integration and compatibility
 
 The FOV cue eases in with the 2-second charge and approaches the configured
-**Maximum glide FOV**, an absolute horizontal angle in degrees (105 by default).
+**Maximum glide FOV**, an absolute horizontal angle in degrees (110 by default).
 Unity's vertical camera angle is calculated from that value and the current
 aspect ratio. A wider normal view is never narrowed. During acceleration the
 cue accounts for the remaining scheduled gain; afterward it follows the actual
@@ -251,7 +251,7 @@ creatures and footwear modes retain their previous behavior.
 ## Live configuration
 
 All entries are declared in the common `Seasons.ConfigInit` under
-**Winter ocean - Slipperiness**. Gameplay values are server-controlled. FOV cue
+**Season - Winter ocean - Slipperiness**. Gameplay values are server-controlled. FOV cue
 preferences are client-side. Existing basic-inertia parameters remain available.
 
 | Setting | Default | Purpose |
@@ -280,7 +280,7 @@ preferences are client-side. Existing basic-inertia parameters remain available.
 | Long glide end speed fraction | 0.90 | Early exit threshold and profile endpoint |
 | Run-up animation speed bonus | 0.25 | Visual locomotion bonus at full charge |
 | Glide FOV cue | true | Local visual toggle |
-| Maximum glide FOV | 105 | Local absolute horizontal FOV, degrees |
+| Maximum glide FOV | 110 | Local absolute horizontal FOV, degrees |
 | Long glide turn speed | 25 | Degrees per second |
 | Long glide turning speed loss | 0.2 | m/s lost per radian turned |
 | Long glide wind speed influence | 0.05 | Wind-dependent peak bonus at release |
