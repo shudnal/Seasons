@@ -286,6 +286,51 @@ namespace Seasons.Compatibility
             }
         }
 
+        private static Type GetClutterManagerType() =>
+            assembly?.GetType("ExpandWorldData.Clutter.ClutterManager")
+                ?? assembly?.GetType("ExpandWorldData.ClutterManager");
+
+        [HarmonyPatch]
+        public static class EWD_ClutterManager_ToData_UseBaseValues
+        {
+            private static MethodBase target;
+            private static FieldInfo enabledField, minField, maxField;
+
+            public static bool Prepare(MethodBase original)
+            {
+                MethodInfo method = GetClutterManagerType()?.GetMethod("ToData", StaticMembers, null,
+                    new[] { typeof(ClutterSystem.Clutter) }, null);
+                if (method == null || (method.ReturnType.FullName != "ExpandWorldData.Clutter.ClutterYaml" &&
+                    method.ReturnType.FullName != "ExpandWorldData.ClutterYaml"))
+                    return false;
+
+                enabledField = method.ReturnType.GetField("enabled");
+                minField = method.ReturnType.GetField("scaleMin");
+                maxField = method.ReturnType.GetField("scaleMax");
+                if (enabledField?.FieldType != typeof(bool) || minField?.FieldType != typeof(float) ||
+                    maxField?.FieldType != typeof(float))
+                    return false;
+
+                target = method;
+                return true;
+            }
+
+            public static MethodBase TargetMethod() => target;
+
+            public static void Postfix(ClutterSystem.Clutter clutter, object __result)
+            {
+                ClutterVariantController controller = ClutterVariantController.Instance;
+                if (__result == null || !controller || !controller.TryGetClutterDefaults(clutter, out var defaults))
+                    return;
+
+                // Default entries are shared with the game. Export their base values, not seasonal multipliers.
+                // Change only the YAML data object, never the live clutter entry.
+                enabledField.SetValue(__result, defaults.Item1);
+                minField.SetValue(__result, defaults.Item2);
+                maxField.SetValue(__result, defaults.Item3);
+            }
+        }
+
         [HarmonyPatch]
         public static class EWD_ClutterManager_Set_RefreshSeasonalClutter
         {
@@ -293,12 +338,7 @@ namespace Seasons.Compatibility
 
             public static bool Prepare(MethodBase original)
             {
-                if (assembly == null)
-                    return false;
-
-                Type manager = assembly.GetType("ExpandWorldData.Clutter.ClutterManager")
-                    ?? assembly.GetType("ExpandWorldData.ClutterManager");
-                MethodInfo method = manager?.GetMethod("Set", StaticMembers, null,
+                MethodInfo method = GetClutterManagerType()?.GetMethod("Set", StaticMembers, null,
                     new[] { typeof(Dictionary<string, string>) }, null);
                 if (method == null || (method.ReturnType != typeof(bool) &&
                     method.ReturnType.FullName != "ExpandWorldData.Data.SetResult"))

@@ -40,7 +40,10 @@ load. Seasons retains the unscaled defaults by entry identity and restores remov
 entries before forgetting them. New entries receive their own defaults and the
 current seasonal settings. Failed loads leave the tracked entries unchanged.
 EWD already requests a clutter rebuild; Seasons does not clear patches a second
-time for the same publication.
+time for the same publication. EWD's default entries share the game's mutable
+clutter objects. The ToData postfix writes the original enabled flag and scales
+to the YAML data object, so backfill cannot save seasonal multipliers as defaults.
+The live clutter entries are not changed during serialization.
 
 Manual checks: initial world entry, successful environment-file reload, malformed
 YAML, migration/backfill-triggered reload, restoring defaults, biome environment

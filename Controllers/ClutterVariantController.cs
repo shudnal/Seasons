@@ -109,7 +109,7 @@ namespace Seasons
             if (!m_registeredClutterPrefabs.Add(clutter.m_prefab) ||
                 !texturesVariants.controllers.TryGetValue(Utils.GetPrefabName(clutter.m_prefab), out PrefabController controller))
                 return;
-           
+
             GameObject prefab = clutter.m_prefab;
 
             foreach (KeyValuePair<string, CachedRenderer> cachedRenderer in controller.renderersInHierarchy)
@@ -138,6 +138,9 @@ namespace Seasons
                 }
             }
         }
+
+        internal bool TryGetClutterDefaults(Clutter clutter, out Tuple<bool, float, float> defaults) =>
+            m_clutterDefaults.TryGetValue(clutter, out defaults);
 
         internal void RefreshExternalClutter()
         {
@@ -433,7 +436,6 @@ namespace Seasons
                         changed |= SetColorIfChanged(material.Key, property.Key, property.Value);
 
             ApplyGrassSettings(seasonal: false, changed, rebuildGrass);
-
         }
 
         public void UpdateColors() => UpdateColors(rebuildGrass: true);
