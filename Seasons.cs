@@ -629,7 +629,14 @@ namespace Seasons
 
             grassDefaultPatchSize.SettingChanged += (sender, args) => ClutterVariantController.UpdateGrassOnSettingChanged();
             grassDefaultAmountScale.SettingChanged += (sender, args) => ClutterVariantController.UpdateGrassOnSettingChanged();
-            grassToControlSize.SettingChanged += (sender, args) => ClutterVariantController.UpdateGrassOnSettingChanged();
+            FillGrassToControlSize();
+            grassToControlSize.SettingChanged += (sender, args) =>
+            {
+                HashSet<string> removedPrefabs = _GrassToControlSize;
+                FillGrassToControlSize();
+                removedPrefabs.ExceptWith(_GrassToControlSize);
+                ClutterVariantController.UpdateGrassOnSettingChanged(removedPrefabs);
+            };
             grassSizeDefaultScaleMin.SettingChanged += (sender, args) => ClutterVariantController.UpdateGrassOnSettingChanged();
             grassSizeDefaultScaleMax.SettingChanged += (sender, args) => ClutterVariantController.UpdateGrassOnSettingChanged();
 
@@ -1142,6 +1149,19 @@ namespace Seasons
             return (SystemInfo.graphicsDeviceType != GraphicsDeviceType.Null) && (ZNet.instance?.IsDedicated() != true);
         }
 
+        private static HashSet<string> ConfigToHashSet(string configString)
+        {
+            return new HashSet<string>(configString.Split(',').Select(p => p.Trim().ToLower()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList());
+        }
+
+        private static void FillGrassToControlSize()
+        {
+            _GrassToControlSize = ConfigToHashSet(grassToControlSize.Value);
+            _GrassToControlSize.Add(ClutterVariantController.c_meadowsFlowersPrefabName.ToLower());
+            _GrassToControlSize.Add(ClutterVariantController.c_forestBloomPrefabName.ToLower());
+            _GrassToControlSize.Add(ClutterVariantController.c_swampGrassBloomName.ToLower());
+        }
+
         public static void FillListsToControl()
         {
             _PlantsToControlGrowth = ConfigToHashSet(cropsToControlGrowth.Value);
@@ -1149,11 +1169,6 @@ namespace Seasons
 
             _WoodToControlDrop = ConfigToHashSet(woodListToControlDrop.Value);
             _MeatToControlDrop = ConfigToHashSet(meatListToControlDrop.Value);
-
-            _GrassToControlSize = ConfigToHashSet(grassToControlSize.Value);
-            _GrassToControlSize.Add(ClutterVariantController.c_meadowsFlowersPrefabName.ToLower());
-            _GrassToControlSize.Add(ClutterVariantController.c_forestBloomPrefabName.ToLower());
-            _GrassToControlSize.Add(ClutterVariantController.c_swampGrassBloomName.ToLower());
 
             _treeRegrowthPrefabs.Clear();
 
@@ -1192,11 +1207,6 @@ namespace Seasons
                             _treeRegrowthPrefabs.Add(stubName, prefab);
                     }
                 }
-            }
-
-            static HashSet<string> ConfigToHashSet(string configString)
-            {
-                return new HashSet<string>(configString.Split(',').Select(p => p.Trim().ToLower()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList());
             }
 
             static bool IsTree(Destructible destructible)

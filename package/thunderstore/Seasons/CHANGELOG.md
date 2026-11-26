@@ -10,6 +10,7 @@
 * added a Fuzzy season timer with configurable stages and optional morning announcements
 * restored compatibility with Expand World Data 1.83, including environment reloads, custom biome names and live clutter settings
 * avoid unnecessary grass rebuilds during seasonal updates, reducing work with FarLands and without it
+* changes to the list of grass prefabs to control size now apply without rejoining the world
 * reduced seasonal overhead for summer heat, food, rain protection, terrain, frozen water and snow visuals
 
 # 1.10.6

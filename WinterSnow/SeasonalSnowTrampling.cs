@@ -42,9 +42,9 @@ namespace Seasons
 
             long owner = state.Zdo.GetOwner();
             if (owner == 0L || state.View.IsOwner())
-                ApplySnowTrampling(state, reduction, minimum);
-            else
-                SnowTramplingAction.Request(owner, state.Id);
+                return ApplySnowTrampling(state, reduction, minimum);
+
+            SnowTramplingAction.Request(owner, state.Id);
 
             return true;
         }
@@ -59,8 +59,13 @@ namespace Seasons
                 ApplySnowTrampling(state, reduction, minimum);
         }
 
-        private void ApplySnowTrampling(SnowPiece state, float reduction, float minimum)
+        private bool ApplySnowTrampling(SnowPiece state, float reduction, float minimum)
         {
+            // The receive hooks already queue snapshot refreshes on data or owner changes.
+            // Skip this step until the existing refresh consumes the new snapshot.
+            if ((state.Refresh & SnowRefresh.Snapshot) != 0)
+                return false;
+
             float previous = state.Snow;
             state.Snow = Mathf.Max(minimum, previous - reduction);
             state.Saved = state.AppearanceChosen = true;
@@ -78,6 +83,7 @@ namespace Seasons
             Classify(state);
             QueueRuntimeVisual(state, force: state.Snow <= minimum);
             RecordSnowValueChange(state, previous, SnowValueCause.Trampling);
+            return true;
         }
     }
 

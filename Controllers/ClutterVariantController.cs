@@ -502,18 +502,22 @@ namespace Seasons
                 colors[property] = material.GetColor(property);
         }
 
-        public static void UpdateGrassOnSettingChanged()
+        public static void UpdateGrassOnSettingChanged() => UpdateGrassOnSettingChanged(null);
+
+        internal static void UpdateGrassOnSettingChanged(HashSet<string> removedPrefabs)
         {
             if (Instance == null || ClutterSystem.instance == null)
                 return;
 
-            Instance.UpdateGrass();
+            Instance.UpdateGrass(removedPrefabs);
         }
 
-        public void UpdateGrass() =>
-            ApplyGrassSettings(enabled && UseTextureControllers() && SeasonState.IsActive, changed: false, rebuildGrass: true);
+        public void UpdateGrass() => UpdateGrass(null);
 
-        private void ApplyGrassSettings(bool seasonal, bool changed, bool rebuildGrass)
+        private void UpdateGrass(HashSet<string> removedPrefabs) =>
+            ApplyGrassSettings(enabled && UseTextureControllers() && SeasonState.IsActive, changed: false, rebuildGrass: true, removedPrefabs);
+
+        private void ApplyGrassSettings(bool seasonal, bool changed, bool rebuildGrass, HashSet<string> removedPrefabs = null)
         {
             if (!m_started || !m_clutterSystem || m_clutterSystem != ClutterSystem.instance)
                 return;
@@ -542,17 +546,20 @@ namespace Seasons
                 bool wanted = clutter.m_enabled;
                 if (m_clutterDefaults.TryGetValue(clutter, out var defaults))
                 {
-                    if (clutter.m_prefab && ControlGrassSize(clutter.m_prefab))
+                    bool controlled = clutter.m_prefab && ControlGrassSize(clutter.m_prefab);
+                    if (controlled || (removedPrefabs != null && clutter.m_prefab &&
+                        removedPrefabs.Contains(PrefabVariantController.GetPrefabName(clutter.m_prefab).ToLower())))
                     {
-                        float min = defaults.Item2 * (grass?.m_scaleMin ?? 1f);
-                        float max = defaults.Item3 * (grass?.m_scaleMax ?? 1f);
+                        SeasonGrass settings = controlled ? grass : null;
+                        float min = defaults.Item2 * (settings?.m_scaleMin ?? 1f);
+                        float max = defaults.Item3 * (settings?.m_scaleMax ?? 1f);
                         if (!clutter.m_scaleMin.Equals(min) || !clutter.m_scaleMax.Equals(max))
                         {
                             clutter.m_scaleMin = min;
                             clutter.m_scaleMax = max;
                             changed = true;
                         }
-                        wanted = defaults.Item1 && (grass == null || max != 0f);
+                        wanted = defaults.Item1 && (settings == null || max != 0f);
                     }
 
                     if (!seasonal)

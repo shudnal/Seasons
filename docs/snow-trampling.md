@@ -42,8 +42,11 @@ must exceed the configured floor. If the piece has no owner or the local peer
 owns it, apply the reduction locally. Otherwise the scene-level routed RPC
 `Seasons_TrampleSnowPiece` sends only the piece's ZDOID to its owner. The receiving
 peer looks up the tracked piece, verifies current ownership and applies its own
-configured reduction and floor. There are no retries, ownership claims,
-per-piece RPC registrations, extra proximity checks or throttling.
+configured reduction and floor. A local write is skipped while a received snow
+snapshot or ownership change is pending in the existing refresh queue. This
+uses the existing refresh flag, without reading the ZDO again on each step.
+There are no retries, ownership claims, per-piece RPC registrations, extra
+proximity checks or throttling.
 
 After reducing snow, the controller rebases the weather and heat cursors to the
 current time so previously elapsed snowfall does not refill the cleared amount.
@@ -69,9 +72,10 @@ hover diagnostics. Use a normal and a reduced-buildup piece with confirmed snow.
 4. Change the reduction while in the world, including zero. Change the minimum
    ranges and verify that the next steps use the correct normal or reduced floor.
 5. Use two clients with different character/piece owners, then change the piece
-   owner and repeat. Observers must not multiply the reduction. Verify creature
-   footsteps as well. For very small reductions, visual quantization may require
-   several steps before the cap visibly changes.
+   owner and repeat. A step during the pending snapshot refresh may be skipped;
+   it must not restore an older snow amount. Observers must not multiply the
+   reduction. Verify creature footsteps as well. For very small reductions,
+   visual quantization may require several steps before the cap visibly changes.
 6. Confirm that hoe clearing and heat can still remove snow below the trampling
    floor. Check native Deep North snow, a snowless piece, and a summer world.
 
