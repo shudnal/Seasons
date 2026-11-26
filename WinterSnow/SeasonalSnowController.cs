@@ -235,37 +235,57 @@ namespace Seasons
             $"bindings={visuals.Count}/{ownedRenderers.Count} {SeasonalSnowMeshSettings.BindingStatus} materials={materials.PoolCount}/{materials.CreatedMaterialCount} " +
             $"heat={heatSources.Count}/{heatCells.Count} interactions={interactingPieces.Count} epoch={lifetimeEpoch}/{winterEpoch}";
 
-        // Native visual callbacks only request the latest singleton-owned target.
+        // Native visual callbacks resolve a registered piece once, then use that state.
         internal bool TryQueueCurrentVisual(WearNTear piece)
         {
             if (!piece)
                 return false;
-            if (TryGetRuntimeSnow(piece, out float runtimeSnow))
+
+            bool winterReady = SeasonalSnow.WinterReady;
+            bool registered = snowPieces.TryGetValue(piece, out SnowPiece state);
+            if (registered && state.Valid)
             {
-                if (ZNet.instance && ZNet.instance.IsDedicated())
+                if (snowHeadless)
                     return true;
-                if (runtimeSnow <= VisibilityThreshold && !visuals.ContainsKey(piece))
+                if ((endingSnowWinter || !winterReady) && !visuals.ContainsKey(piece))
                 {
                     HideCapRoots(piece);
                     return true;
                 }
-                RequestSnowVisual(piece, force: false);
+                QueueRuntimeVisual(state, force: false);
                 return true;
+            }
+
+            // Keep native/disabled handling for objects outside the seasonal runtime.
+            // This slow path must not re-register a piece during winter teardown.
+            if (!winterReady && !registered && !visuals.ContainsKey(piece))
+            {
+                if (piece.m_snowBuildup > 0f || piece.m_addPreSnow)
+                {
+                    if (SeasonalSnowMeshSettings.TryApplyDisabledSnow(piece))
+                        return true;
+                    SeasonalSnow.ClearInactiveLoadedSnow(piece);
+                }
+                return false;
             }
             if (SeasonalSnowMeshSettings.IsSnowDisabled(piece))
             {
                 DisableVisual(piece);
                 return true;
             }
-            if (!SeasonalSnow.WinterReady)
+            if (!winterReady)
             {
                 SeasonalSnow.ClearInactiveLoadedSnow(piece);
                 ReleaseVisual(piece, hide: true, restoreNative: true);
                 return false;
             }
-            // Registration performs the complete eligibility/biome check once. If the
-            // piece belongs to native Deep North or an ignored rule, native visuals run.
-            return RequestSnowVisual(piece, force: false);
+
+            // Only previously unregistered pieces need the eligibility and biome checks.
+            RegisterSnow(piece);
+            if (!snowPieces.TryGetValue(piece, out state) || !state.Valid)
+                return false;
+            QueueRuntimeVisual(state, force: false);
+            return true;
         }
 
         // Some roof prefabs use the same object for wet effects and a snow cap.

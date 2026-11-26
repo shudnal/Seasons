@@ -611,6 +611,37 @@ Vanilla winter colors made by interpolating original biome color to "#FAFAFF" pr
 * Black forest has Swamp color in Fall to get effect of wet dirt ground
 * Plains has Meadows color in Spring to get effect of blooming surroundings
 
+## Frozen ocean sliding
+
+Run steadily on seasonal ice for 2 seconds, then continue running for 2 seconds
+to charge a long glide. Release movement after the charge completes to start
+gliding. Use the camera to steer, or run again during a glide to recharge it.
+Wind can affect the speed, duration and direction of the glide.
+
+Configure sliding in `Season - Winter ocean - Slipperiness`. The camera cue
+approaches 110 degrees of horizontal FOV at full charge by default. Basic
+slipperiness, long glides, and native slipping for players and creatures have
+separate controls. Native ice, ice skates and ice shoes retain their own movement
+rules. The new section replaces the previous frozen ocean slipperiness factor
+setting.
+
+## Snow trampling
+
+Footsteps on supported snow-covered building pieces reduce the snow and use
+the native snow footstep effect while clearing it. In `Season - Winter snow`,
+set `Snow reduction per footstep` to zero to disable trampling or enable
+`Footsteps can clear snow completely` to allow footsteps to remove the entire
+snow cap. Otherwise footsteps stop at the configured minimum snow depth.
+Heat and the snow-clearing hoe action can still remove snow below this limit.
+
+## Seasonal controls and timer
+
+Use the independent controls in `Season - Control` to disable individual
+seasonal gameplay rules without changing their configured values.
+Select the Fuzzy timer format in `Season - Buff` for configurable seasonal
+stages instead of exact dates. Optional morning messages can announce those
+stages.
+
 ## Summer Heat
 Summer is meant to feel like a good time to travel, gather and explore. A small amount of warmth is pleasant and can give you a gentle boost. During the hottest days, however, the open sun can push that warmth too far. If you keep running, fighting or travelling under harsh sunlight without cooling down, you can overheat and take small penalties.
 

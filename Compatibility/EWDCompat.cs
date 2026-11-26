@@ -18,6 +18,9 @@ namespace Seasons.Compatibility
         private static Type environmentManagerType;
         private static Type biomeManagerType;
         private static FieldInfo environmentManagerInitializedField;
+        private static MethodInfo environmentUpdateMethod;
+        private static bool environmentUpdateMembersResolved;
+        private const BindingFlags StaticMembers = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
         private static FieldInfo biomeToDisplayNameField;
         private static bool seasonsWorldInitialized;
         private static bool ewdBiomeSetupAppliedLast;
@@ -75,7 +78,8 @@ namespace Seasons.Compatibility
             if (assembly == null && Chainloader.PluginInfos.TryGetValue(GUID, out PluginInfo ewd))
                 assembly = Assembly.GetAssembly(ewd.Instance.GetType());
 
-            environmentManagerType = assembly?.GetType("ExpandWorldData.EnvironmentManager");
+            environmentManagerType = assembly?.GetType("ExpandWorldData.Environment.EnvironmentManager")
+                ?? assembly?.GetType("ExpandWorldData.EnvironmentManager");
             return environmentManagerType != null;
         }
 
@@ -87,17 +91,63 @@ namespace Seasons.Compatibility
             if (assembly == null && Chainloader.PluginInfos.TryGetValue(GUID, out PluginInfo ewd))
                 assembly = Assembly.GetAssembly(ewd.Instance.GetType());
 
-            biomeManagerType = assembly?.GetType("ExpandWorldData.BiomeManager");
+            biomeManagerType = assembly?.GetType("ExpandWorldData.Biome.BiomeManager")
+                ?? assembly?.GetType("ExpandWorldData.BiomeManager");
             return biomeManagerType != null;
+        }
+
+        private static bool TryResolveEnvironmentUpdateMembers()
+        {
+            if (!TryGetEnvironmentManagerType())
+                return false;
+            if (environmentUpdateMembersResolved)
+                return environmentUpdateMethod != null;
+
+            environmentUpdateMembersResolved = true;
+            // Probe optional API shapes without AccessTools warnings for missing members.
+            environmentManagerInitializedField = environmentManagerType.GetField("Initialized", StaticMembers)
+                ?? assembly.GetType("ExpandWorldData.Data.SyncedDataManager")?.GetField("Initialized", StaticMembers)
+                ?? assembly.GetType("ExpandWorldData.SyncedDataManager")?.GetField("Initialized", StaticMembers);
+            if (environmentManagerInitializedField?.FieldType != typeof(bool))
+                environmentManagerInitializedField = null;
+
+            // EWD 1.83 applies environments only after successful parsing and any backfill.
+            // Hook that publication point instead of interpreting the new SetResult enum.
+            if (environmentManagerType.FullName == "ExpandWorldData.Environment.EnvironmentManager")
+            {
+                MethodInfo apply = environmentManagerType.GetMethod("Apply", StaticMembers, null,
+                    new[] { typeof(List<EnvSetup>) }, null);
+                if (apply != null && !apply.ContainsGenericParameters && apply.ReturnType == typeof(void))
+                    environmentUpdateMethod = apply;
+            }
+
+            // Keep the existing hooks for supported older EWD versions.
+            if (environmentUpdateMethod == null)
+                foreach (Type argument in new[] { typeof(Dictionary<string, string>), typeof(string) })
+                {
+                    MethodInfo method = environmentManagerType.GetMethod("Set", StaticMembers, null, new[] { argument }, null);
+                    if (method != null && !method.ContainsGenericParameters &&
+                        (method.ReturnType == typeof(bool) || method.ReturnType == typeof(void)))
+                    {
+                        environmentUpdateMethod = method;
+                        break;
+                    }
+                }
+
+            if (environmentUpdateMethod == null || environmentManagerInitializedField == null)
+            {
+                environmentUpdateMethod = null;
+                Seasons.LogWarning("Expand World Data environment reload compatibility is unavailable: " +
+                    "the environment publication method or initialization gate is not supported. Seasonal weather selection remains available.");
+                return false;
+            }
+            return true;
         }
 
         private static bool IsEnvironmentManagerInitialized()
         {
-            if (!TryGetEnvironmentManagerType())
-                return false;
-
-            environmentManagerInitializedField ??= AccessTools.Field(environmentManagerType, "Initialized");
-            return environmentManagerInitializedField?.GetValue(null) is bool initialized && initialized;
+            return TryResolveEnvironmentUpdateMembers() &&
+                environmentManagerInitializedField.GetValue(null) is bool initialized && initialized;
         }
 
         private static void ReapplySeasonEnvironmentsAfterEwdUpdate()
@@ -139,12 +189,12 @@ namespace Seasons.Compatibility
                 if (!TryGetEnvironmentManagerType())
                     return false;
 
-                target ??= AccessTools.Method(environmentManagerType, "Initialize", Type.EmptyTypes);
+                target ??= environmentManagerType.GetMethod("Initialize", StaticMembers, null, Type.EmptyTypes, null);
                 if (target == null)
                     return false;
 
                 if (original == null)
-                    Seasons.LogInfo("ExpandWorldData.EnvironmentManager:Initialize method is patched to reset Seasons EWD world state");
+                    Seasons.LogInfo(environmentManagerType.FullName + ":Initialize method is patched to reset Seasons EWD world state");
 
                 return true;
             }
@@ -158,21 +208,18 @@ namespace Seasons.Compatibility
         }
 
         [HarmonyPatch]
-        public static class EWD_EnvironmentManager_Set_ReapplySeasonEnvironments
+        public static class EWD_EnvironmentManager_Apply_ReapplySeasonEnvironments
         {
             public static MethodBase target;
 
             public static bool Prepare(MethodBase original)
             {
-                if (!TryGetEnvironmentManagerType())
+                if (!TryResolveEnvironmentUpdateMembers() || environmentUpdateMethod.ReturnType != typeof(void))
                     return false;
 
-                target ??= AccessTools.Method(environmentManagerType, "Set", new Type[] { typeof(string) });
-                if (target == null)
-                    return false;
-
+                target = environmentUpdateMethod;
                 if (original == null)
-                    Seasons.LogInfo("ExpandWorldData.EnvironmentManager:Set method is patched to reapply Seasons environments after EWD environment changes");
+                    Seasons.LogInfo("Expand World Data environment reload hook: " + target);
 
                 return true;
             }
@@ -186,6 +233,32 @@ namespace Seasons.Compatibility
         }
 
         [HarmonyPatch]
+        public static class EWD_EnvironmentManager_SetResult_ReapplySeasonEnvironments
+        {
+            public static MethodBase target;
+
+            public static bool Prepare(MethodBase original)
+            {
+                if (!TryResolveEnvironmentUpdateMembers() || environmentUpdateMethod.ReturnType != typeof(bool))
+                    return false;
+
+                target = environmentUpdateMethod;
+                if (original == null)
+                    Seasons.LogInfo("Expand World Data environment reload hook: " + target);
+                return true;
+            }
+
+            public static MethodBase TargetMethod() => target;
+
+            public static void Postfix(bool __result)
+            {
+                // Failed parsing and migration retries do not publish a new environment list.
+                if (__result)
+                    ReapplySeasonEnvironmentsAfterEwdUpdate();
+            }
+        }
+
+        [HarmonyPatch]
         public static class EWD_BiomeManager_SetupBiomeEnvs_RegisterAuthoritativeSetup
         {
             public static MethodBase target;
@@ -195,12 +268,12 @@ namespace Seasons.Compatibility
                 if (!TryGetBiomeManagerType())
                     return false;
 
-                target ??= AccessTools.Method(biomeManagerType, "SetupBiomeEnvs", new Type[] { typeof(List<BiomeEnvSetup>) });
+                target ??= biomeManagerType.GetMethod("SetupBiomeEnvs", StaticMembers, null, new[] { typeof(List<BiomeEnvSetup>) }, null);
                 if (target == null)
                     return false;
 
                 if (original == null)
-                    Seasons.LogInfo("ExpandWorldData.BiomeManager:SetupBiomeEnvs method is patched to preserve EWD biome entries while applying seasonal rules");
+                    Seasons.LogInfo(biomeManagerType.FullName + ":SetupBiomeEnvs method is patched to preserve EWD biome entries while applying seasonal rules");
 
                 return true;
             }
@@ -210,6 +283,79 @@ namespace Seasons.Compatibility
             public static void Postfix()
             {
                 CaptureEwdBiomeSetup();
+            }
+        }
+
+        private static Type GetClutterManagerType() =>
+            assembly?.GetType("ExpandWorldData.Clutter.ClutterManager")
+                ?? assembly?.GetType("ExpandWorldData.ClutterManager");
+
+        [HarmonyPatch]
+        public static class EWD_ClutterManager_ToData_UseBaseValues
+        {
+            private static MethodBase target;
+            private static FieldInfo enabledField, minField, maxField;
+
+            public static bool Prepare(MethodBase original)
+            {
+                MethodInfo method = GetClutterManagerType()?.GetMethod("ToData", StaticMembers, null,
+                    new[] { typeof(ClutterSystem.Clutter) }, null);
+                if (method == null || (method.ReturnType.FullName != "ExpandWorldData.Clutter.ClutterYaml" &&
+                    method.ReturnType.FullName != "ExpandWorldData.ClutterYaml"))
+                    return false;
+
+                enabledField = method.ReturnType.GetField("enabled");
+                minField = method.ReturnType.GetField("scaleMin");
+                maxField = method.ReturnType.GetField("scaleMax");
+                if (enabledField?.FieldType != typeof(bool) || minField?.FieldType != typeof(float) ||
+                    maxField?.FieldType != typeof(float))
+                    return false;
+
+                target = method;
+                return true;
+            }
+
+            public static MethodBase TargetMethod() => target;
+
+            public static void Postfix(ClutterSystem.Clutter clutter, object __result)
+            {
+                ClutterVariantController controller = ClutterVariantController.Instance;
+                if (__result == null || !controller || !controller.TryGetClutterDefaults(clutter, out var defaults))
+                    return;
+
+                // Default entries are shared with the game. Export their base values, not seasonal multipliers.
+                // Change only the YAML data object, never the live clutter entry.
+                enabledField.SetValue(__result, defaults.Item1);
+                minField.SetValue(__result, defaults.Item2);
+                maxField.SetValue(__result, defaults.Item3);
+            }
+        }
+
+        [HarmonyPatch]
+        public static class EWD_ClutterManager_Set_RefreshSeasonalClutter
+        {
+            private static MethodBase target;
+
+            public static bool Prepare(MethodBase original)
+            {
+                MethodInfo method = GetClutterManagerType()?.GetMethod("Set", StaticMembers, null,
+                    new[] { typeof(Dictionary<string, string>) }, null);
+                if (method == null || (method.ReturnType != typeof(bool) &&
+                    method.ReturnType.FullName != "ExpandWorldData.Data.SetResult"))
+                    return false;
+
+                target = method;
+                return true;
+            }
+
+            public static MethodBase TargetMethod() => target;
+
+            public static void Postfix()
+            {
+                // Failed parsing and backfill keep the old entry objects, so no refresh is needed.
+                // A published list is reconciled by identity before EWD's scheduled rebuild.
+                if (seasonsWorldInitialized)
+                    ClutterVariantController.Instance?.RefreshExternalClutter();
             }
         }
 

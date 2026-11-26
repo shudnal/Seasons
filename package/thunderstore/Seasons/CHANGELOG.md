@@ -1,3 +1,18 @@
+# 1.11.0
+* updated for Valheim 1.0.30; winter loss of cultivation supports the new terrain data format
+* reworked sliding on frozen oceans: run steadily and release movement for a long, steerable glide with smooth camera and animation feedback; configure wind effects, maximum FOV and creature slipping or use native slipping instead
+* improved movement across frozen ocean zone boundaries
+* fixed flickering and repeated particle resets in hoe and cultivator placement previews
+* footsteps reduce seasonal snow on supported building pieces and use the snow footstep effect while clearing snow; configure the reduction and minimum snow depth
+* sea serpents no longer target creatures or structures above frozen water
+* added independent switches for seasonal resource drops, food, stamina, Rested, fuel, production, livestock, night length, wind, torch warmth and heat damage
+* added a separate switch for mature crops and other supported harvests perishing in winter
+* added a Fuzzy season timer with configurable stages and optional morning announcements
+* restored compatibility with Expand World Data 1.83, including environment reloads, custom biome names and live clutter settings
+* avoid unnecessary grass rebuilds during seasonal updates, reducing work with FarLands and without it
+* changes to the list of grass prefabs to control size now apply without rejoining the world
+* reduced seasonal overhead for summer heat, food, rain protection, terrain, frozen water and snow visuals
+
 # 1.10.6
 * restored seasonal minimap and territory overlay compatibility with Marketplace 10.0.6
 
@@ -23,24 +38,18 @@
 * fixed compatibility with Drop That and other loot mods when seasonal meat drop multipliers are active; configured drops, conditions, modifiers and limits now keep their original drop references
 
 # 1.10.0
-
-## Snow
 * major optimization for seasonal snow, especially on large bases with many snow-covered pieces; reduced overhead outside winter and when seasonal snow is disabled
 * improved snow accumulation and melting when loading areas, sleeping and skipping time, and more consistent behavior around shelters and active heat sources
 * added snow caps for 385 additional build pieces from ClayBuildPieces, CoreWoodPieces, FineWoodBuildPieces, Balrond Constructions, OdinArchitect, MissingPieces and More Gates Extended; supported pieces include roofs, walls, beams, pillars, floors, stairs, gates and storage furniture
 * added reduced snow buildup rules for 195 more vanilla pieces. Most non-roof pieces now receive thinner snow, while roofs, roundpole fences (`wood_fence`) and crafting stations such as workbenches retain the normal seasonal maximum
 * adjusted snow-cap placement and size on numerous vanilla and modded pieces; the default snow configuration now contains 618 piece rules
 * added optional snow hover diagnostics showing the active snow cap and its current position and scale, making custom snow placement easier to adjust
-
-## Ice floes
 * major rework for ice floes physics: floes now tilt with the waves and sit more naturally in the water, while retaining physical interaction with players, creatures, ships and nearby floes
 * improved distant movement and transitions when approaching or leaving floes; distant floes stay at the water surface instead of hanging above it where waves are no longer visible
 * major performance improvements for large numbers of floes and long view distances, including smoother reactions to changing wind
 * larger floes and fewer placement attempts per ocean zone by default: scale 1.25-2.5 and 10-15 attempts per zone, not a world-wide limit
 * improved placement spacing and prevention of duplicate spawns
 * floes are removed promptly when disabled, when the ocean freezes, or when their configured winter period ends
-
-## Configuration and server upgrades
 * advanced floe settings, including amount, size and movement, now use `BepInEx/config/shudnal.Seasons/Seasonal ice floes.json`. The enable switch, winter day range and base health remain in `BepInEx/config/shudnal.Seasons.cfg` under `Season - Winter ocean`
 * per-piece snow buildup, copied caps, position/scale adjustments and creature/cape snow settings are in `BepInEx/config/shudnal.Seasons/Seasonal snow.json`. General snow controls remain in the main cfg under `Season - Winter snow`
 * complete reference JSON files are generated in `BepInEx/config/shudnal.Seasons/Default settings/`. Copy a file one directory up to customize it; do not edit the generated reference files
@@ -274,9 +283,6 @@
 # 1.3.7
 * fix for undying winter crops and crops to control growth
 
-<details>
-<summary><b>Changelog History</b> (<i>click to expand</i>)</summary>
-
 # 1.3.6
 * potential fix for environments (weather) synchronization
 
@@ -402,15 +408,14 @@
 * you can climb on ice floe
 
 # 1.0.12
-* option to hide buff info in Raven menu 
+* option to hide buff info in Raven menu
 * option to set amount of ice floes in winter
-* option for crops and pickables to perish in winter 
+* option for crops and pickables to perish in winter
 * option to make selected crops not to perish in winter
 * proper coloring of raspberry bushes (delete Cache folder to recreate the cache)
-* proper pickable and plants growth control 
+* proper pickable and plants growth control
 * proper recoloring freshly planted pickables and crops
 * seasonal changes properly ignores objects located in interior, Mountains, DeepNorth and Ashlands
-
 
 # 1.0.11
 * hide grass in winter enabled by default (now you can set period in days)
@@ -477,6 +482,4 @@
 * thunderstore package restructured
 
 # 1.0.0
- * Initial Release
-
-</details>
+* Initial Release

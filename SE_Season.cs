@@ -36,6 +36,7 @@ namespace Seasons
 
         public override void Setup(Character character)
         {
+            SeasonFuzzyTimer.Invalidate();
             StatusEffectHud.EnsureTimeTextRichText();
             
             m_season = seasonState.GetCurrentSeason();
@@ -54,7 +55,10 @@ namespace Seasons
                 return "";
 
             _sb.Clear();
-            _sb.AppendFormat("{0}\n", GetSeasonTooltip());
+            if (seasonsTimerFormatInRaven.Value == TimerFormat.Fuzzy)
+                _sb.Append(GetSeasonName(seasonState.GetCurrentSeason())).Append(": ").Append(SeasonFuzzyTimer.GetText()).Append('\n');
+            else
+                _sb.AppendFormat("{0}\n", GetSeasonTooltip());
             
             if (seasonsTimerFormatInRaven.Value == TimerFormat.CurrentDay || seasonsTimerFormatInRaven.Value == TimerFormat.CurrentDayAndTimeToEnd)
                 _sb.AppendFormat("{0} / {1}\n", $"$hud_mapday {seasonState.GetCurrentDay()}".Localize(), seasonState.GetDaysInSeason());
@@ -85,6 +89,9 @@ namespace Seasons
         {
             if (seasonsTimerFormat.Value == TimerFormat.None)
                 return "";
+
+            if (seasonsTimerFormat.Value == TimerFormat.Fuzzy)
+                return SeasonFuzzyTimer.GetText();
 
             _sb.Clear();
             
@@ -147,6 +154,7 @@ namespace Seasons
 
         public static void UpdateSeasonStatusEffectStats()
         {
+            SeasonFuzzyTimer.Invalidate();
             (Player.m_localPlayer?.GetSEMan().GetStatusEffect(SeasonsVars.s_statusEffectSeasonHash) as SE_Season)?.Setup(Player.m_localPlayer);
         }
 

@@ -11,22 +11,8 @@ namespace Seasons
     [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.UpdateSnowVisual))]
     internal static class WearNTear_UpdateSnowVisual_PooledCaps
     {
-        private static bool RouteVisual(WearNTear piece)
-        {
-            SeasonalSnowController controller = SeasonalSnowController.Instance;
-            if (!SeasonalSnow.WinterReady && !controller.HasSnowRuntime(piece) &&
-                !controller.HasSnowVisual(piece))
-            {
-                if (piece.m_snowBuildup > 0f || piece.m_addPreSnow)
-                {
-                    if (SeasonalSnowMeshSettings.TryApplyDisabledSnow(piece))
-                        return true;
-                    SeasonalSnow.ClearInactiveLoadedSnow(piece);
-                }
-                return false;
-            }
-            return controller.TryQueueCurrentVisual(piece);
-        }
+        private static bool RouteVisual(WearNTear piece) =>
+            SeasonalSnowController.Instance.TryQueueCurrentVisual(piece);
 
         [HarmonyTranspiler]
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)

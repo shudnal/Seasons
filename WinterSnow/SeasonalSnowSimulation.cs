@@ -502,13 +502,14 @@ namespace Seasons
             state.ForceVisual |= force;
             if (state.VisualQueued)
                 return;
-            if (!visuals.ContainsKey(state.Piece) && state.Snow <= VisibilityThreshold)
+            bool hasVisual = visuals.TryGetValue(state.Piece, out VisualState visual);
+            if (!hasVisual && state.Snow <= VisibilityThreshold)
             {
                 state.ForceVisual = false;
                 HideCapRoots(state.Piece);
                 return;
             }
-            if (visuals.TryGetValue(state.Piece, out VisualState visual) && !visual.Disabled && visual.Matches(state.Piece))
+            if (hasVisual && !visual.Disabled && visual.Matches(state.Piece))
             {
                 bool prioritizeHide = SetVisualTarget(visual, state.Snow, disabled: false);
                 if (visual.Queued)

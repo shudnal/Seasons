@@ -3,6 +3,9 @@ seasons_season_spring_name;Spring;Весна;Frühling;Primavera;Jaro;Lente;Prin
 seasons_season_summer_name;Summer;Лето;Sommer;Verano;Léto;Zomer;Été;夏;여름;Lato;Verão;Yaz;Літо;夏天;夏天
 seasons_season_fall_name;Autumn;Осень;Herbst;Otoño;Podzim;Herfst;Automne;秋;가을;Jesień;Outono;Sonbahar;Осінь;秋天;秋天
 seasons_season_winter_name;Winter;Зима;Winter;Invierno;Zima;Winter;Hiver;冬;겨울;Zima;Inverno;Kış;Зима;冬天;冬天
+seasons_timer_fuzzy_arrives;Arrives;Наступает;Beginnt;Comienza;Nastává;Breekt aan;S’installe;訪れる;찾아옴;Nadchodzi;Chega;Başlıyor;Настає;初临;初臨
+seasons_timer_fuzzy_reigns;Reigns;В разгаре;In vollem Gange;En su apogeo;V plném proudu;In volle gang;Bat son plein;真っ盛り;한창;W pełni;No auge;Doruğunda;У розпалі;正盛;正盛
+seasons_timer_fuzzy_fades;Fades;Угасает;Klingt aus;Se desvanece;Doznívá;Loopt ten einde;S’estompe;薄れゆく;저물어감;Przemija;Se desvanece;Sona eriyor;Згасає;渐尽;漸盡
 seasons_season_spring_is_coming;Spring is coming;Скоро весна;Der Frühling kündigt sich an;La primavera se acerca;Jaro se blíží;De lente nadert;Le printemps s’annonce;春が近づいている;봄이 다가온다;Zbliża się wiosna;A primavera se aproxima;Bahar yaklaşıyor;Скоро весна;春天将至;春天將至
 seasons_season_summer_is_coming;Summer is approaching;Близится лето;Der Sommer steht kurz bevor;El verano está por llegar;Léto se blíží;De zomer staat voor de deur;L’été arrive bientôt;夏がやって来る;여름이 다가온다;Zbliża się lato;O verão se aproxima;Yaz yaklaşıyor;Близиться літо;夏天将至;夏天將至
 seasons_season_fall_is_coming;Autumn is on its way;Наступает осень;Der Herbst steht vor der Tür;El otoño se acerca;Podzim přichází;De herfst nadert;L’automne approche;秋が近づいている;가을이 다가온다;Zbliża się jesień;O outono se aproxima;Sonbahar yaklaşıyor;Наближається осінь;秋天将至;秋天將至

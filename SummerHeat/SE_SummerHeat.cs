@@ -29,7 +29,7 @@ namespace Seasons
         {
             base.UpdateStatusEffect(dt);
 
-            if (!SummerHeat.IsReady || !SummerHeat.IsMechanicActive || m_character is not Player player)
+            if (!Seasons.summerHeatDamageEnabled.Value || !SummerHeat.IsReady || !SummerHeat.IsMechanicActive || m_character is not Player player)
             {
                 _damageTimer = 0f;
                 return;
@@ -95,7 +95,7 @@ namespace Seasons
 
             AppendActiveFactors(TooltipBuilder);
 
-            if (SummerHeat.MaxEffectFactor > 0f)
+            if (Seasons.summerHeatDamageEnabled.Value && Mathf.Abs(Seasons.summerHeatDamageHealthPerTick.Value) > 0f && SummerHeat.MaxEffectFactor > 0f)
             {
                 float minSoftCapPercent = GetMinSoftHpCap();
                 float softCapPercent = Mathf.Lerp(1f, minSoftCapPercent, SummerHeat.MaxEffectFactor) * 100f;
