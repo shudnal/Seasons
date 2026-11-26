@@ -234,9 +234,9 @@ namespace Seasons
 
         public const float _winterWaterSurfaceOffset = 2f;
         public const float _colliderOffset = 0.01f;
-        private const float IceColliderOverlap = 1f;
-        private const float IceColliderBevelWidth = 3f;
-        private const float IceColliderBevelDepth = 0.01f;
+        private const float IceColliderOverlap = 1.5f;
+        private const float IceColliderBevelWidth = 1f;
+        private const float IceColliderBevelDepth = 0.25f;
         private const float IceColliderThickness = _winterWaterSurfaceOffset * 0.5f;
         public const string _iceSurfaceName = "IceSurface";
         public static readonly int s_playerDroppedFish = "Seasons_PlayerDroppedFish".GetStableHashCode();
@@ -601,7 +601,7 @@ namespace Seasons
             float bevel = -IceColliderBevelDepth;
             float bottom = -IceColliderThickness;
 
-            // Overlap the beveled edges so each outer edge lies below the neighboring slope.
+            // Overlap the flat tops and keep the outer edges below the neighboring surface.
             // Keep the top, bevel and bottom rings in one closed convex mesh.
             Mesh mesh = new Mesh
             {
