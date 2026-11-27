@@ -1,17 +1,19 @@
-# Seasons × FarLands: integration proposal
+# Seasons × FarLands / SteadyFrame: integration design
 
-**Status:** Draft for joint technical review (revision 2). Not an implementation specification or approval to change either repository.
+**Status:** Agreed design (revision 3, 2026-11-27). Implementation baseline for both sides; not a claim that the features have been implemented, tested or released.
 
-**Goal:** Agree on a small, performant contract between the two mods, then implement both sides against the agreed contract. This document is intended for the FarLands developer and their coding assistant. Please review it against the actual FarLands source and shaders, correct any inaccurate assumptions, and return a revised document or a focused response to the open questions. Preserve the agreed requirements unless proposing an explicit change with a reason.
+**Goal:** Implement a small, performant, optional integration for autumn tree colors and protected grass without changing the existing draw grouping or native Seasons behavior. The GPU grass implementation is shared by FarLands and SteadyFrame; the tree integration is specific to FarLands.
+
+**Coordination:** [Seasons issue #55](https://github.com/shudnal/Seasons/issues/55). Revision 3 consolidates the [FarLands technical review](https://github.com/shudnal/Seasons/issues/55#issuecomment-7218849170), [Seasons decisions](https://github.com/shudnal/Seasons/issues/55#issuecomment-7221072693), [FarLands final clarifications](https://github.com/shudnal/Seasons/issues/55#issuecomment-7223264121) and [Seasons acceptance](https://github.com/shudnal/Seasons/issues/55#issuecomment-7223353504). Both sides have closed the remaining contract questions. Resolve any implementation-level changes in the issue and keep this document in sync; FarLands will review revision 3 against its actual source.
 
 ## 1. Scope and verified baseline
 
-Two independent improvements are proposed:
+Two independent improvements are agreed:
 
 1. **Autumn tree colors:** distant deciduous trees should show the same spatial distribution of autumn color variants as nearby trees, with approximate colors acceptable. Preserve FarLands' GPU instancing and indirect rendering architecture.
 2. **Protected grass:** allow FarLands' background grass generation to remain active with Seasons, while preserving the seasonal grass settings and shield protection behavior.
 
-No new general-purpose rendering system, per-instance material creation, cross-mod dependency for unrelated features, or per-frame CPU scan is requested. Spring, summer and winter need no additional distant tree color variation. Existing snow, terrain, building, rock and Seasonality integrations must continue to work. Existing approximation in FarLands' placement and rendering algorithms is not a request to reproduce every detail of the game simulation.
+No new general-purpose rendering system, per-instance material creation, cross-mod dependency for unrelated features, or per-frame CPU scan is requested. Spring, summer and winter need no additional distant tree color variation. Existing snow, terrain, building, rock and Seasonality integrations must continue to work. Understorey color variation, FarLands persistent atlas caching, and the internal modernization of the Seasons texture cache format are outside the joint scope. Existing approximation in FarLands' placement and rendering algorithms is not a request to reproduce every detail of the game simulation.
 
 ### Source baseline
 
@@ -21,7 +23,7 @@ No new general-purpose rendering system, per-instance material creation, cross-m
 | FarLands | Decompiled 1.5.2 assembly, informational version `1.5.2+c606f871c912653a00e4d6576a9035c832e13018`. Decompiled C# file SHA-256 `c31f70938beba74c66b67ac1efbad3eeb75f4d76789d579c72ac0d6936092a6a`. |
 | Valheim | 1.0.30, [`216cb30f748e0ef9c74a8366395e9cc110f3cd8d`](https://github.com/shudnal/assemblies_combined/tree/216cb30f748e0ef9c74a8366395e9cc110f3cd8d) |
 
-The FarLands analysis is based on the decompiled assembly, not its complete source repository. Shader source and all shader channel semantics were not available. Statements about the proposed shader changes are design suggestions, not claims about existing shader capabilities. No builds, runtime tests or performance measurements have been performed. Source line references below refer to the inspected revisions, not necessarily the latest working branches.
+The initial Seasons-side FarLands analysis used the decompiled assembly, not its complete source repository. The FarLands developer subsequently checked the C# source and shaders against 1.5.2 and supplied the missing channel semantics, GPU reader audit and job lifecycle details in the technical review linked above. Statements attributed to that review are source evidence supplied by the FarLands side, not an independent Seasons-side shader audit. No builds, runtime tests or performance measurements have been performed for this integration. Source line references below refer to the inspected revisions, not necessarily the latest working branches.
 
 ## 2. Autumn colors: current Seasons implementation
 
@@ -71,7 +73,7 @@ public static int GetAutumnVariant(Vector3 worldPosition)
 }
 ```
 
-This wrapper is **proposed**, not a method that already exists. `WorldToMapPoint` computes `(x / 12 + 1024) / 2048` and `(z / 12 + 1024) / 2048`. `GetNoise` uses the world's seed factor (`log10(abs(seed))`, or zero), two Perlin samples, frequency 10000, a divisor of 1.1, a power of 1.3, and rounding to increments of 0.05. In autumn the coordinates are `(mx, 1 - my)`:
+This wrapper is the agreed implementation of the new API method; it does not exist in the baseline. `WorldToMapPoint` computes `(x / 12 + 1024) / 2048` and `(z / 12 + 1024) / 2048`. `GetNoise` uses the world's seed factor (`log10(abs(seed))`, or zero), two Perlin samples, frequency 10000, a divisor of 1.1, a power of 1.3, and rounding to increments of 0.05. In autumn the coordinates are `(mx, 1 - my)`:
 
 ```text
 n = (Perlin(mx * 10000 + seedFactor, (1 - my) * 10000 - seedFactor)
@@ -80,7 +82,7 @@ factor = Round(Pow(n, 1.3) * 20) / 20
 index = factor < 0.25 ? 0 : factor < 0.5 ? 1 : factor < 0.75 ? 2 : 3
 ```
 
-Use the existing implementation for exact float/double arithmetic and rounding behavior. The result depends on position and world seed, not tree type, camera position, tile load order or time within autumn. It is not a uniform random distribution of four colors. The API should only be called after the Seasons controller and world are ready, on the main thread unless thread safety is explicitly established.
+Use the existing implementation for exact float/double arithmetic and rounding behavior. The result depends on position and world seed, not tree type, camera position, tile load order or time within autumn. It is not a uniform random distribution of four colors. The API should only be called after the Seasons controller and world are ready, on the main thread.
 
 ## 3. Autumn colors: current FarLands implementation
 
@@ -93,40 +95,37 @@ From the inspected assembly:
 - `ImpostorBaker` uses 64 views (8 × 8). `Stage` prepares a model with its materials. A deferred camera renders each view, then command-buffer blits from the GBuffer through `ImpostorBake.shader` into `_tileAlbedo` and `_tileNormal`. `Step` copies tiles into the atlas; `EndType` generates mipmaps and reads normal atlas alpha for coverage. Some types also have a separate snow albedo atlas. `ImpostorDrawer` renders the impostor using indirect drawing.
 - `InstanceBuffer.Put` writes `GpuTree` entries containing position, scale, yaw, type and two tilt values: eight floats, 32 bytes. `TreeTypes.Max` is 32; several culling/counting arrays and type masks are organized by tree type. `FarForest.Capacity` is 524288. Model and impostor paths share the tree instance data.
 
+The FarLands source review confirmed that Put runs on the main thread (it calls ComputeBuffer.SetData), that the existing look-change lifecycle recreates the forest, and that all GPU readers of the type field use integer truncation. See section 4 for the agreed shader/layout details.
+
 Relevant decompiled symbols/line anchors: `GameLooks` 21738+, `ImpostorBaker` 23066+, `ImpostorDrawer` 23658+, `ImpostorLayer` 23829+, `InstanceBuffer` 24006+, `ModelLayer` 25393+, `SeasonsLink` 27729+, `TreeMeshes` 28874+, `TreeTypes` 29097+, `TickForest` 31406+.
 
-## 4. Proposed autumn integration
+## 4. Agreed autumn integration
 
 ### 4.1 Requirements
 
-- Use the existing Seasons autumn noise function, evaluated once per relevant tree when filling the GPU instance buffer, not every frame or in the pixel shader.
-- Use **variant 3 (the fourth variant)** as the base appearance for eligible deciduous trees in autumn. Variants 0–2 are approximate color corrections of that base; variant 3 is identity.
-- Preserve the existing tree type, mesh parts, culling groups, indirect draw command count and single set of geometry/normal/coverage data. Do not duplicate every tree type or create a draw group per color variant.
-- No additional color-variant atlas sets. One optional compact mask atlas is acceptable if the existing atlas channels cannot safely hold the mask.
-- Apply correction only to eligible autumn materials/prefabs. No extra autumn color work in other seasons; no forced recoloring of noncontrolled trees, trunks, rocks, or other unrelated materials. Existing seasonal rendering remains the default for unsupported materials.
+- Use the existing Seasons autumn noise function once per relevant tree at instance-buffer upload. No noise calculation per frame or shader invocation.
+- Use zero-based **variant 3 (the fourth variant)** as the generated base appearance for eligible distant forest trees in autumn. Variants 0–2 are approximate color corrections of that base; variant 3 is identity.
+- Preserve the existing logical tree types, mesh parts, culling groups, draw commands and 32-byte instance layout. Do not duplicate color atlases, normal/coverage atlases or draw groups for the variants.
+- Apply the new variation only to eligible autumn appearances. Outside autumn, keep the current mirror-position variant selection and the existing material path. Leave understorey, rocks, buildings and unrelated rendering paths unchanged. No extra autumn color work in other seasons.
+- Match the configured overall color scheme, not individual replacement PNGs or exact source pixels. The eligible forest impostors use an existing atlas channel for the mask; no additional persistent impostor mask atlas.
 
-### 4.2 Main-thread appearance API (Seasons responsibility)
+### 4.2 Main-thread appearance API and existing mirrors
 
-Provide a small public integration module in Seasons with directly callable methods. Exact signatures, assembly placement and lifetime contract are to be agreed; examples below describe the required data, not a finalized API:
+The final API signatures and capability binding rules are in section 8. Retain the existing GameLooks renderer/LOD mirrors and native Seasons material resolution. Both the model and bake paths already use GameLooks.Materials(prefab, renderer).
 
-```csharp
-// Proposed contract, not existing methods/types.
-public static bool IsAutumnVariationActive { get; }
-public static int GetAutumnVariant(Vector3 worldPosition);
-public static bool TryGetAutumnAppearance(
-    GameObject prefab, MeshRenderer renderer, int materialIndex,
-    out AutumnAppearance appearance);
-```
+FarLands calls FollowWithVariant(controlledCopy, prefabName, 3) for the forest-tree mirror path intended for the new integration. The requested index is a persistent autumn-only override on that controlled copy:
 
-The appearance result should identify the correct base shared material (or supply the required texture/color bindings for that exact renderer slot), the recolor mask for the relevant albedo texture, and four shader correction parameters. It must use the **same cached renderer/material/texture mapping** as native Seasons, including LOD context, rather than a texture name heuristic. A public method to get the mask for a resolved cache entry is useful independently of FarLands.
+- In autumn, indices 0–3 select the explicit variant. Outside autumn, the normal position-based variant selection is used.
+- An index of -1 always uses the normal selection, including in autumn. FarLands uses -1 for understorey and other existing mirror consumers.
+- Registration and repeated following must work with the existing mirror lifecycle; keep the override when an existing controller is refreshed or reinitialized. No re-registration on every season change is required. Do not change the selection for ordinary loaded game objects.
+- Use the same cached renderer/material/texture binding, including LOD and material slot, as native Seasons. Do not infer the base or mask from the texture name or mirror position.
+- TryGetRecolor(controlledRenderer, materialIndex, out mask, palette) returns the mask in the UV space of that slot's _MainTex, and the palette described in section 4.5. Use the actual effective palette associated with the generated texture/cache entry, including configured prefab/material overrides. A false result means no additional color correction for the slot: for example, no controlled texture, no valid mask, texture control disabled, not autumn, or data not ready. Preserve the existing appearance path for objects/types that cannot participate.
 
-Seasons owns the returned shared resources; FarLands must not mutate or destroy them. FarLands owns copies, baked atlases and shader bindings it creates. Lookup/material construction is per appearance, not per tree. A false result means use the existing material path without additional autumn variation. The base variant must be explicit, not obtained by moving a mirror to a guessed coordinate.
+Seasons owns shared materials, generated textures and the returned source masks. FarLands owns the mirrors, copied materials, temporary bake resources, atlases and shader bindings it creates. Lookup/material construction is per appearance, not per tree. A special generated-only binding must not overwrite a shared material used by ordinary loaded trees or legacy consumers. Keep existing controller removal and legacy paths compatible; no new API methods are needed for unrelated features.
 
-Reuse existing material variants and texture cache where possible. If it is simpler for the initial integration to keep the mirror for material resolution, expose an explicit variant override in that controlled path. Do not change the normal near-tree variant selection or the shared original prefab to accommodate FarLands. The new API should remove the need for reflection in the new integration. Existing unrelated reflection-based features are outside this task.
+### 4.3 Source masks and CustomTextures
 
-### 4.3 Generate and cache source masks in Seasons
-
-Seasons already knows the exact pixels that will be recolored. Build the mask from `pixelsToChange` while generating the seasonal texture cache, before modifying the original pixels:
+Seasons already selects the exact pixels that will be recolored. Build the mask from the existing pixelsToChange list during seasonal texture cache generation, before altering the original pixels:
 
 ```text
 mask = byte[originalWidth * originalHeight]  // initially 0
@@ -134,59 +133,115 @@ for each pixelIndex in pixelsToChange:
     mask[pixelIndex] = 255
 ```
 
-A single mask covers the four variants of this generated texture because all variants use the same selected pixel indices. Values are 0 (unchanged) or 255 (recolor); filtering/mipmaps produce intermediate coverage. The mask is scalar, linear data, not an sRGB color image. Respect source texture dimensions, UV orientation, wrap and filtering. Preserve existing source alpha/cutout separately. The mask must be associated with the actual cached texture entry (and relevant material binding), not a globally unique name or a Unity instance ID taken from a different game session. The current cache records texture IDs in `CachedRenderer`; reuse those resolved cache-local keys. Do not add a separate per-season or per-variant mask unless a real requirement emerges.
+A single mask covers the four generated variants of this texture because they share the selected pixel indices. Values are 0 (unchanged) or 255 (recolor); filtering and mipmaps produce intermediate coverage. The mask is scalar linear data, not an sRGB color image. Respect source dimensions, UV orientation, wrap, filtering and the original alpha/cutout. Associate it with the resolved cache-local texture entry and material binding, not a globally unique name or a Unity instance ID from a different session. No separate per-season or per-variant mask is required.
 
-A mask can be absent for an uncontrolled texture or one whose custom replacement no longer corresponds to the generated texture. `CustomTextures.HaveCustomTexture` can replace a generated variant with arbitrary user content. For this integration, do not recolor a custom replacement using an unverified mask. Retain the existing appearance instead. No attempt to infer or generate masks for arbitrary user-provided textures is required.
+**Agreed CustomTextures policy:** the new autumn forest path uses the generated variant 3 and its matching source mask, and the configured ColorVariant parameters for variants 0–2. Ignore PNG replacements when constructing this generated base/mask pair or choosing the new distant color corrections. In particular, the shipped Fall_3.png replacements (zero-based variant 2) for beech, birch and oak do not disable recoloring, and do not require a separate fitted palette. A replacement of Fall_4.png must not replace the generated base while retaining its old mask. Normal Seasons objects and existing appearance paths outside this integration continue using CustomTextures as before.
 
-Persist the source masks with the corresponding cache generation. Regenerate the cache when the required mask data is absent or outdated. Load a mask lazily through a public getter when requested, not merely because FarLands is installed. No mask textures or persistent mask payload arrays should remain resident when no consumer requests them. A linear single-channel `R8` texture with mipmaps is preferred if supported. Unity texture creation/upload belongs on the main thread. Share the loaded mask for the current cache generation and release it on cache replacement/disposal after consumers have been invalidated.
+This deliberately accepts differences between near replacement textures and distant approximate colors. Do not analyze arbitrary user PNGs, introduce a separate color fitting system, or turn the presence of a custom texture into a reason to disable all four distant colors. If a concrete user configuration produces an undesirable discrepancy, Seasons can investigate the supplied settings and adjust the relevant configured palette separately.
 
-The on-disk format, serialization, cache migration and other internal cache optimizations are outside the joint integration scope. They are implementation details owned by Seasons. FarLands only needs the appearance/mask API and its lifetime contract; the two implementations must not depend on a particular Seasons cache file format.
+Persist the source masks with the corresponding cache generation. Regenerate the cache when required mask data is absent or outdated. Provide reusable mask retrieval on the Seasons side, with lazy loading when a consumer requests a mask (not merely because FarLands is installed). Prefer a linear single-channel R8 texture with mipmaps if supported. Texture creation/upload is on the main thread. Share loaded masks for the current cache generation; release them on replacement/disposal according to section 4.6. Users who never request masks must not retain decoded mask textures or persistent mask payload arrays in RAM/VRAM.
 
-### 4.4 Bake the source mask into the impostor (FarLands responsibility)
+The on-disk format, serialization, cache migration and other internal cache optimizations are outside the joint integration scope. They are implementation details owned by Seasons. FarLands depends only on the appearance API and resource lifetime, not a particular Seasons cache file format.
 
-The mask supplied by Seasons is in source-texture UV space. It cannot be directly sampled using the impostor atlas UVs. FarLands must project it onto the **same** 64 views as the base albedo. The rendered mask must respect the same geometry, material UV transforms, view/projection, alpha cutout, depth test and occlusion as the base image. A leaf hidden behind a trunk must not contribute to the mask of the visible trunk. Render opaque/non-recolorable fragments with zero mask, not simply as missing geometry. Filtering at leaf edges and mipmaps should remain consistent with coverage so there is no colored fringe or change in silhouette.
+### 4.4 Project the mask during impostor baking
 
-Recommended implementation order:
+The FarLands developer verified the following shader channel layout against 1.5.2:
 
-1. Inspect the actual baking shader(s) and GBuffer usage. If a valid existing render target/channel or bake path can carry source mask samples, output the mask alongside base albedo during baking. Prefer writing the mask in an already-read atlas channel **only if** it has no existing meaning and sufficient precision, including mipmaps, compression and all rendering/shadow paths.
-2. Otherwise use a dedicated linear single-channel atlas for eligible trees in autumn. Render/bake the source mask using the same view and alpha/depth logic; a separate mask render pass at bake time is acceptable. Do not render a second geometry pass at runtime for color variation. Reuse tile textures across frames/types, copy matching tile coordinates, generate mipmaps at `EndType`, and dispose of atlas/tile resources with the existing baker. A bake-time pass is preferable to a costly per-pixel classification during every frame.
+| Atlas | Format | RGB | Alpha |
+| --- | --- | --- | --- |
+| Albedo | ARGB32, sRGB | Albedo multiplied by coverage | Smoothness (GBuffer1.a) multiplied by coverage |
+| AlbedoSnow | Same | Snow albedo multiplied by coverage | Smoothness multiplied by coverage |
+| Normal | ARGB32, linear | Object-space normal multiplied by coverage | Coverage used for silhouettes and cutoffs |
 
-The inspected `ImpostorBaker` copies post-GBuffer data: its full-screen blit no longer has the original material UV. Simply adding the original mask texture to `ImpostorBake.shader` is not sufficient. The exact pass/MRT/replacement-material implementation needs review with the source shaders. **Normal atlas alpha is not free**: `ReadCoverage` reads it to determine silhouette/coverage cutoffs. The meaning of albedo alpha and other channels must be verified before packing. Do not sacrifice normal precision, coverage or existing snow support to store the mask. If no channel is safely available, an R8 atlas is a small, explicit cost: nominally 1 byte per texel vs 8 bytes for two RGBA8 atlases, or +12.5% for those two same-sized mipmapped atlases (not +12.5% of all FarLands VRAM). At 1024², including a full mip chain, a separate R8 atlas is about 1.33 MiB per applicable tree type. Actual allocation depends on format/platform and should be measured.
+Impostor.shader uses _Gloss >= 0 ? _Gloss : albedo.a. Forest trees use TreeMeshes.Smoothness = 0, so their Albedo.a is not consumed as smoothness. Understorey does use the stored smoothness. The agreed optimization is to put **mask × coverage in Albedo.a for eligible forest types only**. Do not change Normal.a, and do not change understorey smoothness or introduce an R8 impostor atlas for it. Albedo alpha is linear even though the RGB channels are sRGB. No extra persistent impostor atlas is needed.
 
-For the intermediate mesh models, bind the original mask to the copied material or reuse an appropriate existing mask channel. No projection into an impostor atlas is needed there. The model and impostor paths should use the same palette and instance index to avoid a new color discontinuity at the model/impostor transition.
+The source mask is in original material UV space; the existing post-GBuffer blit has lost those UVs. Therefore render one additional mask view for each of the 64 base views, only while an eligible autumn appearance needs recoloring:
 
-### 4.5 Instance index and shader correction
+1. Reuse the same geometry, camera/view, projection, UV transforms, alpha cutout, depth test and occlusion as the base bake.
+2. For each participating slot, create a temporary copy of its bake material. Pack the source mask into RGB and the base _MainTex alpha into A in a temporary texture, using the original dimensions, wrap, filtering and mip handling. Use correct linear data sampling/encoding so the sampled mask values are preserved. Set _Color.rgb to 1, keep _Color.a and _Cutoff, and disable _MossAlpha, _MossBlend, _AddSnow and _AddRain for the mask pass.
+3. For non-recolorable slots of the same model, render zero RGB while preserving their alpha, depth and cutout behavior. Do not omit the geometry: opaque bark must occlude leaves behind it. The verified mask material path is Custom/Vegetation. A forest type whose slots cannot be rendered correctly by that path remains outside the new recolor path.
+4. The extra pass renders the mask to GBuffer0.r. Copy that value multiplied by coverage into the matching Albedo tile alpha with ColorMask A, preserving RGB from the original base view. Retain the existing snow bake and normal/coverage atlas.
+5. Assemble the same tile coordinates and generate mipmaps at EndType. Release temporary textures/materials after baking the type; they do not become an additional permanent set of color atlases.
 
-Compute the existing autumn variant index in `InstanceBuffer.Put`, after filtering to owned tree instances and only for eligible types with autumn variation enabled. Use each `TreeInstance`'s world coordinates, not its tile center or prefab mirror position. Verify that this path runs on the main thread. Existing `TickForest`/appearance invalidation already rebuilds the buffers on look changes; do not add another global per-frame index-update pass. This index need not be written to persisted FarLands world/placement caches; it is derived visual data. A noneligible instance or nonautumn season uses the identity index or a disabled per-type/material flag.
+In the impostor shader, use the existing view weights normalized by coverage to reconstruct the mask just as for premultiplied albedo; for example, the normalized weighted sum of Albedo.a from the selected views. Read the mask before the snow RGB mix. Do not use the repurposed alpha as smoothness or opacity for these types. The existing normal/coverage cutoff remains the authority for silhouette. Verify wind/animation and cutout consistency between the two renders, edge/mip filtering, color space and bake cost in-game; equal silhouettes and absence of color fringes are acceptance criteria, not measured facts yet.
 
-The current `GpuTree` struct is 32 bytes and all eight fields are in use. The authors should agree how to store the extra 2-bit value (a small explicit field, an existing proven spare representation, or a parallel buffer). A 4-byte field for 524288 instances is 2 MiB of raw additional buffer storage before alignment/other consumers; a packed representation can avoid that cost but must not break type-based culling, the forest mask, shade/shadows, indirect args, understorey, rocks or any other consumer. Do not silently overload fractional `Type` or tilt bits without checking every C#/HLSL consumer and layout. The invariant is unchanged **logical tree type and batching**, not necessarily unchanged physical stride. Prefer the simplest verified layout; if a safe packing is already available in FarLands, use it.
+For the intermediate mesh-model path, bind the original mask to the copied material and sample it in the source UV space. It needs no mask projection. Use the same palette and instance index as the impostor path. Per-material source mask textures, temporary mask bake textures and the extra bake passes have a cost; unchanged persistent impostor atlas size does not mean zero overall memory or GPU overhead.
 
-The shader reads the variant once per instance (e.g. pass as a `nointerpolation` varying where appropriate). The palette is shared data per appearance/material/type, not four colors per instance. Use a constant buffer, material properties or another existing per-type data path, whichever fits FarLands. Apply the correction to albedo before lighting, in the correct linear/sRGB domain. For a mask of 0 or the identity variant, leave the base pixel unchanged; never change alpha, normals or geometry.
+### 4.5 GPU index and color correction
 
-A simple candidate correction, intentionally not an exact reproduction of the HSL pipeline:
+Compute the index with VegetationApi.GetAutumnVariant(worldPosition) at InstanceBuffer.Put, on the main thread, only for eligible types with autumn recoloring active. Use the actual TreeInstance X/Z position, not a tile center. FarLands' placement remains approximate relative to native trees; equal world positions and seeds produce the same index. Do not persist the index in the placement cache; the existing GameLooks.Version change rebuilds the instance buffers. Outside the eligible autumn path, no new noise calculation is needed.
 
-```hlsl
-// Pseudocode. tint is normalized to unit luminance in the chosen color space.
-float y = dot(baseAlbedo.rgb, luminanceWeights);
-float3 recolored = y * tint[variant];
-float3 rgb = lerp(baseAlbedo.rgb, recolored, mask * strength[variant]);
-// strength[3] = 0; preserve baseAlbedo.a
+The source review confirmed that GpuTree uses eight floats, including both tilt fields, and that ForestCull.compute and Canopy.compute truncate t.type with (uint)t.type. The other existing shader paths do not need a fractional type value. Use the existing float type field as follows:
+
+```text
+q = 0                    // identity, noneligible, or outside autumn
+q = variant + 1          // only eligible autumn variants 0, 1, 2
+packedType = treeType + q / 4.0
 ```
 
-Seasons can supply target tint/strength or a small precomputed color transform derived from the actual palette and base variant. The original `ColorVariant.color` and `targetProportion` cannot be used blindly as multiplicative values: the base has already been recolored by variant 3. Use a relative correction, not a second application of the original blend as if the base were the unmodified texture. The objective is visible green, gold, orange and red groups with preserved local detail, not numerical equality to the four generated textures. Select the transform and tune constants after looking at real tree albedo and screenshots. Do not require per-fragment RGB/HSL conversions to reproduce the native pipeline. A simple linear transform with an identity entry may also be suitable if it handles the red/yellow range well; avoid saturating all detail in a channel. Conifers or materials whose palette is not the agreed deciduous one can remain unchanged initially.
+Variant 3 is identity, not q=4. For the existing type range below 32, quarter increments are exactly representable in float. Integer truncation yields the original tree type, so the existing culling groups, type masks, indirect draws and 32-byte stride remain unchanged. Preserve both tilt fields. Document this encoding in FarTree.cginc and audit all CPU/GPU consumers affected by the new code; do not extend the packing to unrelated fields.
 
-### 4.6 Alternatives considered
+Decode q in the vertex stage (uint)(frac(t.type) * 4 + 0.5) and pass it with nointerpolation to the fragment stage. q=0 bypasses the correction. Otherwise select palette index q-1. The caller supplies Vector4[8], and Seasons fills it with the actual configured palette for the resolved source texture:
+
+| Entries | Components |
+| --- | --- |
+| palette[0..3] | (target.r, target.g, target.b, targetProportion) |
+| palette[4..7] | (useColor, reduceOriginalColorToGrayscale, restoreLuminance, 0) |
+
+Boolean fields are encoded as 0 or 1. Color components are the values used by Seasons MergeColors, not precomputed RGB multipliers. Variant 3's entries can be returned with the other variants, but no shader correction is applied for q=0.
+
+Apply the existing MergeColors operation approximately to the generated variant 3 albedo: optional grayscale conversion, blend toward the configured target, and optional restoration of the base HSL lightness. Use the following closed-form restoration rather than a full RGB/HSL/RGB round trip:
+
+```hlsl
+float3 SetLightness(float3 c, float L0)
+{
+    float L = (max(c.r, max(c.g, c.b)) + min(c.r, min(c.g, c.b))) * 0.5;
+    return L0 + (c - L) * (1 - abs(2 * L0 - 1))
+           / max(1 - abs(2 * L - 1), 1e-4);
+}
+```
+
+Conceptually, for q != 0 and a nonzero mask and useColor flag:
+
+```text
+original = base albedo in MergeColors color space
+source = grayscale(original) if configured, otherwise original
+corrected = lerp(source, target.rgb, targetProportion)
+if restoreLuminance: corrected = SetLightness(corrected, HslLightness(original))
+result = lerp(original, corrected, mask)
+```
+
+Preserve base alpha, normal, lighting and geometry. Perform the correction before lighting and convert between the shader color space and the Seasons texture-value space where needed. Check actual project color space and texture/material values during implementation; the baked albedo also contains material tint and moss, so exact numerical equivalence is not a requirement. Preserve the existing snow mix and keep new color work out of other seasons.
+
+For the model path, the palette is shared per mesh/material part. For the impostor path, it is shared per type using the existing property block (SetVectorArray); if multiple slots have different recolor palettes, use the slot with the largest masked coverage as agreed by the FarLands side. This is an intentional approximation, not a request for more per-pixel palette indices. No per-instance palette data is needed.
+
+Applying the original blend to an already blended base leaves a residual term, approximately (1 - t_i) * t_3 times the difference between the original and the base target before lightness restoration. For the default palette the factor is 0.05–0.06. It is not a measured final color error. **Do not introduce a threshold on this factor**, suppress variants for high values, or fit a relative transform to replacement PNGs. The configured palette is authoritative for the approximate distant colors.
+
+### 4.6 Appearance changes and resource lifetime
+
+Use AppearanceRevision() and IsAppearanceUpdating() from the public API rather than querying private state in the new path.
+
+- AppearanceRevision is a cheap session-local change token. Change it when an effective seasonal appearance, palette, relevant settings or resource generation changes, including replacing a cache with another instance of the same disk revision and relevant custom texture changes. Do not calculate a settings hash or scan textures on each getter call.
+- IsAppearanceUpdating exposes the existing texturesVariants.IsUpdating state. Keep the legacy member for old FarLands. The new path must not treat a partially rebuilt base/mask/palette as a valid appearance. Advance the change token before disposing previously issued resources and ensure that completion of an update publishes the coherent new resources; consumers must not lose the pending invalidation by observing a revision while IsAppearanceUpdating is true.
+- FarLands checks the change token in the existing approximately 2-second GameLooks.Changed check; reuse GameLooks.Version and forest recreation rather than a separate refresh loop. Retain the existing per-frame destroyed-object check and include masks. Before baking each type, check the borrowed mask and materials for Unity-null/destroyed state; abort that bake and use the ordinary look invalidation path if required resources are gone.
+- Seasons owns the borrowed objects and releases obsolete ones on cache replacement/disposal. FarLands never destroys those objects; it releases its own references, bindings and bake resources through its existing lifecycle. No separate reference-counting or event system is required. Ensure no further use of a destroyed resource, including during incremental baking; a black default mask for an unbound model mask property leaves that appearance unchanged.
+- FarLands' disk cache currently stores tree placement, not baked atlases. Do not add a persistent atlas cache as part of this design. If FarLands chooses to implement one separately, it needs a deterministic key including effective appearance inputs, geometry, bake parameters and formats, rather than the session-local AppearanceRevision. Internal disk cache implementation is not part of this API.
+
+### 4.7 Alternatives considered
 
 | Approach | Decision and reason |
 | --- | --- |
-| Four render groups/materials per type | Rejected. Up to four times as many applicable indirect draws/groups, more culling/group management; risks the 32-type structure. Not a fourfold FPS prediction. |
-| Four albedo layers / full variant atlases | Rejected for this scope. Can preserve draw count but multiplies the color atlas storage and bake work for a small visual improvement; exact colors are not required. |
-| Compute noise/hash in shader | Rejected. The original position-based function is already available; compute once at upload, not repeatedly in vertex/fragment stages. A new hash would not match Seasons' spatial distribution. |
-| RGB/HSL foliage detection every fragment | Rejected as the preferred solution. Repeats mask classification every frame and can recolor bark, especially after filtering/lighting/color changes. |
-| Infer a mask from base albedo during baking | Acceptable simpler alternative if exact mask baking is disproportionately expensive. No extra runtime classification, but loses material/position rules and may select bark or miss foliage. Discuss if the real bake shaders make exact-mask projection impractical. |
-| Exact mask from Seasons cache + bake-time projection | Preferred. Source mask is already known during cache generation, mask work is amortized, runtime only needs mask sampling and cheap color correction. Dedicated R8 atlas is allowed if packing cannot be verified. |
+| Four render groups/materials per type | Rejected. Up to four times as many applicable draw groups; risks type limits and culling complexity. This is not a fourfold FPS prediction. |
+| Four complete albedo atlas layers | Rejected. Preserves grouping only with a different sampling layout and multiplies atlas/bake cost; exact color is not needed. |
+| Compute a new hash/noise in a shader | Rejected. Existing Seasons noise is available at upload and gives matching spatial distribution; no repeated GPU noise computation. |
+| Detect foliage in every fragment | Rejected. Repeated classification cost, approximate bark/leaf selection after recoloring/filtering. |
+| Infer mask from recolored albedo at bake time | Rejected in favor of exact source masks; existing Seasons pixel selection includes material/position rules that an albedo heuristic loses. |
+| Separate R8 impostor atlas | Not needed for the agreed forest types. Albedo.a is available; separate atlases/sampling or changing understorey smoothness would add cost for no required feature. |
+| Expand GpuTree or add a parallel buffer | Not needed. The verified fractional type encoding keeps the 32-byte layout and logical type grouping. |
+| Fit colors to every replacement PNG or disable variants by error threshold | Rejected. Approximate configured palette is sufficient, and suppressing variants can make near/far differences more noticeable. |
+| Existing mirrors + generated base + exact source mask projected into Albedo.a + existing noise and cheap shader correction | Agreed. Preserves the rendering architecture and atlas count while moving classification to cache generation and mask projection to baking. |
 
-The preferred solution trades limited cache disk space and bake-time work for minimal steady-state cost. Actual GPU timing and visual quality still require verification. A separate mask sample is not literally free.
+The performance trade-off is limited cache data, source mask resources and extra bake work versus no additional persistent impostor atlases, color groups or instance bytes. Measure actual upload/bake time, CPU/GPU cost and memory before release.
 
 ## 5. Grass: current Seasons implementation
 
@@ -233,7 +288,7 @@ The native `ClutterSystem.GenerateVegPatch` first determines all placement condi
 
 ## 6. Grass: current FarLands implementation and conflict
 
-In the inspected FarLands `GpuGrass`:
+In the inspected FarLands `GpuGrass` (shared code also compiled into SteadyFrame, as confirmed by the FarLands developer):
 
 - `ForeignBuild(ClutterSystem)` caches a decision for a `ClutterSystem` instance. It inspects Harmony owners on `ClutterSystem.GenerateVegPatch` and `InstanceRenderer.AddInstance(Vector3, Quaternion, float)` / `AddInstance(Matrix4x4)`. It disables background grass generation for unknown foreign patches (with existing exceptions for FarLands and known idle patches). The Seasons positional prefix is one of these foreign patches. GPU rendering/upload of native-created grass is a separate path and can still work. Do not equate this conflict with the entire FarLands grass renderer being disabled.
 - `RefreshKinds` reads enabled, instanced clutter with a supported `Custom/Grass` material, extracts placement properties into `BuildKind`, and retains the original clutter list index. It reads scale, amount/quality, biome/forest/altitude/vegetation/clearing/tilt/water/random offset and other existing placement settings. These are already compatible with Seasons' normal property changes, subject to normal rebuild timing.
@@ -244,163 +299,231 @@ In the inspected FarLands `GpuGrass`:
 
 Relevant decompiled anchors: `BuildKind` 1331+, `BuildJob` 1396+, `Patch_Build` 1489+, `ForeignBuild` 3160+, `PumpBuild` 3218+, `Current`/`Apply` 3274+, `Freed` 3419+, `RefreshKinds` 3499+, `Prepare` 3575+, `WorkerLoop` 3659+, `Build` 3781+ (final position/scale and rows near 3960+). These anchors are for orientation; use the current actual source for changes.
 
-## 7. Proposed grass integration
+## 7. Agreed grass integration
 
-### 7.1 Minimal public API and snapshot
+### 7.1 Main-thread API and numeric snapshot
 
-The goal is to preserve the existing filter without executing main-thread Seasons code from the grass worker. Expose a direct API in the Seasons integration module, conceptually:
+The grass API consists of IsShieldedClutter, GetGrassProtection and ReplacesPlacementPatch (exact signatures in section 8). Do not execute live Seasons or game shield checks in the worker.
 
-```csharp
-// Proposed main-thread calls; names and types to be agreed.
-public static bool IsShieldedClutter(ClutterSystem.Clutter clutter);
-public static GrassProtectionSnapshot GetGrassProtectionSnapshot(
-    Vector2Int patchId, float patchSize);
-```
+IsShieldedClutter(clutter) resolves the registered Seasons shield-copy identity; FarLands must not parse the suffix. Evaluate during RefreshKinds for each relevant BuildKind, using the existing kind lifecycle/cache keyed by the clutter reference, not per grass candidate.
 
-`IsShieldedClutter` resolves the actual registered clone identity; do not require FarLands to parse the suffix. Evaluate it when building `BuildKind`, once per relevant kind, not for each candidate. The snapshot contains an active-state flag and immutable plain numeric data for the relevant shield geometry (centers and squared radii for outer and inner tests). It may expose a pure predicate, or FarLands may implement the small agreed predicate on the data. The choice should avoid allocations and cross-mod callback/delegate overhead in the inner loop. No Unity `Object`, `Transform`, mutable dictionaries, `ShieldGenerator` references, config entries or calls into world generation in a worker snapshot. Value types such as position coordinates are fine; only use pure numeric operations on the worker.
+GetGrassProtection(Vector3 patchCenter, float halfSize, List<Vector4> outer, List<Vector4> inner) fills the caller-owned reusable lists with relevant spheres and returns Active. Each sphere is (center.x, center.y, center.z, radiusSquared). The lists represent separate unions:
 
-Prefer capturing a shared immutable geometry snapshot when relevant shield state changes (or collecting relevant entries in `Prepare` if simpler and cheaper), then give each job the subset intersecting its patch or reference a shared immutable array. Do not enumerate the live game shield list per grass blade. A patch overlap test can use the minimum squared XZ distance from each sphere center to the patch square; this safely rejects nonintersecting spheres independently of terrain height. The final per-instance test must use XYZ, including actual ground height and random offset. Only include positive inner radii (do not square a negative radius). Outer geometry uses the valid native dome/current radius, inner geometry uses the tracked center/radius minus 2, as described above. Snapshot construction may consolidate them when verified equivalent, but the API must preserve both semantics.
+- outer: valid native shield/dome centers with current positive m_radius, when the native IsShieldedPosition test is applicable.
+- inner: valid tracked Seasons shield centers with positive (trackedRadius - 2).
+- Only include spheres that can intersect the XZ square of the patch. Compare the minimum squared XZ distance to the square with the squared radius; the actual position test later uses all three coordinates. Do not square a nonpositive radius. Keep both sets even where they overlap; do not require outer and inner hits to belong to the same shield.
 
-### 7.2 Placement in the existing pipeline
+The lists are outputs for the current call, not accumulated state. Active is the current native placement gate, isAnyShieldActive. In the normal inactive case return false and empty lists; protected clones are normally disabled, so the native prefix allows all candidates. If Active is true but the effective per-position outer predicate is disabled (e.g. SeasonState.IsActive is false), return true with empty lists: ordinary instances are allowed, shield copies are rejected. Preserve the existing protection configuration, including winter-only and ignored-center gating for active areas, rather than introducing a new per-candidate ignored-biome test.
+
+Prepare executes on the main thread. It obtains this data into reusable lists, then gives the job its own stable numeric data for the intersecting spheres. No Unity Object, Transform, live shield list, shared mutable Seasons dictionary, ConfigEntry or calls into world generation may be captured by the worker. Use ordinary squared-distance arithmetic. Reuse the existing job/buffer lifetime; avoid adding per-candidate callbacks, locks, allocations or a spatial index.
+
+### 7.2 Placement in the existing pipeline (G1)
 
 ```text
 Main thread: RefreshKinds
-  classify each eligible BuildKind as ordinary or Seasons shield copy
+  classify each relevant kind as ordinary or Seasons shield copy
 Main thread: Prepare
-  acquire stable protection state/geometry for this job; determine intersection
+  obtain protection snapshot for this job; store numeric data
 Worker: Build
-  skip protected-copy kinds in cells with no possible shield overlap
+  if Active and no outer spheres: skip shield-copy kinds
   run existing placement and RNG for other kinds
-  after final position and scale RNG, before adding rows/counts/bounds:
+  after final position and scale RNG, before the 1023 cap and output writes:
     reject placements that do not pass the agreed geometric filter
 Main thread: Apply
-  use existing Current(job) / patch replacement lifecycle
+  use existing Current(job) and patch handoff
 ```
 
-Pseudocode (per-job, pure numeric state):
+The worker predicate is:
 
 ```csharp
-bool Allows(in GrassProtectionSnapshot s, bool isShieldCopy, Vector3 pos)
-{
-    if (!s.Active)
-        return true; // same prefix semantics; clones are disabled in normal state
-
-    bool insideOuter = s.ContainsOuter(pos); // union of strict radius tests
-    if (!insideOuter)
-        return !isShieldCopy;
-
-    return isShieldCopy && s.ContainsInner(pos);
-}
+if (!active)
+    return true;
+bool insideOuter = ContainsAnyStrict(outer, position); // squared XYZ
+if (!insideOuter)
+    return !isShieldCopy;
+return isShieldCopy && ContainsAnyStrict(inner, position);
 ```
 
-`Active` should represent the full effective placement gate, including season/texture/protection state; if the API captures an unusual transition where `isAnyShieldActive` is true but `SeasonState.IsActive` is false, preserve the native result (ordinary allowed, copies rejected). The API should define this invariant explicitly and ensure the enabled clone state agrees with it. For each sphere, compare squared 3D distance with squared positive radius. No square root or Unity object access is necessary. For ordinary candidates, only the outer test is needed; for protected candidates, test both outer and inner when relevant. With protection active but no intersecting outer sphere, skip the shield-copy kind and use the exact current ordinary path, with no per-candidate mask lookup. With no protection active, do not add worker work beyond a job/kind-level gate. No new kind, buffer, shader, or draw group is required beyond the clones that Seasons already creates.
+ContainsAnyStrict compares squared XYZ distance < radiusSquared for any sphere in the list. Use the final world position including height and random offset. For ordinary candidates only the outer test is needed; for protected candidates both are needed. With no active protection there is no per-candidate shield test. With active protection but no intersecting outer sphere, omit protected-copy kinds and keep the ordinary fast path unchanged. Do not optimize fully contained patches at the cost of vertical bounds handling.
 
-**RNG and counts:** filter only after the generator consumed the random offset and scale, before writing matrix rows, ground data, count and bounds. Rejecting a candidate must not skip random draws that the existing generator would consume. Accepted instances alone count toward the 1023 cap, matching the native prefix behavior. It is safe to skip a whole protected-copy kind in a nonintersecting patch because its RNG is seeded independently using its original `BuildKind.Index`; never renumber kinds or derive seeds from a compacted list. Do not attempt to convert ordinary instances to copies in place: the two generators can have different amount/scale/biome settings and independent placement sequences, and ordinary clutter can be disabled. The intent is equivalent **conditional placement**, not identical placement between the existing game generator and FarLands' already approximate generator.
+Filter after all position/scale random draws, before rows, count, ground data, bounds and the accepted-instance limit. The current generator seeds each kind from the original clutter index. Skipping an entire impossible shield-copy kind is safe (its independent seed and zero count do not affect other kinds); never renumber kinds. Rejecting a candidate must not skip random draws that the existing algorithm would consume. Do not convert an ordinary instance into a protected copy: originals and copies can have different enabled/scale/amount settings and separate seeds. The goal is equivalent conditional placement, not identical blade positions between native and FarLands generators.
 
-Do not implement full-contained-patch optimization for the first implementation. It needs reliable vertical bounds, snap-to-water and random-offset handling and provides little benefit over the safe no-overlap path. Do not add a spatial index unless real shield counts/profile data justify it.
+### 7.3 Shield changes and job handoff (G3)
 
-### 7.3 Shield changes and invalidation
+Seasons already calls ResetGrass(position, affectedRadius + 1) when relevant shield visual radius changes. SetShieldData updates tracked radii and invalidates caches; visual refresh is throttled (first radius, change of at least 3 m from last visual radius, or target reached). UpdateShieldActiveState calls ClearAll only when the global clone enablement changes. Keep this policy, existing config/season/EWD rebuild handling and world-scoped job lifetime. No whole-world reset for every radius step.
 
-Seasons already calls `ResetGrass(position, affectedRadius + 1)` when relevant shield visual radius changes. `SetShieldData` updates its tracked radius and caches on changes and throttles visual refresh (first radius, change of at least 3 m from last visual radius, or target reached); `UpdateShieldActiveState` also calls `ClearAll` when the global clone enablement changes. Keep this policy; do not force a full rebuild on every animated radius step or every frame.
+The FarLands source review confirmed the existing replacement mechanism: ResetGrass marks patches for rebuild; the next eligible Update generates the replacement patch, installs the new job in BuiltCells, and frees the old patch. Freed transfers the old rendered patch or its replacement reference to the new job, while Current(job) rejects superseded/freed jobs. A result finishing before the marked patch is actually replaced can remain visible during the normal handoff until the new job applies; the native path also retains old grass while terrain is not ready. Accept this transient behavior. No new global generation counter, reset version check or shader filter is required for G3. Verify that there is no permanent stale or duplicate grass after handoff.
 
-Ensure the snapshot is taken from current authoritative geometry at job preparation. When an affected patch is reset, superseded or freed, its obsolete job must not be uploaded as the current result. The existing `Current(job)` check is a useful basis but needs review for the interval between a patch being marked `m_reset` and replacement/freeing; a job that finishes in that interval should follow the agreed existing reset/handoff policy. If necessary use a targeted reset generation/state check, not a global rejection of all jobs whenever any radius changes. Old rendered patches can remain during normal handoff; avoid permanent stale grass, duplicate draws or disappearance of unrelated patches. A shader-based runtime filter is not needed to solve this lifecycle issue.
+On the Seasons side, review RemoveShield when another shield remains active: it removes tracked coverage and calls UpdateShieldActiveState, but has no explicit local grass reset in the inspected code. If the normal radius-to-zero lifecycle does not already refresh the affected patch, reset only the old affected area via ClutterSystem.ResetGrass(center, radius). This is a potential existing native-path issue, not a confirmed runtime regression. The existing FarLands path already handles ResetGrass, so no additional cross-mod invalidation API is required.
 
-One existing edge case to address in the integration review: `RemoveShield` removes tracked coverage and calls `UpdateShieldActiveState`, but does not itself call local `ResetGrass` when another active shield remains. If the normal radius-to-zero path does not already reset the affected area for a given removal, add a targeted reset of the old affected radius (not a blanket clear). Verify this with actual game lifecycle and overlapping/disjoint shields. This is a relevant potential stale-grass issue, not a confirmed runtime regression. Similarly, retain current config/season change and EWD rebuild behavior. Snapshot lifetime must be world-scoped; no old world references/data should be reused after world change.
+### 7.4 ForeignBuild, capability loss and optional integration (G2)
 
-### 7.4 Foreign patch detection and optional integration
+Keep the Seasons native positional AddInstance prefix enabled for native/unhandled clutter, legacy versions and fallback. When the complete version-compatible grass capability is bound, ForeignBuild may exempt the exact replacement patch identified by Seasons:
 
-The native Seasons `AddInstance` prefix must stay enabled. FarLands' `Patch_Build` bypasses it only for its own generated kinds; all native/unhandled clutter still requires it. Do not unpatch it globally just because FarLands is installed.
+- Require the patch owner shudnal.Seasons and a true result from ReplacesPlacementPatch(MethodInfo patchMethod). Seasons recognizes its own InstanceRenderer_AddInstance_PreventInProtectedArea.Prefix, not other patches. Do not hard-code its internal class name in FarLands or whitelist all Seasons patches.
+- All other unknown foreign patches retain the existing conservative/native behavior. If the API is absent, incomplete, incompatible or the worker is disabled, do not enable this exception. Cache the decision on ClutterSystem as before. No separate grass readiness flag is required; the snapshot is correct once the capability is bound, including inactive/no-shield states.
+- **An API failure is not an inactive protection result.** A successful GetGrassProtection returning false is a valid state. If IsShieldedClutter or GetGrassProtection throws or yields an invalid result, do not substitute a successful false return from the delegate wrapper. Disable the grass capability for the rest of the session, invalidate the cached ForeignBuild decision and return to native generation through the existing ResetGrass/worker-disable path. Do not publish a result generated without the required filter; keep the native prefix active. A failed patch-identity probe must not exempt the patch. Do not attempt repeated automatic recovery or per-frame rebinding.
 
-Modify `ForeignBuild` only when the agreed Seasons grass API is available and the equivalent filtering path is active. The current code evaluates patch owners. Prefer recognizing the exact known placement prefix (owner `shudnal.Seasons`, known method/target and compatible contract), not blanket-whitelisting every patch owned by Seasons or all future patches. All other unknown foreign patches must keep the original safe behavior. If the API is absent, incompatible, not ready or the background builder is disabled, retain the existing safe/native path. Account for the cached `_foreignChecked` decision: select integration state before the first check, or invalidate that decision if integration readiness actually changes. Do not re-enumerate Harmony patches on every frame or call.
+GpuGrass is shared source compiled into FarLands and SteadyFrame. Each copy binds the neutral Seasons API itself. Update the shared GpuGrass version used by its existing highest-version selection, so the new compatible worker wins when both mods are installed. Do not create a second active worker. See section 8.2 for the mixed-version case.
 
 ### 7.5 Alternatives considered
 
 | Approach | Decision and reason |
 | --- | --- |
-| Keep native placement for all grass whenever Seasons is installed | Existing safe fallback, but loses FarLands background generation and its CPU benefit. |
-| Ignore the Seasons Harmony owner without porting the predicate | Rejected. Would allow ordinary seasonal grass under shields and protected copies elsewhere. |
-| Call the current Seasons placement prefix from the worker | Rejected. Unsafe access to Unity objects, mutable caches and shared native state; locks or main-thread dispatch per blade would undermine performance. |
-| Generate everything then filter on main thread or during GPU drawing | Rejected for this scope. Extra rows/upload/CPU or per-frame GPU work; would also have to handle disabled ordinary clutter, separate protected kinds and instance caps. |
-| Replace all clones with a new per-instance material/scale system | Rejected. Changes existing placement semantics and rendering architecture unnecessarily. |
-| Immutable geometry snapshot + worker-side rejection | Preferred. Small extension of existing Prepare/BuildJob/Build dataflow, preserves existing clone mechanics and native path, performs only bounded arithmetic near shields, skips impossible clone kinds in most cells. |
+| Keep native placement for all grass whenever Seasons is installed | Existing safe fallback, but loses the CPU benefit of background generation. |
+| Ignore the Seasons Harmony owner without porting the predicate | Rejected. Breaks normal/clone placement under and outside shields. |
+| Call Seasons placement checks directly from the worker | Rejected. Unsafe access to Unity objects, mutable caches and native state; locks or main-thread dispatch per blade undermine performance. |
+| Generate everything then filter on main thread or during GPU drawing | Rejected. Extra generation/rows/upload or per-frame GPU work; complicates disabled kinds and instance caps. |
+| Replace clones with per-instance material/scale logic | Rejected. Unnecessary change of existing placement semantics and rendering architecture. |
+| Numeric snapshot + worker rejection and no-overlap skip | Agreed. Small extension of the existing Prepare/BuildJob/Build dataflow, preserves clone mechanics and native fallback, does bounded arithmetic near shields only. |
 
-## 8. Shared API and ownership decisions
+## 8. Shared API v1 and ownership
 
-Proposed division of work:
+### 8.1 Exact agreed public contract
 
-| Seasons | FarLands |
+Expose one public static class Seasons.VegetationApi in the Seasons plugin assembly. The following is the signature contract (declarations for documentation, not a compilable implementation):
+
+```csharp
+namespace Seasons
+{
+    public static class VegetationApi
+    {
+        public static int ApiVersion(); // 1
+
+        // Grass; main thread.
+        public static bool IsShieldedClutter(ClutterSystem.Clutter clutter);
+        public static bool GetGrassProtection(
+            Vector3 patchCenter, float halfSize,
+            List<Vector4> outer, List<Vector4> inner);
+        public static bool ReplacesPlacementPatch(MethodInfo patchMethod);
+
+        // Autumn appearance; main thread.
+        public static bool FollowWithVariant(
+            GameObject controlledCopy, string prefabName, int variant);
+        public static bool TryGetRecolor(
+            MeshRenderer controlledRenderer, int materialIndex,
+            out Texture mask, Vector4[] palette);
+        public static int GetAutumnVariant(Vector3 worldPosition);
+        public static int AppearanceRevision();
+        public static bool IsAppearanceUpdating();
+    }
+}
+```
+
+All Unity types are from UnityEngine, List is System.Collections.Generic.List and MethodInfo is System.Reflection.MethodInfo. The signature contains only BCL, Unity and game types, no Seasons-specific enums, structures or interface dependencies. ApiVersion returns 1 for this contract. The method bodies, not the signature sketch above, will be implemented in the Seasons PR.
+
+| Method | Contract |
 | --- | --- |
-| Public opt-in compatibility API and stable version/capability contract | Direct optional integration adapter; no new reflection for these two features |
-| Exact autumn position-to-index function | Compute/store index at upload; preserve culling and draw grouping |
-| Explicit base material and palette/transform data | Bind base and transform; update model/impostor shaders |
-| Source texture mask generation, persistence and lazy loading | Project mask during bake, own atlas format/channel and rendering resources |
-| Shield-copy classification, effective protection state, numeric snapshot | Capture at Prepare, filter in worker, handle job replacement and ForeignBuild |
-| Cache and visual state invalidation for borrowed data | Hook into existing appearance/grass rebuild lifecycle |
+| ApiVersion | Capability version, not the plugin release number or a resource revision. |
+| IsShieldedClutter | True only for a registered Seasons shield-copy kind; false is a valid ordinary kind. |
+| GetGrassProtection | Fills current intersecting outer/inner spheres in caller-owned lists, returns the Active gate. See section 7.1; false is a successful inactive state, not an error code. |
+| ReplacesPlacementPatch | True only for the exact Seasons placement prefix replaced by the equivalent worker filter. |
+| FollowWithVariant | Follow a controlled mirror using the existing mapping; explicit 0–3 index only in autumn, -1 normal selection in all seasons. Return false if the controller cannot follow that object. Repeated calls use the existing controller lifecycle. |
+| TryGetRecolor | For the controlled renderer/material slot, return a valid borrowed Texture and fill caller-provided Vector4[8] with the configured palette. False means no new correction; do not consume its outputs in that case. No extra correction outside autumn, while updating, or without an eligible generated base/mask. |
+| GetAutumnVariant | Original noise function, returns 0–3. Call only for relevant world positions once the Seasons appearance is ready; no per-frame evaluation. |
+| AppearanceRevision | Cheap session-local token changed on effective look/resource changes (section 4.6). |
+| IsAppearanceUpdating | Existing texturesVariants.IsUpdating state exposed as a public method. |
 
-Keep both mods independently usable. A direct compile-time API reference must not force Seasons to be installed for FarLands to start. Agree on a soft-dependency adapter or another established optional binding pattern that does not eagerly load/JIT the Seasons-dependent type when the plugin is absent. Seasons must not require FarLands or reference FarLands' internal classes. The precise target framework/assembly distribution needs verification (`FarLands` inspected assembly targets .NET Standard 2.1; the Seasons project targets .NET Framework 4.8). No mandatory new shared library is assumed. The API examples here are conceptual; agree on a small stable versioned contract and signatures before either side implements against them. Mixed-version behavior and its implementation cost must be reviewed before finalizing the contract; see section 8.1. Do not add broad compatibility layers for hypothetical future versions.
+Optional binding follows FarLands/SteadyFrame's existing VcpApi pattern: locate the class and public static methods by name and exact signatures once, create delegates, and invoke those delegates. No compile-time reference to Seasons or a mandatory shared DLL. This avoids requiring a Seasons assembly or its net48 target when the .NET Standard 2.1 consumer is running without it. Keep independent capabilities; enable each only if ApiVersion is at least the required version and every member of that set is bound:
 
-For appearance resources, explicitly agree how readiness/invalidation is signaled (existing `GameLooks` polling/version mechanism or one direct revision value/event). A cache rebuild or custom texture change must invalidate the base, mask and correction data together, even if a material reference happens to be unchanged. Prefer integrating with the existing refresh rather than adding an independent polling loop. Main-thread creation/disposal and cache-generation ownership must prevent use of destroyed textures. Shader and mask format changes should remain an implementation detail of FarLands; cache format remains an implementation detail of Seasons.
+- Grass: IsShieldedClutter, GetGrassProtection, ReplacesPlacementPatch.
+- Autumn trees: FollowWithVariant, TryGetRecolor, GetAutumnVariant, AppearanceRevision, IsAppearanceUpdating.
 
-### 8.1 Mixed-version compatibility
+No repeated reflection on trees, grass candidates or frames. No blanket catch-to-default for grass API calls after enabling the replacement path; use the failure contract in section 7.4. The agreed new public API is additive. Existing legacy reflection paths for terrain, snow, buildings, materials and cleanup remain available. Any future additive API version must retain existing signatures/semantics for existing consumers.
 
-Assess compatibility with the last versions before this integration, starting with Seasons 1.11.0 and FarLands 1.5.2 from the inspected baseline. The goal is to preserve existing behavior when only one mod is updated, not to backport the new features to older releases. Confirm the exact supported versions against both working branches before release.
+### 8.2 Mixed-version compatibility
 
-| Combination | Proposed behavior |
+The agreed compatibility baseline is Seasons 1.11.0 and FarLands 1.5.2, plus the combination with the updated shared grass worker in SteadyFrame. Preserve behavior when only one mod is updated; do not backport the new features into older releases or promise compatibility with arbitrary future internal changes.
+
+| Combination | Expected behavior |
 | --- | --- |
-| New Seasons + new FarLands | Enable the agreed tree and grass integrations when their respective capabilities are available and ready. |
-| New Seasons + previous FarLands | Preserve the existing seasonal material lookup and native grass placement, including the Seasons placement prefix and FarLands' existing foreign-patch fallback. Do not require old FarLands to call the new API. |
-| Previous Seasons + new FarLands | Retain the existing reflection-based Seasons integration for supported older versions, including the safe native grass generation fallback. Do not enter the new API path if its capability is unavailable. |
-| Only one mod installed | Preserve independent operation without loading or invoking types from the absent mod. |
+| New Seasons + new FarLands | Both new features enabled independently when their corresponding API capabilities are available. |
+| New Seasons + FarLands 1.5.2 | Existing SeasonsLink appearance (one position-selected variant per mirror). Native grass fallback through ForeignBuild and the Seasons prefix. |
+| Seasons 1.11.0 + new FarLands | New API unavailable; retain the existing SeasonsLink appearance and native grass fallback. |
+| FarLands 1.5.2 + new SteadyFrame + new Seasons | New shared grass integration through SteadyFrame's newer worker; distant forest colors retain the old FarLands behavior. |
+| Only Seasons installed | Native Seasons appearance and grass placement unchanged. No masks loaded solely because the API exists. |
+| Only FarLands and/or SteadyFrame installed | Existing behavior, no Seasons API delegates active. |
 
-Preliminary assessment: FarLands 1.5.2 already has a legacy `SeasonsLink` adapter. Its material path resolves `PrefabVariantController.instance`, `AddControllerTo(GameObject, bool, ZNetView, WearNTear, string, MeshRenderer)`, `RemoveController(GameObject)`, and the `Seasons.texturesVariants.controllers` mapping. These entry points still exist in Seasons 1.11.0. Preserve the existing reflection-facing names, signatures, field/property types and behavior for the supported legacy paths, including the other existing terrain and snow integrations that are outside this task. The new API should be additive; cache changes must not break the existing runtime object model used by the legacy adapter.
+The FarLands developer listed the following legacy reflection-facing members used by SeasonsLink 1.5.2. Preserve their names, signatures, field/property types and behavior for the supported legacy paths:
 
-On the FarLands side, reusing the existing legacy adapter and isolating the new optional direct API behind a capability check is likely simpler than implementing new compatibility shims. Verify that probing a missing or older API cannot cause assembly loading, type resolution or JIT failures, and that `ForeignBuild` keeps its existing conservative decision when the new grass capability is unavailable. Select or cache the applicable path outside the hot loops. Check whether independent capability checks for the two features are needed if the integrations become ready at different times.
+| Type | Members |
+| --- | --- |
+| Seasons.Seasons | texturesVariants (field; its type has controllers field and IsUpdating property), seasonState and controlEnvironments (fields), IsIgnoredPosition(Vector3) |
+| Seasons.SeasonState | IsActive (property), GetCurrentSeason() |
+| Seasons.SeasonalSnow | Enabled (property), GetSnowBuildupRange(), GetReducedSnowBuildupRange(), ReducedSnowBuildupPrefabNames (field), GetCumulativeSnowGainAt(Heightmap.Biome, double) |
+| Seasons.PrefabVariantController | instance (property), AddControllerTo(GameObject, bool, ZNetView, WearNTear, string, MeshRenderer), RemoveController(GameObject) |
+| Seasons.Heightmap_GetBiomeColor_TerrainColor | overrideColor (field) |
 
-This is a proposed limited compatibility scope, not a confirmed runtime result. Both sides should inspect their actual dependencies and estimate the cost of the mixed-version paths. If either path requires substantial changes beyond the existing adapter and additive API, discuss the trade-off in the issue and agree on a narrower supported version range rather than expanding the scope silently.
+Retain the existing old adapter rather than creating a separate set of compatibility shims. When no compatible public capability is available, the optional delegate path is not used. Continue to allow missing members in the older adapter to produce its existing safe fallback and warning. Preserve the native Seasons placement prefix in all versions. Do not change the runtime object model used by the legacy adapter as part of the mask/cache work.
+
+The FarLands side estimates the mixed-version support to be small (one optional delegate adapter, existing mirror path selection and exact patch exemption). This remains to be verified in the mixed-version tests; the matrix describes expected, not yet tested, behavior.
+
+### 8.3 Division of ownership
+
+| Seasons | FarLands / shared GpuGrass in SteadyFrame |
+| --- | --- |
+| Public versioned API and exact position-to-index function | Optional delegate binding, feature-set selection, index packing and shader decoding |
+| Existing controlled mirror mapping, autumn-only explicit variant, generated base and matching configured palette | Keep existing GameLooks lifecycle, use the explicit forest-tree path, preserve other mirrors |
+| Source texture masks, persistence, lazy loading, ownership and appearance state | Project masks into forest Albedo.a, bind model masks and palettes, own copied resources and atlas lifetime |
+| Shield-copy classification, current numeric geometry snapshot, exact patch identity | Capture in Prepare, filter in Build, preserve native fallback, handle API failures and worker selection |
+| Preserve existing native/legacy behavior; investigate local shield removal reset | Preserve existing job handoff, handle ResetGrass, test both old/new version paths |
+
+No requirement on either mod to change its public release version until the implementations are ready and release coordination is explicitly agreed.
 
 ## 9. Acceptance criteria and validation plan
 
-Static review first; runtime checks and profiling by the developers after implementation. No benchmark thresholds are claimed before measuring a baseline. Verify the agreed mixed-version matrix in section 8.1, including mod startup, existing seasonal appearance, native grass fallback and absence of either mod.
+Static review first, then runtime tests and profiling by the developers on the two implementation branches. Record the exact mod commits, game version, settings and relevant logs. The design has no measured benchmark threshold yet.
 
 ### Autumn colors
 
-- In autumn, a forest containing eligible deciduous trees shows all four appearances where the existing noise selects them. Near and far representations of the same tree use the same index, with approximate color differences acceptable. Tile unloading/reloading and different camera positions do not change that index.
-- Variant 3 is the baseline; no correction for mask 0. Bark, silhouette, opacity, lighting, shadows, normal/coverage and snow behavior remain valid. Check both the mesh-model and impostor paths and their transition. Verify alpha-tested overlapping leaves/trunks and distant mips for color fringes.
-- Spring/summer/winter, disabled Seasons texture controls, noneligible vegetation, arbitrary custom texture overrides, absence of Seasons and the existing older integration behave as before. No new autumn variation work outside eligible autumn appearances.
-- Season/config/cache reload and world unload/rejoin do not retain stale masks, palettes, materials or index buffers. New cache revision regenerates correctly, and users who never request masks do not load them into RAM/VRAM.
-- Compare model/impostor draw counts and culling group counts with current FarLands, using the same tree types and settings. No additional color groups or color atlas sets. Record actual extra mask VRAM, buffer memory, bake time, CPU upload time and GPU time; compare steady state separately from baking and cache generation.
+- In autumn, eligible distant forest trees show the configured four-color distribution where the existing noise selects each index. Near and far representations of equal world positions use the same index; approximate colors and differences from CustomTextures replacements are expected. Tile unload/reload and camera position do not alter the index.
+- Variant 3 is identity; mask 0 or useColor false leaves base albedo unchanged. Check beech, birch and oak, including the shipped Fall_3.png replacements. Changing the configured autumn palette changes the distant correction; arbitrary base replacement PNGs do not replace the generated base/mask pair. Ordinary Seasons and old integration behavior is unchanged.
+- Check model/impostor transitions, shader color space, HSL lightness, bark, alpha cutout, overlapping leaves/trunks, coverage-normalized mips and silhouette. Verify wind consistency between bake passes and preservation of existing snow/shadow/lighting behavior. No recolor of unrelated types.
+- Spring/summer/winter, disabled texture controls, understorey and ineligible types retain existing appearance. No noise/recolor work for the new feature outside eligible autumn appearances.
+- On season/settings/cache reload (including rebuilding with the same cache key) and world unload/rejoin, verify coherent base, mask, palette and indices. During incremental baking, invalidated/destroyed resources are not used; the normal look refresh restores the new appearance. No persistent mask payloads or textures loaded in a client that never requests them.
+- Compare indirect draw counts, culling group counts, GpuTree stride, and permanent impostor atlas count/size with the baseline under the same settings: no new color groups, 32-byte stride and unchanged atlas count for eligible forest trees. Measure bake time, temporary and source mask memory, upload time and steady-state GPU cost separately. Confirm reasonable performance for the added correction; do not claim all VRAM or GPU timings are unchanged.
 
 ### Grass
 
-- With no shield, compare placement against the existing FarLands worker on the same patch/settings; normal grass should be unchanged and protected clones should not generate. With Seasons absent, the worker and native fallback behave as before.
-- With a shield, inspect a patch outside, inside, and crossing the shield; include the inner boundary band, steep ground, overlapping shields, seasonal normal grass disabled, different scale settings, and winter-only vs all-season protection. Compare against Seasons' native placement policy, not exact RNG output of the two independent generators.
-- Confirm ordinary/copy filtering for every relevant GPU kind and native-only kinds. Confirm no worker-side Unity object access, shared mutable Seasons state, random-stream changes, or cap/bounds/count inconsistencies.
-- Activate, fuel, expand, shrink and remove a shield while jobs are queued/running; check the case where another shield remains active. Verify patch resets and replacement, no persistent stale grass and no unnecessary global rebuilds on incremental radius changes. Check world change and season/config reload, and existing EWD clutter updates if available.
-- Verify foreign patch detection is relaxed only for the implemented Seasons prefix and still falls back for unrelated unknown patches or unavailable integration. Record CPU main-thread and worker timings, patch throughput and allocations with no shields and with shields; outside shield areas should use the current fast path, with no repeated per-candidate shield scan or new rendering groups.
+- With no shield, compare placement against the existing FarLands worker on the same patch/settings; normal grass remains unchanged and shield copies do not generate. With active protection but no outer overlap, the worker skips impossible copy kinds and ordinary grass uses the existing fast path. Without Seasons the worker and native fallback behave as before.
+- Check patches outside, inside and crossing shields, the inner boundary band, steep ground, overlapping spheres, normal grass disabled, differing scales, and winter-only vs all-season protection. Compare both ordinary and protected candidates with the native placement policy, not exact RNG output between different generators.
+- Confirm filtering occurs after all RNG draws and before the accepted cap, rows/bounds/ground/count writes; no kind renumbering. Verify native-only clutter still passes through the native prefix. No Unity object access or mutable shared Seasons state in worker jobs.
+- Activate, fuel, expand, shrink and remove shields while jobs are queued/running, including removal while another shield remains. Check the existing handoff and any needed local ResetGrass call; no permanently stale grass, duplicate draws or unnecessary global rebuilds on incremental radius changes. Check world change, season/config reload and existing EWD clutter updates where available.
+- Verify ForeignBuild exempts only the exact implemented patch and retains native fallback for unknown foreign patches, absent/incomplete/incompatible API. Force an API failure separately from a successful inactive snapshot: grass capability is disabled for that session and native placement is restored. Check the shared-worker selection when both consumers are installed.
+- Record main-thread and worker timings, allocations and patch throughput with no shields and with shields, compared to the existing native fallback and FarLands background generation. No extra rendering groups, repeated per-candidate shield scans or worker cross-mod callbacks outside the necessary geometric tests.
 
-## 10. Questions for the FarLands developer / coding assistant
+### Mixed versions
 
-Please review these specific decisions against the real source and reply with evidence (file/symbol and, where useful, a short code excerpt or commit reference). A proposed change with a concrete reason is preferred over a generic approval.
+Verify every combination in section 8.2: startup/logs, seasonal appearance at distance, expected grass generation path and correct native shield protection. In the old FarLands case the existing reflection-facing members must remain available, and new FarLands with old or absent Seasons must not fail binding or startup. Include the older FarLands + newer SteadyFrame combination, verify only the selected shared worker runs, and inspect the existing grass fallback warning when applicable.
 
-| ID | Question / expected decision |
-| --- | --- |
-| T1 | Can the actual `GameLooks`/model/bake paths accept an explicit per-renderer-slot base appearance from Seasons without creating extra per-instance materials? What is the smallest data shape that fits your current material pipeline? |
-| T2 | What channels are actually occupied in albedo, normal/coverage, snow or other existing atlas textures? Is there a safe existing channel and way to project the source mask in the bake, or should we agree on a separate R8 atlas and bake pass? Describe UV/alpha/depth and mip handling. |
-| T3 | Which `GpuTree` representation is simplest for the 0–3 variant index, considering every GPU consumer and existing culling/layout? Can it stay at 32 bytes safely, or is an explicit field/buffer preferable? Confirm `InstanceBuffer.Put` is a suitable main-thread insertion point. |
-| T4 | Which color transform parameter layout is easiest to share across model and impostor shaders? Is a tint/strength pair sufficient in your color space, or would a compact relative color transform be more suitable? |
-| T5 | Can the new appearance API use the current `GameLooks.Version` invalidation and normal forest recreation for season/cache changes? How will masks and palette changes be included? |
-| G1 | Confirm the `RefreshKinds` / `Prepare` / `Build` insertion points and the most natural immutable snapshot representation. Can we skip shield-copy kinds for nonintersecting patches without altering the existing per-kind index/seed? |
-| G2 | Confirm the exact supported Seasons Harmony prefix exception in `ForeignBuild`. How should the optional API readiness and cached decision be handled without a per-frame scan? |
-| G3 | Does the current `Current(job)`/`FreePatch` replacement path adequately handle jobs finishing after `ResetGrass` marks a patch, but before replacement? Identify the smallest needed adjustment, if any. |
-| A1 | Agree on an optional, direct public API reference mechanism, version/capability checks, ownership and invalidation. Verify framework/assembly constraints. No hard dependency between the mods. |
-| A2 | Review the mixed-version matrix in section 8.1. Can the existing legacy adapter and additive Seasons API preserve both mixed-version combinations at reasonable cost? Identify required changes, compatibility limits and test cases before deciding the supported version range. |
+These checks are a joint test plan, not completed runtime evidence.
 
-### Review workflow
+## 10. Implementation tasks and coordination
 
-1. FarLands side: verify the source facts and answer T1–T5, G1–G3 and A1–A2. Identify any blocked assumptions. Propose concrete revisions where necessary, preferably with actual signatures/data layouts and exact shader channel choices.
-2. Seasons side: confirm or revise the API, mask cache ownership and geometry contract based on that feedback. Keep the agreed performance and visual scope; do not turn an open question into a requirement without agreement.
-3. When both sides agree, consolidate the accepted decisions into the final design document with exact signatures, resource lifetimes, fallback behavior, supported mixed-version combinations and the two implementation task lists. Mark the unresolved items closed or explicitly deferred. Use that document as the implementation baseline for both repositories.
-4. Implement the Seasons changes in a dedicated branch and open a PR linked to the coordination issue. Implement the corresponding FarLands changes in its own branch/PR and cross-link the work. Share the exact branch/commit references so the FarLands developer can build a compatible Seasons version and test both changes together before either PR is merged.
-5. Review and test both implementations against the agreed design, including performance and mixed-version behavior. Resolve integration defects in the branches. Once both developers agree that the two implementations work together and the agreed fallback paths are acceptable, coordinate the merges and new releases. Do not raise release versions or publish either mod merely because the design or one implementation is ready.
+### Seasons
 
-**Suggested response format:** for each question, provide `Accept / Change / Blocked`, the source evidence, the proposed decision, and any required change on the other side. End with a proposed contract diff or updated Markdown and a list of remaining decisions. No need to implement code, change release versions, or run game tests until the contract is agreed.
+- Add Seasons.VegetationApi v1 with the exact signatures and independent feature contracts in section 8. Keep the existing legacy reflection-facing members.
+- Expose the original autumn index function; add the autumn-only explicit variant for the existing controlled mirror lifecycle, keeping normal objects and other seasons unchanged.
+- Generate source masks from pixelsToChange, persist them with the relevant cache generation and load them lazily. Resolve the actual generated base/mask pair and effective configured palette for TryGetRecolor; the new autumn path ignores replacement PNGs as agreed.
+- Expose AppearanceRevision and IsAppearanceUpdating, keep coherent resources across refresh/rebuild and dispose of old resources safely.
+- Expose shield-copy classification, numeric outer/inner snapshot and exact native patch identity. Keep the native prefix. Review RemoveShield and add local ResetGrass only if the existing path does not already refresh the affected area.
+- Perform focused static checks on API signatures, palette/mask mapping, cache/resource lifetime, protection geometry and legacy members. No unrelated cache format modernization or release work is required by this joint design.
+
+### FarLands and shared GpuGrass
+
+- Bind VegetationApi once using the existing optional delegate pattern. Validate independent capability sets, retain legacy SeasonsLink, and implement the agreed grass failure fallback.
+- In the shared grass code (GpuGrassBuild.cs), add ShieldCopy classification in RefreshKinds, collect the snapshot in Prepare, skip impossible kinds and filter before the cap in Build. Exempt the exact Seasons prefix in ForeignBuild only when the grass capability is active. Preserve job handoff and native-only kinds; update the shared worker version for FarLands/SteadyFrame selection.
+- In GameLooks, use the autumn override for forest tree mirrors and normal selection for all other mirrors. Share base/mask/palette lookup between the bake and model paths. Add the public revision/updating checks to the existing lifecycle; check masks and materials before baking and in the existing destroyed-resource check.
+- In ImpostorBaker / ImpostorBake.shader, bake the temporary mask pass into Albedo.a for eligible forest types only, retaining the existing atlas sizes, coverage, mipmaps, snow and smoothness behavior. Keep understorey unchanged.
+- In InstanceBuffer.Put / FarTree.cginc, encode q in the fractional part of the existing type field. In Impostor.shader / ModelVegetation.shader / FarModel.cginc, decode q, read the mask and configured palette, apply the agreed approximate correction. Keep draw grouping and stride.
+- Perform focused static review of GPU layout/consumers, shader channel use, resource checks, worker snapshot/fallback and legacy adapter. Validate color space, bake alignment and actual performance in the joint runtime checks.
+
+### Coordination and release gate
+
+The architecture and API v1 were agreed in issue #55 (T1–T5, G1–G3 and A1–A2, including the final IsAppearanceUpdating and autumn-only FollowWithVariant decisions). No additional architectural approval is required to begin the implementation. The FarLands developer will compare revision 3 with the actual source/shaders and report any discrepancies in the issue. Resolve and document implementation-level changes before making incompatible contract changes.
+
+1. Seasons implements in a dedicated branch and opens a PR linked to #55; FarLands implements in its own branch/PR and links the corresponding work. Share exact refs/commits so the FarLands developer can build the Seasons branch and test both changes before merging.
+2. Review and test both implementations against section 9, including mixed versions and SteadyFrame. Fix confirmed defects in the branches. Report actual checks and measurements rather than treating static design review as game verification.
+3. Once both developers agree that the implementations work together and the compatibility matrix is acceptable, coordinate the merges and new releases. Do not raise release versions or publish either mod merely because this document or one implementation is ready.
+
+Internal Seasons cache serialization/storage optimization, persistent FarLands atlas caching, understorey variation, and support for arbitrary custom replacement texture matching are not joint implementation tasks. If a new requirement emerges from actual tests, discuss it separately in #55.
