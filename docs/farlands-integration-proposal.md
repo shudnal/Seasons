@@ -1,6 +1,6 @@
 # Seasons × FarLands: integration proposal
 
-**Status:** Draft for joint technical review (revision 1). Not an implementation specification or approval to change either repository.
+**Status:** Draft for joint technical review (revision 2). Not an implementation specification or approval to change either repository.
 
 **Goal:** Agree on a small, performant contract between the two mods, then implement both sides against the agreed contract. This document is intended for the FarLands developer and their coding assistant. Please review it against the actual FarLands source and shaders, correct any inaccurate assumptions, and return a revised document or a focused response to the open questions. Preserve the agreed requirements unless proposing an explicit change with a reason.
 
@@ -138,13 +138,9 @@ A single mask covers the four variants of this generated texture because all var
 
 A mask can be absent for an uncontrolled texture or one whose custom replacement no longer corresponds to the generated texture. `CustomTextures.HaveCustomTexture` can replace a generated variant with arbitrary user content. For this integration, do not recolor a custom replacement using an unverified mask. Retain the existing appearance instead. No attempt to infer or generate masks for arbitrary user-provided textures is required.
 
-**Agreed direction for the Seasons cache work:** integrate mask generation with modernization of the existing on-disk cache. The existing binary format uses `BinaryFormatter`; this serializer is obsolete, not binary storage itself. `CachedData` currently supports Binary, Json and both; `TextureData` stores the original PNG and sixteen variant PNG byte arrays. `SeasonalTextureVariants.Initialize` deserializes the cache and creates the textures. `SaveCacheOnDisk` collects encoded data, deletes the revision directory and writes the replacement under `s_diskLock` on a worker. Thus simply writing new mask files into the revision directory during generation would lose them when the existing save path deletes that directory.
+Persist the source masks with the corresponding cache generation. Regenerate the cache when the required mask data is absent or outdated. Load a mask lazily through a public getter when requested, not merely because FarLands is installed. No mask textures or persistent mask payload arrays should remain resident when no consumer requests them. A linear single-channel `R8` texture with mipmaps is preferred if supported. Unity texture creation/upload belongs on the main thread. Share the loaded mask for the current cache generation and release it on cache replacement/disposal after consumers have been invalidated.
 
-Replace `BinaryFormatter` with an explicit versioned cache format or existing per-entry storage where it is sufficient. Avoid loading every mask byte array into RAM during normal cache initialization. A simple first design is a cache-local manifest/metadata plus separate payload files or an indexed binary file with independently addressable entries. Mask payloads must be independently accessible in every supported cache mode. Use the existing revision directory and save/rebuild lifecycle; increment `globalRevision` (currently `1.6.0`) so clients regenerate compatible data. Avoid writing mask files that can be removed by the final save; stage/publish them with the same cache generation. Preserve the meaning of the existing storage configuration unless its migration is explicitly agreed.
-
-Load masks lazily through a public getter when requested (not at startup just because FarLands is installed). Prefer a linear single-channel `R8` GPU texture with mipmaps if the format is supported. A PNG or compact raw payload is a disk-storage choice, distinct from the GPU format; do not assume `LoadImage` preserves `R8`. Unity texture creation/upload belongs on the main thread. Share the loaded mask for the current cache generation, release it on cache replacement/disposal after consumers have been invalidated, and do not retain all decoded masks or raw pixel arrays indefinitely. When no mod requests masks, no mask textures or persistent mask payload arrays should remain resident. Existing generated seasonal textures are unchanged by this proposal.
-
-The serializer/cache migration is owned by Seasons and can be designed independently of FarLands' renderer. Do not make FarLands wait for a particular internal serialization format; its contract is the returned appearance/mask and its lifetime.
+The on-disk format, serialization, cache migration and other internal cache optimizations are outside the joint integration scope. They are implementation details owned by Seasons. FarLands only needs the appearance/mask API and its lifetime contract; the two implementations must not depend on a particular Seasons cache file format.
 
 ### 4.4 Bake the source mask into the impostor (FarLands responsibility)
 
@@ -337,17 +333,34 @@ Proposed division of work:
 | Public opt-in compatibility API and stable version/capability contract | Direct optional integration adapter; no new reflection for these two features |
 | Exact autumn position-to-index function | Compute/store index at upload; preserve culling and draw grouping |
 | Explicit base material and palette/transform data | Bind base and transform; update model/impostor shaders |
-| Source texture mask generation, versioned storage and lazy loading | Project mask during bake, own atlas format/channel and rendering resources |
+| Source texture mask generation, persistence and lazy loading | Project mask during bake, own atlas format/channel and rendering resources |
 | Shield-copy classification, effective protection state, numeric snapshot | Capture at Prepare, filter in worker, handle job replacement and ForeignBuild |
 | Cache and visual state invalidation for borrowed data | Hook into existing appearance/grass rebuild lifecycle |
 
-Keep both mods independently usable. A direct compile-time API reference must not force Seasons to be installed for FarLands to start. Agree on a soft-dependency adapter or another established optional binding pattern that does not eagerly load/JIT the Seasons-dependent type when the plugin is absent. Seasons must not require FarLands or reference FarLands' internal classes. The precise target framework/assembly distribution needs verification (`FarLands` inspected assembly targets .NET Standard 2.1; the Seasons project targets .NET Framework 4.8). No mandatory new shared library is assumed. The API examples here are conceptual; agree on a small stable versioned contract and signatures before either side implements against them. Old versions without the contract retain the existing behavior; do not add broad compatibility layers for hypothetical future versions.
+Keep both mods independently usable. A direct compile-time API reference must not force Seasons to be installed for FarLands to start. Agree on a soft-dependency adapter or another established optional binding pattern that does not eagerly load/JIT the Seasons-dependent type when the plugin is absent. Seasons must not require FarLands or reference FarLands' internal classes. The precise target framework/assembly distribution needs verification (`FarLands` inspected assembly targets .NET Standard 2.1; the Seasons project targets .NET Framework 4.8). No mandatory new shared library is assumed. The API examples here are conceptual; agree on a small stable versioned contract and signatures before either side implements against them. Mixed-version behavior and its implementation cost must be reviewed before finalizing the contract; see section 8.1. Do not add broad compatibility layers for hypothetical future versions.
 
 For appearance resources, explicitly agree how readiness/invalidation is signaled (existing `GameLooks` polling/version mechanism or one direct revision value/event). A cache rebuild or custom texture change must invalidate the base, mask and correction data together, even if a material reference happens to be unchanged. Prefer integrating with the existing refresh rather than adding an independent polling loop. Main-thread creation/disposal and cache-generation ownership must prevent use of destroyed textures. Shader and mask format changes should remain an implementation detail of FarLands; cache format remains an implementation detail of Seasons.
 
+### 8.1 Mixed-version compatibility
+
+Assess compatibility with the last versions before this integration, starting with Seasons 1.11.0 and FarLands 1.5.2 from the inspected baseline. The goal is to preserve existing behavior when only one mod is updated, not to backport the new features to older releases. Confirm the exact supported versions against both working branches before release.
+
+| Combination | Proposed behavior |
+| --- | --- |
+| New Seasons + new FarLands | Enable the agreed tree and grass integrations when their respective capabilities are available and ready. |
+| New Seasons + previous FarLands | Preserve the existing seasonal material lookup and native grass placement, including the Seasons placement prefix and FarLands' existing foreign-patch fallback. Do not require old FarLands to call the new API. |
+| Previous Seasons + new FarLands | Retain the existing reflection-based Seasons integration for supported older versions, including the safe native grass generation fallback. Do not enter the new API path if its capability is unavailable. |
+| Only one mod installed | Preserve independent operation without loading or invoking types from the absent mod. |
+
+Preliminary assessment: FarLands 1.5.2 already has a legacy `SeasonsLink` adapter. Its material path resolves `PrefabVariantController.instance`, `AddControllerTo(GameObject, bool, ZNetView, WearNTear, string, MeshRenderer)`, `RemoveController(GameObject)`, and the `Seasons.texturesVariants.controllers` mapping. These entry points still exist in Seasons 1.11.0. Preserve the existing reflection-facing names, signatures, field/property types and behavior for the supported legacy paths, including the other existing terrain and snow integrations that are outside this task. The new API should be additive; cache changes must not break the existing runtime object model used by the legacy adapter.
+
+On the FarLands side, reusing the existing legacy adapter and isolating the new optional direct API behind a capability check is likely simpler than implementing new compatibility shims. Verify that probing a missing or older API cannot cause assembly loading, type resolution or JIT failures, and that `ForeignBuild` keeps its existing conservative decision when the new grass capability is unavailable. Select or cache the applicable path outside the hot loops. Check whether independent capability checks for the two features are needed if the integrations become ready at different times.
+
+This is a proposed limited compatibility scope, not a confirmed runtime result. Both sides should inspect their actual dependencies and estimate the cost of the mixed-version paths. If either path requires substantial changes beyond the existing adapter and additive API, discuss the trade-off in the issue and agree on a narrower supported version range rather than expanding the scope silently.
+
 ## 9. Acceptance criteria and validation plan
 
-Static review first; runtime checks and profiling by the developers after implementation. No benchmark thresholds are claimed before measuring a baseline.
+Static review first; runtime checks and profiling by the developers after implementation. No benchmark thresholds are claimed before measuring a baseline. Verify the agreed mixed-version matrix in section 8.1, including mod startup, existing seasonal appearance, native grass fallback and absence of either mod.
 
 ### Autumn colors
 
@@ -380,11 +393,14 @@ Please review these specific decisions against the real source and reply with ev
 | G2 | Confirm the exact supported Seasons Harmony prefix exception in `ForeignBuild`. How should the optional API readiness and cached decision be handled without a per-frame scan? |
 | G3 | Does the current `Current(job)`/`FreePatch` replacement path adequately handle jobs finishing after `ResetGrass` marks a patch, but before replacement? Identify the smallest needed adjustment, if any. |
 | A1 | Agree on an optional, direct public API reference mechanism, version/capability checks, ownership and invalidation. Verify framework/assembly constraints. No hard dependency between the mods. |
+| A2 | Review the mixed-version matrix in section 8.1. Can the existing legacy adapter and additive Seasons API preserve both mixed-version combinations at reasonable cost? Identify required changes, compatibility limits and test cases before deciding the supported version range. |
 
 ### Review workflow
 
-1. FarLands side: verify the source facts and answer T1–T5, G1–G3 and A1. Identify any blocked assumptions. Propose concrete revisions where necessary, preferably with actual signatures/data layouts and exact shader channel choices.
+1. FarLands side: verify the source facts and answer T1–T5, G1–G3 and A1–A2. Identify any blocked assumptions. Propose concrete revisions where necessary, preferably with actual signatures/data layouts and exact shader channel choices.
 2. Seasons side: confirm or revise the API, mask cache ownership and geometry contract based on that feedback. Keep the agreed performance and visual scope; do not turn an open question into a requirement without agreement.
-3. When both sides agree, consolidate the accepted decisions into the final design document with exact signatures, resource lifetimes, fallback behavior and the two implementation task lists. Mark the unresolved items closed or explicitly deferred. Use that document as the implementation baseline for both repositories.
+3. When both sides agree, consolidate the accepted decisions into the final design document with exact signatures, resource lifetimes, fallback behavior, supported mixed-version combinations and the two implementation task lists. Mark the unresolved items closed or explicitly deferred. Use that document as the implementation baseline for both repositories.
+4. Implement the Seasons changes in a dedicated branch and open a PR linked to the coordination issue. Implement the corresponding FarLands changes in its own branch/PR and cross-link the work. Share the exact branch/commit references so the FarLands developer can build a compatible Seasons version and test both changes together before either PR is merged.
+5. Review and test both implementations against the agreed design, including performance and mixed-version behavior. Resolve integration defects in the branches. Once both developers agree that the two implementations work together and the agreed fallback paths are acceptable, coordinate the merges and new releases. Do not raise release versions or publish either mod merely because the design or one implementation is ready.
 
 **Suggested response format:** for each question, provide `Accept / Change / Blocked`, the source evidence, the proposed decision, and any required change on the other side. End with a proposed contract diff or updated Markdown and a list of remaining decisions. No need to implement code, change release versions, or run game tests until the contract is agreed.
