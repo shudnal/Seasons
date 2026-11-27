@@ -19,6 +19,9 @@ namespace Seasons
             public Dictionary<string, TextureVariants> m_textureVariants = new Dictionary<string, TextureVariants>();
             public Dictionary<string, Color[]> m_colorVariants = new Dictionary<string, Color[]>();
             public Material[] seasonalMaterials = Array.Empty<Material>();
+            // Allocated only for explicitly followed autumn appearances. These
+            // materials must not replace the ordinary shared seasonal variants.
+            private Material[] m_generatedAutumnMaterials;
 
             public Season season;
             public bool updateSeasonalMaterials = true;
@@ -67,7 +70,10 @@ namespace Seasons
                     }
             }
 
-            public void ReplaceSharedMaterial(Renderer renderer, int materialIndex, int variant)
+            public void ReplaceSharedMaterial(Renderer renderer, int materialIndex, int variant) =>
+                ReplaceSharedMaterial(renderer, materialIndex, variant, generatedAutumn: false);
+
+            internal void ReplaceSharedMaterial(Renderer renderer, int materialIndex, int variant, bool generatedAutumn)
             {
                 if (updateSeasonalMaterials || season != seasonState.GetCurrentSeason())
                 {
@@ -81,11 +87,50 @@ namespace Seasons
 
                         foreach (KeyValuePair<string, Color[]> colorVariants in m_colorVariants)
                             seasonalMaterials[i].SetColor(colorVariants.Key, colorVariants.Value[(int)season * seasonColorVariants + i]);
+
+                        if (season == Season.Fall && m_generatedAutumnMaterials != null && m_generatedAutumnMaterials[i])
+                            UpdateGeneratedAutumnMaterial(m_generatedAutumnMaterials[i], i);
                     }
                 }
 
-                if (!SeasonalLevelMaterials.TryApply(renderer, materialIndex, this, seasonalMaterials[variant]))
-                    ApplySharedMaterial(renderer, materialIndex, seasonalMaterials[variant]);
+                Material material = seasonalMaterials[variant];
+                if (generatedAutumn && m_originalMaterial.shader.name == "Custom/Vegetation" &&
+                    m_textureVariants.TryGetValue("_MainTex", out TextureVariants texture) && texture.HasRecolorData)
+                {
+                    m_generatedAutumnMaterials ??= new Material[seasonColorVariants];
+                    if (!m_generatedAutumnMaterials[variant])
+                    {
+                        m_generatedAutumnMaterials[variant] = new Material(material);
+                        UpdateGeneratedAutumnMaterial(m_generatedAutumnMaterials[variant], variant);
+                    }
+                    material = m_generatedAutumnMaterials[variant];
+                }
+
+                if (!SeasonalLevelMaterials.TryApply(renderer, materialIndex, this, material))
+                    ApplySharedMaterial(renderer, materialIndex, material);
+            }
+
+            private void UpdateGeneratedAutumnMaterial(Material material, int variant)
+            {
+                material.CopyPropertiesFromMaterial(seasonalMaterials[variant]);
+                foreach (var binding in m_textureVariants)
+                    material.SetTexture(binding.Key, binding.Value.GetGeneratedVariant(Season.Fall, variant));
+            }
+
+            internal bool TryGetRecolor(MeshRenderer renderer, int materialIndex, int variant, out Texture mask, Vector4[] palette)
+            {
+                mask = null;
+                if (m_generatedAutumnMaterials == null || !m_generatedAutumnMaterials[variant] ||
+                    !m_textureVariants.TryGetValue("_MainTex", out TextureVariants texture))
+                    return false;
+
+                // Only return a mask for the generated base actually bound to this slot.
+                s_tempMaterials.Clear();
+                renderer.GetSharedMaterials(s_tempMaterials);
+                bool matches = materialIndex < s_tempMaterials.Count &&
+                    s_tempMaterials[materialIndex] == m_generatedAutumnMaterials[variant];
+                s_tempMaterials.Clear();
+                return matches && texture.TryGetRecolor(out mask, palette);
             }
 
             public void RevertSharedMaterial(Renderer renderer, int materialIndex)
@@ -95,7 +140,8 @@ namespace Seasons
                 if (!renderer)
                     return;
                 Material[] current = renderer.sharedMaterials;
-                if (materialIndex < current.Length && seasonalMaterials.Contains(current[materialIndex]))
+                if (materialIndex < current.Length && (seasonalMaterials.Contains(current[materialIndex]) ||
+                    (m_generatedAutumnMaterials != null && m_generatedAutumnMaterials.Contains(current[materialIndex]))))
                     ApplySharedMaterial(renderer, materialIndex, m_originalMaterial);
             }
 
@@ -130,7 +176,16 @@ namespace Seasons
             public static void Clear()
             {
                 s_tempMaterials.Clear();
-                s_materialVariants.Values.Do(matVar => matVar.seasonalMaterials.Do(Destroy));
+                if (s_materialVariants.Count > 0)
+                    VegetationApi.InvalidateAppearance();
+                foreach (MaterialVariants variants in s_materialVariants.Values)
+                {
+                    variants.seasonalMaterials.Do(Destroy);
+                    if (variants.m_generatedAutumnMaterials != null)
+                        foreach (Material material in variants.m_generatedAutumnMaterials)
+                            if (material)
+                                Destroy(material);
+                }
                 s_materialVariants.Clear();
             }
         }
@@ -144,6 +199,7 @@ namespace Seasons
             private List<SeasonalLevelMaterials.Binding> m_levelMaterials;
 
             public string m_prefabName;
+            internal int AutumnVariant { get; set; } = -1;
             private double m_springFactor;
             private double m_summerFactor;
             private double m_fallFactor;
@@ -312,9 +368,10 @@ namespace Seasons
                 }
 
                 int variant = GetCurrentVariant();
+                bool generatedAutumn = AutumnVariant >= 0 && seasonState.GetCurrentSeason() == Season.Fall;
                 foreach (KeyValuePair<Renderer, Dictionary<int, MaterialVariants>> materialVariants in m_materialVariants)
                     foreach (KeyValuePair<int, MaterialVariants> materialIndex in materialVariants.Value)
-                        materialIndex.Value.ReplaceSharedMaterial(materialVariants.Key, materialIndex.Key, variant);
+                        materialIndex.Value.ReplaceSharedMaterial(materialVariants.Key, materialIndex.Key, variant, generatedAutumn);
 
                 foreach (KeyValuePair<ParticleSystem, Color[]> startColor in m_startColors)
                 {
@@ -328,6 +385,15 @@ namespace Seasons
                     mainModule.startColor = color;
                     m_appliedStartColors[startColor.Key] = color;
                 }
+            }
+
+            internal bool TryGetRecolor(MeshRenderer renderer, int materialIndex, out Texture mask, Vector4[] palette)
+            {
+                mask = null;
+                return AutumnVariant >= 0 &&
+                    m_materialVariants.TryGetValue(renderer, out var materials) &&
+                    materials.TryGetValue(materialIndex, out MaterialVariants variants) &&
+                    variants.TryGetRecolor(renderer, materialIndex, AutumnVariant, out mask, palette);
             }
 
             public void AddToPrefabList()
@@ -386,7 +452,7 @@ namespace Seasons
                 {
                     Season.Spring => GetVariant(m_springFactor),
                     Season.Summer => GetVariant(m_summerFactor),
-                    Season.Fall => GetVariant(m_fallFactor),
+                    Season.Fall => AutumnVariant >= 0 ? AutumnVariant : GetVariant(m_fallFactor),
                     Season.Winter => GetVariant(m_winterFactor),
                     _ => GetVariant(m_springFactor),
                 };
@@ -626,32 +692,63 @@ namespace Seasons
             }
         }
 
-        public void AddControllerTo(GameObject gameObject, bool checkLocation = true, ZNetView netView = null, WearNTear wnt = null, string prefabName = null, MeshRenderer meshRenderer = null)
-        {
-            if (!UseTextureControllers())
-                return;
+        public void AddControllerTo(GameObject gameObject, bool checkLocation = true, ZNetView netView = null, WearNTear wnt = null, string prefabName = null, MeshRenderer meshRenderer = null) =>
+            TryAddControllerTo(gameObject, checkLocation, netView, wnt, prefabName, meshRenderer, -1);
 
-            if (gameObject == null)
-                return;
+        private bool TryAddControllerTo(GameObject gameObject, bool checkLocation, ZNetView netView, WearNTear wnt,
+            string prefabName, MeshRenderer meshRenderer, int autumnVariant)
+        {
+            if (!UseTextureControllers() || !gameObject)
+                return false;
 
             if (m_prefabVariants.ContainsKey(gameObject))
-                return;
+                return true;
 
             prefabName ??= GetPrefabName(gameObject);
             if (prefabName == "YggdrasilRoot" && !controlYggdrasil.Value)
-                return;
+                return false;
 
             if (!texturesVariants.controllers.TryGetValue(prefabName, out PrefabController controller))
-                return;
+                return false;
 
             if (checkLocation && IsIgnoredPosition(gameObject.transform.position))
-                return;
+                return false;
 
-            PrefabVariant prefabVariant = new PrefabVariant();
+            PrefabVariant prefabVariant = new PrefabVariant { AutumnVariant = autumnVariant };
             if (!prefabVariant.Initialize(controller, gameObject, prefabName, netView, wnt, meshRenderer))
-                return;
+                return false;
 
             prefabVariant.AddToPrefabList();
+            return true;
+        }
+
+        internal bool FollowWithVariant(GameObject controlledCopy, string prefabName, int variant)
+        {
+            if (!controlledCopy || !UseTextureControllers() || texturesVariants.IsUpdating)
+                return false;
+
+            if (m_prefabVariants.TryGetValue(controlledCopy, out PrefabVariant existing))
+            {
+                if (existing.AutumnVariant != variant)
+                {
+                    existing.AutumnVariant = variant;
+                    existing.UpdateColors();
+                }
+                return true;
+            }
+
+            return TryAddControllerTo(controlledCopy, false, null, null, prefabName, null, variant);
+        }
+
+        internal bool TryGetRecolor(MeshRenderer controlledRenderer, int materialIndex, out Texture mask, Vector4[] palette)
+        {
+            // GameLooks mirrors preserve the renderer hierarchy beneath the followed root.
+            for (Transform root = controlledRenderer.transform; root; root = root.parent)
+                if (m_prefabVariants.TryGetValue(root.gameObject, out PrefabVariant prefab))
+                    return prefab.TryGetRecolor(controlledRenderer, materialIndex, out mask, palette);
+
+            mask = null;
+            return false;
         }
 
         public void AddControllerTo(Humanoid humanoid, Ragdoll ragdoll)
@@ -733,6 +830,7 @@ namespace Seasons
             if (instance == null)
                 return;
 
+            VegetationApi.NotifySeasonAppearance();
             UpdatePrefabColorsFromList(instance.m_prefabVariants);
         }
 
@@ -1347,6 +1445,9 @@ namespace Seasons
 
         public static void ForgetVisualRadius(ShieldGenerator shield) => s_visualRadius.Remove(shield);
 
+        internal static float GetAffectedRadius(ShieldGenerator shield, float radius) =>
+            s_visualRadius.TryGetValue(shield, out float visualRadius) ? Mathf.Max(radius, visualRadius) : radius;
+
         [HarmonyPriority(Priority.First)]
         private static void Prefix(ShieldGenerator shield, Vector3 position, float radius)
         {
@@ -1385,14 +1486,21 @@ namespace Seasons
         [HarmonyPriority(Priority.First)]
         private static void Prefix(ShieldGenerator shield)
         {
-            if (ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.shieldRadius.Remove(shield))
+            if (ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.shieldRadius.TryGetValue(shield, out float radius))
             {
+                float affectedRadius = ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.GetAffectedRadius(shield, radius);
+                ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.shieldRadius.Remove(shield);
                 ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.ForgetVisualRadius(shield);
                 ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.InvalidateShieldCoverCache();
                 ClutterVariantController.UpdateShieldActiveState();
                 if (IsShieldProtectionActive())
                 {
                     Vector3 position = shield.GetShieldPosition();
+                    // Destruction removes the native shield after RemoveShield returns.
+                    // Mark these patches for the next update when other shields stay active;
+                    // removing the last active shield already clears grass in UpdateShieldActiveState.
+                    if (ClutterVariantController.GrassProtectionActive && affectedRadius > 0f)
+                        ClutterSystem.instance?.ResetGrass(position, affectedRadius + 1f);
                     UpdatePrefabColorsAroundPosition(position, shield.m_maxShieldRadius, delay: 5f);
                     ZoneSystemVariantController.UpdateTerrainColorsAroundPosition(position, shield.m_maxShieldRadius, delay: 5f);
                 }

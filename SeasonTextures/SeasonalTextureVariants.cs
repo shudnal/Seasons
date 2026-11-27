@@ -22,6 +22,9 @@ namespace Seasons
 
         public void Dispose()
         {
+            if (ReferenceEquals(this, texturesVariants))
+                VegetationApi.InvalidateAppearance();
+
             foreach (TextureVariants variants in textures.Values)
                 variants.Dispose();
             textures.Clear();
@@ -200,6 +203,7 @@ namespace Seasons
                     yield break;
                 }
 
+                VegetationApi.InvalidateAppearance();
                 PrefabVariantController.instance?.RevertPrefabsState();
                 ClutterVariantController.Instance?.RevertColors();
 
@@ -220,8 +224,11 @@ namespace Seasons
                         oldTexture.Dispose();
                 }
 
-                m_reloading = false;
                 yield return waitForFixedUpdate;
+                if (!sourceZone || sourceZone != ZoneSystem.instance)
+                    yield break;
+
+                m_reloading = false;
                 PrefabVariantController.UpdatePrefabColors();
                 ClutterVariantController.Instance?.UpdateColors();
                 LogInfo($"Loaded from cache revision:{revision} controllers:{controllers.Count} textures:{textures.Count} in {stopwatch.Elapsed.TotalSeconds,-4:F2} seconds");
@@ -261,6 +268,7 @@ namespace Seasons
 
                 Stopwatch stopwatch = Stopwatch.StartNew();
                 List<TextureVariants> oldTextures = new List<TextureVariants>(textures.Values);
+                VegetationApi.InvalidateAppearance();
                 controllers.Clear();
                 textures.Clear();
                 revision = newTexturesVariants.revision;
