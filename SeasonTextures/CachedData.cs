@@ -1,288 +1,485 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using static Seasons.Seasons;
-using UnityEngine;
 using System.IO;
+using System.Text;
+using System.Threading.Tasks;
 using Newtonsoft.Json;
-using System.Runtime.Serialization.Formatters.Binary;
+using UnityEngine;
+using static Seasons.Seasons;
 
 namespace Seasons
 {
-    [Serializable]
+    // Only metadata is resident for the whole year. Each season file is a sequence
+    // of independently compressed variants; the mask file has a lazy-read index.
     public class CachedData
     {
-        [Serializable]
         public class TextureData
         {
             public string name;
-            public byte[] originalPNG;
             public TextureProperties properties;
-            [NonSerialized]
-            internal byte[] recolorData;
-            public Dictionary<Season, Dictionary<int, byte[]>> variants = new Dictionary<Season, Dictionary<int, byte[]>>();
-
-            public bool Initialized()
-            {
-                return properties != null && Enum.GetValues(typeof(Season)).Cast<Season>().All(season =>
-                    variants.TryGetValue(season, out Dictionary<int, byte[]> values)
-                    && Enumerable.Range(0, seasonColorVariants).All(variant => values.TryGetValue(variant, out byte[] data) && data?.Length > 0));
-            }
-
-            public TextureData(TextureVariants textureVariants)
-            {
-                if (textureVariants == null)
-                    return;
-
-                originalPNG = textureVariants.originalPNG;
-                name = textureVariants.originalName;
-                properties = textureVariants.properties;
-                recolorData = textureVariants.PendingRecolorData;
-
-                foreach (KeyValuePair<Season, Dictionary<int, Texture2D>> texSeason in textureVariants.seasons)
-                {
-                    variants.Add(texSeason.Key, new Dictionary<int, byte[]>());
-                    foreach (KeyValuePair<int, Texture2D> texData in texSeason.Value)
-                        variants[texSeason.Key].Add(texData.Key, texData.Value.EncodeToPNG());
-                }
-            }
-
-            public TextureData(DirectoryInfo texDirectory)
-            {
-                FileInfo[] propertiesFile = texDirectory.GetFiles(texturePropertiesFileName);
-                if (propertiesFile.Length > 0)
-                    properties = JsonUtility.FromJson<TextureProperties>(File.ReadAllText(propertiesFile[0].FullName));
-                
-                foreach (Season season in Enum.GetValues(typeof(Season)))
-                {
-                    variants.Add(season, new Dictionary<int, byte[]>());
-
-                    for (int variant = 0; variant < seasonColorVariants; variant++)
-                    {
-                        FileInfo[] files = texDirectory.GetFiles(SeasonFileName(season, variant));
-                        if (files.Length == 0)
-                            continue;
-
-                        variants[season].Add(variant, File.ReadAllBytes(files[0].FullName));
-                    }
-                }
-            }
-
         }
 
-        internal const string cacheSubdirectory = "Cache";
-        internal const string prefabCacheCommonFile = "cache.bin";
-        internal const string prefabCacheFileName = "cache.json";
-        internal const string texturesDirectory = "textures";
-        internal const string recolorDirectory = "recolor";
-        internal const string originalPostfix = ".orig.png";
-        internal const string texturePropertiesFileName = "properties.json";
+        private sealed class Metadata
+        {
+            public uint revision;
+            public Dictionary<string, PrefabController> controllers;
+            public Dictionary<int, TextureData> textures;
+        }
 
-        public Dictionary<string, PrefabController> controllers = new Dictionary<string, PrefabController>();
-        public Dictionary<int, TextureData> textures = new Dictionary<int, TextureData>();
-        public uint revision = 0;
+        internal sealed class VariantBlock
+        {
+            internal int TextureId;
+            internal int Variant;
+            internal byte[] Data;
+            internal bool Raw;
+        }
 
-        public CachedData(uint revision)
+        private struct MaskBlock
+        {
+            internal long Offset;
+            internal int Length;
+        }
+
+        private const uint MetadataMagic = 0x4D435353;
+        private const uint SeasonMagic = 0x54435353;
+        private const uint RecolorMagic = 0x52435353;
+        private const int FormatVersion = 1;
+        private const string MetadataFile = "cache.dat";
+        private const string RecolorFile = "recolor.dat";
+        private const string ExportFile = "cache.json";
+        private const string TexturesDirectory = "textures";
+        private const string PropertiesFile = "properties.json";
+        private const string OriginalPostfix = ".orig.png";
+
+        public readonly uint revision;
+        public readonly Dictionary<string, PrefabController> controllers;
+        public readonly Dictionary<int, TextureData> textures;
+
+        private readonly bool m_json;
+        private string m_directory;
+        private readonly Dictionary<int, MaskBlock> m_masks = new Dictionary<int, MaskBlock>();
+
+        private CachedData(uint revision, bool json, string directory,
+            Dictionary<string, PrefabController> controllers, Dictionary<int, TextureData> textures)
         {
             this.revision = revision;
+            m_json = json;
+            m_directory = directory;
+            this.controllers = controllers;
+            this.textures = textures;
         }
 
-        public bool Initialized()
+        internal static string CacheDirectory(uint revision) => Path.Combine(cacheDirectory, revision.ToString());
+        private static string SeasonPath(string directory, Season season) => Path.Combine(directory, season + ".dat");
+        private static string TexturePath(string directory, int id) => Path.Combine(directory, TexturesDirectory, id.ToString());
+        public static string SeasonFileName(Season season, int variant) => $"{season}_{variant + 1}.png";
+
+        private static void WriteHeader(BinaryWriter writer, uint magic, uint revision, int kind)
         {
-            return controllers?.Count > 0 && textures?.Count > 0 && textures.Values.All(texture => texture != null && texture.Initialized());
+            writer.Write(magic);
+            writer.Write(FormatVersion);
+            writer.Write(revision);
+            writer.Write(kind);
         }
 
-        public void SaveOnDisk()
+        private static void ReadHeader(BinaryReader reader, uint magic, uint revision, int kind)
         {
-            if (!Initialized())
-                return;
-
-            // Both storage modes use the same independently addressable mask files.
-            Directory.CreateDirectory(Path.Combine(CacheDirectory(), recolorDirectory));
-            foreach (var entry in textures)
-            {
-                byte[] data = entry.Value.recolorData;
-                if (data == null || data.LongLength != TextureVariants.RecolorDataLength(entry.Value.properties))
-                    throw new InvalidDataException($"Missing recolor data for texture {entry.Key}.");
-                File.WriteAllBytes(RecolorPath(entry.Key), data);
-            }
-
-            if (cacheStorageFormat.Value == CacheFormat.Binary)
-                SaveToBinary();
-            else if (cacheStorageFormat.Value == CacheFormat.Json)
-                SaveToJSON();
-            else
-            {
-                SaveToJSON();
-                SaveToBinary();
-            }
+            if (reader.ReadUInt32() != magic || reader.ReadInt32() != FormatVersion ||
+                reader.ReadUInt32() != revision || reader.ReadInt32() != kind)
+                throw new InvalidDataException("Invalid Seasons cache header.");
         }
 
-        public void LoadFromDisk()
+        private static void WriteBlock(BinaryWriter writer, byte[] data)
         {
-            try
-            {
-                if (cacheStorageFormat.Value == CacheFormat.Json)
-                    LoadFromJSON();
-                else
-                    LoadFromBinary();
+            byte[] compressed = BrotliCompressor.CompressBytes(data);
+            writer.Write(data.Length);
+            writer.Write(compressed.Length);
+            writer.Write(compressed);
+        }
 
-                // Check the file metadata, not the mask payload, during normal cache loads.
-                foreach (var entry in textures)
+        private static (int RawLength, int Length) ReadBlockHeader(BinaryReader reader, int expectedLength)
+        {
+            int rawLength = reader.ReadInt32();
+            int length = reader.ReadInt32();
+            if (rawLength <= 0 || (expectedLength > 0 && rawLength != expectedLength) ||
+                length <= 0 || length > reader.BaseStream.Length - reader.BaseStream.Position)
+                throw new InvalidDataException("Invalid Seasons cache block size.");
+            return (rawLength, length);
+        }
+
+        private static byte[] ReadBlock(BinaryReader reader, int expectedLength = 0)
+        {
+            var size = ReadBlockHeader(reader, expectedLength);
+            byte[] compressed = reader.ReadBytes(size.Length);
+            if (compressed.Length != size.Length)
+                throw new EndOfStreamException();
+            byte[] data = BrotliCompressor.DecompressBytes(compressed);
+            if (data.Length != size.RawLength)
+                throw new InvalidDataException("Invalid Seasons decompressed block size.");
+            return data;
+        }
+
+        private static BinaryReader OpenReader(string path) =>
+            new BinaryReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read));
+
+        private static void RequireEnd(BinaryReader reader)
+        {
+            if (reader.BaseStream.Position != reader.BaseStream.Length)
+                throw new InvalidDataException("Unexpected trailing Seasons cache data.");
+        }
+
+        internal static CachedData Open(uint revision, CacheFormat format, string directory = null)
+        {
+            directory ??= CacheDirectory(revision);
+            bool json = format == CacheFormat.Json;
+            Metadata metadata;
+            if (json)
+            {
+                metadata = new Metadata
                 {
-                    var mask = new FileInfo(RecolorPath(entry.Key));
-                    if (entry.Value.properties == null || !mask.Exists ||
-                        mask.Length != TextureVariants.RecolorDataLength(entry.Value.properties))
-                        throw new InvalidDataException($"Missing or invalid recolor data for texture {entry.Key}.");
+                    revision = revision,
+                    controllers = JsonConvert.DeserializeObject<Dictionary<string, PrefabController>>(
+                        File.ReadAllText(Path.Combine(directory, ExportFile))),
+                    textures = new Dictionary<int, TextureData>()
+                };
+
+                foreach (string path in Directory.GetDirectories(Path.Combine(directory, TexturesDirectory)))
+                {
+                    if (!int.TryParse(Path.GetFileName(path), out int id))
+                        continue;
+                    string[] originals = Directory.GetFiles(path, "*" + OriginalPostfix);
+                    if (originals.Length != 1)
+                        throw new InvalidDataException($"Missing or ambiguous original texture name in {path}.");
+                    string original = Path.GetFileName(originals[0]);
+                    metadata.textures.Add(id, new TextureData
+                    {
+                        name = original.Substring(0, original.Length - OriginalPostfix.Length),
+                        properties = JsonConvert.DeserializeObject<TextureProperties>(
+                            File.ReadAllText(Path.Combine(path, PropertiesFile)))
+                    });
+                    foreach (Season season in Enum.GetValues(typeof(Season)))
+                        for (int variant = 0; variant < seasonColorVariants; variant++)
+                            if (!File.Exists(Path.Combine(path, SeasonFileName(season, variant))))
+                                throw new InvalidDataException($"Missing {season} variant {variant} of texture {id}.");
                 }
             }
-            catch (Exception error)
+            else
             {
-                controllers = new Dictionary<string, PrefabController>();
-                textures = new Dictionary<int, TextureData>();
-                LogWarning($"Unable to load seasonal texture cache:\n{error}");
+                using BinaryReader reader = OpenReader(Path.Combine(directory, MetadataFile));
+                ReadHeader(reader, MetadataMagic, revision, 0);
+                metadata = JsonConvert.DeserializeObject<Metadata>(Encoding.UTF8.GetString(ReadBlock(reader)));
+                RequireEnd(reader);
             }
+
+            if (metadata == null || metadata.revision != revision ||
+                metadata.controllers == null || metadata.controllers.Count == 0 ||
+                metadata.textures == null || metadata.textures.Count == 0)
+                throw new InvalidDataException("Incomplete Seasons cache metadata.");
+
+            foreach (var entry in metadata.textures)
+                if (entry.Value?.properties == null || entry.Value.name == null)
+                    throw new InvalidDataException($"Missing metadata for texture {entry.Key}.");
+                else
+                    entry.Value.properties.RawDataLength();
+
+            var cache = new CachedData(revision, json, directory, metadata.controllers, metadata.textures);
+            if (!json)
+                foreach (Season season in Enum.GetValues(typeof(Season)))
+                {
+                    using BinaryReader reader = OpenReader(SeasonPath(directory, season));
+                    ReadHeader(reader, SeasonMagic, revision, (int)season);
+                    if (reader.BaseStream.Position == reader.BaseStream.Length)
+                        throw new InvalidDataException($"Empty {season} texture cache.");
+                }
+
+            // Index the mask records without decompressing any of their payloads.
+            using (BinaryReader reader = OpenReader(Path.Combine(directory, RecolorFile)))
+            {
+                ReadHeader(reader, RecolorMagic, revision, 0);
+                for (int i = 0; i < metadata.textures.Count; i++)
+                {
+                    int id = reader.ReadInt32();
+                    if (!metadata.textures.TryGetValue(id, out TextureData texture))
+                        throw new InvalidDataException($"Unknown recolor texture {id}.");
+                    long offset = reader.BaseStream.Position;
+                    var size = ReadBlockHeader(reader, checked((int)TextureVariants.RecolorDataLength(texture.properties)));
+                    cache.m_masks.Add(id, new MaskBlock { Offset = offset, Length = size.RawLength });
+                    reader.BaseStream.Seek(size.Length, SeekOrigin.Current);
+                }
+                RequireEnd(reader);
+            }
+
+            return cache;
         }
 
-        private void SaveToJSON()
+        internal IEnumerable<VariantBlock> ReadSeason(Season season)
         {
-            string folder = CacheDirectory();
-
-            Directory.CreateDirectory(folder);
-
-            string filename = Path.Combine(folder, prefabCacheFileName);
-
-            File.WriteAllText(filename, JsonConvert.SerializeObject(controllers, Formatting.Indented, new JsonSerializerSettings()
+            if (m_json)
             {
-                NullValueHandling = NullValueHandling.Ignore,
-                DefaultValueHandling = DefaultValueHandling.Ignore,
-            }));
-
-            string directory = Path.Combine(folder, texturesDirectory);
-
-            LogInfo($"Saved cache file {filename}");
-
-            foreach (KeyValuePair<int, TextureData> tex in textures)
-            {
-                string texturePath = Path.Combine(directory, tex.Key.ToString());
-
-                Directory.CreateDirectory(texturePath);
-
-                File.WriteAllBytes(Path.Combine(texturePath, $"{tex.Value.name}{originalPostfix}"), tex.Value.originalPNG);
-
-                File.WriteAllText(Path.Combine(texturePath, texturePropertiesFileName), JsonUtility.ToJson(tex.Value.properties, true));
-
-                foreach (KeyValuePair<Season, Dictionary<int, byte[]>> season in tex.Value.variants)
-                    foreach (KeyValuePair<int, byte[]> texData in season.Value)
-                        File.WriteAllBytes(Path.Combine(texturePath, SeasonFileName(season.Key, texData.Key)), texData.Value);
+                foreach (var entry in textures)
+                    for (int variant = 0; variant < seasonColorVariants; variant++)
+                        yield return new VariantBlock
+                        {
+                            TextureId = entry.Key,
+                            Variant = variant,
+                            Data = File.ReadAllBytes(Path.Combine(TexturePath(m_directory, entry.Key),
+                                SeasonFileName(season, variant))),
+                            Raw = false
+                        };
+                yield break;
             }
 
-            LogInfo($"Saved {textures.Count} textures at {directory}");
+            using BinaryReader reader = OpenReader(SeasonPath(m_directory, season));
+            ReadHeader(reader, SeasonMagic, revision, (int)season);
+            var seen = new HashSet<(int, int)>();
+            int count = checked(textures.Count * seasonColorVariants);
+            for (int i = 0; i < count; i++)
+            {
+                int id = reader.ReadInt32();
+                int variant = reader.ReadInt32();
+                if (!textures.TryGetValue(id, out TextureData texture) ||
+                    variant < 0 || variant >= seasonColorVariants || !seen.Add((id, variant)))
+                    throw new InvalidDataException("Invalid or duplicate seasonal texture record.");
+
+                yield return new VariantBlock
+                {
+                    TextureId = id,
+                    Variant = variant,
+                    Data = ReadBlock(reader, texture.properties.RawDataLength()),
+                    Raw = true
+                };
+            }
+            RequireEnd(reader);
         }
 
-        private void LoadFromJSON()
+        private void ValidateSeasonFile(Season season)
         {
-            string folder = CacheDirectory();
-
-            DirectoryInfo cacheDirectory = new DirectoryInfo(folder);
-            if (!cacheDirectory.Exists)
-                return;
-
-            FileInfo[] cacheFile = cacheDirectory.GetFiles(prefabCacheFileName);
-            if (cacheFile.Length == 0)
+            using BinaryReader reader = OpenReader(SeasonPath(m_directory, season));
+            ReadHeader(reader, SeasonMagic, revision, (int)season);
+            var seen = new HashSet<(int, int)>();
+            int count = checked(textures.Count * seasonColorVariants);
+            for (int i = 0; i < count; i++)
             {
-                LogInfo($"File not found: {Path.Combine(folder, prefabCacheFileName)}");
-                return;
+                int id = reader.ReadInt32();
+                int variant = reader.ReadInt32();
+                if (!textures.TryGetValue(id, out TextureData texture) ||
+                    variant < 0 || variant >= seasonColorVariants || !seen.Add((id, variant)))
+                    throw new InvalidDataException("Invalid or duplicate seasonal texture record.");
+                var block = ReadBlockHeader(reader, texture.properties.RawDataLength());
+                reader.BaseStream.Seek(block.Length, SeekOrigin.Current);
             }
-
-            try
-            {
-                controllers = JsonConvert.DeserializeObject<Dictionary<string, PrefabController>>(File.ReadAllText(cacheFile[0].FullName));
-            }
-            catch (Exception ex)
-            {
-                LogWarning($"Error loading JSON cache data from {cacheFile[0].FullName}\n{ex}");
-                return;
-            }
-
-            DirectoryInfo[] texDir = cacheDirectory.GetDirectories(texturesDirectory);
-            if (texDir.Length == 0)
-                return;
-
-            foreach (DirectoryInfo texDirectory in texDir[0].GetDirectories())
-            {
-                if (!Int32.TryParse(texDirectory.Name, out int hash))
-                    continue;
-                if (textures.ContainsKey(hash))
-                    continue;
-
-                TextureData texData = new TextureData(texDirectory);
-
-                if (!texData.Initialized())
-                    continue;
-
-                textures.Add(hash, texData);
-            }
+            RequireEnd(reader);
         }
 
-        private void SaveToBinary()
+        internal bool HasRecolor(int id) => m_masks.ContainsKey(id);
+
+        internal byte[] ReadRecolor(int id)
         {
-            string folder = CacheDirectory();
-
-            Directory.CreateDirectory(folder);
-
-            using (FileStream fs = new FileStream(Path.Combine(folder, prefabCacheCommonFile), FileMode.Create))
-            {
-                BinaryFormatter bf = new BinaryFormatter();
-                bf.Serialize(fs, this);
-                fs.Dispose();
-            }
-
-            LogInfo($"Saved cache file {Path.Combine(folder, prefabCacheCommonFile)}");
+            MaskBlock block = m_masks[id];
+            using BinaryReader reader = OpenReader(Path.Combine(m_directory, RecolorFile));
+            ReadHeader(reader, RecolorMagic, revision, 0);
+            reader.BaseStream.Seek(block.Offset, SeekOrigin.Begin);
+            return ReadBlock(reader, block.Length);
         }
 
-        private void LoadFromBinary()
+        // Generation writes directly to the final file layout in a private staging
+        // directory. Only one background write owns a pixel payload at a time.
+        internal sealed class Writer : IDisposable
         {
-            string folder = CacheDirectory();
+            private readonly uint m_revision;
+            private readonly CacheFormat m_format;
+            private readonly bool m_binary;
+            internal bool WritesJson { get; }
+            private readonly string m_temp;
+            private readonly BinaryWriter[] m_seasons = new BinaryWriter[seasonsCount];
+            private BinaryWriter m_recolor;
+            private Task m_pending;
+            private byte[] m_rawBuffer;
+            private Exception m_writeError;
+            private bool m_published;
+            private bool m_disposed;
 
-            string filename = Path.Combine(folder, prefabCacheCommonFile);
-            if (!File.Exists(filename))
+            internal Writer(uint revision, CacheFormat format)
             {
-                LogInfo($"File not found: {filename}");
-                return;
+                m_revision = revision;
+                m_format = format;
+                m_binary = format != CacheFormat.Json;
+                WritesJson = format != CacheFormat.Binary;
+                m_temp = Path.Combine(cacheDirectory, "temp", revision + "-" + Guid.NewGuid().ToString("N"));
+                try
+                {
+                    Directory.CreateDirectory(m_temp);
+                    if (m_binary)
+                        foreach (Season season in Enum.GetValues(typeof(Season)))
+                        {
+                            var writer = new BinaryWriter(File.Create(SeasonPath(m_temp, season)));
+                            m_seasons[(int)season] = writer;
+                            WriteHeader(writer, SeasonMagic, revision, (int)season);
+                        }
+
+                    m_recolor = new BinaryWriter(File.Create(Path.Combine(m_temp, RecolorFile)));
+                    WriteHeader(m_recolor, RecolorMagic, revision, 0);
+                }
+                catch
+                {
+                    Dispose();
+                    throw;
+                }
             }
 
-            try
+            private void WaitForWrite()
             {
-                using FileStream fs = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read);
-                BinaryFormatter bf = new BinaryFormatter();
-                CachedData cd = (CachedData)bf.Deserialize(fs);
-                fs.Dispose();
-
-                controllers.Copy(cd.controllers);
-                textures.Copy(cd.textures);
-
-                cd = null;
+                Task pending = m_pending;
+                m_pending = null;
+                try { pending?.GetAwaiter().GetResult(); }
+                catch (Exception error) { m_writeError = error; }
+                if (m_writeError != null)
+                    throw new IOException("Unable to write the seasonal cache.", m_writeError);
             }
-            catch (Exception ex)
+
+            internal void WriteOriginal(int id, string name, TextureProperties properties, Texture2D source)
             {
-                LogWarning($"Error loading binary cache data from {filename}:\n {ex}");
+                if (!WritesJson)
+                    return;
+                WaitForWrite();
+                string path = TexturePath(m_temp, id);
+                byte[] png = source.EncodeToPNG();
+                string settings = JsonConvert.SerializeObject(properties, Formatting.Indented);
+                m_pending = Task.Run(() =>
+                {
+                    Directory.CreateDirectory(path);
+                    File.WriteAllText(Path.Combine(path, PropertiesFile), settings);
+                    File.WriteAllBytes(Path.Combine(path, name + OriginalPostfix), png);
+                });
+            }
+
+            internal void WriteVariant(int id, Season season, int variant, Texture2D texture, TextureProperties properties)
+            {
+                // Do not extract the next payload until the previous one has been
+                // written. The worker never touches a Unity object.
+                WaitForWrite();
+                byte[] raw = null;
+                if (m_binary)
+                {
+                    var view = texture.GetRawTextureData<byte>();
+                    if (view.Length != properties.RawDataLength())
+                        throw new InvalidDataException($"Unexpected raw texture size for {id}.");
+                    if (m_rawBuffer == null || m_rawBuffer.Length != view.Length)
+                        m_rawBuffer = new byte[view.Length];
+                    view.CopyTo(m_rawBuffer);
+                    raw = m_rawBuffer;
+                }
+                byte[] png = WritesJson ? texture.EncodeToPNG() : null;
+                m_pending = Task.Run(() =>
+                {
+                    if (raw != null)
+                    {
+                        BinaryWriter writer = m_seasons[(int)season];
+                        writer.Write(id);
+                        writer.Write(variant);
+                        WriteBlock(writer, raw);
+                    }
+                    if (png != null)
+                        File.WriteAllBytes(Path.Combine(TexturePath(m_temp, id), SeasonFileName(season, variant)), png);
+                });
+            }
+
+            internal void WriteRecolor(int id, byte[] data)
+            {
+                WaitForWrite();
+                m_pending = Task.Run(() =>
+                {
+                    m_recolor.Write(id);
+                    WriteBlock(m_recolor, data);
+                });
+            }
+
+            private void CloseStreams()
+            {
+                for (int i = 0; i < m_seasons.Length; i++)
+                {
+                    m_seasons[i]?.Dispose();
+                    m_seasons[i] = null;
+                }
+                m_recolor?.Dispose();
+                m_recolor = null;
+            }
+
+            internal CachedData Finish(Dictionary<string, PrefabController> controllers,
+                Dictionary<int, TextureData> textures)
+            {
+                WaitForWrite();
+                m_rawBuffer = null;
+                CloseStreams();
+                if (controllers.Count == 0 || textures.Count == 0)
+                    throw new InvalidDataException("No seasonal texture data generated.");
+
+                if (m_binary)
+                {
+                    var metadata = new Metadata { revision = m_revision, controllers = controllers, textures = textures };
+                    byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(metadata));
+                    using var writer = new BinaryWriter(File.Create(Path.Combine(m_temp, MetadataFile)));
+                    WriteHeader(writer, MetadataMagic, m_revision, 0);
+                    WriteBlock(writer, data);
+                }
+                if (WritesJson)
+                    File.WriteAllText(Path.Combine(m_temp, ExportFile),
+                        JsonConvert.SerializeObject(controllers, Formatting.Indented, new JsonSerializerSettings
+                        {
+                            NullValueHandling = NullValueHandling.Ignore,
+                            DefaultValueHandling = DefaultValueHandling.Ignore
+                        }));
+
+                // Validate every season's record layout before publication.
+                // This does not decompress or retain the pixel payloads.
+                CachedData cache = Open(m_revision, m_format, m_temp);
+                if (m_binary)
+                    foreach (Season season in Enum.GetValues(typeof(Season)))
+                        cache.ValidateSeasonFile(season);
+                return cache;
+            }
+
+            internal void Publish(CachedData cache)
+            {
+                string destination = CacheDirectory(m_revision);
+                string backup = m_temp + "-previous";
+                bool replaced = Directory.Exists(destination);
+                if (replaced)
+                    Directory.Move(destination, backup);
+                try
+                {
+                    Directory.Move(m_temp, destination);
+                }
+                catch
+                {
+                    if (replaced)
+                        Directory.Move(backup, destination);
+                    throw;
+                }
+
+                cache.m_directory = destination;
+                m_published = true;
+                if (replaced)
+                    try { Directory.Delete(backup, true); }
+                    catch (Exception error) { LogWarning($"Unable to remove previous Seasons cache: {error.Message}"); }
+            }
+
+            public void Dispose()
+            {
+                if (m_disposed)
+                    return;
+                m_disposed = true;
+                try { WaitForWrite(); }
+                catch (Exception error) { LogWarning($"Seasons cache write failed: {error.Message}"); }
+                m_rawBuffer = null;
+                try { CloseStreams(); }
+                finally
+                {
+                    if (!m_published && Directory.Exists(m_temp))
+                        try { Directory.Delete(m_temp, true); }
+                        catch (Exception error) { LogWarning($"Unable to remove incomplete Seasons cache: {error.Message}"); }
+                }
             }
         }
-
-        internal string RecolorPath(int textureId) =>
-            Path.Combine(CacheDirectory(), recolorDirectory, textureId + ".bin");
-
-        public string CacheDirectory()
-        {
-            return Path.Combine(cacheDirectory, revision.ToString());
-        }
-
-        public static string SeasonFileName(Season season, int variant)
-        {
-            return $"{season}_{variant + 1}.png";
-        }
-
     }
-
 }

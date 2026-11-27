@@ -1005,7 +1005,7 @@ namespace Seasons
             seasonalGlobalKeyWinter.SettingChanged += (sender, args) => seasonState?.UpdateGlobalKeys();
             seasonalGlobalKeyDay.SettingChanged += (sender, args) => seasonState?.UpdateGlobalKeys();
 
-            cacheStorageFormat = clientConfig("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache files format. Binary for fast loading of single non humanreadable file. JSON for humanreadable cache.json + textures subdirectory.");
+            cacheStorageFormat = clientConfig("Test", "Cache format", defaultValue: CacheFormat.Binary, "Cache storage format. Binary uses Brotli-compressed raw textures in separate season files. JSON preserves editable PNG files and cache.json. SaveBothLoadBinary saves both and loads the binary cache.");
             logTime = clientConfig("Test", "Log time", defaultValue: false, "Log time info on state update");
             logFloes = clientConfig("Test", "Log ice floes", defaultValue: false, "Log ice-floe placement and removal.");
             logControllersTime = clientConfig("Test", "Log prefab caching time", defaultValue: false, "Log elapsed time of prefabs caching process in descending order");

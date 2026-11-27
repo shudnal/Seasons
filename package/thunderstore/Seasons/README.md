@@ -157,7 +157,9 @@ BepInEx\cache\shudnal.Seasons
 
 If you experience any issue with textures or just want to rebuild cache you can safely delete the files inside this folder.
 
-By default, cache is saved as a non-human-readable binary file for faster loading. It can also be saved as JSON and PNG files.
+By default, the cache stores Brotli-compressed texture data in separate files for each season. Seasons loads only the current season's textures into memory. Cache generation writes texture data to a temporary directory instead of keeping all generated textures in memory. The previous cache is replaced only after the new cache is ready.
+
+The `Test - Cache format` option also supports JSON and PNG files for inspection and custom texture development. `SaveBothLoadBinary` saves both formats and uses the binary cache in game. The old `cache.bin` format is no longer used; Seasons rebuilds it automatically.
 
 You can replace generated textures with your own custom textures using approach described in Custom textures. There is no need to alter files in cache folder.
 
@@ -538,7 +540,7 @@ Folders inside of **\BepInEx\config\shudnal.Seasons\Custom textures** folder sho
 
 To find what texture name is you should set general config option "Test - Cache format" to "SaveBothLoadBinary" and rebuild the cache (by running console command or just deleting old one in **\BepInEx\cache\shudnal.Seasons**).
 
-After that new cache folder will form with files **cache.json** and **cache.bin** and **textures** folder. Cache.json consists of all objects and their materials and color that will be replaced. 
+After the rebuild, the cache folder contains **cache.json**, the **textures** folder, and the binary files **cache.dat**, **Spring.dat**, **Summer.dat**, **Fall.dat**, **Winter.dat** and **recolor.dat**. The `cache.json` file lists controlled objects, their materials, and color variants. 
 
 In that file you can find prefab and texture number which corresponds with folder in "texture\" directory. 
 

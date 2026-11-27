@@ -75,10 +75,10 @@ namespace Seasons
 
             internal void ReplaceSharedMaterial(Renderer renderer, int materialIndex, int variant, bool generatedAutumn)
             {
-                if (updateSeasonalMaterials || season != seasonState.GetCurrentSeason())
+                if (updateSeasonalMaterials || season != texturesVariants.AppearanceSeason)
                 {
                     updateSeasonalMaterials = false;
-                    season = seasonState.GetCurrentSeason();
+                    season = texturesVariants.AppearanceSeason;
 
                     for (int i = 0; i < seasonColorVariants; i++)
                     {
@@ -174,6 +174,31 @@ namespace Seasons
             public static void UpdateSeasonalMaterials()
             {
                 s_materialVariants.Values.Do(matVar => matVar.updateSeasonalMaterials = true);
+            }
+
+            // Cached materials without a live renderer may not have been
+            // repainted. Detach their old texture bindings before retirement.
+            internal static void RetireInactiveSeason(Season activeSeason)
+            {
+                foreach (MaterialVariants variants in s_materialVariants.Values)
+                {
+                    if (variants.updateSeasonalMaterials || variants.season != activeSeason)
+                    {
+                        foreach (Material material in variants.seasonalMaterials)
+                            if (material)
+                                foreach (var binding in variants.m_textureVariants)
+                                    material.SetTexture(binding.Key, variants.m_originalMaterial ? variants.m_originalMaterial.GetTexture(binding.Key) : null);
+                        variants.updateSeasonalMaterials = true;
+                    }
+
+                    if (activeSeason != Season.Fall && variants.m_generatedAutumnMaterials != null)
+                    {
+                        foreach (Material material in variants.m_generatedAutumnMaterials)
+                            if (material)
+                                Destroy(material);
+                        variants.m_generatedAutumnMaterials = null;
+                    }
+                }
             }
 
             public static void Clear()
@@ -371,7 +396,7 @@ namespace Seasons
                 }
 
                 int variant = GetCurrentVariant();
-                bool generatedAutumn = AutumnVariant >= 0 && seasonState.GetCurrentSeason() == Season.Fall;
+                bool generatedAutumn = AutumnVariant >= 0 && texturesVariants.AppearanceSeason == Season.Fall;
                 foreach (KeyValuePair<Renderer, Dictionary<int, MaterialVariants>> materialVariants in m_materialVariants)
                     foreach (KeyValuePair<int, MaterialVariants> materialIndex in materialVariants.Value)
                         materialIndex.Value.ReplaceSharedMaterial(materialVariants.Key, materialIndex.Key, variant, generatedAutumn);
@@ -384,7 +409,7 @@ namespace Seasons
                     if (!m_appliedStartColors.TryGetValue(startColor.Key, out Color applied)
                         || mainModule.startColor.mode != ParticleSystemGradientMode.Color || mainModule.startColor.color != applied)
                         m_originalStartColors[startColor.Key] = mainModule.startColor;
-                    Color color = startColor.Value[(int)seasonState.GetCurrentSeason() * seasonsCount + variant];
+                    Color color = startColor.Value[(int)texturesVariants.AppearanceSeason * seasonsCount + variant];
                     mainModule.startColor = color;
                     m_appliedStartColors[startColor.Key] = color;
                 }
@@ -451,7 +476,7 @@ namespace Seasons
 
             private int GetCurrentVariant()
             {
-                return seasonState.GetCurrentSeason() switch
+                return texturesVariants.AppearanceSeason switch
                 {
                     Season.Spring => GetVariant(m_springFactor),
                     Season.Summer => GetVariant(m_summerFactor),
@@ -830,7 +855,7 @@ namespace Seasons
 
         public static void UpdatePrefabColors()
         {
-            if (instance == null)
+            if (instance == null || texturesVariants.IsUpdating)
                 return;
 
             VegetationApi.NotifySeasonAppearance();

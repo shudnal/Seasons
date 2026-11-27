@@ -1495,6 +1495,9 @@ namespace Seasons
                 if (SameWorld())
                     OnSeasonChange(winterStartDay);
 
+                while (CanFade() && texturesVariants.IsSeasonLoading)
+                    yield return waitForFixedUpdate;
+
                 while (CanFade() && hud.m_loadingScreen.alpha > 0f)
                 {
                     hud.m_loadingScreen.alpha = Mathf.MoveTowards(hud.m_loadingScreen.alpha, 0f, Time.fixedDeltaTime / fadeDuration);
@@ -1527,6 +1530,7 @@ namespace Seasons
 
             if (UseTextureControllers())
             {
+                texturesVariants.CompleteSeasonChange();
                 ClutterVariantController.Instance?.UpdateColors();
 
                 PrefabVariantController.UpdatePrefabColors();
@@ -1838,9 +1842,13 @@ namespace Seasons
                 LogInfo($"Season: {seasonState.m_season}, day: {seasonState.m_day}");
 
             if (seasonChanged)
+            {
+                if (UseTextureControllers())
+                    texturesVariants.PrepareSeasonChange();
                 seasonState.StartSeasonChangeCore(enteredWinter
                     ? (int?)(seasonState.GetCurrentWorldDay() - seasonState.m_day + 1)
                     : null);
+            }
             else if (dayChanged)
                 OnDayChange();
             if (seasonChanged || dayChanged)

@@ -20,12 +20,12 @@ namespace Seasons.Controllers
 
         public static LoadingIndicator LoadingIndicator => Hud.instance?.m_loadingIndicator;
 
-        internal static void StartCaching(SeasonalTextureVariants texturesVariants)
+        internal static void StartCaching(SeasonalTextureVariants texturesVariants, bool force)
         {
             if (!ZoneSystem.instance || InProcess)
                 return;
             TextureCachingController controller = instance ? instance : ZoneSystem.instance.gameObject.AddComponent<TextureCachingController>();
-            controller.Initialize(texturesVariants);
+            controller.Initialize(texturesVariants, force);
         }
 
         private SeasonalTextureVariants _texturesVariants;
@@ -43,13 +43,11 @@ namespace Seasons.Controllers
             Seasons.LogInfo("Starting up texture caching process");
         }
 
-        public void Initialize(SeasonalTextureVariants texturesVariants)
+        public void Initialize(SeasonalTextureVariants texturesVariants, bool force)
         {
             _texturesVariants = texturesVariants;
 
-            SeasonalTexturePrefabCache.SetCurrentTextureVariants(_texturesVariants);
-
-            _worker = StartCoroutine(GenerateTextures());
+            _worker = StartCoroutine(GenerateTextures(force));
         }
 
         public static void SetupLoadingIndicator(float maxProgress)
@@ -81,7 +79,7 @@ namespace Seasons.Controllers
                 LoadingIndicator.SetProgress(Mathf.Clamp01(_indicatorProgress / _indicatorMaxProgress));
         }
 
-        public IEnumerator GenerateTextures()
+        public IEnumerator GenerateTextures(bool force)
         {
             ZoneSystem sourceZone = ZoneSystem.instance;
             try
@@ -95,38 +93,23 @@ namespace Seasons.Controllers
                 _indicatorProgress = 0;
                 _indicatorText = "$seasons_loadscreen_preparing";
 
-                yield return new WaitForSeconds(0.5f);
-
-                if (_texturesVariants.controllers.Count > 0 || _texturesVariants.textures.Count > 0)
-                    _texturesVariants.Dispose();
-
-                yield return StartCoroutine(SeasonalTexturePrefabCache.FillWithGameData());
-
-                yield return wait;
-
                 if (!sourceZone || sourceZone != ZoneSystem.instance)
                     yield break;
-                if (LoadingIndicator?.IsVisible == true)
-                {
-                    LoadingIndicator.SetProgress(1f);
-                    LoadingIndicator.SetText("$seasons_loadscreen_saving");
-                }
 
-                yield return wait;
-                yield return StartCoroutine(_texturesVariants.SaveCacheOnDisk());
-                yield return wait;
+                yield return _texturesVariants.InitializeCache(force);
 
                 if (LoadingIndicator?.IsVisible == true)
                     LoadingIndicator.SetShowProgress(false);
-
-                yield return wait;
 
                 if (!sourceZone || sourceZone != ZoneSystem.instance)
                     yield break;
 
                 _worker = null;
                 if (_texturesVariants.Initialized())
+                {
                     SeasonState.InitializeTextureControllers();
+                    _texturesVariants.RequestSeason();
+                }
                 else
                     Seasons.LogInfo("Missing textures variants");
 

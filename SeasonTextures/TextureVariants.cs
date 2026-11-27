@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.IO;
 using static Seasons.SeasonalTexturePrefabCache.ColorsCacheSettings;
 using static Seasons.Seasons;
@@ -13,28 +12,27 @@ namespace Seasons
     {
         public Texture2D original;
         public string originalName;
-        public byte[] originalPNG;
         public TextureProperties properties;
+        // The runtime holds a single season. During a transition the new set is
+        // prepared separately before these dictionaries are exchanged.
         public Dictionary<Season, Dictionary<int, Texture2D>> seasons = new Dictionary<Season, Dictionary<int, Texture2D>>();
 
         private const int RecolorPaletteBytes = 8 * 4 * sizeof(float);
-        internal byte[] PendingRecolorData { get; private set; }
-        private string m_recolorPath;
+        private readonly CachedData m_cache;
+        private readonly int m_textureId;
         private Texture2D m_recolorMask;
         private Vector4[] m_recolorPalette;
         private bool m_recolorUnavailable;
 
-        // The generated base remains eligible even when no correction can be applied.
-        internal bool HasRecolorData => PendingRecolorData != null || m_recolorPath != null;
+        // A disabled or unreadable mask must not change generated-base eligibility.
+        internal bool HasRecolorData => m_cache != null && m_cache.HasRecolor(m_textureId);
 
         internal static long RecolorDataLength(TextureProperties properties) =>
             RecolorPaletteBytes + ((long)properties.width * properties.height + 7) / 8;
 
-        // Persist the original pixel selection and the actual palette used to generate
-        // this cache entry. Keep the bit-packed payload separate from cache.bin.
-        internal void BuildRecolorData(int[] pixelsToChange, ColorVariant[] variants)
+        internal static byte[] BuildRecolorData(byte[] mask, ColorVariant[] variants)
         {
-            byte[] data = new byte[checked((int)RecolorDataLength(properties))];
+            byte[] data = new byte[checked(RecolorPaletteBytes + mask.Length)];
             using (var writer = new BinaryWriter(new MemoryStream(data, writable: true)))
             {
                 foreach (ColorVariant variant in variants)
@@ -53,18 +51,8 @@ namespace Seasons
                     writer.Write(0f);
                 }
             }
-
-            foreach (int pixel in pixelsToChange)
-                data[RecolorPaletteBytes + (pixel >> 3)] |= (byte)(1 << (pixel & 7));
-            PendingRecolorData = data;
-        }
-
-        // Called for a loaded cache entry or after its generation has been saved.
-        internal void SetRecolorPath(string path)
-        {
-            m_recolorPath = path;
-            PendingRecolorData = null;
-            m_recolorUnavailable = false;
+            Buffer.BlockCopy(mask, 0, data, RecolorPaletteBytes, mask.Length);
+            return data;
         }
 
         internal bool TryGetRecolor(out Texture mask, Vector4[] palette)
@@ -78,7 +66,7 @@ namespace Seasons
                 Texture2D texture = null;
                 try
                 {
-                    byte[] data = PendingRecolorData ?? File.ReadAllBytes(m_recolorPath);
+                    byte[] data = m_cache.ReadRecolor(m_textureId);
                     if (data.LongLength != RecolorDataLength(properties))
                         throw new InvalidDataException("Invalid seasonal recolor mask length.");
 
@@ -87,8 +75,6 @@ namespace Seasons
                         for (int i = 0; i < colors.Length; i++)
                             colors[i] = new Vector4(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
 
-                    // An entirely disabled autumn palette needs neither a GPU mask
-                    // nor the extra bake pass. The base variant remains usable.
                     if (colors[4].x == 0f && colors[5].x == 0f && colors[6].x == 0f)
                     {
                         m_recolorUnavailable = true;
@@ -116,7 +102,6 @@ namespace Seasons
                 {
                     if (texture)
                         Object.Destroy(texture);
-                    // Do not retry a broken mask or change the generated base selection.
                     m_recolorUnavailable = true;
                     LogWarning($"Unable to load seasonal recolor mask: {error.Message}");
                     return false;
@@ -128,33 +113,12 @@ namespace Seasons
             return true;
         }
 
-        public TextureVariants(CachedData.TextureData texData)
+        internal TextureVariants(CachedData cache, int id, CachedData.TextureData data)
         {
-            if (texData == null)
-                return;
-
-            properties = texData.properties;
-            if (properties == null)
-                return;
-
-            foreach (Season season in Enum.GetValues(typeof(Season)))
-            {
-                if (!texData.variants.TryGetValue(season, out Dictionary<int, byte[]> variants))
-                    continue;
-
-                for (int variant = 0; variant < seasonColorVariants; variant++)
-                {
-                    if (!variants.TryGetValue(variant, out byte[] data))
-                        continue;
-
-                    Texture2D tex = properties.CreateTexture();
-
-                    if (tex.LoadImage(data, true))
-                        AddVariant(season, variant, tex);
-                    else
-                        Object.Destroy(tex);
-                }
-            }
+            m_cache = cache;
+            m_textureId = id;
+            originalName = data.name;
+            properties = data.properties;
         }
 
         public TextureVariants(Texture texture)
@@ -164,21 +128,67 @@ namespace Seasons
 
         public void SetOriginalTexture(Texture texture)
         {
-            if (texture is not Texture2D)
+            if (texture is not Texture2D source)
                 return;
-            original = texture as Texture2D;
-            properties = new TextureProperties(texture as Texture2D);
+            original = source;
+            // Keep the metadata describing the cached bytes, even if another mod
+            // has replaced the original texture since this cache was generated.
+            properties ??= new TextureProperties(source);
             originalName = original.name;
         }
 
-        public void Dispose()
+        internal void LoadVariant(Season season, CachedData.VariantBlock block)
+        {
+            Texture2D texture = properties.CreateTexture();
+            try
+            {
+                if (block.Raw)
+                {
+                    texture.LoadRawTextureData(block.Data);
+                    texture.Apply(updateMipmaps: false, makeNoLongerReadable: true);
+                }
+                else if (!texture.LoadImage(block.Data, true) ||
+                    texture.width != properties.width || texture.height != properties.height)
+                    throw new InvalidDataException($"Invalid PNG for seasonal texture {m_textureId}.");
+
+                if (!seasons.TryGetValue(season, out Dictionary<int, Texture2D> variants))
+                    seasons.Add(season, variants = new Dictionary<int, Texture2D>());
+                variants.Add(block.Variant, texture);
+            }
+            catch
+            {
+                Object.Destroy(texture);
+                throw;
+            }
+        }
+
+        internal bool Initialized(Season season)
+        {
+            if (properties == null || !seasons.TryGetValue(season, out var variants) ||
+                variants.Count != seasonColorVariants)
+                return false;
+            for (int i = 0; i < seasonColorVariants; i++)
+                if (!variants.TryGetValue(i, out Texture2D texture) || !texture)
+                    return false;
+            return true;
+        }
+
+        internal void ExchangeSeason(TextureVariants replacement)
+        {
+            (seasons, replacement.seasons) = (replacement.seasons, seasons);
+        }
+
+        internal void ReleaseRecolor()
         {
             if (m_recolorMask)
                 Object.Destroy(m_recolorMask);
             m_recolorMask = null;
             m_recolorPalette = null;
-            SetRecolorPath(null);
+        }
 
+        public void Dispose()
+        {
+            ReleaseRecolor();
             foreach (var variants in seasons.Values)
                 foreach (Texture2D texture in variants.Values)
                     if (texture)
@@ -186,36 +196,7 @@ namespace Seasons
             seasons.Clear();
         }
 
-        public bool Initialized()
-        {
-            return properties != null && Enum.GetValues(typeof(Season)).Cast<Season>().All(season =>
-                seasons.TryGetValue(season, out Dictionary<int, Texture2D> variants)
-                && Enumerable.Range(0, seasonColorVariants).All(variant => variants.TryGetValue(variant, out Texture2D texture) && texture));
-        }
-
-        public bool HaveOriginalTexture()
-        {
-            return (bool)original;
-        }
-
-        public void ApplyTextures()
-        {
-            foreach (KeyValuePair<Season, Dictionary<int, Texture2D>> season in seasons)
-                foreach (KeyValuePair<int, Texture2D> variant in season.Value)
-                    variant.Value.Apply(true, true);
-        }
-
-        public void AddVariant(Season season, int variant, Texture2D tex)
-        {
-            if (!seasons.TryGetValue(season, out Dictionary<int, Texture2D> variants))
-            {
-                variants = new Dictionary<int, Texture2D>();
-                seasons.Add(season, variants);
-            }
-
-            if (!variants.ContainsKey(variant))
-                variants.Add(variant, tex);
-        }
+        public bool HaveOriginalTexture() => original;
 
         public Texture2D GetSeasonalVariant(Season season, int variant)
         {
@@ -229,9 +210,7 @@ namespace Seasons
         {
             if (seasons.TryGetValue(season, out Dictionary<int, Texture2D> variants) && variants.TryGetValue(variant, out Texture2D texture))
                 return texture;
-
             return original;
         }
     }
-
 }
