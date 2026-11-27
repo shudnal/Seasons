@@ -93,7 +93,7 @@ From the inspected assembly:
 - `GameLooks.Watch` / `Changed` detect changes in materials and textures; `TickForest` calls `StopForest` and recreates the far forest when `GameLooks.Version` changes. Use this existing lifecycle for the new appearance data rather than rebuilding the forest again through another independent mechanism.
 - `TreeMeshes` / `MeshParts` / `ModelLayer` render the far model LODs. `ModelLayer` uses a copied material with the corresponding FarLands shader, and issues `Graphics.RenderMeshIndirect` per mesh part. The original source material is not a place to store per-tree values.
 - `ImpostorBaker` uses 64 views (8 × 8). `Stage` prepares a model with its materials. A deferred camera renders each view, then command-buffer blits from the GBuffer through `ImpostorBake.shader` into `_tileAlbedo` and `_tileNormal`. `Step` copies tiles into the atlas; `EndType` generates mipmaps and reads normal atlas alpha for coverage. Some types also have a separate snow albedo atlas. `ImpostorDrawer` renders the impostor using indirect drawing.
-- `InstanceBuffer.Put` writes `GpuTree` entries containing position, scale, yaw, type and two tilt values: eight floats, 32 bytes. `TreeTypes.Max` is 32; several culling/counting arrays and type masks are organized by tree type. `FarForest.Capacity` is 524288. Model and impostor paths share the tree instance data.
+- `InstanceBuffer.Put` writes `GpuTree` entries containing position, scale, yaw, type and two tilt values: eight floats, 32 bytes. The stored type is layer-local (`t.Type - _first`), with values below 32. `TreeTypes.Max` is 32; several culling/counting arrays and type masks are organized by tree type. `FarForest.Capacity` is 524288. Model and impostor paths share the tree instance data.
 
 The FarLands source review confirmed that Put runs on the main thread (it calls ComputeBuffer.SetData), that the existing look-change lifecycle recreates the forest, and that all GPU readers of the type field use integer truncation. See section 4 for the agreed shader/layout details.
 
@@ -116,7 +116,7 @@ The final API signatures and capability binding rules are in section 8. Retain t
 FarLands calls FollowWithVariant(controlledCopy, prefabName, 3) for the forest-tree mirror path intended for the new integration. The requested index is a persistent autumn-only override on that controlled copy:
 
 - In autumn, indices 0–3 select the explicit variant. Outside autumn, the normal position-based variant selection is used.
-- An index of -1 always uses the normal selection, including in autumn. FarLands uses -1 for understorey and other existing mirror consumers.
+- An index of -1 always uses the normal selection, including in autumn. FarLands uses -1 for understorey and other existing mirror consumers. The forest and understorey classifications do not overlap (`TreeTypes.IsUnderstorey` excludes `TreeBase` prefabs and large plants), so one mirror per prefab is sufficient.
 - Registration and repeated following must work with the existing mirror lifecycle; keep the override when an existing controller is refreshed or reinitialized. No re-registration on every season change is required. Do not change the selection for ordinary loaded game objects.
 - Use the same cached renderer/material/texture binding, including LOD and material slot, as native Seasons. Do not infer the base or mask from the texture name or mirror position.
 - TryGetRecolor(controlledRenderer, materialIndex, out mask, palette) returns the mask in the UV space of that slot's _MainTex, and the palette described in section 4.5. Use the actual effective palette associated with the generated texture/cache entry, including configured prefab/material overrides. A false result means no additional color correction for the slot: for example, no controlled texture, no valid mask, texture control disabled, not autumn, or data not ready. Preserve the existing appearance path for objects/types that cannot participate.
@@ -176,10 +176,10 @@ The source review confirmed that GpuTree uses eight floats, including both tilt 
 ```text
 q = 0                    // identity, noneligible, or outside autumn
 q = variant + 1          // only eligible autumn variants 0, 1, 2
-packedType = treeType + q / 4.0
+packedType = (treeType - firstLayerType) + q / 4.0
 ```
 
-Variant 3 is identity, not q=4. For the existing type range below 32, quarter increments are exactly representable in float. Integer truncation yields the original tree type, so the existing culling groups, type masks, indirect draws and 32-byte stride remain unchanged. Preserve both tilt fields. Document this encoding in FarTree.cginc and audit all CPU/GPU consumers affected by the new code; do not extend the packing to unrelated fields.
+Variant 3 is identity, not q=4. For the existing layer-local type range below 32, quarter increments are exactly representable in float. Integer truncation yields the original layer-local type, so the existing culling groups, type masks, indirect draws and 32-byte stride remain unchanged. Preserve both tilt fields. Document this encoding in FarTree.cginc and audit all CPU/GPU consumers affected by the new code; do not extend the packing to unrelated fields.
 
 Decode q in the vertex stage (uint)(frac(t.type) * 4 + 0.5) and pass it with nointerpolation to the fragment stage. q=0 bypasses the correction. Otherwise select palette index q-1. The caller supplies Vector4[8], and Seasons fills it with the actual configured palette for the resolved source texture:
 
@@ -346,7 +346,7 @@ return isShieldCopy && ContainsAnyStrict(inner, position);
 
 ContainsAnyStrict compares squared XYZ distance < radiusSquared for any sphere in the list. Use the final world position including height and random offset. For ordinary candidates only the outer test is needed; for protected candidates both are needed. With no active protection there is no per-candidate shield test. With active protection but no intersecting outer sphere, omit protected-copy kinds and keep the ordinary fast path unchanged. Do not optimize fully contained patches at the cost of vertical bounds handling.
 
-Filter after all position/scale random draws, before rows, count, ground data, bounds and the accepted-instance limit. The current generator seeds each kind from the original clutter index. Skipping an entire impossible shield-copy kind is safe (its independent seed and zero count do not affect other kinds); never renumber kinds. Rejecting a candidate must not skip random draws that the existing algorithm would consume. Do not convert an ordinary instance into a protected copy: originals and copies can have different enabled/scale/amount settings and separate seeds. The goal is equivalent conditional placement, not identical blade positions between native and FarLands generators.
+Filter after all position/scale random draws, before rows, count, ground data, bounds and the accepted-instance limit. The current FarLands source confirms that the scale draw is immediately followed by the 1023 cap in `GpuGrassBuild.cs`; insert the filter between them and leave earlier placement rejections unchanged. The current generator seeds each kind from the original clutter index. Skipping an entire impossible shield-copy kind is safe (its independent seed and zero count do not affect other kinds); never renumber kinds. Rejecting a candidate must not skip random draws that the existing algorithm would consume. Do not convert an ordinary instance into a protected copy: originals and copies can have different enabled/scale/amount settings and separate seeds. The goal is equivalent conditional placement, not identical blade positions between native and FarLands generators.
 
 ### 7.3 Shield changes and job handoff (G3)
 
@@ -441,6 +441,8 @@ The agreed compatibility baseline is Seasons 1.11.0 and FarLands 1.5.2, plus the
 | New Seasons + FarLands 1.5.2 | Existing SeasonsLink appearance (one position-selected variant per mirror). Native grass fallback through ForeignBuild and the Seasons prefix. |
 | Seasons 1.11.0 + new FarLands | New API unavailable; retain the existing SeasonsLink appearance and native grass fallback. |
 | FarLands 1.5.2 + new SteadyFrame + new Seasons | New shared grass integration through SteadyFrame's newer worker; distant forest colors retain the old FarLands behavior. |
+| New Seasons + new SteadyFrame, without FarLands | New grass integration through SteadyFrame's worker. No FarLands trees. |
+| New Seasons + SteadyFrame 1.3.4 or earlier, without FarLands | Native grass generation through the existing ForeignBuild fallback. |
 | Only Seasons installed | Native Seasons appearance and grass placement unchanged. No masks loaded solely because the API exists. |
 | Only FarLands and/or SteadyFrame installed | Existing behavior, no Seasons API delegates active. |
 
@@ -477,7 +479,7 @@ Static review first, then runtime tests and profiling by the developers on the t
 ### Autumn colors
 
 - In autumn, eligible distant forest trees show the configured four-color distribution where the existing noise selects each index. Near and far representations of equal world positions use the same index; approximate colors and differences from CustomTextures replacements are expected. Tile unload/reload and camera position do not alter the index.
-- Variant 3 is identity; mask 0 or useColor false leaves base albedo unchanged. Check beech, birch and oak, including the shipped Fall_3.png replacements. Changing the configured autumn palette changes the distant correction; arbitrary base replacement PNGs do not replace the generated base/mask pair. Ordinary Seasons and old integration behavior is unchanged.
+- Variant 3 is identity; mask 0 or useColor false leaves base albedo unchanged. Check beech, birch and oak, including the shipped Fall_3.png replacements. Changing the configured autumn palette changes the distant correction; arbitrary base replacement PNGs do not replace the generated base/mask pair. With variants 0–2 disabled and a Fall_4.png replacement present, verify that repeated recolor queries return false without creating a mask, and that subsequent appearance refreshes retain the generated base. Ordinary Seasons and old integration behavior is unchanged.
 - Check model/impostor transitions, shader color space, HSL lightness, bark, alpha cutout, overlapping leaves/trunks, coverage-normalized mips and silhouette. Verify wind consistency between bake passes and preservation of existing snow/shadow/lighting behavior. No recolor of unrelated types.
 - Spring/summer/winter, disabled texture controls, understorey and ineligible types retain existing appearance. No noise/recolor work for the new feature outside eligible autumn appearances.
 - On season/settings/cache reload (including rebuilding with the same cache key) and world unload/rejoin, verify coherent base, mask, palette and indices. During incremental baking, invalidated/destroyed resources are not used; the normal look refresh restores the new appearance. No persistent mask payloads or textures loaded in a client that never requests them.
@@ -494,7 +496,7 @@ Static review first, then runtime tests and profiling by the developers on the t
 
 ### Mixed versions
 
-Verify every combination in section 8.2: startup/logs, seasonal appearance at distance, expected grass generation path and correct native shield protection. In the old FarLands case the existing reflection-facing members must remain available, and new FarLands with old or absent Seasons must not fail binding or startup. Include the older FarLands + newer SteadyFrame combination, verify only the selected shared worker runs, and inspect the existing grass fallback warning when applicable.
+Verify every combination in section 8.2: startup/logs, seasonal appearance at distance, expected grass generation path and correct native shield protection. In the old FarLands case the existing reflection-facing members must remain available, and new FarLands with old or absent Seasons must not fail binding or startup. Include the older FarLands + newer SteadyFrame combination, verify only the selected shared worker runs, and inspect the existing grass fallback warning when applicable. Test SteadyFrame without FarLands separately: the new worker must use the grass integration and version 1.3.4 or earlier must retain the native fallback.
 
 These checks are a joint test plan, not completed runtime evidence.
 

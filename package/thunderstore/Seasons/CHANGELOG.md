@@ -1,3 +1,8 @@
+# 1.12.0
+* added support for distant autumn tree color variation with compatible FarLands versions
+* added support for background grass generation with seasonal shield protection in compatible FarLands and SteadyFrame versions
+* fixed stale grass when removing a shield while another shield remains active
+
 # 1.11.0
 * updated for Valheim 1.0.30; winter loss of cultivation supports the new terrain data format
 * reworked sliding on frozen oceans: run steadily and release movement for a long, steerable glide with smooth camera and animation feedback; configure wind effects, maximum FOV and creature slipping or use native slipping instead

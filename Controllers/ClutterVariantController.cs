@@ -818,6 +818,11 @@ namespace Seasons
 
         private static bool isAnyShieldActive = false;
 
+        internal static bool GrassProtectionActive => isAnyShieldActive;
+
+        internal static bool IsShieldedClutter(Clutter clutter) =>
+            clutter?.m_prefab != null && s_shieldedPrefabs.ContainsKey(clutter.m_prefab.name);
+
         private static bool RefreshShieldActiveState(bool seasonal)
         {
             bool active = seasonal && ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.IsThereAnyActiveShieldedArea();
@@ -849,6 +854,12 @@ namespace Seasons
         public static class InstanceRenderer_AddInstance_PreventInProtectedArea
         {
             private static readonly Dictionary<string, bool> s_isShieldedGrassByRendererName = new Dictionary<string, bool>(StringComparer.Ordinal);
+
+            private static readonly MethodInfo s_placementPrefix = AccessTools.Method(
+                typeof(InstanceRenderer_AddInstance_PreventInProtectedArea), nameof(Prefix));
+
+            internal static bool ReplacesPlacementPatch(MethodInfo patchMethod) =>
+                patchMethod != null && patchMethod == s_placementPrefix;
 
             internal static void ResetWorldState() => s_isShieldedGrassByRendererName.Clear();
 

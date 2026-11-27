@@ -36,6 +36,7 @@
     <LangVersion>12.0</LangVersion>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Compatibility\VegetationApi.cs" />
     <Compile Include="Compatibility\HoneyPlusCompat.cs" />
     <Compile Include="Compatibility\MyLittleUICompat.cs" />
     <Compile Include="Compatibility\EWDCompat.cs" />

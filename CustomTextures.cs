@@ -50,6 +50,7 @@ namespace Seasons
 
         public static void UpdateTextures()
         {
+            VegetationApi.InvalidateAppearance();
             foreach (var tex in textures)
                 foreach (var seasonaltex in tex.Value)
                     foreach (var varianttex in seasonaltex.Value)
