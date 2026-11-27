@@ -67,6 +67,7 @@ namespace Seasons
                         texVariants.Dispose();
                         continue;
                     }
+                    texVariants.SetRecolorPath(cachedData.RecolorPath(texData.Key));
                     textures.Add(texData.Key, texVariants);
                 }
 
@@ -127,6 +128,10 @@ namespace Seasons
                 if (saveError != null)
                     LogWarning($"Unable to save seasonal texture cache:\n{saveError}");
 
+                foreach (var entry in textures)
+                    entry.Value.SetRecolorPath(saveError == null && cachedData.textures.ContainsKey(entry.Key)
+                        ? cachedData.RecolorPath(entry.Key) : null);
+
                 ApplyTexturesToGPU();
             }
         }
@@ -180,7 +185,10 @@ namespace Seasons
                 {
                     TextureVariants variants = new TextureVariants(texData.Value);
                     if (variants.Initialized())
+                    {
+                        variants.SetRecolorPath(cachedData.RecolorPath(texData.Key));
                         loadedTextures.Add(texData.Key, variants);
+                    }
                     else
                         variants.Dispose();
                 }

@@ -1771,13 +1771,16 @@ namespace Seasons
                     colorVariants = colorSettings.seasonal;
             }
 
+            int[] recolorPixels = pixelsToChange.ToArray();
             foreach (Season season in Enum.GetValues(typeof(Season)))
             {
-                List<ColorVariant> colorVariant = new List<ColorVariant>();
-                for (int i = 0; i <= seasonColorVariants - 1; i++)
-                    colorVariant.Add(colorVariants.GetColorVariant(season, i));
+                ColorVariant[] variants = new ColorVariant[seasonColorVariants];
+                for (int i = 0; i < variants.Length; i++)
+                    variants[i] = colorVariants.GetColorVariant(season, i);
 
-                GenerateTextureVariants(season, colorVariant.ToArray(), pixels, pixelsToChange.ToArray(), textureVariants.properties, textureVariants);
+                GenerateTextureVariants(season, variants, pixels, recolorPixels, textureVariants.properties, textureVariants);
+                if (season == Season.Fall)
+                    textureVariants.BuildRecolorData(recolorPixels, variants);
             }
 
             return textureVariants.Initialized();
@@ -1843,7 +1846,7 @@ namespace Seasons
         }
 
         // Used to force global cache rebuild after mod changes
-        const string globalRevision = "1.6.0";
+        const string globalRevision = "1.6.1";
 
         public static uint GetRevision()
         {

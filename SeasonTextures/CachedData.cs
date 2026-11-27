@@ -18,6 +18,8 @@ namespace Seasons
             public string name;
             public byte[] originalPNG;
             public TextureProperties properties;
+            [NonSerialized]
+            internal byte[] recolorData;
             public Dictionary<Season, Dictionary<int, byte[]>> variants = new Dictionary<Season, Dictionary<int, byte[]>>();
 
             public bool Initialized()
@@ -35,6 +37,7 @@ namespace Seasons
                 originalPNG = textureVariants.originalPNG;
                 name = textureVariants.originalName;
                 properties = textureVariants.properties;
+                recolorData = textureVariants.PendingRecolorData;
 
                 foreach (KeyValuePair<Season, Dictionary<int, Texture2D>> texSeason in textureVariants.seasons)
                 {
@@ -71,6 +74,7 @@ namespace Seasons
         internal const string prefabCacheCommonFile = "cache.bin";
         internal const string prefabCacheFileName = "cache.json";
         internal const string texturesDirectory = "textures";
+        internal const string recolorDirectory = "recolor";
         internal const string originalPostfix = ".orig.png";
         internal const string texturePropertiesFileName = "properties.json";
 
@@ -90,16 +94,28 @@ namespace Seasons
 
         public void SaveOnDisk()
         {
-            if (Initialized())
-                if (cacheStorageFormat.Value == CacheFormat.Binary)
-                    SaveToBinary();
-                else if (cacheStorageFormat.Value == CacheFormat.Json)
-                    SaveToJSON();
-                else
-                {
-                    SaveToJSON();
-                    SaveToBinary();
-                }
+            if (!Initialized())
+                return;
+
+            // Both storage modes use the same independently addressable mask files.
+            Directory.CreateDirectory(Path.Combine(CacheDirectory(), recolorDirectory));
+            foreach (var entry in textures)
+            {
+                byte[] data = entry.Value.recolorData;
+                if (data == null || data.LongLength != TextureVariants.RecolorDataLength(entry.Value.properties))
+                    throw new InvalidDataException($"Missing recolor data for texture {entry.Key}.");
+                File.WriteAllBytes(RecolorPath(entry.Key), data);
+            }
+
+            if (cacheStorageFormat.Value == CacheFormat.Binary)
+                SaveToBinary();
+            else if (cacheStorageFormat.Value == CacheFormat.Json)
+                SaveToJSON();
+            else
+            {
+                SaveToJSON();
+                SaveToBinary();
+            }
         }
 
         public void LoadFromDisk()
@@ -110,6 +126,15 @@ namespace Seasons
                     LoadFromJSON();
                 else
                     LoadFromBinary();
+
+                // Check the file metadata, not the mask payload, during normal cache loads.
+                foreach (var entry in textures)
+                {
+                    var mask = new FileInfo(RecolorPath(entry.Key));
+                    if (entry.Value.properties == null || !mask.Exists ||
+                        mask.Length != TextureVariants.RecolorDataLength(entry.Value.properties))
+                        throw new InvalidDataException($"Missing or invalid recolor data for texture {entry.Key}.");
+                }
             }
             catch (Exception error)
             {
@@ -244,6 +269,9 @@ namespace Seasons
                 LogWarning($"Error loading binary cache data from {filename}:\n {ex}");
             }
         }
+
+        internal string RecolorPath(int textureId) =>
+            Path.Combine(CacheDirectory(), recolorDirectory, textureId + ".bin");
 
         public string CacheDirectory()
         {
