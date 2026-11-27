@@ -22,7 +22,9 @@ namespace Seasons
         private string m_recolorPath;
         private Texture2D m_recolorMask;
         private Vector4[] m_recolorPalette;
+        private bool m_recolorUnavailable;
 
+        // The generated base remains eligible even when no correction can be applied.
         internal bool HasRecolorData => PendingRecolorData != null || m_recolorPath != null;
 
         internal static long RecolorDataLength(TextureProperties properties) =>
@@ -62,12 +64,13 @@ namespace Seasons
         {
             m_recolorPath = path;
             PendingRecolorData = null;
+            m_recolorUnavailable = false;
         }
 
         internal bool TryGetRecolor(out Texture mask, Vector4[] palette)
         {
             mask = null;
-            if (!HasRecolorData)
+            if (!HasRecolorData || m_recolorUnavailable)
                 return false;
 
             if (!m_recolorMask)
@@ -88,7 +91,7 @@ namespace Seasons
                     // nor the extra bake pass. The base variant remains usable.
                     if (colors[4].x == 0f && colors[5].x == 0f && colors[6].x == 0f)
                     {
-                        SetRecolorPath(null);
+                        m_recolorUnavailable = true;
                         return false;
                     }
 
@@ -113,8 +116,8 @@ namespace Seasons
                 {
                     if (texture)
                         Object.Destroy(texture);
-                    // Do not repeatedly attempt to load a broken entry during rendering.
-                    SetRecolorPath(null);
+                    // Do not retry a broken mask or change the generated base selection.
+                    m_recolorUnavailable = true;
                     LogWarning($"Unable to load seasonal recolor mask: {error.Message}");
                     return false;
                 }
