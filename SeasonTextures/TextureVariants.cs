@@ -84,6 +84,14 @@ namespace Seasons
                         for (int i = 0; i < colors.Length; i++)
                             colors[i] = new Vector4(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
 
+                    // An entirely disabled autumn palette needs neither a GPU mask
+                    // nor the extra bake pass. The base variant remains usable.
+                    if (colors[4].x == 0f && colors[5].x == 0f && colors[6].x == 0f)
+                    {
+                        SetRecolorPath(null);
+                        return false;
+                    }
+
                     byte[] pixels = new byte[checked(properties.width * properties.height)];
                     for (int i = 0; i < pixels.Length; i++)
                         pixels[i] = (data[RecolorPaletteBytes + (i >> 3)] & (1 << (i & 7))) != 0 ? (byte)255 : (byte)0;

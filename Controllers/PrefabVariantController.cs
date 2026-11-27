@@ -127,8 +127,11 @@ namespace Seasons
                 // Only return a mask for the generated base actually bound to this slot.
                 s_tempMaterials.Clear();
                 renderer.GetSharedMaterials(s_tempMaterials);
+                Material generated = m_generatedAutumnMaterials[variant];
+                Texture2D baseTexture = texture.GetGeneratedVariant(Season.Fall, variant);
                 bool matches = materialIndex < s_tempMaterials.Count &&
-                    s_tempMaterials[materialIndex] == m_generatedAutumnMaterials[variant];
+                    s_tempMaterials[materialIndex] == generated &&
+                    baseTexture && generated.GetTexture("_MainTex") == baseTexture;
                 s_tempMaterials.Clear();
                 return matches && texture.TryGetRecolor(out mask, palette);
             }
@@ -141,7 +144,7 @@ namespace Seasons
                     return;
                 Material[] current = renderer.sharedMaterials;
                 if (materialIndex < current.Length && (seasonalMaterials.Contains(current[materialIndex]) ||
-                    (m_generatedAutumnMaterials != null && m_generatedAutumnMaterials.Contains(current[materialIndex]))))
+                    (current[materialIndex] && m_generatedAutumnMaterials != null && m_generatedAutumnMaterials.Contains(current[materialIndex]))))
                     ApplySharedMaterial(renderer, materialIndex, m_originalMaterial);
             }
 
