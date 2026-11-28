@@ -40,6 +40,10 @@ namespace Seasons
 
         public static void UpdateTexturesOnChange(object sender = null, FileSystemEventArgs eargs = null)
         {
+            // The cache commit reloads the current season, including file changes
+            // received while the previous appearance is still in use.
+            if (!texturesVariants.Initialized() || texturesVariants.IsUpdating)
+                return;
             UpdateTextures();
 
             PrefabVariantController.MaterialVariants.UpdateSeasonalMaterials();
@@ -48,15 +52,27 @@ namespace Seasons
             ClutterVariantController.Instance?.UpdateColors();
         }
 
-        public static void UpdateTextures()
+        private static void ClearTextures()
         {
-            VegetationApi.InvalidateAppearance();
             foreach (var tex in textures)
                 foreach (var seasonaltex in tex.Value)
                     foreach (var varianttex in seasonaltex.Value)
                         UnityEngine.Object.Destroy(varianttex.Value);
 
             textures.Clear();
+        }
+
+        internal static void ResetWorldState()
+        {
+            s_watcher?.Dispose();
+            s_watcher = null;
+            ClearTextures();
+        }
+
+        public static void UpdateTextures()
+        {
+            VegetationApi.InvalidateAppearance();
+            ClearTextures();
 
             if (!customTextures.Value)
                 return;
@@ -121,14 +137,23 @@ namespace Seasons
 
                 foreach (FileInfo file in directory.GetFiles())
                 {
-                    if (!TryGetSeasonVariant(file.Name, out Season season, out int variant))
+                    if (!TryGetSeasonVariant(file.Name, out Season season, out int variant) ||
+                        season != texturesVariants.AppearanceSeason)
                         continue;
 
                     // Texture load as readable to later apply format and make unreadable on first check
-                    Texture2D texture = new Texture2D(2, 2);
-                    if (!texture.LoadImage(File.ReadAllBytes(file.FullName)))
+                    Texture2D texture = null;
+                    try
                     {
-                        UnityEngine.Object.Destroy(texture);
+                        texture = new Texture2D(2, 2);
+                        if (!texture.LoadImage(File.ReadAllBytes(file.FullName)))
+                            throw new InvalidDataException("Invalid PNG.");
+                    }
+                    catch (Exception error)
+                    {
+                        if (texture)
+                            UnityEngine.Object.Destroy(texture);
+                        LogWarning($"Unable to load custom texture {file.FullName}: {error.Message}");
                         continue;
                     }
 

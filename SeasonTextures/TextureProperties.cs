@@ -6,6 +6,8 @@ namespace Seasons
     [Serializable]
     public class TextureProperties
     {
+        public TextureProperties() { }
+
         public TextureProperties(Texture2D tex)
         {
             mipmapCount = tex.mipmapCount;
@@ -25,6 +27,23 @@ namespace Seasons
         public float mipMapBias = 0;
         public int width = 2;
         public int height = 2;
+
+        internal int RawDataLength()
+        {
+            if (width <= 0 || height <= 0 || mipmapCount <= 0 || format != TextureFormat.ARGB32)
+                throw new System.IO.InvalidDataException("Invalid cached texture properties.");
+            long size = 0;
+            int w = width, h = height;
+            for (int mip = 0; mip < mipmapCount; mip++)
+            {
+                size = checked(size + (long)w * h * 4);
+                if (mip + 1 < mipmapCount && w == 1 && h == 1)
+                    throw new System.IO.InvalidDataException("Invalid cached mip count.");
+                w = Math.Max(1, w / 2);
+                h = Math.Max(1, h / 2);
+            }
+            return checked((int)size);
+        }
 
         public Texture2D CreateTexture()
         {

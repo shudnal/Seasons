@@ -50,6 +50,7 @@ namespace Seasons
             ClutterVariantController.Instance?.RevertColors();
             ShieldDomeImageEffect_SetShieldData_ProtectedStateChange.Clear();
 
+            CustomTextures.ResetWorldState();
             texturesVariants.Dispose();
             texturesVariants = new SeasonalTextureVariants();
             SeasonalTexturePrefabCache.SetCurrentTextureVariants(texturesVariants);
@@ -1717,136 +1718,149 @@ namespace Seasons
                 return false;
             }
             textureVariants = new TextureVariants(texture);
+            TextureProperties properties = textureVariants.properties;
+            int textureId = texture.GetInstanceID();
+            CachedData.Writer writer = currentTextureVariants.BuildWriter;
+            Texture2D scratch = properties.CreateTexture();
+            try
+            {
+                ReadTexturePixels(texture, scratch, properties);
+                Color32[] pixels = scratch.GetPixels32();
+                if (pixels.Length == 0)
+                    return false;
 
-            Color[] pixels = GetTexturePixels(texture, textureVariants.properties, out textureVariants.originalPNG);
-            if (pixels.Length < 1)
-                return false;
+                bool isGrass = IsGrass(material.shader.name);
+                bool isMoss = IsMoss(propertyName);
+                bool isCreature = IsCreature(material.shader.name);
 
-            bool isGrass = IsGrass(material.shader.name);
-            bool isMoss = IsMoss(propertyName);
-            bool isCreature = IsCreature(material.shader.name);
+                PositionSpecific positionFits = null;
+                foreach (PositionSpecific spec in colorPositions.positions)
+                    if (spec.FitsMaterial(prefabName, rendererName, material.name))
+                    {
+                        positionFits = spec;
+                        LogInfo($"Position specific prefab:{prefabName} renderer:{rendererName} material:{material.name} {spec.bounds.Join()}");
+                        break;
+                    }
 
-            PositionSpecific positionFits = null;
-            foreach (PositionSpecific spec in colorPositions.positions)
-                if (spec.FitsMaterial(prefabName, rendererName, material.name))
+                ColorSpecific colorSpecific = null;
+                foreach (ColorSpecific spec in colorReplacement.specific)
+                    if (spec.FitsMaterial(prefabName, rendererName, material.name))
+                    {
+                        colorSpecific = spec;
+                        LogInfo($"Color specific prefab:{prefabName} renderer:{rendererName} material:{material.name} {spec.colors.Join()}");
+                        break;
+                    }
+
+                // The exact selection is shared by every variant and by the
+                // public autumn mask. Avoid an int index per selected pixel.
+                byte[] mask = new byte[checked((pixels.Length + 7) / 8)];
+                bool any = false;
+                for (int i = 0; i < pixels.Length; i++)
+                    if (colorPositions.IsPixelToChange(pixels[i], i, properties, isGrass, isMoss, material, positionFits, colorSpecific))
+                    {
+                        mask[i >> 3] |= (byte)(1 << (i & 7));
+                        any = true;
+                    }
+                if (!any)
+                    return false;
+
+                SeasonalColorVariants colorVariants = colorSettings.GetPrefabOverride(prefabName) ?? colorSettings.GetMaterialOverride(material.name);
+                if (colorVariants == null)
                 {
-                    positionFits = spec;
-                    LogInfo($"Position specific prefab:{prefabName} renderer:{rendererName} material:{material.name} {spec.bounds.Join()}");
-                    break;
+                    if (IsPine(material.name, prefabName))
+                        colorVariants = colorSettings.conifer;
+                    else if (IsPiece(material))
+                        colorVariants = colorSettings.piece;
+                    else if (isGrass || isPlant)
+                        colorVariants = colorSettings.grass;
+                    else if (isMoss)
+                        colorVariants = colorSettings.moss;
+                    else if (isCreature)
+                        colorVariants = colorSettings.creature;
+                    else if (IsBush(material.name, prefabName))
+                        colorVariants = colorSettings.bush;
+                    else
+                        colorVariants = colorSettings.seasonal;
                 }
 
-            ColorSpecific colorSpecific = null;
-            foreach (ColorSpecific spec in colorReplacement.specific)
-                if (spec.FitsMaterial(prefabName, rendererName, material.name))
+                writer.WriteOriginal(textureId, textureVariants.originalName, properties, scratch);
+                // Keep the existing float color arithmetic and SetPixels
+                // conversion, but use bounded row batches instead of four
+                // full-sized Color arrays. Reuse one unbound texture and its mips.
+                int rows = Math.Max(1, Math.Min(properties.height, 65536 / properties.width));
+                var strip = new Color[checked(properties.width * rows)];
+                int tailRows = properties.height % rows;
+                Color[] tail = tailRows == 0 ? strip : new Color[checked(properties.width * tailRows)];
+
+                foreach (Season season in Enum.GetValues(typeof(Season)))
                 {
-                    colorSpecific = spec;
-                    LogInfo($"Color specific prefab:{prefabName} renderer:{rendererName} material:{material.name} {spec.colors.Join()}");
-                    break;
+                    var variants = new ColorVariant[seasonColorVariants];
+                    for (int variant = 0; variant < variants.Length; variant++)
+                    {
+                        ColorVariant colors = colorVariants.GetColorVariant(season, variant);
+                        variants[variant] = colors;
+                        if (!colors.useColor)
+                            scratch.SetPixels32(pixels);
+                        else
+                            for (int y = 0; y < properties.height; y += rows)
+                            {
+                                int height = Math.Min(rows, properties.height - y);
+                                Color[] buffer = height == rows ? strip : tail;
+                                int offset = y * properties.width;
+                                for (int i = 0; i < buffer.Length; i++)
+                                {
+                                    int pixel = offset + i;
+                                    Color color = pixels[pixel];
+                                    buffer[i] = (mask[pixel >> 3] & (1 << (pixel & 7))) != 0
+                                        ? colors.MergeColors(color) : color;
+                                }
+                                scratch.SetPixels(0, y, properties.width, height, buffer);
+                            }
+
+                        scratch.Apply(updateMipmaps: true, makeNoLongerReadable: false);
+                        writer.WriteVariant(textureId, season, variant, scratch, properties);
+                    }
+
+                    if (season == Season.Fall)
+                        writer.WriteRecolor(textureId, TextureVariants.BuildRecolorData(mask, variants));
                 }
-
-            List<int> pixelsToChange = new List<int>();
-            for (int i = 0; i < pixels.Length; i++)
-                if (colorPositions.IsPixelToChange(pixels[i], i, textureVariants.properties, isGrass, isMoss, material, positionFits, colorSpecific))
-                    pixelsToChange.Add(i);
-
-            if (pixelsToChange.Count == 0)
-                return false;
-
-            SeasonalColorVariants colorVariants = colorSettings.GetPrefabOverride(prefabName) ?? colorSettings.GetMaterialOverride(material.name);
-            if (colorVariants == null)
-            {
-                if (IsPine(material.name, prefabName))
-                    colorVariants = colorSettings.conifer;
-                else if (IsPiece(material))
-                    colorVariants = colorSettings.piece;
-                else if (isGrass || isPlant)
-                    colorVariants = colorSettings.grass;
-                else if (isMoss)
-                    colorVariants = colorSettings.moss;
-                else if (isCreature)
-                    colorVariants = colorSettings.creature;
-                else if (IsBush(material.name, prefabName))
-                    colorVariants = colorSettings.bush;
-                else
-                    colorVariants = colorSettings.seasonal;
+                return true;
             }
-
-            int[] recolorPixels = pixelsToChange.ToArray();
-            foreach (Season season in Enum.GetValues(typeof(Season)))
+            finally
             {
-                ColorVariant[] variants = new ColorVariant[seasonColorVariants];
-                for (int i = 0; i < variants.Length; i++)
-                    variants[i] = colorVariants.GetColorVariant(season, i);
-
-                GenerateTextureVariants(season, variants, pixels, recolorPixels, textureVariants.properties, textureVariants);
-                if (season == Season.Fall)
-                    textureVariants.BuildRecolorData(recolorPixels, variants);
+                // This private scratch texture has never been assigned to a
+                // renderer. Release it now, including in synchronous HD builds.
+                Object.DestroyImmediate(scratch);
             }
-
-            return textureVariants.Initialized();
         }
 
-
-
-        private static Color[] GetTexturePixels(Texture texture, TextureProperties texProperties, out byte[] originalPNG)
+        private static void ReadTexturePixels(Texture texture, Texture2D scratch, TextureProperties properties)
         {
-            RenderTexture tmp = RenderTexture.GetTemporary(
-                                    texture.width,
-                                    texture.height,
-                                    24, RenderTextureFormat.ARGB32);
-
+            RenderTexture tmp = RenderTexture.GetTemporary(texture.width, texture.height, 24, RenderTextureFormat.ARGB32);
             tmp.autoGenerateMips = true;
             tmp.useMipMap = true;
-            tmp.anisoLevel = texProperties.anisoLevel;
-            tmp.mipMapBias = texProperties.mipMapBias;
-            tmp.wrapMode = texProperties.wrapMode;
-            tmp.filterMode = texProperties.filterMode;
+            tmp.anisoLevel = properties.anisoLevel;
+            tmp.mipMapBias = properties.mipMapBias;
+            tmp.wrapMode = properties.wrapMode;
+            tmp.filterMode = properties.filterMode;
 
             RenderTexture previous = RenderTexture.active;
-            Texture2D textureCopy = null;
             try
             {
                 Graphics.Blit(texture, tmp);
                 RenderTexture.active = tmp;
-                textureCopy = texProperties.CreateTexture();
-                textureCopy.ReadPixels(new Rect(0, 0, tmp.width, tmp.height), 0, 0, true);
-                textureCopy.Apply();
-                Color[] pixels = textureCopy.GetPixels();
-                originalPNG = textureCopy.EncodeToPNG();
-                return pixels;
+                scratch.ReadPixels(new Rect(0, 0, tmp.width, tmp.height), 0, 0, true);
+                scratch.Apply();
             }
             finally
             {
                 RenderTexture.active = previous;
                 RenderTexture.ReleaseTemporary(tmp);
-                if (textureCopy)
-                    Object.Destroy(textureCopy);
-            }
-        }
-        
-        private static void GenerateTextureVariants(Season season, ColorVariant[] colorVariants, Color[] pixels, int[] pixelsToChange, TextureProperties texProperties, TextureVariants textureVariants)
-        {
-            List<Color[]> seasonColors = new List<Color[]>();
-            for (int i = 0; i < colorVariants.Length; i++)
-                seasonColors.Add(pixels.ToArray());
-
-            foreach (int i in pixelsToChange)
-                for (int j = 0; j < colorVariants.Length; j++)
-                    seasonColors[j][i] = colorVariants[j].MergeColors(pixels[i]);
-
-            for (int variant = 0; variant < colorVariants.Length; variant++)
-            {
-                Texture2D tex = texProperties.CreateTexture();
-
-                tex.SetPixels(seasonColors[variant]);
-                tex.Apply();
-
-                textureVariants.AddVariant(season, variant, tex);
             }
         }
 
         // Used to force global cache rebuild after mod changes
-        const string globalRevision = "1.6.1";
+        const string globalRevision = "1.7.0";
 
         public static uint GetRevision()
         {
@@ -2014,6 +2028,7 @@ namespace Seasons
 
             LogInfo("Initializing cache settings");
             currentTextureVariants.revision = GetRevision();
+            currentTextureVariants.BeginBuild();
             LogInfo($"Cache settings revision {currentTextureVariants.revision}");
 
             LogInfo("Caching yggdrasil branch");

@@ -85,6 +85,7 @@ namespace Seasons
             PrefabVariantController controller = PrefabVariantController.instance;
             return controller && controlledRenderer && materialIndex >= 0 && palette?.Length == 8 &&
                 SeasonState.IsActive && seasonState.GetCurrentSeason() == Season.Fall &&
+                texturesVariants.AppearanceSeason == Season.Fall &&
                 UseTextureControllers() && !IsAppearanceUpdating() &&
                 controller.TryGetRecolor(controlledRenderer, materialIndex, out mask, palette);
         }
@@ -109,7 +110,7 @@ namespace Seasons
             if (!SeasonState.IsActive)
                 return;
 
-            Season current = seasonState.GetCurrentSeason();
+            Season current = texturesVariants.AppearanceSeason;
             if (s_appearanceSeason != current)
             {
                 s_appearanceSeason = current;

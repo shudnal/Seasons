@@ -450,6 +450,7 @@ namespace Seasons
                 return;
             }
 
+            Season season = texturesVariants.AppearanceSeason;
             int variant = GetCurrentMainVariant();
             bool changed = ApplyMaterialBindings(originals: false);
             foreach (KeyValuePair<Material, Dictionary<string, TextureVariants>> materialVariants in m_materialVariants)
@@ -458,7 +459,7 @@ namespace Seasons
                     if (!materialVariants.Key)
                         continue;
                     int pos = (variant + m_materialVariantOffset.GetValueSafe(materialVariants.Key)) % seasonColorVariants;
-                    if (texProp.Value.seasons.TryGetValue(seasonState.GetCurrentSeason(), out Dictionary<int, Texture2D> variants) && variants.TryGetValue(pos, out Texture2D texture))
+                    if (texProp.Value.seasons.TryGetValue(season, out Dictionary<int, Texture2D> variants) && variants.TryGetValue(pos, out Texture2D texture))
                     {
                         if (!texProp.Value.HaveOriginalTexture())
                             texProp.Value.SetOriginalTexture(materialVariants.Key.GetTexture(texProp.Key));
@@ -469,7 +470,7 @@ namespace Seasons
                             changed |= SetTextureIfChanged(materialVariants.Key, texProp.Key, null);
                         else
                         {
-                            if (CustomTextures.HaveCustomTexture(texProp.Value.originalName, seasonState.GetCurrentSeason(), variant, texProp.Value.properties, out Texture2D customTexture))
+                            if (CustomTextures.HaveCustomTexture(texProp.Value.originalName, season, variant, texProp.Value.properties, out Texture2D customTexture))
                                 changed |= SetTextureIfChanged(materialVariants.Key, texProp.Key, customTexture);
                             else
                                 changed |= SetTextureIfChanged(materialVariants.Key, texProp.Key, texture);
@@ -488,7 +489,7 @@ namespace Seasons
                     RememberColor(colorVariants.Key, colorProp.Key);
 
                     int pos = (variant + m_materialVariantOffset.GetValueSafe(colorVariants.Key)) % seasonColorVariants;
-                    changed |= SetColorIfChanged(colorVariants.Key, colorProp.Key, colorProp.Value[(int)seasonState.GetCurrentSeason() * seasonsCount + pos]);
+                    changed |= SetColorIfChanged(colorVariants.Key, colorProp.Key, colorProp.Value[(int)season * seasonsCount + pos]);
                 }
 
             ApplyGrassSettings(seasonal: true, changed, rebuildGrass);
