@@ -22,6 +22,7 @@ namespace Seasons
             // Allocated only for explicitly followed autumn appearances. These
             // materials must not replace the ordinary shared seasonal variants.
             private Material[] m_generatedAutumnMaterials;
+            private Material m_mosslessMaterial;
 
             public Season season;
             public bool updateSeasonalMaterials = true;
@@ -136,16 +137,41 @@ namespace Seasons
                 return matches && texture.TryGetRecolor(out mask, palette);
             }
 
-            public void RevertSharedMaterial(Renderer renderer, int materialIndex)
+            public void RevertSharedMaterial(Renderer renderer, int materialIndex) =>
+                ApplyCoveredMaterial(renderer, materialIndex, hideMoss: false);
+
+            internal void ApplyCoveredMaterial(Renderer renderer, int materialIndex, bool hideMoss)
             {
                 if (SeasonalLevelMaterials.TryRevert(renderer, materialIndex, this))
                     return;
                 if (!renderer)
                     return;
                 Material[] current = renderer.sharedMaterials;
-                if (materialIndex < current.Length && (seasonalMaterials.Contains(current[materialIndex]) ||
-                    (current[materialIndex] && m_generatedAutumnMaterials != null && m_generatedAutumnMaterials.Contains(current[materialIndex]))))
-                    ApplySharedMaterial(renderer, materialIndex, m_originalMaterial);
+                if (materialIndex >= current.Length)
+                    return;
+
+                Material assigned = current[materialIndex];
+                if (!seasonalMaterials.Contains(assigned) &&
+                    !(assigned && m_generatedAutumnMaterials != null && m_generatedAutumnMaterials.Contains(assigned)) &&
+                    !(m_mosslessMaterial && assigned == m_mosslessMaterial) &&
+                    !(hideMoss && assigned == m_originalMaterial))
+                    return;
+
+                Material material = m_originalMaterial;
+                if (hideMoss && material && material.shader.name == "Custom/StaticRock")
+                {
+                    // Share the covered appearance between pieces. Do not change
+                    // the original material or interfere with MaterialMan's block.
+                    if (!m_mosslessMaterial)
+                    {
+                        m_mosslessMaterial = new Material(material);
+                        m_mosslessMaterial.SetFloat("_MossAlpha", 0f);
+                    }
+                    material = m_mosslessMaterial;
+                }
+
+                if (assigned != material)
+                    ApplySharedMaterial(renderer, materialIndex, material);
             }
 
             public static void ApplySharedMaterial(Renderer renderer, int materialIndex, Material material)
@@ -209,6 +235,8 @@ namespace Seasons
                 foreach (MaterialVariants variants in s_materialVariants.Values)
                 {
                     variants.seasonalMaterials.Do(Destroy);
+                    if (variants.m_mosslessMaterial)
+                        Destroy(variants.m_mosslessMaterial);
                     if (variants.m_generatedAutumnMaterials != null)
                         foreach (Material material in variants.m_generatedAutumnMaterials)
                             if (material)
@@ -234,6 +262,8 @@ namespace Seasons
             private double m_winterFactor;
 
             private bool m_isVines = false;
+            private bool m_isStoneFence;
+            private bool m_underRoof;
             private bool m_covered = true;
             private float m_nextCoveredStatusCheckTime = -1f;
             private const float CoveredStatusCheckInterval = 5f;
@@ -254,6 +284,7 @@ namespace Seasons
                     return false;
 
                 m_prefabName = string.IsNullOrEmpty(prefabName) ? GetPrefabName(m_gameObject) : prefabName;
+                m_isStoneFence = m_wnt != null && m_prefabName == "stone_fence";
                 m_renderer = meshRenderer;
 
                 if (m_renderer != null)
@@ -338,11 +369,13 @@ namespace Seasons
                 return Initialize(controller, m_gameObject, m_prefabName, m_nview, m_wnt, m_renderer);
             }
 
-            public void RevertState()
+            public void RevertState() => RevertStateCore(hideMoss: false);
+
+            private void RevertStateCore(bool hideMoss)
             {
                 foreach (KeyValuePair<Renderer, Dictionary<int, MaterialVariants>> materialVariants in m_materialVariants)
                     foreach (KeyValuePair<int, MaterialVariants> materialIndex in materialVariants.Value)
-                        materialIndex.Value.RevertSharedMaterial(materialVariants.Key, materialIndex.Key);
+                        materialIndex.Value.ApplyCoveredMaterial(materialVariants.Key, materialIndex.Key, hideMoss);
 
                 foreach (var original in m_originalStartColors)
                     if (original.Key)
@@ -362,11 +395,13 @@ namespace Seasons
 
                 m_nextCoveredStatusCheckTime = Time.time + CoveredStatusCheckInterval;
 
-                bool haveRoof = HaveRoof();
-                if (m_covered == haveRoof)
+                bool covered = HaveRoof(out bool underRoof);
+                underRoof &= m_isStoneFence;
+                if (m_covered == covered && m_underRoof == underRoof)
                     return;
 
-                m_covered = haveRoof;
+                m_covered = covered;
+                m_underRoof = underRoof;
                 UpdateColors();
             }
 
@@ -391,7 +426,7 @@ namespace Seasons
 
                 if (m_wnt != null && m_covered || m_gameObject.layer != 9 && IsProtectedPosition(m_gameObject.transform.position))
                 {
-                    RevertState();
+                    RevertStateCore(hideMoss: m_isStoneFence && m_underRoof && hideStoneFenceMossUnderRoof.Value);
                     return;
                 }
 
@@ -610,16 +645,20 @@ namespace Seasons
                 }
             }
 
-            private bool HaveRoof()
+            private bool HaveRoof(out bool underRoof)
             {
+                underRoof = false;
                 if (m_wnt == null || m_isVines)
                     return false;
 
-                if (IsProtectedPosition(m_gameObject.transform.position))
+                bool protectedPosition = IsProtectedPosition(m_gameObject.transform.position);
+                // A shield protects seasonal colors but does not hide fence moss.
+                // Reuse the same roof test when a stone fence is protected.
+                if (protectedPosition && !m_isStoneFence)
                     return true;
 
                 if (!m_wnt.HaveRoof())
-                    return false;
+                    return protectedPosition;
 
                 int num = Physics.SphereCastNonAlloc(m_gameObject.transform.position + new Vector3(0, 2f, 0), 0.15f, Vector3.up, s_raycastHits, 100f, instance.m_rayMask);
                 for (int i = 0; i < num; i++)
@@ -629,10 +668,13 @@ namespace Seasons
 
                     GameObject go = s_raycastHits[i].collider.gameObject;
                     if (go != null && go != m_wnt && !go.CompareTag("leaky") && !IsWearNTearCollider(go))
+                    {
+                        underRoof = true;
                         return true;
+                    }
                 }
 
-                return false;
+                return protectedPosition;
             }
 
             private bool IsWearNTearCollider(GameObject go)

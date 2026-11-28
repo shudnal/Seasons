@@ -44,6 +44,7 @@ namespace Seasons
         public static ConfigEntry<bool> logFloes;
         public static ConfigEntry<bool> logControllersTime;
         public static ConfigEntry<bool> plainsSwampBorderFix;
+        public static ConfigEntry<bool> hideStoneFenceMossUnderRoof;
         public static ConfigEntry<bool> frozenKarvePositionFix;
         public static ConfigEntry<float> lastDayTerrainFactor;
         public static ConfigEntry<float> firstDayTerrainFactor;
@@ -1010,12 +1011,14 @@ namespace Seasons
             logFloes = clientConfig("Test", "Log ice floes", defaultValue: false, "Log ice-floe placement and removal.");
             logControllersTime = clientConfig("Test", "Log prefab caching time", defaultValue: false, "Log elapsed time of prefabs caching process in descending order");
             plainsSwampBorderFix = clientConfig("Test", "Plains Swamp border fix", defaultValue: true, "Fix clipping into ground on Plains - Swamp border");
+            hideStoneFenceMossUnderRoof = clientConfig("Test", "Hide stone fence moss under roof", defaultValue: true, "Hide moss on stone fences under a roof.");
             frozenKarvePositionFix = serverConfig("Test", "Fix position for frozen Karve", defaultValue: false, "Make Karve storage always available if frozen. If Karve is below certain level it will be pushed to the surface.");
             lastDayTerrainFactor = clientConfig("Test", "Last day terrain factor", defaultValue: 0.0f, "Last day");
             firstDayTerrainFactor = clientConfig("Test", "First day terrain factor", defaultValue: 0.0f, "First day");
             runTextureCachingSync = clientConfig("Test", "Run texture caching without indicator", defaultValue: false, "It is significantly faster than running with loading indicator but lacks visual progress");
 
             plainsSwampBorderFix.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateTerrainColors();
+            hideStoneFenceMossUnderRoof.SettingChanged += (sender, args) => PrefabVariantController.UpdatePrefabColors();
             lastDayTerrainFactor.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateTerrainColors();
             firstDayTerrainFactor.SettingChanged += (sender, args) => ZoneSystemVariantController.UpdateTerrainColors();
 
